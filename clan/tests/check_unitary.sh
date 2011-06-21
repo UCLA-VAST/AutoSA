@@ -37,4 +37,4 @@
 # *****************************************************************************/
 
 
-./$CHECKER "Unitary test suite" "$UNITARY_TEST_FILES"
+$CHECKER "Unitary test suite" "$UNITARY_TEST_FILES"
