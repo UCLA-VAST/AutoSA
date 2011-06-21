@@ -1,0 +1,6 @@
+[submodule "cloog"]
+	path = cloog
+	url = git://repo.or.cz/cloog.git
+[submodule "isl"]
+	path = isl
+	url = git://repo.or.cz/isl.git
