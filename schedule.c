@@ -12,6 +12,8 @@
 #include <ctype.h>
 #include <string.h>
 
+#include <isl/set.h>
+#include <isl/map.h>
 #include <isl/constraint.h>
 
 #include "schedule.h"
