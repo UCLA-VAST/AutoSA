@@ -2446,7 +2446,7 @@ struct cuda_size_info {
  * if so, check whether the expression "i - ceil(b(x)/m) + 1" has a constant
  * upper bound.  If so, and if this bound is smaller than any bound
  * derived from earlier constraints, set the size to this bound on
- * the expression and the lower bound to b(x).
+ * the expression and the lower bound to ceil(b(x)/m).
  */
 static int compute_size_in_direction(__isl_take isl_constraint *c, void *user)
 {
