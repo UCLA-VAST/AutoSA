@@ -1306,10 +1306,118 @@ static __isl_give isl_union_map *group_access_relation(
 	return access;
 }
 
+/* Check that none of the shared memory tiles involve any strides.
+ */
+static int no_strides(struct cuda_array_ref_group *group)
+{
+	int i;
+	int n_index = group->array->n_index;
+
+	for (i = 0; i < n_index; ++i)
+		if (group->shared_bound[i].shift)
+			return 0;
+
+	return 1;
+}
+
+/* Return a set containing the values of the given index i
+ * of the elements in the array tile in global memory that corresponds
+ * to the shared memory copy.
+ * In particular, if a is the index, we return a set with constraints
+ *
+ *	tile_offset <= a <= tile_offset + tile_size - 1
+ *
+ * and
+ *
+ *	0 <= a <= array_size - 1
+ *
+ */
+static __isl_give isl_set *group_tile_dim(struct cuda_array_ref_group *group,
+	int i)
+{
+	isl_basic_set *tile;
+	isl_aff *aff;
+	isl_constraint *c;
+	isl_local_space *ls;
+	isl_pw_aff *bound;
+	isl_set *dom;
+	isl_set *tile_set;
+
+	aff = isl_aff_copy(group->shared_bound[i].lb);
+	aff = isl_aff_add_dims(aff, isl_dim_set, 1);
+	ls = isl_aff_get_local_space(aff);
+	aff = isl_aff_neg(aff);
+	aff = isl_aff_add_coefficient_si(aff, isl_dim_set, 0, 1);
+	c = isl_inequality_from_aff(isl_aff_copy(aff));
+	tile = isl_basic_set_from_constraint(c);
+
+	aff = isl_aff_neg(aff);
+	aff = isl_aff_add_constant(aff, group->shared_bound[i].size);
+	aff = isl_aff_add_constant_si(aff, -1);
+	c = isl_inequality_from_aff(aff);
+	tile = isl_basic_set_add_constraint(tile, c);
+
+	aff = isl_aff_zero(ls);
+	aff = isl_aff_add_coefficient_si(aff, isl_dim_set, 0, 1);
+	c = isl_inequality_from_aff(aff);
+	tile = isl_basic_set_add_constraint(tile, c);
+
+	bound = isl_pw_aff_copy(group->array->bound[i]);
+	bound = isl_pw_aff_add_dims(bound, isl_dim_set, 1);
+	ls = isl_local_space_from_dim(isl_pw_aff_get_dim(bound));
+	aff = isl_aff_zero(ls);
+	aff = isl_aff_add_coefficient_si(aff, isl_dim_set, 0, 1);
+	aff = isl_aff_add_constant_si(aff, 1);
+	dom = isl_pw_aff_domain(isl_pw_aff_copy(bound));
+
+	tile_set = isl_pw_aff_ge_set(bound, isl_pw_aff_alloc(dom, aff));
+	tile_set = isl_set_align_params(tile_set, isl_basic_set_get_dim(tile));
+	tile_set = isl_set_intersect(tile_set, isl_set_from_basic_set(tile));
+
+	return tile_set;
+}
+
+/* Return a set containing the elements in the array tile in
+ * global memory that corresponds to the shared memory copy.
+ */
+static __isl_give isl_set *group_tile(struct cuda_array_ref_group *group)
+{
+	int i;
+	int n_index = group->array->n_index;
+	isl_set *tile;
+
+	tile = group_tile_dim(group, 0);
+	for (i = 1; i < n_index; ++i) {
+		isl_set *tile_i;
+
+		tile_i = group_tile_dim(group, i);
+		tile = isl_set_flat_product(tile, tile_i);
+	}
+
+	tile = isl_set_set_tuple_name(tile, group->array->name);
+
+	return tile;
+}
+
 /* Print code for reading into or writing from shared memory
  * the given array reference group.
  *
  * sched maps the original iteration domains to the shared memory tile loops.
+ *
+ * If we are performing a read from global memory to shared memory,
+ * if the array involved is not a scalar and if the definition of the
+ * shared memory tiles does not involve any strides, then we copy
+ * the entire tile to shared memory.  This may result in some extra
+ * elements getting copied, but it should lead to simpler code
+ * (which means that fewer registers may be needed) and less divergence.
+ *
+ * Otherwise, we only copy the elements that will be read or have been written
+ * in the kernel.
+ *
+ * Note that the absence of stride requirement can easily be lifted.
+ * We would just need to add constraints of the form
+ *
+ *	shift + a = stride * alpha
  */
 static int print_group_shared_accesses(struct cuda_gen *gen,
 	struct cuda_array_ref_group *group, const char *type,
@@ -1334,6 +1442,14 @@ static int print_group_shared_accesses(struct cuda_gen *gen,
 	if (isl_union_set_is_empty(uset)) {
 		isl_union_set_free(uset);
 		return 0;
+	}
+
+	if (read && group->array->n_index > 0 && no_strides(group)) {
+		isl_union_set_free(uset);
+		access_set = group_tile(group);
+		print_shared_access(gen, shared_domain, access_set,
+				    type, group);
+		return 1;
 	}
 
 	access_set = isl_union_set_copy_set(uset);
