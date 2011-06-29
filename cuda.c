@@ -83,9 +83,9 @@ struct cuda_array_info {
 	/* Number of indices. */
 	unsigned n_index;
 	/* For each index, a bound on the array in that direction. */
-	isl_pw_qpolynomial_fold **bound;
+	isl_pw_aff **bound;
 	/* For each index, bound[i] specialized to the current kernel. */
-	isl_pw_qpolynomial_fold **local_bound;
+	isl_pw_aff **local_bound;
 
 	/* All references to this array; point to elements of a linked list. */
 	int n_ref;
@@ -210,16 +210,16 @@ static int extract_array_info(__isl_take isl_set *array, void *user)
 	struct cuda_gen *gen = (struct cuda_gen *)user;
 	const char *name;
 	int n_index;
-	isl_pw_qpolynomial_fold **bounds;
-	isl_pw_qpolynomial_fold **local_bounds;
+	isl_pw_aff **bounds;
+	isl_pw_aff **local_bounds;
 
 	n_index = isl_set_dim(array, isl_dim_set);
 	name = isl_set_get_tuple_name(array);
 	bounds = isl_alloc_array(isl_set_get_ctx(array),
-				 isl_pw_qpolynomial_fold *, n_index);
+				 isl_pw_aff *, n_index);
 	assert(bounds);
 	local_bounds = isl_calloc_array(isl_set_get_ctx(array),
-				 isl_pw_qpolynomial_fold *, n_index);
+				 isl_pw_aff *, n_index);
 	assert(local_bounds);
 	gen->array[gen->n_array].dim = isl_set_get_dim(array);
 	gen->array[gen->n_array].name = strdup(name);
@@ -228,21 +228,20 @@ static int extract_array_info(__isl_take isl_set *array, void *user)
 	gen->array[gen->n_array].local_bound = local_bounds;
 
 	for (i = 0; i < n_index; ++i) {
-		isl_dim *dim;
-		isl_qpolynomial *qp, *one;
-		isl_pw_qpolynomial *pwqp;
-		isl_pw_qpolynomial_fold *pwf;
+		isl_set *dom;
+		isl_local_space *ls;
+		isl_aff *one;
+		isl_pw_aff *bound;
 
-		dim = isl_set_get_dim(array);
-		one = isl_qpolynomial_one(isl_dim_copy(dim));
-		qp = isl_qpolynomial_var(dim, isl_dim_set, i);
-		qp = isl_qpolynomial_add(qp, one);
-		pwqp = isl_pw_qpolynomial_alloc(isl_set_copy(array), qp);
-		pwf = isl_pw_qpolynomial_bound(pwqp, isl_fold_max, NULL);
-		pwf = isl_pw_qpolynomial_fold_gist(pwf,
-						isl_set_copy(gen->context));
+		bound = isl_set_dim_max(isl_set_copy(array), i);
+		dom = isl_pw_aff_domain(isl_pw_aff_copy(bound));
+		ls = isl_local_space_from_dim(isl_set_get_dim(dom));
+		one = isl_aff_zero(ls);
+		one = isl_aff_add_constant_si(one, 1);
+		bound = isl_pw_aff_add(bound, isl_pw_aff_alloc(dom, one));
+		bound = isl_pw_aff_gist(bound, isl_set_copy(gen->context));
 
-		bounds[i] = pwf;
+		bounds[i] = bound;
 	}
 
 	collect_references(gen, &gen->array[gen->n_array]);
@@ -279,8 +278,8 @@ static void free_array_info(struct cuda_gen *gen)
 		int n_index = gen->array[i].n_index;
 		free(gen->array[i].name);
 		for (j = 0; j < n_index; ++j) {
-			isl_pw_qpolynomial_fold_free(gen->array[i].bound[j]);
-			isl_pw_qpolynomial_fold_free(gen->array[i].local_bound[j]);
+			isl_pw_aff_free(gen->array[i].bound[j]);
+			isl_pw_aff_free(gen->array[i].local_bound[j]);
 		}
 		isl_dim_free(gen->array[i].dim);
 		free(gen->array[i].bound);
@@ -309,8 +308,7 @@ static void print_array_size(struct cuda_gen *gen, FILE *out,
 	prn = isl_printer_set_output_format(prn, ISL_FORMAT_C);
 	for (i = 0; i < array->n_index; ++i) {
 		prn = isl_printer_print_str(prn, "(");
-		prn = isl_printer_print_pw_qpolynomial_fold(prn,
-							    array->bound[i]);
+		prn = isl_printer_print_pw_aff(prn, array->bound[i]);
 		prn = isl_printer_print_str(prn, ") * ");
 	}
 	prn = isl_printer_print_str(prn, "sizeof(");
@@ -1552,7 +1550,7 @@ static void print_access(struct cuda_gen *gen, __isl_take isl_map *access,
 		if (i) {
 			if (!bounds) {
 				prn = isl_printer_print_str(prn, ") * (");
-				prn = isl_printer_print_pw_qpolynomial_fold(prn,
+				prn = isl_printer_print_pw_aff(prn,
 							array->local_bound[i]);
 				prn = isl_printer_print_str(prn, ") + ");
 			} else
@@ -1653,7 +1651,7 @@ static void print_private_global_index(isl_ctx *ctx, FILE *out,
 	for (i = 0; i < array->n_index; ++i) {
 		if (i) {
 			prn = isl_printer_print_str(prn, ") * (");
-			prn = isl_printer_print_pw_qpolynomial_fold(prn,
+			prn = isl_printer_print_pw_aff(prn,
 							array->local_bound[i]);
 			prn = isl_printer_print_str(prn, ") + ");
 		}
@@ -3188,7 +3186,7 @@ static void free_local_array_info(struct cuda_gen *gen)
 		if (array->n_group == 0)
 			continue;
 		for (j = 0; j < gen->array[i].n_index; ++j) {
-			isl_pw_qpolynomial_fold_free(gen->array[i].local_bound[j]);
+			isl_pw_aff_free(gen->array[i].local_bound[j]);
 			gen->array[i].local_bound[j] = NULL;
 		}
 	}
@@ -3230,7 +3228,7 @@ static void print_global_index(isl_ctx *ctx, FILE *out,
 			prn = isl_printer_to_file(ctx, out);
 			prn = isl_printer_set_output_format(prn, ISL_FORMAT_C);
 			prn = isl_printer_print_str(prn, ") * (");
-			prn = isl_printer_print_pw_qpolynomial_fold(prn,
+			prn = isl_printer_print_pw_aff(prn,
 							array->local_bound[i]);
 			prn = isl_printer_print_str(prn, ") + ");
 			isl_printer_free(prn);
@@ -3360,12 +3358,11 @@ static void localize_bounds(struct cuda_gen *gen,
 			continue;
 
 		for (j = 0; j < array->n_index; ++j) {
-			isl_pw_qpolynomial_fold *pwf;
+			isl_pw_aff *pwaff;
 
-			pwf = isl_pw_qpolynomial_fold_copy(array->bound[j]);
-			pwf = isl_pw_qpolynomial_fold_gist(pwf,
-							isl_set_copy(context));
-			array->local_bound[j] = pwf;
+			pwaff = isl_pw_aff_copy(array->bound[j]);
+			pwaff = isl_pw_aff_gist(pwaff, isl_set_copy(context));
+			array->local_bound[j] = pwaff;
 		}
 	}
 	isl_set_free(context);
