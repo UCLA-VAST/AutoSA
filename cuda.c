@@ -13,6 +13,7 @@
 
 #include <isl/polynomial.h>
 #include <isl/union_set.h>
+#include <isl/aff.h>
 #include <isl/ilp.h>
 #include <isl/flow.h>
 #include <isl/band.h>
