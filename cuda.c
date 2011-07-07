@@ -2550,7 +2550,7 @@ static int can_tile_for_shared_memory(struct cuda_gen *gen,
 		access_i = isl_map_copy(access);
 		access_i = isl_map_project_out(access_i, isl_dim_out, 0, i);
 		access_i = isl_map_project_out(access_i, isl_dim_out,
-					    i + 1, array->n_index - (i + 1));
+					    1, array->n_index - (i + 1));
 		access_i = isl_map_compute_divs(access_i);
 		hull = isl_map_simple_hull(access_i);
 		if (compute_array_dim_size(gen, &bounds[i], hull) < 0)
