@@ -1,7 +1,7 @@
 #ifndef _CUDA_H
 #define _CUDA_H
 
-#include "clan/clan.h"
+#include <pet.h>
 #include "cuda_common.h"
 #include "gpucode.h"
 #include "ppcg_options.h"
@@ -118,7 +118,7 @@ void collect_array_info(struct cuda_gen *gen);
 void print_host_code(struct cuda_gen *gen);
 void clear_cuda_gen(struct cuda_gen *gen);
 
-int cuda_scop(isl_ctx *ctx, scoplib_scop_p scop, struct ppcg_options *options,
+int cuda_pet(isl_ctx *ctx, struct pet_scop *scop, struct ppcg_options *options,
 	const char *input);
 
 #endif

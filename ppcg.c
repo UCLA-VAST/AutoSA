@@ -12,7 +12,7 @@
 #include <stdio.h>
 #include <isl/ctx.h>
 #include <isl/options.h>
-#include <clan/clan.h>
+#include <pet.h>
 #include "ppcg_options.h"
 #include "cuda.h"
 
@@ -33,11 +33,11 @@ ISL_ARG_DEF(options, struct options, options_arg)
 
 int main(int argc, char **argv)
 {
+	int r;
 	isl_ctx *ctx;
 	struct options *options;
-	clan_options_p clan_options;
-	scoplib_scop_p scop;
 	FILE *input;
+	struct pet_scop *scop;
 
 	options = options_new_with_defaults();
 	assert(options);
@@ -45,16 +45,11 @@ int main(int argc, char **argv)
 
 	ctx = isl_ctx_alloc_with_options(options_arg, options);
 
-	clan_options = clan_options_malloc();
+	scop = pet_scop_extract_from_C_source(ctx, options->input, NULL, 0);
+	r = cuda_pet(ctx, scop, options->ppcg, options->input);
+	pet_scop_free(scop);
 
-	input = fopen(options->input, "r");
-	if (!input) {
-		fprintf(stderr, "unable to open input file '%s'\n",
-				options->input);
-		return -1;
-	}
-	scop = clan_scop_extract(input, clan_options);
-	clan_options_free(clan_options);
+	isl_ctx_free(ctx);
 
-	return cuda_scop(ctx, scop, options->ppcg, options->input);
+	return r;
 }

@@ -1,0 +1,16 @@
+Requirements:
+
+- gmp (http://gmplib.org/)
+- libyaml (http://pyyaml.org/wiki/LibYAML)
+- LLVM/clang (http://clang.llvm.org/get_started.html)
+
+Compilation:
+
+	git clone git://repo.or.cz/ppcg.git
+	cd ppcg
+	git submodule init
+	git submodule update
+	./autogen.sh
+	./configure
+	make
+	make check

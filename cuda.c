@@ -25,7 +25,6 @@
 #include "cuda_common.h"
 #include "gpucode.h"
 #include "schedule.h"
-#include "scoplib_isl.h"
 #include "ppcg_options.h"
 
 /* The fields stride, shift and shift_map only contain valid information
@@ -482,7 +481,6 @@ static void free_stmts(struct cuda_stmt *stmts, int n)
 		}
 
 		isl_set_free(stmts[i].domain);
-		free(stmts[i].text);
 	}
 	free(stmts);
 }
@@ -1684,21 +1682,71 @@ static void print_access(struct cuda_gen *gen, __isl_take isl_map *access,
 	isl_basic_set_free(aff);
 }
 
+static struct cuda_stmt_access *print_expr(struct cuda_gen *gen, FILE *out,
+	struct pet_expr *expr, struct cuda_stmt_access *access, int outer)
+{
+	int i;
+
+	switch (expr->type) {
+	case pet_expr_double:
+		fprintf(out, "%g", expr->d);
+		break;
+	case pet_expr_access:
+		print_access(gen, isl_map_copy(access->access), access->group);
+		access = access->next;
+		break;
+	case pet_expr_unary:
+		if (!outer)
+			fprintf(out, "(");
+		fprintf(out, " %s ", pet_op_str(expr->op));
+		access = print_expr(gen, out, expr->args[pet_un_arg],
+					access, 0);
+		if (!outer)
+			fprintf(out, ")");
+		break;
+	case pet_expr_binary:
+		if (!outer)
+			fprintf(out, "(");
+		access = print_expr(gen, out, expr->args[pet_bin_lhs],
+					access, 0);
+		fprintf(out, " %s ", pet_op_str(expr->op));
+		access = print_expr(gen, out, expr->args[pet_bin_rhs],
+					access, 0);
+		if (!outer)
+			fprintf(out, ")");
+		break;
+	case pet_expr_ternary:
+		if (!outer)
+			fprintf(out, "(");
+		access = print_expr(gen, out, expr->args[pet_ter_cond],
+					access, 0);
+		fprintf(out, " ? ");
+		access = print_expr(gen, out, expr->args[pet_ter_true],
+					access, 0);
+		fprintf(out, " : ");
+		access = print_expr(gen, out, expr->args[pet_ter_false],
+					access, 0);
+		if (!outer)
+			fprintf(out, ")");
+		break;
+	case pet_expr_call:
+		fprintf(out, "%s(", expr->name);
+		for (i = 0; i < expr->n_arg; ++i) {
+			if (i)
+				fprintf(out, ", ");
+			access = print_expr(gen, out, expr->args[i],
+						access, 1);
+		}
+		fprintf(out, ")");
+	}
+	return access;
+}
+
 static void print_stmt_body(struct cuda_gen *gen,
 	FILE *out, struct cuda_stmt *stmt)
 {
-	int last = 0;
-	struct cuda_stmt_access *access;
-
-	for (access = stmt->accesses; access; access = access->next) {
-		fwrite(stmt->text + last, 1, access->text_offset - last, out);
-		last = access->text_offset + access->text_len;
-
-		print_access(gen, isl_map_copy(access->access),
-			     access->group);
-	}
-
-	fprintf(out, "%s\n", stmt->text + last);
+	print_expr(gen, out, stmt->body, stmt->accesses, 1);
+	fprintf(out, ";\n");
 }
 
 /* This function is called for each leaf in the innermost clast,
@@ -3664,112 +3712,6 @@ __isl_give isl_set *add_context_from_str(__isl_take isl_set *set,
 	return set;
 }
 
-/* Convert scop->context to an isl_set.
- */
-static __isl_give isl_set *extract_context(isl_ctx *ctx, scoplib_scop_p scop)
-{
-	isl_dim *dim;
-
-	dim = isl_dim_set_alloc(ctx, scop->nb_parameters, 0);
-	dim = set_dim_names(dim, isl_dim_param, scop->parameters);
-	return scoplib_matrix_to_isl_set(scop->context, dim);
-}
-
-/* Return an array of cuda_stmt representing the statements in "scop".
- */
-static struct cuda_stmt *extract_stmts(isl_ctx *ctx, scoplib_scop_p scop,
-	__isl_keep isl_set *context)
-{
-	int n;
-	struct cuda_stmt *stmts;
-	scoplib_statement_p stmt = scop->statement;
-
-	n = scoplib_statement_number(scop->statement);
-	stmts = isl_calloc_array(ctx, struct cuda_stmt, n);
-	assert(stmts);
-
-	for (stmt = scop->statement, n = 0; stmt; stmt = stmt->next, n++) {
-		char name[20];
-		isl_dim *dim;
-		struct cuda_stmt *s = &stmts[n];
-
-		snprintf(name, sizeof(name), "S_%d", n);
-
-		dim = isl_dim_set_alloc(ctx, scop->nb_parameters,
-					stmt->nb_iterators);
-		dim = set_dim_names(dim, isl_dim_param, scop->parameters);
-		dim = set_dim_names(dim, isl_dim_set, stmt->iterators);
-		dim = isl_dim_set_tuple_name(dim, isl_dim_set, name);
-		dim = set_dim_names(dim, isl_dim_set, stmt->iterators);
-		s->domain = scoplib_matrix_list_to_isl_set(stmt->domain,
-									dim);
-		s->domain = isl_set_intersect(s->domain, isl_set_copy(context));
-		s->text = strdup(stmt->body);
-		stmt_extract_accesses(s);
-	}
-
-	return stmts;
-}
-
-/* Extract all the read and write accesses from "scop" and store
- * them in gen->read and gen->write.
- */
-static void extract_accesses(struct cuda_gen *gen, scoplib_scop_p scop)
-{
-	int i;
-	int n = scoplib_statement_number(scop->statement);
-	isl_dim *dim;
-	scoplib_statement_p stmt;
-
-	dim = isl_set_get_dim(gen->context);
-	gen->write = isl_union_map_empty(isl_dim_copy(dim));
-	gen->read = isl_union_map_empty(dim);
-
-	for (i = 0, stmt = scop->statement; i < n; ++i, stmt = stmt->next) {
-		isl_union_map *read_i;
-		isl_union_map *write_i;
-
-		read_i = scoplib_access_to_isl_union_map(stmt->read,
-				isl_set_copy(gen->stmts[i].domain),
-				scop->arrays);
-		write_i = scoplib_access_to_isl_union_map(stmt->write,
-				isl_set_copy(gen->stmts[i].domain),
-				scop->arrays);
-
-		gen->read = isl_union_map_union(gen->read, read_i);
-		gen->write = isl_union_map_union(gen->write, write_i);
-	}
-}
-
-/* Extract and return the original schedule of the program from "scop".
- */
-static isl_union_map *extract_original_schedule(struct cuda_gen *gen,
-	scoplib_scop_p scop)
-{
-	int i;
-	int n = scoplib_statement_number(scop->statement);
-	isl_dim *dim;
-	isl_union_map *sched;
-	scoplib_statement_p stmt;
-
-	dim = isl_set_get_dim(gen->context);
-	sched = isl_union_map_empty(dim);
-
-	for (i = 0, stmt = scop->statement; i < n; ++i, stmt = stmt->next) {
-		isl_map *sched_i;
-
-		dim = isl_set_get_dim(gen->stmts[i].domain);
-		dim = isl_dim_from_domain(dim);
-		dim = isl_dim_add(dim, isl_dim_out, 2 * stmt->nb_iterators + 1);
-		sched_i = scoplib_schedule_to_isl_map(stmt->schedule, dim);
-
-		sched = isl_union_map_union(sched,
-					    isl_union_map_from_map(sched_i));
-	}
-
-	return sched;
-}
-
 /* Return the union of all iteration domains of the gen->stmts[i].
  */
 static __isl_give isl_union_set *extract_domain(struct cuda_gen *gen)
@@ -4148,6 +4090,70 @@ static void compute_schedule(struct cuda_gen *gen,
 	isl_schedule_free(schedule);
 }
 
+static struct cuda_stmt_access **expr_extract_access(struct pet_expr *expr,
+	struct cuda_stmt_access **next_access)
+{
+	struct cuda_stmt_access *access;
+	isl_ctx *ctx = isl_map_get_ctx(expr->acc.access);
+
+	access = isl_alloc_type(ctx, struct cuda_stmt_access);
+	assert(access);
+	access->next = NULL;
+	access->read = expr->acc.read;
+	access->write = expr->acc.write;
+	access->access = isl_map_copy(expr->acc.access);
+
+	*next_access = access;
+	next_access = &(*next_access)->next;
+	return next_access;
+}
+
+static struct cuda_stmt_access **expr_extract_accesses(struct pet_expr *expr,
+	struct cuda_stmt_access **next_access)
+{
+	int i;
+
+	for (i = 0; i < expr->n_arg; ++i)
+		next_access = expr_extract_accesses(expr->args[i],
+							next_access);
+
+	if (expr->type == pet_expr_access)
+		next_access = expr_extract_access(expr, next_access);
+
+	return next_access;
+}
+
+static void pet_stmt_extract_accesses(struct cuda_stmt *stmt)
+{
+	struct cuda_stmt_access **next_access = &stmt->accesses;
+
+	stmt->accesses = NULL;
+	expr_extract_accesses(stmt->body, next_access);
+}
+
+/* Return an array of cuda_stmt representing the statements in "scop".
+ */
+static struct cuda_stmt *extract_stmts(isl_ctx *ctx, struct pet_scop *scop,
+	__isl_keep isl_set *context)
+{
+	int i;
+	struct cuda_stmt *stmts;
+
+	stmts = isl_calloc_array(ctx, struct cuda_stmt, scop->n_stmt);
+	assert(stmts);
+
+	for (i = 0; i < scop->n_stmt; ++i) {
+		struct cuda_stmt *s = &stmts[i];
+
+		s->domain = isl_set_copy(scop->stmts[i]->domain);
+		s->domain = isl_set_intersect(s->domain, isl_set_copy(context));
+		s->body = scop->stmts[i]->body;
+		pet_stmt_extract_accesses(s);
+	}
+
+	return stmts;
+}
+
 /* Replace the scop in the "input" file by equivalent code
  * that uses the GPU.  "scop" is assumed to correspond to this scop.
  *
@@ -4192,18 +4198,21 @@ static void compute_schedule(struct cuda_gen *gen,
  *
  * The function frees "scop" and "ctx".
  */
-int cuda_scop(isl_ctx *ctx, scoplib_scop_p scop, struct ppcg_options *options,
+int cuda_pet(isl_ctx *ctx, struct pet_scop *scop, struct ppcg_options *options,
 	const char *input)
 {
 	isl_union_map *sched;
 	struct cuda_gen gen;
 
+	scop = pet_scop_align_params(scop);
+
 	gen.ctx = ctx;
-	gen.context = extract_context(gen.ctx, scop);
+	gen.context = isl_set_copy(scop->context);
 	gen.context = add_context_from_str(gen.context, options->ctx);
-	gen.n_stmts = scoplib_statement_number(scop->statement);
-	gen.stmts = extract_stmts(gen.ctx, scop, gen.context);
-	extract_accesses(&gen, scop);
+	gen.n_stmts = scop->n_stmt;
+	gen.stmts = extract_stmts(ctx, scop, gen.context);
+	gen.read = pet_scop_collect_reads(scop);
+	gen.write = pet_scop_collect_writes(scop);
 	gen.options = options;
 	gen.state = cloog_isl_state_malloc(gen.ctx);
 
@@ -4211,15 +4220,14 @@ int cuda_scop(isl_ctx *ctx, scoplib_scop_p scop, struct ppcg_options *options,
 
 	collect_array_info(&gen);
 
-	sched = extract_original_schedule(&gen, scop);
+	sched = pet_scop_collect_schedule(scop);
+
 	compute_schedule(&gen, sched);
 
 	print_host_code(&gen);
 
 	cloog_state_free(gen.state);
 	clear_cuda_gen(&gen);
-	isl_ctx_free(gen.ctx);
-	scoplib_scop_free(scop);
 
 	cuda_close_files(&gen.cuda);
 

@@ -6,10 +6,6 @@
  * An access may be both read and write.
  */
 struct cuda_stmt_access {
-	/* Offset in stmt->text */
-	int text_offset;
-	int text_len;
-
 	/* Access reads elements */
 	int read;
 	/* Access writes elements */
@@ -26,7 +22,7 @@ struct cuda_stmt_access {
 
 struct cuda_stmt {
 	isl_set *domain;
-	char *text;
+	struct pet_expr *body;
 
 	/* Number of tile dimensions. */
 	int tile_len;
@@ -44,7 +40,5 @@ __isl_give isl_map *project_out(__isl_take isl_dim *dim,
 __isl_give isl_map *projection(__isl_take isl_dim *dim,
 	int src_len, int dst_len);
 __isl_give isl_set *extend(__isl_take isl_set *set, int dst_len);
-
-void stmt_extract_accesses(struct cuda_stmt *stmt);
 
 #endif

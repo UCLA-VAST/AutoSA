@@ -52,41 +52,29 @@ system)
 	CLOOG_LIBS="-lcloog-isl"
 esac
 
-AX_SUBMODULE(clan,build|bundled|system,bundled)
-AM_CONDITIONAL(BUNDLED_CLAN, test $with_clan = bundled)
+AX_SUBMODULE(pet,bundled|system,bundled)
+AM_CONDITIONAL(BUNDLED_PET, test $with_pet = bundled)
 
-AC_SUBST(CLAN_LDFLAGS)
-AC_SUBST(CLAN_CFLAGS)
-AC_SUBST(CLAN_LIBS)
-CLAN_CFLAGS="-DSCOPLIB_INT_T_IS_LONGLONG"
-case "$with_cloog" in
+AC_SUBST(PET_CFLAGS)
+AC_SUBST(PET_LIBS)
+case "$with_pet" in
 bundled)
-	CLAN_CFLAGS="$CLAN_CFLAGS -I\$(top_srcdir)/clan/scoplib/scoplib-0.2.0/include -I\$(top_srcdir)/clan/include -I\$(top_builddir)/clan/scoplib/scoplib-0.2.0/include -I\$(top_builddir)/clan/include"
-	;;
-build)
-	with_clan_builddir=`echo @abs_builddir@ | $with_clan_builddir/config.status --file=-`
-	CLAN_CFLAGS="$CLAN_CFLAGS -I$clan_srcdir/scoplib/scoplib-0.2.0/include -I$clan_srcdir/include -I$with_clan_builddir/scoplib/scoplib-0.2.0/include -I$with_clan_builddir/include"
-	CLAN_LIBS="$with_clan_builddir/source/libclan.la"
+	PET_CFLAGS="$PET_CFLAGS -I\$(top_srcdir)/pet/include"
 	;;
 system)
-	if test "x$with_clan_prefix" != "x"; then
-		CLAN_CFLAGS="$CLAN_CFLAGS -I$with_clan_prefix/include"
-	fi
-	if test "x$with_clan_exec_prefix" != "x"; then
-		CLAN_LDFLAGS="-L$with_clan_exec_prefix/lib"
-	fi
-	CLAN_LIBS="-lclan"
+	PKG_CHECK_MODULES([PET], [pet])
+	;;
 esac
 
 AC_CONFIG_FILES(Makefile)
 if test $with_isl = bundled; then
 	AC_CONFIG_SUBDIRS(isl)
 fi
+if test $with_pet = bundled; then
+	AC_CONFIG_SUBDIRS(pet)
+fi
 if test $with_cloog = bundled; then
 	AC_CONFIG_SUBDIRS(cloog)
-fi
-if test $with_clan = bundled; then
-	AC_CONFIG_SUBDIRS(clan)
 fi
 AC_CONFIG_COMMANDS_POST([
 	dnl pass on arguments to subdir configures, but don't
