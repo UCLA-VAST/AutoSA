@@ -1453,8 +1453,7 @@ static int print_group_shared_accesses(struct cuda_gen *gen,
 		return 1;
 	}
 
-	access_set = isl_union_set_copy_set(uset);
-	isl_union_set_free(uset);
+	access_set = isl_set_from_union_set(uset);
 	access_set = isl_set_coalesce(access_set);
 
 	print_shared_access(gen, shared_domain, access_set, type, group);
@@ -1962,8 +1961,7 @@ static void print_group_private_accesses(struct cuda_gen *gen,
 		return;
 	}
 
-	access_set = isl_union_set_copy_set(uset);
-	isl_union_set_free(uset);
+	access_set = isl_set_from_union_set(uset);
 	access_set = isl_set_coalesce(access_set);
 	access_set = isl_set_eliminate(access_set, isl_dim_param,
 			first_shared + shared_len,
@@ -2107,7 +2105,6 @@ static __isl_give isl_union_map *interchange_for_unroll(struct cuda_gen *gen,
 
 		for (j = 0; j < array->n_group; ++j) {
 			isl_union_map *access;
-			isl_dim *dim;
 			isl_map *acc;
 
 			if (!array->groups[j]->private_bound)
@@ -2117,18 +2114,10 @@ static __isl_give isl_union_map *interchange_for_unroll(struct cuda_gen *gen,
 			access = isl_union_map_apply_domain(access,
 						isl_union_map_copy(sched));
 
-			dim = isl_union_map_get_dim(access);
-			dim = isl_dim_add(dim, isl_dim_out, array->n_index);
-			dim = isl_dim_set_tuple_name(dim, isl_dim_out,
-							array->name);
-			dim = isl_dim_add(dim, isl_dim_in,
-							gen->thread_tiled_len);
-			acc = isl_union_map_extract_map(access, dim);
-
+			acc = isl_map_from_union_map(access);
 			isl_map_foreach_basic_map(acc, &check_unroll, unroll);
 
 			isl_map_free(acc);
-			isl_union_map_free(access);
 		}
 	}
 
@@ -2768,8 +2757,7 @@ static int access_is_coalesced(struct cuda_gen *gen,
 	access = isl_union_map_copy(access);
 	access = isl_union_map_apply_domain(access,
 				isl_union_map_copy(gen->tiled_sched));
-	access_map = isl_union_map_copy_map(access);
-	isl_union_map_free(access);
+	access_map = isl_map_from_union_map(access);
 
 	dim = isl_map_get_dim(access_map);
 	dim = isl_dim_domain(dim);
@@ -2840,8 +2828,7 @@ static void check_private_group_access(struct cuda_gen *gen,
 	access = isl_union_map_apply_domain(access,
 					isl_union_map_copy(gen->shared_sched));
 
-	acc = isl_union_map_copy_map(access);
-	isl_union_map_free(access);
+	acc = isl_map_from_union_map(access);
 
 	if (!isl_map_is_bijective(acc)) {
 		isl_map_free(acc);
@@ -2983,13 +2970,12 @@ static int populate_array_references(struct cuda_gen *gen,
 		umap = isl_union_map_apply_domain(umap,
 				isl_union_map_copy(sched));
 
-		map = isl_union_map_copy_map(umap);
-		isl_union_map_free(umap);
-
-		if (isl_map_is_empty(map)) {
-			isl_map_free(map);
+		if (isl_union_map_is_empty(umap)) {
+			isl_union_map_free(umap);
 			continue;
 		}
+
+		map = isl_map_from_union_map(umap);
 
 		group = isl_calloc_type(ctx, struct cuda_array_ref_group);
 		assert(group);
