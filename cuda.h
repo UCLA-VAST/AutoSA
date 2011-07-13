@@ -16,6 +16,8 @@ struct cuda_gen {
 	struct ppcg_options *options;
 	CloogState *state;
 
+	struct pet_scop *scop;
+
 	/* Set of parameter values */
 	isl_set *context;
 

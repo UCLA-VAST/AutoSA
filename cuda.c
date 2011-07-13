@@ -201,6 +201,27 @@ static void free_bound_list(struct cuda_array_bound *bound, int n_index)
 	free(bound);
 }
 
+static struct pet_array *find_array(struct pet_scop *scop,
+	__isl_keep isl_set *accessed)
+{
+	int i;
+	isl_id *id;
+
+	id = isl_set_get_tuple_id(accessed);
+
+	for (i = 0; i < scop->n_array; ++i) {
+		isl_id *id_i;
+
+		id_i = isl_set_get_tuple_id(scop->arrays[i]->extent);
+		isl_id_free(id_i);
+		if (id == id_i)
+			break;
+	}
+	isl_id_free(id);
+
+	return i < scop->n_array ? scop->arrays[i] : NULL;
+}
+
 /* Compute bounds on the host arrays based on the accessed elements
  * and collect all references to the array.
  */
@@ -212,6 +233,7 @@ static int extract_array_info(__isl_take isl_set *array, void *user)
 	int n_index;
 	isl_pw_aff **bounds;
 	isl_pw_aff **local_bounds;
+	struct pet_array *pa;
 
 	n_index = isl_set_dim(array, isl_dim_set);
 	name = isl_set_get_tuple_name(array);
@@ -227,13 +249,18 @@ static int extract_array_info(__isl_take isl_set *array, void *user)
 	gen->array[gen->n_array].bound = bounds;
 	gen->array[gen->n_array].local_bound = local_bounds;
 
+	pa = find_array(gen->scop, array);
+	assert(pa);
+
 	for (i = 0; i < n_index; ++i) {
 		isl_set *dom;
 		isl_local_space *ls;
 		isl_aff *one;
 		isl_pw_aff *bound;
+		isl_set *size = i == 0 ? array : pa->extent;
 
-		bound = isl_set_dim_max(isl_set_copy(array), i);
+		bound = isl_set_dim_max(isl_set_copy(size), i);
+		assert(bound);
 		dom = isl_pw_aff_domain(isl_pw_aff_copy(bound));
 		ls = isl_local_space_from_dim(isl_set_get_dim(dom));
 		one = isl_aff_zero(ls);
@@ -354,10 +381,6 @@ static void copy_arrays_to_device(struct cuda_gen *gen)
 		if (empty)
 			continue;
 
-		fprintf(gen->cuda.host_c, "assert(sizeof(%s) == ",
-			gen->array[i].name);
-		print_array_size(gen, gen->cuda.host_c, &gen->array[i]);
-		fprintf(gen->cuda.host_c, ");\n");
 		fprintf(gen->cuda.host_c, "cudaMemcpy(dev_%s, %s, ",
 			gen->array[i].name, gen->array[i].name);
 		print_array_size(gen, gen->cuda.host_c, &gen->array[i]);
@@ -4215,6 +4238,7 @@ int cuda_pet(isl_ctx *ctx, struct pet_scop *scop, struct ppcg_options *options,
 	gen.write = pet_scop_collect_writes(scop);
 	gen.options = options;
 	gen.state = cloog_isl_state_malloc(gen.ctx);
+	gen.scop = scop;
 
 	cuda_open_files(&gen.cuda, input);
 
