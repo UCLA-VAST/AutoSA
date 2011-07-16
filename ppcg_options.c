@@ -14,8 +14,6 @@ struct isl_arg ppcg_options_arg[] = {
 ISL_ARG_BOOL(struct ppcg_options, scale_tile_loops, 0,
 	"scale-tile-loops", 1, NULL)
 ISL_ARG_BOOL(struct ppcg_options, wrap, 0, "wrap", 1, NULL)
-ISL_ARG_STR(struct ppcg_options, type, 't', "type", "type", "float",
-    "Element type of arrays")
 ISL_ARG_STR(struct ppcg_options, ctx, 0, "ctx", "context", NULL,
     "Constraints on parameters")
 ISL_ARG_INT(struct ppcg_options, tile_size, 'S', "tile-size", "size", 32, NULL)

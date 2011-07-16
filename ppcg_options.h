@@ -7,7 +7,6 @@ struct ppcg_options {
 	int scale_tile_loops;
 	int wrap;
 
-	char *type;
 	char *ctx;
 
 	int tile_size;

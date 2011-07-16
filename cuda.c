@@ -78,6 +78,8 @@ struct cuda_array_ref_group {
 
 struct cuda_array_info {
 	isl_dim *dim;
+	/* Element type. */
+	char *type;
 	/* Name of the array. */
 	char *name;
 	/* Number of indices. */
@@ -252,6 +254,8 @@ static int extract_array_info(__isl_take isl_set *array, void *user)
 	pa = find_array(gen->scop, array);
 	assert(pa);
 
+	gen->array[gen->n_array].type = strdup(pa->element_type);
+
 	for (i = 0; i < n_index; ++i) {
 		isl_set *dom;
 		isl_local_space *ls;
@@ -303,6 +307,7 @@ static void free_array_info(struct cuda_gen *gen)
 
 	for (i = 0; i < gen->n_array; ++i) {
 		int n_index = gen->array[i].n_index;
+		free(gen->array[i].type);
 		free(gen->array[i].name);
 		for (j = 0; j < n_index; ++j) {
 			isl_pw_aff_free(gen->array[i].bound[j]);
@@ -322,7 +327,7 @@ static void declare_device_arrays(struct cuda_gen *gen)
 
 	for (i = 0; i < gen->n_array; ++i)
 		fprintf(gen->cuda.host_c, "%s *dev_%s;\n",
-			gen->options->type, gen->array[i].name);
+			gen->array[i].type, gen->array[i].name);
 }
 
 static void print_array_size(struct cuda_gen *gen, FILE *out,
@@ -339,7 +344,7 @@ static void print_array_size(struct cuda_gen *gen, FILE *out,
 		prn = isl_printer_print_str(prn, ") * ");
 	}
 	prn = isl_printer_print_str(prn, "sizeof(");
-	prn = isl_printer_print_str(prn, gen->options->type);
+	prn = isl_printer_print_str(prn, array->type);
 	prn = isl_printer_print_str(prn, ")");
 	isl_printer_free(prn);
 }
@@ -566,9 +571,9 @@ static void print_kernel_launch(struct cuda_gen *gen,
 
 		fprintf(gen->code.dst, "dev_%s", gen->array[i].name);
 		fprintf(gen->cuda.kernel_c, "%s *%s",
-			gen->options->type, gen->array[i].name);
+			gen->array[i].type, gen->array[i].name);
 		fprintf(gen->cuda.kernel_h, "%s *%s",
-			gen->options->type, gen->array[i].name);
+			gen->array[i].type, gen->array[i].name);
 
 		first = 0;
 	}
@@ -2419,7 +2424,7 @@ static void print_group_shared_array(struct cuda_gen *gen,
 
 	print_indent(gen->cuda.kernel_c, 4);
 	fprintf(gen->cuda.kernel_c, "%s%s ",
-		group->private_bound ? "" : "__shared__ ", gen->options->type);
+		group->private_bound ? "" : "__shared__ ", group->array->type);
 	print_array_name(gen->cuda.kernel_c, group);
 	for (j = 0; j < group->array->n_index; ++j) {
 		fprintf(gen->cuda.kernel_c, "[");
