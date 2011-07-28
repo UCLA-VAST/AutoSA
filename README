@@ -2,7 +2,7 @@ Requirements:
 
 - gmp (http://gmplib.org/)
 - libyaml (http://pyyaml.org/wiki/LibYAML)
-- LLVM/clang (http://clang.llvm.org/get_started.html)
+- LLVM/clang libraries, 2.9 or higher (http://clang.llvm.org/get_started.html)
 
 Compilation:
 
