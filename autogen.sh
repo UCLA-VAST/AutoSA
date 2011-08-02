@@ -8,5 +8,4 @@ fi
 if test -f cloog/autogen.sh; then
 	(cd cloog; ./autogen.sh)
 fi
-(cd clan; autoreconf -i)
 autoreconf -i
