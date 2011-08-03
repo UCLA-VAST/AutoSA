@@ -3830,7 +3830,9 @@ static void band_select_outer_band(struct cuda_gen *gen,
 					    &set_stmt_tile_len, info);
 	} else {
 		isl_band_list *children;
-		assert(isl_band_has_children(band));
+		if (!isl_band_has_children(band))
+			isl_die(isl_band_get_ctx(band), isl_error_unknown,
+				"unable to detect any parallelism", abort());
 		children = isl_band_get_children(band);
 		list_select_outer_band(gen, children, pos + n, info);
 	}
