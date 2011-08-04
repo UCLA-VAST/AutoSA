@@ -4225,14 +4225,15 @@ static struct cuda_stmt *extract_stmts(isl_ctx *ctx, struct pet_scop *scop,
  * and including T2), with iterators g%d and after equating the H loops
  * to h%d parameters and the T1P loops to the block dimensions.
  * Finally, we generate code for the remaining loops in a similar fashion.
- *
- * The function frees "scop" and "ctx".
  */
 int cuda_pet(isl_ctx *ctx, struct pet_scop *scop, struct ppcg_options *options,
 	const char *input)
 {
 	isl_union_map *sched;
 	struct cuda_gen gen;
+
+	if (!scop)
+		return -1;
 
 	scop = pet_scop_align_params(scop);
 
