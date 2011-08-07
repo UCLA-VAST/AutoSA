@@ -354,7 +354,7 @@ static void allocate_device_arrays(struct cuda_gen *gen)
 	int i;
 
 	for (i = 0; i < gen->n_array; ++i) {
-		fprintf(gen->cuda.host_c, "cudaMalloc(&dev_%s, ",
+		fprintf(gen->cuda.host_c, "cudaMalloc((void **) &dev_%s, ",
 			gen->array[i].name);
 		print_array_size(gen, gen->cuda.host_c, &gen->array[i]);
 		fprintf(gen->cuda.host_c, ");\n");
