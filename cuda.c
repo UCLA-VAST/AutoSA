@@ -354,10 +354,11 @@ static void allocate_device_arrays(struct cuda_gen *gen)
 	int i;
 
 	for (i = 0; i < gen->n_array; ++i) {
-		fprintf(gen->cuda.host_c, "cudaMalloc((void **) &dev_%s, ",
+		fprintf(gen->cuda.host_c,
+			"cudaCheckReturn(cudaMalloc((void **) &dev_%s, ",
 			gen->array[i].name);
 		print_array_size(gen, gen->cuda.host_c, &gen->array[i]);
-		fprintf(gen->cuda.host_c, ");\n");
+		fprintf(gen->cuda.host_c, "));\n");
 	}
 }
 
@@ -366,7 +367,7 @@ static void free_device_arrays(struct cuda_gen *gen)
 	int i;
 
 	for (i = 0; i < gen->n_array; ++i)
-		fprintf(gen->cuda.host_c, "cudaFree(dev_%s);\n",
+		fprintf(gen->cuda.host_c, "cudaCheckReturn(cudaFree(dev_%s));\n",
 			gen->array[i].name);
 }
 
@@ -395,7 +396,7 @@ static void copy_arrays_to_device(struct cuda_gen *gen)
 		if (empty)
 			continue;
 
-		fprintf(gen->cuda.host_c, "cudaMemcpy(dev_%s,",
+		fprintf(gen->cuda.host_c, "cudaCheckReturn(cudaMemcpy(dev_%s,",
 			gen->array[i].name);
 
 		if (cuda_array_is_scalar(&(gen->array[i])))
@@ -405,7 +406,7 @@ static void copy_arrays_to_device(struct cuda_gen *gen)
 			fprintf(gen->cuda.host_c, " %s, ", gen->array[i].name);
 
 		print_array_size(gen, gen->cuda.host_c, &gen->array[i]);
-		fprintf(gen->cuda.host_c, ", cudaMemcpyHostToDevice);\n");
+		fprintf(gen->cuda.host_c, ", cudaMemcpyHostToDevice));\n");
 	}
 }
 
@@ -427,10 +428,11 @@ static void copy_arrays_from_device(struct cuda_gen *gen)
 		if (empty)
 			continue;
 
-		fprintf(gen->cuda.host_c, "cudaMemcpy(%s, dev_%s, ",
+		fprintf(gen->cuda.host_c,
+			"cudaCheckReturn(cudaMemcpy(%s, dev_%s, ",
 			gen->array[i].name, gen->array[i].name);
 		print_array_size(gen, gen->cuda.host_c, &gen->array[i]);
-		fprintf(gen->cuda.host_c, ", cudaMemcpyDeviceToHost);\n");
+		fprintf(gen->cuda.host_c, ", cudaMemcpyDeviceToHost));\n");
 	}
 
 	isl_union_set_free(write);
@@ -625,6 +627,8 @@ static void print_kernel_launch(struct cuda_gen *gen,
 	fprintf(gen->code.dst, ");\n");
 	fprintf(gen->cuda.kernel_c, ")\n");
 	fprintf(gen->cuda.kernel_h, ");\n");
+
+	fprintf(gen->code.dst, "cudaCheckKernel();\n");
 }
 
 /* Construct a map from a domain of dimensionality "len"
@@ -3730,11 +3734,22 @@ static void print_cloog_host_code(struct cuda_gen *gen)
 	cloog_options_free(options);
 }
 
+void print_cuda_macros(struct cuda_gen *gen)
+{
+	const char *macros =
+		"#define cudaCheckReturn(ret) assert((ret) == cudaSuccess)\n"
+		"#define cudaCheckKernel()"
+		" assert(cudaGetLastError() == cudaSuccess)\n";
+	fputs(macros, gen->cuda.host_c);
+}
+
 void print_host_code(struct cuda_gen *gen)
 {
 	fprintf(gen->cuda.host_c, "{\n");
 	print_cloog_macros(gen->cuda.host_c);
 	print_cloog_macros(gen->cuda.kernel_c);
+
+	print_cuda_macros(gen);
 
 	declare_device_arrays(gen);
 
