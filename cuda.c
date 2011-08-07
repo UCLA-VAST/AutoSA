@@ -370,6 +370,15 @@ static void free_device_arrays(struct cuda_gen *gen)
 			gen->array[i].name);
 }
 
+/* Check if a cuda array is a scalar.  A scalar is a value that is not stored
+ * as an array or through a pointer reference, but as single data element.  At
+ * the moment, scalars are represented as zero dimensional arrays.
+ */
+static int cuda_array_is_scalar(struct cuda_array_info *array)
+{
+	return (array->n_index == 0);
+}
+
 static void copy_arrays_to_device(struct cuda_gen *gen)
 {
 	int i;
@@ -386,8 +395,15 @@ static void copy_arrays_to_device(struct cuda_gen *gen)
 		if (empty)
 			continue;
 
-		fprintf(gen->cuda.host_c, "cudaMemcpy(dev_%s, %s, ",
-			gen->array[i].name, gen->array[i].name);
+		fprintf(gen->cuda.host_c, "cudaMemcpy(dev_%s,",
+			gen->array[i].name);
+
+		if (cuda_array_is_scalar(&(gen->array[i])))
+			fprintf(gen->cuda.host_c, " &%s, ",
+				gen->array[i].name);
+		else
+			fprintf(gen->cuda.host_c, " %s, ", gen->array[i].name);
+
 		print_array_size(gen, gen->cuda.host_c, &gen->array[i]);
 		fprintf(gen->cuda.host_c, ", cudaMemcpyHostToDevice);\n");
 	}
@@ -1649,6 +1665,12 @@ static void print_access(struct cuda_gen *gen, __isl_take isl_map *access,
 			bounds = group->shared_bound;
 
 		print_array_name(gen->cuda.kernel_c, group);
+
+		if (cuda_array_is_scalar(array)) {
+			isl_set_free(data_set);
+			return;
+		}
+
 		fprintf(gen->cuda.kernel_c, "[");
 	}
 
@@ -3398,6 +3420,11 @@ static void print_global_index(isl_ctx *ctx, FILE *out,
 {
 	int i;
 	isl_printer *prn;
+
+	if (cuda_array_is_scalar(array)) {
+		fprintf(out, "*%s", array->name);
+		return;
+	}
 
 	fprintf(out, "%s[", array->name);
 	for (i = 0; i + 1 < array->n_index; ++i)
