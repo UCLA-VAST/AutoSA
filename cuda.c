@@ -500,7 +500,7 @@ static void read_sizes(struct cuda_gen *gen)
 	gen->n_grid = (n <= 2) ? n : 2;
 	switch (gen->n_grid) {
 	case 1:
-		gen->grid_dim[0] = 65536;
+		gen->grid_dim[0] = 32768;
 		break;
 	default:
 		gen->grid_dim[0] = 256;
