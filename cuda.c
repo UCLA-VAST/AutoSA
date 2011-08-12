@@ -1261,7 +1261,8 @@ static __isl_give isl_union_map *access_schedule(struct cuda_gen *gen,
 	n_tile = gen->n_block;
 	if (n_tile > nvar) {
 		int i;
-		sched = isl_map_insert(sched, isl_dim_out, 0, n_tile - nvar);
+		sched = isl_map_insert_dims(sched,
+						isl_dim_out, 0, n_tile - nvar);
 		for (i = 0; i < n_tile - nvar; ++i)
 			sched = isl_map_fix_si(sched, isl_dim_out, i, 0);
 		nvar = n_tile;
