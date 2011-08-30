@@ -3013,6 +3013,9 @@ static void compute_private_size(struct cuda_gen *gen)
 	int i, j;
 	isl_union_map *private;
 
+	if (!gen->options->use_private_memory)
+		return;
+
 	private = isl_union_map_empty(isl_union_map_get_dim(gen->shared_sched));
 
 	for (i = 0; i < gen->n_array; ++i) {
@@ -3166,6 +3169,9 @@ static void compute_group_shared_bound(struct cuda_gen *gen,
 	struct cuda_array_info *array, struct cuda_array_ref_group *group)
 {
 	isl_ctx *ctx = isl_dim_get_ctx(array->dim);
+
+	if (!gen->options->use_shared_memory)
+		return;
 
 	group->shared_bound = create_bound_list(ctx, array->n_index);
 	if (!can_tile_for_shared_memory(gen, array, group->access,

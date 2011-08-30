@@ -10,6 +10,12 @@ struct ppcg_options {
 	char *ctx;
 
 	int tile_size;
+
+	/* Take advantage of private memory. */
+	int use_private_memory;
+
+	/* Take advantage of shared memory. */
+	int use_shared_memory;
 };
 
 ISL_ARG_DECL(ppcg_options, struct ppcg_options, ppcg_options_arg)
