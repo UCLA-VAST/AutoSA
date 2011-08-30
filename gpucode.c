@@ -160,7 +160,8 @@ static void print_guard(struct gpucode_info *info, struct clast_guard *g)
     for (i = 0; i < n; ++i) {
         if (i > 0)
             fprintf(info->dst," && ");
-        fprintf(info->dst,"(");
+        if (n > 1)
+            fprintf(info->dst,"(");
         print_expr(g->eq[i].LHS, info->dst);
         if (g->eq[i].sign == 0)
             fprintf(info->dst," == ");
@@ -169,7 +170,8 @@ static void print_guard(struct gpucode_info *info, struct clast_guard *g)
         else
             fprintf(info->dst," <= ");
         print_expr(g->eq[i].RHS, info->dst);
-        fprintf(info->dst,")");
+        if (n > 1)
+            fprintf(info->dst,")");
     }
     fprintf(info->dst, ") {\n");
     info->indent += 4;
