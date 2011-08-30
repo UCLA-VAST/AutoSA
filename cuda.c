@@ -328,6 +328,7 @@ static void declare_device_arrays(struct cuda_gen *gen)
 	for (i = 0; i < gen->n_array; ++i)
 		fprintf(gen->cuda.host_c, "%s *dev_%s;\n",
 			gen->array[i].type, gen->array[i].name);
+	fprintf(gen->cuda.host_c, "\n");
 }
 
 static void print_array_size(struct cuda_gen *gen, FILE *out,
@@ -360,6 +361,7 @@ static void allocate_device_arrays(struct cuda_gen *gen)
 		print_array_size(gen, gen->cuda.host_c, &gen->array[i]);
 		fprintf(gen->cuda.host_c, "));\n");
 	}
+	fprintf(gen->cuda.host_c, "\n");
 }
 
 static void free_device_arrays(struct cuda_gen *gen)
@@ -408,6 +410,7 @@ static void copy_arrays_to_device(struct cuda_gen *gen)
 		print_array_size(gen, gen->cuda.host_c, &gen->array[i]);
 		fprintf(gen->cuda.host_c, ", cudaMemcpyHostToDevice));\n");
 	}
+	fprintf(gen->cuda.host_c, "\n");
 }
 
 static void copy_arrays_from_device(struct cuda_gen *gen)
@@ -436,6 +439,7 @@ static void copy_arrays_from_device(struct cuda_gen *gen)
 	}
 
 	isl_union_set_free(write);
+	fprintf(gen->cuda.host_c, "\n");
 }
 
 static void read_sizes_from_file(struct cuda_gen *gen, const char *filename,
@@ -3733,6 +3737,7 @@ static void print_cloog_host_code(struct cuda_gen *gen)
 
 	cloog_clast_free(stmt);
 	cloog_options_free(options);
+	fprintf(gen->cuda.host_c, "\n");
 }
 
 void print_cuda_macros(struct cuda_gen *gen)
@@ -3740,7 +3745,7 @@ void print_cuda_macros(struct cuda_gen *gen)
 	const char *macros =
 		"#define cudaCheckReturn(ret) assert((ret) == cudaSuccess)\n"
 		"#define cudaCheckKernel()"
-		" assert(cudaGetLastError() == cudaSuccess)\n";
+		" assert(cudaGetLastError() == cudaSuccess)\n\n";
 	fputs(macros, gen->cuda.host_c);
 }
 
