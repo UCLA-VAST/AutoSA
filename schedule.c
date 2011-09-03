@@ -26,7 +26,7 @@
  * in the domain.
  * "dim" prescribes the parameters.
  */
-__isl_give isl_map *wavefront(__isl_take isl_dim *dim, int len,
+__isl_give isl_map *wavefront(__isl_take isl_space *dim, int len,
         int first, int wave_len)
 {
     int i;
@@ -36,15 +36,15 @@ __isl_give isl_map *wavefront(__isl_take isl_dim *dim, int len,
 
     isl_int_init(v);
 
-    dim = isl_dim_add(dim, isl_dim_in, len);
-    dim = isl_dim_add(dim, isl_dim_out, len);
-    bmap = isl_basic_map_universe(isl_dim_copy(dim));
+    dim = isl_space_add_dims(dim, isl_dim_in, len);
+    dim = isl_space_add_dims(dim, isl_dim_out, len);
+    bmap = isl_basic_map_universe(isl_space_copy(dim));
 
     for (i = 0; i < len; ++i) {
         if (i == first)
             continue;
 
-        c = isl_equality_alloc(isl_dim_copy(dim));
+        c = isl_equality_alloc(isl_space_copy(dim));
         isl_int_set_si(v, -1);
         isl_constraint_set_coefficient(c, isl_dim_in, i, v);
         isl_int_set_si(v, 1);
@@ -52,7 +52,7 @@ __isl_give isl_map *wavefront(__isl_take isl_dim *dim, int len,
         bmap = isl_basic_map_add_constraint(bmap, c);
     }
 
-    c = isl_equality_alloc(isl_dim_copy(dim));
+    c = isl_equality_alloc(isl_space_copy(dim));
     isl_int_set_si(v, -1);
     for (i = 0; i < wave_len; ++i)
         isl_constraint_set_coefficient(c, isl_dim_in, first + i, v);
@@ -60,7 +60,7 @@ __isl_give isl_map *wavefront(__isl_take isl_dim *dim, int len,
     isl_constraint_set_coefficient(c, isl_dim_out, first, v);
     bmap = isl_basic_map_add_constraint(bmap, c);
 
-    isl_dim_free(dim);
+    isl_space_free(dim);
     isl_int_clear(v);
 
     return isl_map_from_basic_map(bmap);
@@ -71,7 +71,7 @@ __isl_give isl_map *wavefront(__isl_take isl_dim *dim, int len,
  * starting at first.
  * "dim" prescribes the parameters.
  */
-__isl_give isl_map *project_out(__isl_take isl_dim *dim,
+__isl_give isl_map *project_out(__isl_take isl_space *dim,
     int len, int first, int n)
 {
     int i, j;
@@ -81,14 +81,14 @@ __isl_give isl_map *project_out(__isl_take isl_dim *dim,
 
     isl_int_init(v);
 
-    dim = isl_dim_add(dim, isl_dim_in, len);
-    dim = isl_dim_add(dim, isl_dim_out, len - n);
-    bmap = isl_basic_map_universe(isl_dim_copy(dim));
+    dim = isl_space_add_dims(dim, isl_dim_in, len);
+    dim = isl_space_add_dims(dim, isl_dim_out, len - n);
+    bmap = isl_basic_map_universe(isl_space_copy(dim));
 
     for (i = 0, j = 0; i < len; ++i) {
         if (i >= first && i < first + n)
             continue;
-        c = isl_equality_alloc(isl_dim_copy(dim));
+        c = isl_equality_alloc(isl_space_copy(dim));
         isl_int_set_si(v, -1);
         isl_constraint_set_coefficient(c, isl_dim_in, i, v);
         isl_int_set_si(v, 1);
@@ -96,7 +96,7 @@ __isl_give isl_map *project_out(__isl_take isl_dim *dim,
         bmap = isl_basic_map_add_constraint(bmap, c);
         ++j;
     }
-    isl_dim_free(dim);
+    isl_space_free(dim);
 
     isl_int_clear(v);
 
@@ -107,7 +107,7 @@ __isl_give isl_map *project_out(__isl_take isl_dim *dim,
  * to its first dst_len coordinates.
  * "dim" prescribes the parameters.
  */
-__isl_give isl_map *projection(__isl_take isl_dim *dim,
+__isl_give isl_map *projection(__isl_take isl_space *dim,
     int src_len, int dst_len)
 {
     return project_out(dim, src_len, dst_len, src_len - dst_len);
@@ -118,12 +118,12 @@ __isl_give isl_map *projection(__isl_take isl_dim *dim,
 __isl_give isl_set *extend(__isl_take isl_set *set, int dst_len)
 {
     int n_set;
-    isl_dim *dim;
+    isl_space *dim;
     isl_map *map;
 
-    dim = isl_set_get_dim(set);
-    n_set = isl_dim_size(dim, isl_dim_set);
-    dim = isl_dim_drop(dim, isl_dim_set, 0, n_set);
+    dim = isl_set_get_space(set);
+    n_set = isl_space_dim(dim, isl_dim_set);
+    dim = isl_space_drop_dims(dim, isl_dim_set, 0, n_set);
     map = projection(dim, dst_len, n_set);
     map = isl_map_reverse(map);
 

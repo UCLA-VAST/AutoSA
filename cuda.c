@@ -77,7 +77,7 @@ struct cuda_array_ref_group {
 };
 
 struct cuda_array_info {
-	isl_dim *dim;
+	isl_space *dim;
 	/* Element type. */
 	char *type;
 	/* Name of the array. */
@@ -245,7 +245,7 @@ static int extract_array_info(__isl_take isl_set *array, void *user)
 	local_bounds = isl_calloc_array(isl_set_get_ctx(array),
 				 isl_pw_aff *, n_index);
 	assert(local_bounds);
-	gen->array[gen->n_array].dim = isl_set_get_dim(array);
+	gen->array[gen->n_array].dim = isl_set_get_space(array);
 	gen->array[gen->n_array].name = strdup(name);
 	gen->array[gen->n_array].n_index = n_index;
 	gen->array[gen->n_array].bound = bounds;
@@ -266,7 +266,7 @@ static int extract_array_info(__isl_take isl_set *array, void *user)
 		bound = isl_set_dim_max(isl_set_copy(size), i);
 		assert(bound);
 		dom = isl_pw_aff_domain(isl_pw_aff_copy(bound));
-		ls = isl_local_space_from_dim(isl_set_get_dim(dom));
+		ls = isl_local_space_from_space(isl_set_get_space(dom));
 		one = isl_aff_zero(ls);
 		one = isl_aff_add_constant_si(one, 1);
 		bound = isl_pw_aff_add(bound, isl_pw_aff_alloc(dom, one));
@@ -313,7 +313,7 @@ static void free_array_info(struct cuda_gen *gen)
 			isl_pw_aff_free(gen->array[i].bound[j]);
 			isl_pw_aff_free(gen->array[i].local_bound[j]);
 		}
-		isl_dim_free(gen->array[i].dim);
+		isl_space_free(gen->array[i].dim);
 		free(gen->array[i].bound);
 		free(gen->array[i].local_bound);
 		free(gen->array[i].refs);
@@ -387,11 +387,11 @@ static void copy_arrays_to_device(struct cuda_gen *gen)
 	int i;
 
 	for (i = 0; i < gen->n_array; ++i) {
-		isl_dim *dim;
+		isl_space *dim;
 		isl_set *read_i;
 		int empty;
 
-		dim = isl_dim_copy(gen->array[i].dim);
+		dim = isl_space_copy(gen->array[i].dim);
 		read_i = isl_union_set_extract_set(gen->copy_in, dim);
 		empty = isl_set_fast_is_empty(read_i);
 		isl_set_free(read_i);
@@ -420,11 +420,11 @@ static void copy_arrays_from_device(struct cuda_gen *gen)
 	write = isl_union_map_range(isl_union_map_copy(gen->write));
 
 	for (i = 0; i < gen->n_array; ++i) {
-		isl_dim *dim;
+		isl_space *dim;
 		isl_set *write_i;
 		int empty;
 
-		dim = isl_dim_copy(gen->array[i].dim);
+		dim = isl_space_copy(gen->array[i].dim);
 		write_i = isl_union_set_extract_set(write, dim);
 		empty = isl_set_fast_is_empty(write_i);
 		isl_set_free(write_i);
@@ -563,7 +563,7 @@ static void print_kernel_launch(struct cuda_gen *gen,
 	int i;
 	int first = 1;
 	unsigned nparam;
-	isl_dim *dim;
+	isl_space *dim;
 
 	print_indent(gen->code.dst, gen->code.indent);
 	fprintf(gen->code.dst, "kernel%d <<<k%d_dimGrid, k%d_dimBlock>>> (",
@@ -574,11 +574,11 @@ static void print_kernel_launch(struct cuda_gen *gen,
 		gen->kernel_id);
 
 	for (i = 0; i < gen->n_array; ++i) {
-		isl_dim *dim;
+		isl_space *dim;
 		isl_set *arr;
 		int empty;
 
-		dim = isl_dim_copy(gen->array[i].dim);
+		dim = isl_space_copy(gen->array[i].dim);
 		arr = isl_union_set_extract_set(arrays, dim);
 		empty = isl_set_fast_is_empty(arr);
 		isl_set_free(arr);
@@ -600,10 +600,10 @@ static void print_kernel_launch(struct cuda_gen *gen,
 		first = 0;
 	}
 
-	dim = isl_union_set_get_dim(arrays);
-	nparam = isl_dim_size(dim, isl_dim_param);
+	dim = isl_union_set_get_space(arrays);
+	nparam = isl_space_dim(dim, isl_dim_param);
 	for (i = 0; i < nparam; ++i) {
-		const char *name = isl_dim_get_name(dim, isl_dim_param, i);
+		const char *name = isl_space_get_dim_name(dim, isl_dim_param, i);
 		if (!first) {
 			fprintf(gen->code.dst, ", ");
 			fprintf(gen->cuda.kernel_c, ", ");
@@ -614,7 +614,7 @@ static void print_kernel_launch(struct cuda_gen *gen,
 		fprintf(gen->cuda.kernel_h, "int %s", name);
 		first = 0;
 	}
-	isl_dim_free(dim);
+	isl_space_free(dim);
 
 	for (i = 0; i < gen->tile_first; ++i) {
 		if (!first) {
@@ -641,7 +641,7 @@ static void print_kernel_launch(struct cuda_gen *gen,
  * In particular, [s_i] -> [s_i / tile_size[i], s_i % tile_size[i]].
  * "dim" prescribes the parameters.
  */
-static __isl_give isl_map *tile(__isl_take isl_dim *dim, int len,
+static __isl_give isl_map *tile(__isl_take isl_space *dim, int len,
         int first, int tile_len, int *tile_size)
 {
 	int i;
@@ -651,15 +651,15 @@ static __isl_give isl_map *tile(__isl_take isl_dim *dim, int len,
 
 	isl_int_init(v);
 
-	dim = isl_dim_add(dim, isl_dim_in, len);
-	dim = isl_dim_add(dim, isl_dim_out, len + tile_len);
-	bmap = isl_basic_map_universe(isl_dim_copy(dim));
+	dim = isl_space_add_dims(dim, isl_dim_in, len);
+	dim = isl_space_add_dims(dim, isl_dim_out, len + tile_len);
+	bmap = isl_basic_map_universe(isl_space_copy(dim));
 
 	for (i = 0; i < len - tile_len; ++i) {
 		int j = i < first ? i : i + tile_len;
 		int k = i < first ? i : i + 2 * tile_len;
 
-		c = isl_equality_alloc(isl_dim_copy(dim));
+		c = isl_equality_alloc(isl_space_copy(dim));
 		isl_int_set_si(v, -1);
 		isl_constraint_set_coefficient(c, isl_dim_in, j, v);
 		isl_int_set_si(v, 1);
@@ -668,7 +668,7 @@ static __isl_give isl_map *tile(__isl_take isl_dim *dim, int len,
 	}
 
 	for (i = 0; i < tile_len; ++i) {
-		c = isl_equality_alloc(isl_dim_copy(dim));
+		c = isl_equality_alloc(isl_space_copy(dim));
 		isl_int_set_si(v, -1);
 		isl_constraint_set_coefficient(c, isl_dim_in, first + i, v);
 		isl_int_set_si(v, tile_size[i]);
@@ -678,13 +678,13 @@ static __isl_give isl_map *tile(__isl_take isl_dim *dim, int len,
 						first + i + tile_len, v);
 		bmap = isl_basic_map_add_constraint(bmap, c);
 
-		c = isl_inequality_alloc(isl_dim_copy(dim));
+		c = isl_inequality_alloc(isl_space_copy(dim));
 		isl_int_set_si(v, 1);
 		isl_constraint_set_coefficient(c, isl_dim_out,
 						first + i + tile_len, v);
 		bmap = isl_basic_map_add_constraint(bmap, c);
 	
-		c = isl_inequality_alloc(isl_dim_copy(dim));
+		c = isl_inequality_alloc(isl_space_copy(dim));
 		isl_int_set_si(v, -1);
 		isl_constraint_set_coefficient(c, isl_dim_out,
 						first + i + tile_len, v);
@@ -693,7 +693,7 @@ static __isl_give isl_map *tile(__isl_take isl_dim *dim, int len,
 		bmap = isl_basic_map_add_constraint(bmap, c);
 	}
 
-	isl_dim_free(dim);
+	isl_space_free(dim);
 	isl_int_clear(v);
 
 	return isl_map_from_basic_map(bmap);
@@ -707,28 +707,28 @@ static __isl_give isl_map *tile(__isl_take isl_dim *dim, int len,
  * that are projected out at the end.
  * "dim" prescribes the parameters.
  */
-static __isl_give isl_map *wrap(__isl_take isl_dim *dim, int len,
+static __isl_give isl_map *wrap(__isl_take isl_space *dim, int len,
         int first, int wrap_len, int *wrap_size)
 {
 	int i;
 	isl_basic_map *bmap;
 	isl_constraint *c;
 
-	dim = isl_dim_add(dim, isl_dim_in, len);
-	dim = isl_dim_add(dim, isl_dim_out, len + 2 * wrap_len);
-	bmap = isl_basic_map_universe(isl_dim_copy(dim));
+	dim = isl_space_add_dims(dim, isl_dim_in, len);
+	dim = isl_space_add_dims(dim, isl_dim_out, len + 2 * wrap_len);
+	bmap = isl_basic_map_universe(isl_space_copy(dim));
 
 	for (i = 0; i < len; ++i) {
 		int k = i < first + wrap_len ? i : i + 2 * wrap_len;
 
-		c = isl_equality_alloc(isl_dim_copy(dim));
+		c = isl_equality_alloc(isl_space_copy(dim));
 		isl_constraint_set_coefficient_si(c, isl_dim_in, i, -1);
 		isl_constraint_set_coefficient_si(c, isl_dim_out, k, 1);
 		bmap = isl_basic_map_add_constraint(bmap, c);
 	}
 
 	for (i = 0; i < wrap_len; ++i) {
-		c = isl_equality_alloc(isl_dim_copy(dim));
+		c = isl_equality_alloc(isl_space_copy(dim));
 		isl_constraint_set_coefficient_si(c, isl_dim_out,
 						    first + i, -1);
 		isl_constraint_set_coefficient_si(c, isl_dim_out,
@@ -737,19 +737,19 @@ static __isl_give isl_map *wrap(__isl_take isl_dim *dim, int len,
 				    first + 2 * wrap_len + i, wrap_size[i]);
 		bmap = isl_basic_map_add_constraint(bmap, c);
 
-		c = isl_inequality_alloc(isl_dim_copy(dim));
+		c = isl_inequality_alloc(isl_space_copy(dim));
 		isl_constraint_set_coefficient_si(c, isl_dim_out,
 						    first + wrap_len + i, 1);
 		bmap = isl_basic_map_add_constraint(bmap, c);
 	
-		c = isl_inequality_alloc(isl_dim_copy(dim));
+		c = isl_inequality_alloc(isl_space_copy(dim));
 		isl_constraint_set_coefficient_si(c, isl_dim_out,
 						    first + wrap_len + i, -1);
 		isl_constraint_set_constant_si(c, wrap_size[i] - 1);
 		bmap = isl_basic_map_add_constraint(bmap, c);
 	}
 
-	isl_dim_free(dim);
+	isl_space_free(dim);
 
 	bmap = isl_basic_map_project_out(bmap, isl_dim_out,
 				first + 2 * wrap_len, wrap_len);
@@ -787,7 +787,7 @@ static __isl_give isl_set *parametrize(__isl_take isl_set *set,
 	int i;
 	unsigned nparam;
 	isl_int v;
-	isl_dim *dim;
+	isl_space *dim;
 	isl_basic_set *bset;
 	isl_constraint *c;
 
@@ -795,13 +795,13 @@ static __isl_give isl_set *parametrize(__isl_take isl_set *set,
 
 	set = add_params(set, n, prefix);
 
-	dim = isl_set_get_dim(set);
-	bset = isl_basic_set_universe(isl_dim_copy(dim));
+	dim = isl_set_get_space(set);
+	bset = isl_basic_set_universe(isl_space_copy(dim));
 
 	isl_int_init(v);
 
 	for (i = 0; i < n; ++i) {
-		c = isl_equality_alloc(isl_dim_copy(dim));
+		c = isl_equality_alloc(isl_space_copy(dim));
 		isl_int_set_si(v, -1);
 		isl_constraint_set_coefficient(c, isl_dim_param, nparam + i, v);
 		isl_int_set_si(v, 1);
@@ -810,17 +810,17 @@ static __isl_give isl_set *parametrize(__isl_take isl_set *set,
 	}
 
 	isl_int_clear(v);
-	isl_dim_free(dim);
+	isl_space_free(dim);
 
 	return isl_set_intersect(set, isl_set_from_basic_set(bset));
 }
 
-static __isl_give isl_set *parametrization(__isl_take isl_dim *dim,
+static __isl_give isl_set *parametrization(__isl_take isl_space *dim,
 	int len, int first, int n, const char *prefix)
 {
 	isl_set *set;
 
-	dim = isl_dim_add(dim, isl_dim_set, len);
+	dim = isl_space_add_dims(dim, isl_dim_set, len);
 	set = isl_set_universe(dim);
 
 	return parametrize(set, first, n, prefix);
@@ -832,11 +832,11 @@ static __isl_give isl_set *parametrization(__isl_take isl_dim *dim,
 static __isl_give isl_union_map *tile_schedule(struct cuda_gen *gen,
 	__isl_take isl_union_map *sched)
 {
-	isl_dim *dim;
+	isl_space *dim;
 	isl_map *tiling, *block_tiling;
 
-	dim = isl_union_map_get_dim(sched);
-	tiling = tile(isl_dim_copy(dim), gen->untiled_len,
+	dim = isl_union_map_get_space(sched);
+	tiling = tile(isl_space_copy(dim), gen->untiled_len,
 		      gen->tile_first, gen->tile_len, gen->tile_size);
 
 	if (gen->options->wrap)
@@ -861,15 +861,15 @@ static __isl_give isl_union_map *tile_schedule(struct cuda_gen *gen,
 static __isl_give isl_union_map *parametrize_tiled_schedule(
 	struct cuda_gen *gen, __isl_take isl_union_map *sched)
 {
-	isl_dim *dim;
+	isl_space *dim;
 	isl_set *par;
 
-	dim = isl_union_map_get_dim(sched);
+	dim = isl_union_map_get_space(sched);
 	par = parametrization(dim, gen->tiled_len, 0, gen->tile_first, "h");
 	sched = isl_union_map_intersect_range(sched,
 						isl_union_set_from_set(par));
 
-	dim = isl_union_map_get_dim(sched);
+	dim = isl_union_map_get_space(sched);
 	par = parametrization(dim, gen->tiled_len,
 		gen->tile_first + gen->n_grid, gen->n_grid, "b");
 	sched = isl_union_map_intersect_range(sched,
@@ -883,17 +883,17 @@ static __isl_give isl_union_map *parametrize_tiled_schedule(
 static __isl_give isl_union_map *thread_tile_schedule(struct cuda_gen *gen,
 	__isl_take isl_union_map *sched)
 {
-	isl_dim *dim;
+	isl_space *dim;
 	isl_map *tiling;
 	isl_set *par;
 
-	dim = isl_union_map_get_dim(sched);
+	dim = isl_union_map_get_space(sched);
 
 	if (gen->options->wrap)
-		tiling = wrap(isl_dim_copy(dim), gen->tiled_len,
+		tiling = wrap(isl_space_copy(dim), gen->tiled_len,
 				gen->shared_len, gen->n_block, gen->block_dim);
 	else
-		tiling = tile(isl_dim_copy(dim), gen->tiled_len,
+		tiling = tile(isl_space_copy(dim), gen->tiled_len,
 				gen->shared_len, gen->n_block, gen->block_dim);
 	gen->thread_tiled_len = gen->tiled_len + gen->n_block;
 
@@ -920,17 +920,17 @@ static __isl_give isl_union_map *scale_tile_loops(struct cuda_gen *gen,
 	__isl_take isl_union_map *sched)
 {
 	int i;
-	isl_dim *dim;
+	isl_space *dim;
 	isl_basic_map *scale;
 	isl_constraint *c;
 
 	if (!gen->options->scale_tile_loops)
 		return sched;
 
-	dim = isl_union_map_get_dim(sched);
-	dim = isl_dim_add(dim, isl_dim_in, gen->tiled_len);
-	dim = isl_dim_add(dim, isl_dim_out, gen->tiled_len);
-	scale = isl_basic_map_universe(isl_dim_copy(dim));
+	dim = isl_union_map_get_space(sched);
+	dim = isl_space_add_dims(dim, isl_dim_in, gen->tiled_len);
+	dim = isl_space_add_dims(dim, isl_dim_out, gen->tiled_len);
+	scale = isl_basic_map_universe(isl_space_copy(dim));
 
 	for (i = 0; i < gen->tiled_len; ++i) {
 		int f = 1;
@@ -944,13 +944,13 @@ static __isl_give isl_union_map *scale_tile_loops(struct cuda_gen *gen,
 			f = gen->tile_size[i - (gen->tile_first + gen->n_grid)];
 		}
 
-		c = isl_equality_alloc(isl_dim_copy(dim));
+		c = isl_equality_alloc(isl_space_copy(dim));
 		isl_constraint_set_coefficient_si(c, isl_dim_in, i, f);
 		isl_constraint_set_coefficient_si(c, isl_dim_out, i, -1);
 		scale = isl_basic_map_add_constraint(scale, c);
 	}
 
-	isl_dim_free(dim);
+	isl_space_free(dim);
 
 	sched = isl_union_map_apply_range(sched,
 		isl_union_map_from_map(isl_map_from_basic_map(scale)));
@@ -965,7 +965,7 @@ static __isl_give isl_union_map *scale_thread_tile_loops(struct cuda_gen *gen,
 	__isl_take isl_union_map *sched)
 {
 	int i;
-	isl_dim *dim;
+	isl_space *dim;
 	isl_basic_map *scale;
 	isl_constraint *c;
 
@@ -974,10 +974,10 @@ static __isl_give isl_union_map *scale_thread_tile_loops(struct cuda_gen *gen,
 	if (!gen->options->scale_tile_loops)
 		return sched;
 
-	dim = isl_union_map_get_dim(sched);
-	dim = isl_dim_add(dim, isl_dim_in, gen->thread_tiled_len);
-	dim = isl_dim_add(dim, isl_dim_out, gen->thread_tiled_len);
-	scale = isl_basic_map_universe(isl_dim_copy(dim));
+	dim = isl_union_map_get_space(sched);
+	dim = isl_space_add_dims(dim, isl_dim_in, gen->thread_tiled_len);
+	dim = isl_space_add_dims(dim, isl_dim_out, gen->thread_tiled_len);
+	scale = isl_basic_map_universe(isl_space_copy(dim));
 
 	for (i = 0; i < gen->thread_tiled_len; ++i) {
 		int f = 1;
@@ -986,13 +986,13 @@ static __isl_give isl_union_map *scale_thread_tile_loops(struct cuda_gen *gen,
 		    i < gen->shared_len + gen->n_block)
 			f = gen->block_dim[i - gen->shared_len];
 
-		c = isl_equality_alloc(isl_dim_copy(dim));
+		c = isl_equality_alloc(isl_space_copy(dim));
 		isl_constraint_set_coefficient_si(c, isl_dim_in, i, f);
 		isl_constraint_set_coefficient_si(c, isl_dim_out, i, -1);
 		scale = isl_basic_map_add_constraint(scale, c);
 	}
 
-	isl_dim_free(dim);
+	isl_space_free(dim);
 
 	sched = isl_union_map_apply_range(sched,
 		isl_union_map_from_map(isl_map_from_basic_map(scale)));
@@ -1007,7 +1007,7 @@ static __isl_give isl_union_map *scale_access_tile_loops(struct cuda_gen *gen,
 	__isl_take isl_union_map *sched, int len, int first, int n_tile)
 {
 	int i;
-	isl_dim *dim;
+	isl_space *dim;
 	isl_basic_map *scale;
 	isl_constraint *c;
 
@@ -1016,10 +1016,10 @@ static __isl_give isl_union_map *scale_access_tile_loops(struct cuda_gen *gen,
 	if (!gen->options->scale_tile_loops)
 		return sched;
 
-	dim = isl_union_map_get_dim(sched);
-	dim = isl_dim_add(dim, isl_dim_in, len);
-	dim = isl_dim_add(dim, isl_dim_out, len);
-	scale = isl_basic_map_universe(isl_dim_copy(dim));
+	dim = isl_union_map_get_space(sched);
+	dim = isl_space_add_dims(dim, isl_dim_in, len);
+	dim = isl_space_add_dims(dim, isl_dim_out, len);
+	scale = isl_basic_map_universe(isl_space_copy(dim));
 
 	for (i = 0; i < len; ++i) {
 		int f = 1;
@@ -1027,13 +1027,13 @@ static __isl_give isl_union_map *scale_access_tile_loops(struct cuda_gen *gen,
 		if (i >= first && i < first + n_tile)
 			f = gen->block_dim[i - first];
 
-		c = isl_equality_alloc(isl_dim_copy(dim));
+		c = isl_equality_alloc(isl_space_copy(dim));
 		isl_constraint_set_coefficient_si(c, isl_dim_in, i, f);
 		isl_constraint_set_coefficient_si(c, isl_dim_out, i, -1);
 		scale = isl_basic_map_add_constraint(scale, c);
 	}
 
-	isl_dim_free(dim);
+	isl_space_free(dim);
 
 	sched = isl_union_map_apply_range(sched,
 		isl_union_map_from_map(isl_map_from_basic_map(scale)));
@@ -1061,7 +1061,7 @@ static void print_cloog_shared_body(struct cuda_gen *gen,
 	char name[20];
 
 	sched = isl_union_map_copy(sched);
-	sched = isl_union_map_align_params(sched, isl_set_get_dim(context));
+	sched = isl_union_map_align_params(sched, isl_set_get_space(context));
 
 	options = cloog_options_malloc(gen->state);
 	options->language = LANGUAGE_C;
@@ -1106,7 +1106,7 @@ __isl_give isl_set *add_bounded_parameters(__isl_take isl_set *set,
 	int i;
 	unsigned nparam;
 	isl_int v;
-	isl_dim *dim;
+	isl_space *dim;
 	isl_basic_set *bset;
 	isl_constraint *c;
 	char name[20];
@@ -1120,18 +1120,18 @@ __isl_give isl_set *add_bounded_parameters(__isl_take isl_set *set,
 					    nparam + i, name);
 	}
 
-	dim = isl_set_get_dim(set);
-	bset = isl_basic_set_universe(isl_dim_copy(dim));
+	dim = isl_set_get_space(set);
+	bset = isl_basic_set_universe(isl_space_copy(dim));
 
 	isl_int_init(v);
 
 	for (i = 0; i < len; ++i) {
-		c = isl_inequality_alloc(isl_dim_copy(dim));
+		c = isl_inequality_alloc(isl_space_copy(dim));
 		isl_int_set_si(v, 1);
 		isl_constraint_set_coefficient(c, isl_dim_param, nparam + i, v);
 		bset = isl_basic_set_add_constraint(bset, c);
 	
-		c = isl_inequality_alloc(isl_dim_copy(dim));
+		c = isl_inequality_alloc(isl_space_copy(dim));
 		isl_int_set_si(v, -1);
 		isl_constraint_set_coefficient(c, isl_dim_param, nparam + i, v);
 		isl_int_set_si(v, size[i] - 1);
@@ -1140,7 +1140,7 @@ __isl_give isl_set *add_bounded_parameters(__isl_take isl_set *set,
 	}
 
 	isl_int_clear(v);
-	isl_dim_free(dim);
+	isl_space_free(dim);
 
 	return isl_set_intersect(set, isl_set_from_basic_set(bset));
 }
@@ -1177,7 +1177,7 @@ static __isl_give isl_map *shift_access(__isl_take isl_set *access,
 	struct cuda_array_ref_group *group)
 {
 	int i;
-	isl_dim *dim;
+	isl_space *dim;
 	isl_basic_set *bset;
 	isl_basic_map *bmap;
 	isl_aff *lb;
@@ -1193,8 +1193,8 @@ static __isl_give isl_map *shift_access(__isl_take isl_set *access,
 	if (!bounds)
 		bounds = group->shared_bound;
 
-	dim = isl_set_get_dim(access);
-	dim = isl_dim_drop(dim, isl_dim_set, 0, n_index);
+	dim = isl_set_get_space(access);
+	dim = isl_space_drop_dims(dim, isl_dim_set, 0, n_index);
 	offset = isl_basic_set_universe(dim);
 	for (i = 0; i < n_index; ++i) {
 		lb = isl_aff_copy(bounds[i].lb);
@@ -1204,29 +1204,29 @@ static __isl_give isl_map *shift_access(__isl_take isl_set *access,
 	}
 	offset = isl_basic_set_neg(offset);
 
-	dim = isl_dim_map_from_set(isl_set_get_dim(access));
+	dim = isl_space_map_from_set(isl_set_get_space(access));
 	shift = isl_basic_map_identity(dim);
 	shift = isl_basic_map_set_tuple_name(shift, isl_dim_out, NULL);
 
-	bset = isl_basic_set_universe(isl_set_get_dim(access));
+	bset = isl_basic_set_universe(isl_set_get_space(access));
 	bmap = isl_basic_map_from_domain_and_range(bset, offset);
 
 	shift = isl_basic_map_sum(shift, bmap);
 
-	dim = isl_set_get_dim(access);
-	dim = isl_dim_drop(dim, isl_dim_set, 0, n_index);
-	dim = isl_dim_map_from_set(dim);
-	pre_shift = isl_basic_map_universe(isl_dim_copy(dim));
-	dim = isl_dim_add(dim, isl_dim_in, 1);
-	dim = isl_dim_add(dim, isl_dim_out, 1);
+	dim = isl_set_get_space(access);
+	dim = isl_space_drop_dims(dim, isl_dim_set, 0, n_index);
+	dim = isl_space_map_from_set(dim);
+	pre_shift = isl_basic_map_universe(isl_space_copy(dim));
+	dim = isl_space_add_dims(dim, isl_dim_in, 1);
+	dim = isl_space_add_dims(dim, isl_dim_out, 1);
 	for (i = 0; i < n_index; ++i) {
 		if (!bounds[i].shift_map)
-			bmap = isl_basic_map_identity(isl_dim_copy(dim));
+			bmap = isl_basic_map_identity(isl_space_copy(dim));
 		else
 			bmap = isl_basic_map_copy(bounds[i].shift_map);
 		pre_shift = isl_basic_map_flat_product(pre_shift, bmap);
 	}
-	isl_dim_free(dim);
+	isl_space_free(dim);
 	name = isl_basic_map_get_tuple_name(shift, isl_dim_in);
 	pre_shift = isl_basic_map_set_tuple_name(pre_shift, isl_dim_in, name);
 	pre_shift = isl_basic_map_set_tuple_name(pre_shift, isl_dim_out, name);
@@ -1251,7 +1251,7 @@ static __isl_give isl_map *shift_access(__isl_take isl_set *access,
 static __isl_give isl_union_map *access_schedule(struct cuda_gen *gen,
 	__isl_take isl_set *access, struct cuda_array_ref_group *group)
 {
-	isl_dim *dim;
+	isl_space *dim;
 	isl_map *sched;
 	isl_union_map *usched;
 	isl_map *tiling;
@@ -1279,14 +1279,14 @@ static __isl_give isl_union_map *access_schedule(struct cuda_gen *gen,
 						first + n_tile - 1, NULL))
 			break;
 
-	dim = isl_map_get_dim(sched);
-	dim = isl_dim_drop(dim, isl_dim_in, 0, isl_dim_size(dim, isl_dim_in));
-	dim = isl_dim_drop(dim, isl_dim_out, 0, nvar);
+	dim = isl_map_get_space(sched);
+	dim = isl_space_drop_dims(dim, isl_dim_in, 0, isl_space_dim(dim, isl_dim_in));
+	dim = isl_space_drop_dims(dim, isl_dim_out, 0, nvar);
 	if (gen->options->wrap)
-		tiling = wrap(isl_dim_copy(dim), nvar, first,
+		tiling = wrap(isl_space_copy(dim), nvar, first,
 				n_tile, gen->block_dim);
 	else
-		tiling = tile(isl_dim_copy(dim), nvar, first,
+		tiling = tile(isl_space_copy(dim), nvar, first,
 				n_tile, gen->block_dim);
 	sched = isl_map_apply_range(sched, tiling);
 
@@ -1343,7 +1343,7 @@ static __isl_give isl_union_map *group_access_relation(
 	int i;
 	isl_union_map *access;
 
-	access = isl_union_map_empty(isl_map_get_dim(group->access));
+	access = isl_union_map_empty(isl_map_get_space(group->access));
 	for (i = 0; i < group->n_ref; ++i) {
 		isl_map *map_i;
 
@@ -1416,14 +1416,14 @@ static __isl_give isl_set *group_tile_dim(struct cuda_array_ref_group *group,
 
 	bound = isl_pw_aff_copy(group->array->bound[i]);
 	bound = isl_pw_aff_add_dims(bound, isl_dim_set, 1);
-	ls = isl_local_space_from_dim(isl_pw_aff_get_dim(bound));
+	ls = isl_local_space_from_space(isl_pw_aff_get_space(bound));
 	aff = isl_aff_zero(ls);
 	aff = isl_aff_add_coefficient_si(aff, isl_dim_set, 0, 1);
 	aff = isl_aff_add_constant_si(aff, 1);
 	dom = isl_pw_aff_domain(isl_pw_aff_copy(bound));
 
 	tile_set = isl_pw_aff_ge_set(bound, isl_pw_aff_alloc(dom, aff));
-	tile_set = isl_set_align_params(tile_set, isl_basic_set_get_dim(tile));
+	tile_set = isl_set_align_params(tile_set, isl_basic_set_get_space(tile));
 	tile_set = isl_set_intersect(tile_set, isl_set_from_basic_set(tile));
 
 	return tile_set;
@@ -1526,7 +1526,7 @@ static void print_shared_accesses(struct cuda_gen *gen,
 	const char *type, int level)
 {
 	int i, j;
-	isl_dim *dim;
+	isl_space *dim;
 	isl_map *proj;
 	isl_set *par;
 	int shared_len = isl_set_dim(shared_domain, isl_dim_set);
@@ -1535,13 +1535,13 @@ static void print_shared_accesses(struct cuda_gen *gen,
 
 	shared_domain = isl_set_copy(shared_domain);
 	sched = isl_union_map_copy(gen->tiled_sched);
-	dim = isl_union_map_get_dim(sched);
+	dim = isl_union_map_get_space(sched);
 	proj = projection(dim, gen->tiled_len, shared_len);
 	sched = isl_union_map_apply_range(sched, isl_union_map_from_map(proj));
 	sched = isl_union_map_intersect_range(sched,
 			isl_union_set_from_set(isl_set_copy(shared_domain)));
 	if (shared_len != gen->shared_len) {
-		dim = isl_union_map_get_dim(sched);
+		dim = isl_union_map_get_space(sched);
 		proj = projection(dim, gen->shared_len, shared_len);
 		proj = isl_map_reverse(proj);
 		shared_domain = isl_set_apply(shared_domain,
@@ -1550,7 +1550,7 @@ static void print_shared_accesses(struct cuda_gen *gen,
 				isl_union_map_from_map(proj));
 	}
 
-	dim = isl_union_map_get_dim(sched);
+	dim = isl_union_map_get_space(sched);
 	par = parametrization(dim, gen->shared_len, 0, gen->shared_len, "g");
 	sched = isl_union_map_intersect_range(sched,
 						isl_union_set_from_set(par));
@@ -1592,15 +1592,15 @@ static __isl_give isl_qpolynomial *shift_index(__isl_take isl_qpolynomial *qp,
 	if (bound->shift) {
 		isl_qpolynomial *shift, *t;
 		isl_int one;
-		isl_dim *dim;
+		isl_space *dim;
 		shift = bound->shift;
 		shift = isl_qpolynomial_copy(shift);
 		shift = isl_qpolynomial_drop_dims(shift, isl_dim_set, 0,
 			    isl_qpolynomial_dim(shift, isl_dim_set));
 		shift = isl_qpolynomial_align_params(shift,
-					  isl_qpolynomial_get_dim(qp));
+					  isl_qpolynomial_get_space(qp));
 		qp = isl_qpolynomial_add(qp, shift);
-		dim = isl_qpolynomial_get_dim(qp);
+		dim = isl_qpolynomial_get_space(qp);
 		isl_int_init(one);
 		isl_int_set_si(one, 1);
 		t = isl_qpolynomial_rat_cst(dim, one, bound->stride);
@@ -1612,7 +1612,7 @@ static __isl_give isl_qpolynomial *shift_index(__isl_take isl_qpolynomial *qp,
 	lb = isl_qpolynomial_drop_dims(lb, isl_dim_set, 0,
 			isl_qpolynomial_dim(lb, isl_dim_set));
 
-	lb = isl_qpolynomial_align_params(lb, isl_qpolynomial_get_dim(qp));
+	lb = isl_qpolynomial_align_params(lb, isl_qpolynomial_get_space(qp));
 
 	qp = isl_qpolynomial_sub(qp, lb);
 	qp = isl_qpolynomial_gist(qp, domain);
@@ -1651,7 +1651,7 @@ static void print_access(struct cuda_gen *gen, __isl_take isl_map *access,
 	struct cuda_array_bound *bounds = NULL;
 
 	access = isl_map_align_params(access,
-					isl_set_get_dim(gen->stmt_domain));
+					isl_set_get_space(gen->stmt_domain));
 
 	data_set = isl_set_apply(isl_set_copy(gen->stmt_domain), access);
 
@@ -1817,7 +1817,7 @@ static void print_statement(struct gpucode_info *code,
 	struct clast_user_stmt *u)
 {
 	struct cuda_gen *gen = code->user;
-	isl_dim *dim;
+	isl_space *dim;
 	isl_set *par;
 	isl_set *stmt_domain;
 	isl_union_map *stmt_sched;
@@ -1834,17 +1834,17 @@ static void print_statement(struct gpucode_info *code,
 		    isl_union_map_copy(gen->local_sched),
 		    isl_union_set_from_set(extend(stmt_domain,
 						  gen->thread_tiled_len)));
-	dim = isl_union_map_get_dim(stmt_sched);
+	dim = isl_union_map_get_space(stmt_sched);
 	par = parametrization(dim, gen->thread_tiled_len, 0,
 				gen->thread_tiled_len, "c");
 	stmt_sched = isl_union_map_intersect_range(stmt_sched,
 						isl_union_set_from_set(par));
 
 	uset = isl_union_map_domain(stmt_sched);
-	dim = isl_union_set_get_dim(uset);
-	dim = isl_dim_add(dim, isl_dim_set,
+	dim = isl_union_set_get_space(uset);
+	dim = isl_space_add_dims(dim, isl_dim_set,
 			  isl_set_dim(stmt->domain, isl_dim_set));
-	dim = isl_dim_set_tuple_name(dim, isl_dim_set, u->statement->name);
+	dim = isl_space_set_tuple_name(dim, isl_dim_set, u->statement->name);
 	gen->stmt_domain = isl_union_set_extract_set(uset, dim);
 	isl_union_set_free(uset);
 
@@ -1936,7 +1936,7 @@ static void print_private_copy_statement(struct gpucode_info *code,
 	int i;
 	unsigned n_in;
 	unsigned n_out;
-	isl_dim *dim;
+	isl_space *dim;
 	isl_set *param;
 	isl_set *index;
 	isl_basic_set *aff;
@@ -1954,11 +1954,11 @@ static void print_private_copy_statement(struct gpucode_info *code,
 	sched = isl_map_intersect_domain(sched, domain);
 	n_in = isl_map_dim(sched, isl_dim_in);
 	n_out = isl_map_dim(sched, isl_dim_out);
-	dim = isl_map_get_dim(sched);
-	dim = isl_dim_drop(dim, isl_dim_in, 0, n_in);
-	dim = isl_dim_drop(dim, isl_dim_out, 0, n_out);
+	dim = isl_map_get_space(sched);
+	dim = isl_space_drop_dims(dim, isl_dim_in, 0, n_in);
+	dim = isl_space_drop_dims(dim, isl_dim_out, 0, n_out);
 	param = parametrization(dim, n_in, 0, n_in, "c");
-	sched = isl_map_align_params(sched, isl_set_get_dim(param));
+	sched = isl_map_align_params(sched, isl_set_get_space(param));
 	sched = isl_map_intersect_domain(sched, param);
 	index = isl_map_range(sched);
 	domain = isl_set_copy(index);
@@ -2094,7 +2094,7 @@ static void print_private_accesses(struct cuda_gen *gen,
 	const char *type, int level)
 {
 	int i, j;
-	isl_dim *dim;
+	isl_space *dim;
 	isl_map *proj;
 	int shared_len = isl_set_dim(shared_domain, isl_dim_set);
 	unsigned first_shared;
@@ -2102,14 +2102,14 @@ static void print_private_accesses(struct cuda_gen *gen,
 
 	shared_domain = isl_set_copy(shared_domain);
 	sched = isl_union_map_copy(gen->tiled_sched);
-	dim = isl_union_map_get_dim(sched);
-	first_shared = isl_dim_size(dim, isl_dim_param);
+	dim = isl_union_map_get_space(sched);
+	first_shared = isl_space_dim(dim, isl_dim_param);
 	proj = projection(dim, gen->tiled_len, shared_len);
 	sched = isl_union_map_apply_range(sched, isl_union_map_from_map(proj));
 	sched = isl_union_map_intersect_range(sched,
 			isl_union_set_from_set(isl_set_copy(shared_domain)));
 	if (shared_len != gen->shared_len) {
-		dim = isl_union_map_get_dim(sched);
+		dim = isl_union_map_get_space(sched);
 		proj = projection(dim, gen->shared_len, shared_len);
 		proj = isl_map_reverse(proj);
 		shared_domain = isl_set_apply(shared_domain,
@@ -2164,24 +2164,24 @@ static int check_unroll(__isl_take isl_basic_map *bmap, void *user)
 /* Given an array pos mapping input dimensions to the corresponding
  * output dimension, construct the corresponding map.
  */
-static __isl_give isl_map *permutation(__isl_take isl_dim *dim,
+static __isl_give isl_map *permutation(__isl_take isl_space *dim,
 	int *pos, int len)
 {
 	int i;
 	isl_constraint *c;
 	isl_basic_map *bmap;
 
-	dim = isl_dim_add(dim, isl_dim_in, len);
-	dim = isl_dim_add(dim, isl_dim_out, len);
-	bmap = isl_basic_map_universe(isl_dim_copy(dim));
+	dim = isl_space_add_dims(dim, isl_dim_in, len);
+	dim = isl_space_add_dims(dim, isl_dim_out, len);
+	bmap = isl_basic_map_universe(isl_space_copy(dim));
 
 	for (i = 0; i < len; ++i) {
-		c = isl_equality_alloc(isl_dim_copy(dim));
+		c = isl_equality_alloc(isl_space_copy(dim));
 		isl_constraint_set_coefficient_si(c, isl_dim_in, i, -1);
 		isl_constraint_set_coefficient_si(c, isl_dim_out, pos[i], 1);
 		bmap = isl_basic_map_add_constraint(bmap, c);
 	}
-	isl_dim_free(dim);
+	isl_space_free(dim);
 
 	return isl_map_from_basic_map(bmap);
 }
@@ -2199,7 +2199,7 @@ static __isl_give isl_union_map *interchange_for_unroll(struct cuda_gen *gen,
 	int i, j;
 	int unroll[gen->thread_tiled_len];
 	int perm[gen->thread_tiled_len];
-	isl_dim *dim;
+	isl_space *dim;
 	isl_map *permute;
 	int len = gen->shared_len + gen->n_parallel + gen->n_block;
 
@@ -2252,7 +2252,7 @@ static __isl_give isl_union_map *interchange_for_unroll(struct cuda_gen *gen,
 		if (unroll[i])
 			perm[i] = j++;
 
-	dim = isl_union_map_get_dim(sched);
+	dim = isl_union_map_get_space(sched);
 	permute = permutation(dim, perm, gen->thread_tiled_len);
 	sched = isl_union_map_apply_range(sched,
 					  isl_union_map_from_map(permute));
@@ -2374,7 +2374,7 @@ static void print_cloog_kernel_body(struct cuda_gen *gen,
 	char name[20];
 
 	sched = isl_union_map_copy(sched);
-	sched = isl_union_map_align_params(sched, isl_set_get_dim(context));
+	sched = isl_union_map_align_params(sched, isl_set_get_space(context));
 
 	options = cloog_options_malloc(gen->state);
 	options->language = LANGUAGE_C;
@@ -2512,18 +2512,18 @@ static void extract_stride(__isl_keep isl_constraint *c,
 	int i;
 	isl_int v;
 	isl_int one;
-	isl_dim *dim;
+	isl_space *dim;
 	unsigned nparam;
 	isl_qpolynomial *qp;
 
 	isl_int_set(bound->stride, stride);
 
-	dim = isl_constraint_get_dim(c);
-	dim = isl_dim_drop(dim, isl_dim_out, 0, 1);
-	dim = isl_dim_drop(dim, isl_dim_in, 0, isl_dim_size(dim, isl_dim_in));
-	dim = isl_dim_domain(dim);
+	dim = isl_constraint_get_space(c);
+	dim = isl_space_drop_dims(dim, isl_dim_out, 0, 1);
+	dim = isl_space_drop_dims(dim, isl_dim_in, 0, isl_space_dim(dim, isl_dim_in));
+	dim = isl_space_domain(dim);
 
-	nparam = isl_dim_size(dim, isl_dim_param);
+	nparam = isl_space_dim(dim, isl_dim_param);
 
 	isl_int_init(v);
 	isl_int_init(one);
@@ -2532,7 +2532,7 @@ static void extract_stride(__isl_keep isl_constraint *c,
 	isl_constraint_get_constant(c, &v);
 	if (sign < 0)
 		isl_int_neg(v, v);
-	qp = isl_qpolynomial_rat_cst(isl_dim_copy(dim), v, one);
+	qp = isl_qpolynomial_rat_cst(isl_space_copy(dim), v, one);
 
 	for (i = 0; i < nparam; ++i) {
 		isl_qpolynomial *t, *p;
@@ -2542,13 +2542,13 @@ static void extract_stride(__isl_keep isl_constraint *c,
 			continue;
 		if (sign < 0)
 			isl_int_neg(v, v);
-		t = isl_qpolynomial_rat_cst(isl_dim_copy(dim), v, one);
-		p = isl_qpolynomial_var(isl_dim_copy(dim), isl_dim_param, i);
+		t = isl_qpolynomial_rat_cst(isl_space_copy(dim), v, one);
+		p = isl_qpolynomial_var(isl_space_copy(dim), isl_dim_param, i);
 		t = isl_qpolynomial_mul(t, p);
 		qp = isl_qpolynomial_add(qp, t);
 	}
 
-	isl_dim_free(dim);
+	isl_space_free(dim);
 	isl_int_clear(one);
 	isl_int_clear(v);
 
@@ -2611,7 +2611,7 @@ static int check_stride_constraint(__isl_take isl_constraint *c, void *user)
 static __isl_give isl_basic_map *check_stride(struct cuda_gen *gen,
 	struct cuda_array_bound *bound, __isl_take isl_basic_map *bounds)
 {
-	isl_dim *dim;
+	isl_space *dim;
 	isl_basic_map *aff;
 	isl_basic_map *shift;
 	isl_qpolynomial *qp, *t;
@@ -2630,8 +2630,8 @@ static __isl_give isl_basic_map *check_stride(struct cuda_gen *gen,
 
 	qp = isl_qpolynomial_copy(bound->shift);
 	qp = isl_qpolynomial_add_dims(qp, isl_dim_set, 1);
-	dim = isl_qpolynomial_get_dim(qp);
-	t = isl_qpolynomial_var(isl_dim_copy(dim), isl_dim_set, 0);
+	dim = isl_qpolynomial_get_space(qp);
+	t = isl_qpolynomial_var(isl_space_copy(dim), isl_dim_set, 0);
 	qp = isl_qpolynomial_add(qp, t);
 	isl_int_init(one);
 	isl_int_set_si(one, 1);
@@ -2783,15 +2783,15 @@ static __isl_give isl_map *compute_privatization(struct cuda_gen *gen)
 	isl_map *tiling;
 	isl_map *proj;
 	isl_set *par;
-	isl_dim *dim;
+	isl_space *dim;
 
-	dim = isl_union_map_get_dim(gen->shared_sched);
+	dim = isl_union_map_get_space(gen->shared_sched);
 
 	if (gen->options->wrap)
-		tiling = wrap(isl_dim_copy(dim), gen->shared_len + gen->n_block,
+		tiling = wrap(isl_space_copy(dim), gen->shared_len + gen->n_block,
 				gen->shared_len, gen->n_block, gen->block_dim);
 	else
-		tiling = tile(isl_dim_copy(dim), gen->shared_len + gen->n_block,
+		tiling = tile(isl_space_copy(dim), gen->shared_len + gen->n_block,
 				gen->shared_len, gen->n_block, gen->block_dim);
 
 	priv = tiling;
@@ -2800,12 +2800,12 @@ static __isl_give isl_map *compute_privatization(struct cuda_gen *gen)
 		gen->tile_first + gen->tile_len + gen->n_grid + gen->n_block,
 		gen->n_block, "t");
 
-	priv = isl_map_align_params(priv, isl_set_get_dim(par));
+	priv = isl_map_align_params(priv, isl_set_get_space(par));
 	priv = isl_map_intersect_range(priv, par);
 
-	dim = isl_map_get_dim(priv);
-	dim = isl_dim_drop(dim, isl_dim_in, 0, isl_dim_size(dim, isl_dim_in));
-	dim = isl_dim_drop(dim, isl_dim_out, 0, isl_dim_size(dim, isl_dim_out));
+	dim = isl_map_get_space(priv);
+	dim = isl_space_drop_dims(dim, isl_dim_in, 0, isl_space_dim(dim, isl_dim_in));
+	dim = isl_space_drop_dims(dim, isl_dim_out, 0, isl_space_dim(dim, isl_dim_out));
 	proj = projection(dim, gen->shared_len + 2 * gen->n_block,
 			  gen->shared_len);
 
@@ -2818,20 +2818,20 @@ static __isl_give isl_map *compute_privatization(struct cuda_gen *gen)
  * the dimension at position "pos" and leaves all other dimensions
  * constant.
  */
-static __isl_give isl_map *next(__isl_take isl_dim *domain_dim, int pos)
+static __isl_give isl_map *next(__isl_take isl_space *domain_dim, int pos)
 {
 	int i;
-	int len = isl_dim_size(domain_dim, isl_dim_set);
-	isl_dim *dim;
+	int len = isl_space_dim(domain_dim, isl_dim_set);
+	isl_space *dim;
 	isl_basic_map *next;
 
-	dim = isl_dim_map_from_set(domain_dim);
-	next = isl_basic_map_universe(isl_dim_copy(dim));
+	dim = isl_space_map_from_set(domain_dim);
+	next = isl_basic_map_universe(isl_space_copy(dim));
 
 	for (i = 0; i < len; ++i) {
 		isl_constraint *c;
 
-		c = isl_equality_alloc(isl_dim_copy(dim));
+		c = isl_equality_alloc(isl_space_copy(dim));
 		isl_constraint_set_coefficient_si(c, isl_dim_in, i, 1);
 		isl_constraint_set_coefficient_si(c, isl_dim_out, i, -1);
 		if (i == pos)
@@ -2839,7 +2839,7 @@ static __isl_give isl_map *next(__isl_take isl_dim *domain_dim, int pos)
 		next = isl_basic_map_add_constraint(next, c);
 	}
 
-	isl_dim_free(dim);
+	isl_space_free(dim);
 
 	return isl_map_from_basic_map(next);
 }
@@ -2854,7 +2854,7 @@ static __isl_give isl_map *next(__isl_take isl_dim *domain_dim, int pos)
 static int access_is_coalesced(struct cuda_gen *gen,
 	__isl_keep isl_union_map *access)
 {
-	isl_dim *dim;
+	isl_space *dim;
 	isl_map *access_map;
 	isl_map *next_thread_x;
 	isl_map *next_element;
@@ -2866,13 +2866,13 @@ static int access_is_coalesced(struct cuda_gen *gen,
 				isl_union_map_copy(gen->tiled_sched));
 	access_map = isl_map_from_union_map(access);
 
-	dim = isl_map_get_dim(access_map);
-	dim = isl_dim_domain(dim);
+	dim = isl_map_get_space(access_map);
+	dim = isl_space_domain(dim);
 	next_thread_x = next(dim, gen->shared_len + gen->n_block - 1);
 
-	dim = isl_map_get_dim(access_map);
-	dim = isl_dim_range(dim);
-	next_element = next(dim, isl_dim_size(dim, isl_dim_set) - 1);
+	dim = isl_map_get_space(access_map);
+	dim = isl_space_range(dim);
+	next_element = next(dim, isl_space_dim(dim, isl_dim_set) - 1);
 
 	map = isl_map_apply_domain(next_thread_x, isl_map_copy(access_map));
 	map = isl_map_apply_range(map, access_map);
@@ -2943,7 +2943,7 @@ static void check_private_group_access(struct cuda_gen *gen,
 	}
 
 	group->private_bound = create_bound_list(gen->ctx, n_index);
-	acc = isl_map_align_params(acc, isl_map_get_dim(gen->privatization));
+	acc = isl_map_align_params(acc, isl_map_get_space(gen->privatization));
 	acc = isl_map_apply_domain(acc, isl_map_copy(gen->privatization));
 	if (!can_tile_for_shared_memory(gen, group->array, acc,
 					group->private_bound)) {
@@ -3016,7 +3016,7 @@ static void compute_private_size(struct cuda_gen *gen)
 	if (!gen->options->use_private_memory)
 		return;
 
-	private = isl_union_map_empty(isl_union_map_get_dim(gen->shared_sched));
+	private = isl_union_map_empty(isl_union_map_get_space(gen->shared_sched));
 
 	for (i = 0; i < gen->n_array; ++i) {
 		struct cuda_array_info *array = &gen->array[i];
@@ -3168,7 +3168,7 @@ static int group_overlapping_writes(int n,
 static void compute_group_shared_bound(struct cuda_gen *gen,
 	struct cuda_array_info *array, struct cuda_array_ref_group *group)
 {
-	isl_ctx *ctx = isl_dim_get_ctx(array->dim);
+	isl_ctx *ctx = isl_space_get_ctx(array->dim);
 
 	if (!gen->options->use_shared_memory)
 		return;
@@ -3193,7 +3193,7 @@ static int group_common_shared_memory_tile(struct cuda_gen *gen,
 	struct cuda_array_ref_group **groups, int *leader, int n_group)
 {
 	int i, j;
-	isl_ctx *ctx = isl_dim_get_ctx(array->dim);
+	isl_ctx *ctx = isl_space_get_ctx(array->dim);
 
 	for (i = 0; n_group > 1 && i < n; ++i) {
 		int l = i;
@@ -3345,25 +3345,25 @@ static void group_array_references(struct cuda_gen *gen,
  */
 static void compute_shared_sched(struct cuda_gen *gen)
 {
-	isl_dim *dim;
+	isl_space *dim;
 	isl_map *proj;
 	isl_set *par;
 	isl_union_map *sched;
 
 	sched = isl_union_map_copy(gen->tiled_sched);
 
-	dim = isl_union_map_get_dim(sched);
-	gen->first_shared = isl_dim_size(dim, isl_dim_param);
+	dim = isl_union_map_get_space(sched);
+	gen->first_shared = isl_space_dim(dim, isl_dim_param);
 	proj = projection(dim, gen->tiled_len, gen->shared_len + gen->n_block);
 	sched = isl_union_map_apply_range(sched, isl_union_map_from_map(proj));
 
-	dim = isl_union_map_get_dim(sched);
+	dim = isl_union_map_get_space(sched);
 	par = parametrization(dim, gen->shared_len + gen->n_block,
 				0, gen->shared_len, "g");
 	sched = isl_union_map_intersect_range(sched,
 						isl_union_set_from_set(par));
 
-	dim = isl_union_map_get_dim(sched);
+	dim = isl_union_map_get_space(sched);
 	proj = projection(dim, gen->shared_len + gen->n_block, gen->shared_len);
 
 	gen->shared_sched = sched;
@@ -3474,7 +3474,7 @@ static void print_local_index(FILE *out, struct cuda_array_ref_group *group)
 	isl_printer *prn;
 	struct cuda_array_bound *bounds = group->shared_bound;
 
-	ctx = isl_dim_get_ctx(group->array->dim);
+	ctx = isl_space_get_ctx(group->array->dim);
 	print_array_name(out, group);
 	for (i = 0; i < group->array->n_index; ++i) {
 		fprintf(out, "[(a%d", i);
@@ -3615,7 +3615,7 @@ static void print_host_user(struct gpucode_info *code,
 	struct clast_user_stmt *u)
 {
 	struct cuda_gen *gen = code->user;
-	isl_dim *dim;
+	isl_space *dim;
 	isl_set *par;
 	isl_set *host_domain;
 	isl_union_map *access;
@@ -3653,7 +3653,7 @@ static void print_host_user(struct gpucode_info *code,
 
 	gen->local_sched = isl_union_map_copy(gen->tiled_sched);
 
-	dim = isl_union_map_get_dim(gen->local_sched);
+	dim = isl_union_map_get_space(gen->local_sched);
 	par = parametrization(dim, gen->tiled_len, 0, gen->shared_len, "g");
 	gen->local_sched = isl_union_map_intersect_range(gen->local_sched,
 						isl_union_set_from_set(par));
@@ -3788,7 +3788,7 @@ __isl_give isl_set *add_context_from_str(__isl_take isl_set *set,
 
 	ctx = isl_set_get_ctx(set);
 	context = isl_set_read_from_str(ctx, str, -1);
-	context = isl_set_align_params(context, isl_set_get_dim(set));
+	context = isl_set_align_params(context, isl_set_get_space(set));
 	set = isl_set_intersect(set, context);
 
 	return set;
@@ -3801,7 +3801,7 @@ static __isl_give isl_union_set *extract_domain(struct cuda_gen *gen)
 	int i;
 	isl_union_set *domain;
 
-	domain = isl_union_set_empty(isl_set_get_dim(gen->context));
+	domain = isl_union_set_empty(isl_set_get_space(gen->context));
 	for (i = 0; i < gen->n_stmts; ++i) {
 		isl_set *domain_i;
 
@@ -3914,11 +3914,11 @@ static int cmp_band(const void *p1, const void *p2)
 static __isl_give isl_union_map *extend_range(__isl_take isl_union_map *umap,
 	int src_len, int dst_len, int val)
 {
-	isl_dim *dim;
+	isl_space *dim;
 	isl_map *map;
 	int i;
 
-	dim = isl_union_map_get_dim(umap);
+	dim = isl_union_map_get_space(umap);
 	map = isl_map_reverse(projection(dim, dst_len, src_len));
 	for (i = src_len; i < dst_len; ++i)
 		map = isl_map_fix_si(map, isl_dim_out, i, val);
@@ -4046,11 +4046,11 @@ static int map_align_range(__isl_take isl_map *map, void *user)
 {
 	struct align_range_data *data = user;
 	int i;
-	isl_dim *dim;
+	isl_space *dim;
 	isl_map *proj;
 	int n_out = isl_map_dim(map, isl_dim_out);
 
-	dim = isl_union_map_get_dim(data->res);
+	dim = isl_union_map_get_space(data->res);
 	proj = isl_map_reverse(projection(dim, data->max_out, n_out));
 	for (i = n_out; i < data->max_out; ++i)
 		proj = isl_map_fix_si(proj, isl_dim_out, i, 0);
@@ -4072,7 +4072,7 @@ static __isl_give isl_union_map *align_range(__isl_take isl_union_map *umap)
 	data.max_out = 0;
 	isl_union_map_foreach_map(umap, &update_max_out, &data.max_out);
 
-	data.res = isl_union_map_empty(isl_union_map_get_dim(umap));
+	data.res = isl_union_map_empty(isl_union_map_get_space(umap));
 	isl_union_map_foreach_map(umap, &map_align_range, &data);
 
 	isl_union_map_free(umap);
@@ -4140,7 +4140,7 @@ static void compute_schedule(struct cuda_gen *gen,
 	isl_schedule *schedule;
 	struct isl_options *options;
 
-	empty = isl_union_map_empty(isl_union_map_get_dim(sched));
+	empty = isl_union_map_empty(isl_union_map_get_space(sched));
 
         isl_union_map_compute_flow(isl_union_map_copy(gen->read),
                             isl_union_map_copy(gen->write), empty,

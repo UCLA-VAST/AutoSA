@@ -33,11 +33,11 @@ struct cuda_stmt {
 	struct cuda_stmt_access *accesses;
 };
 
-__isl_give isl_map *wavefront(__isl_take isl_dim *dim, int len,
+__isl_give isl_map *wavefront(__isl_take isl_space *dim, int len,
         int first, int wave_len);
-__isl_give isl_map *project_out(__isl_take isl_dim *dim,
+__isl_give isl_map *project_out(__isl_take isl_space *dim,
 	int len, int first, int n);
-__isl_give isl_map *projection(__isl_take isl_dim *dim,
+__isl_give isl_map *projection(__isl_take isl_space *dim,
 	int src_len, int dst_len);
 __isl_give isl_set *extend(__isl_take isl_set *set, int dst_len);
 
