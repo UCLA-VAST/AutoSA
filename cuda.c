@@ -1280,8 +1280,7 @@ static __isl_give isl_union_map *access_schedule(struct cuda_gen *gen,
 			break;
 
 	dim = isl_map_get_space(sched);
-	dim = isl_space_drop_dims(dim, isl_dim_in, 0, isl_space_dim(dim, isl_dim_in));
-	dim = isl_space_drop_dims(dim, isl_dim_out, 0, nvar);
+	dim = isl_space_params(dim);
 	if (gen->options->wrap)
 		tiling = wrap(isl_space_copy(dim), nvar, first,
 				n_tile, gen->block_dim);
