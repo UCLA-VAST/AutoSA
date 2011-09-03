@@ -3563,11 +3563,9 @@ static void localize_bounds(struct cuda_gen *gen,
 {
 	int i, j;
 	isl_set *context;
-	unsigned nvar;
 
 	context = isl_set_copy(host_domain);
-	nvar = isl_set_dim(host_domain, isl_dim_set);
-	context = isl_set_project_out(host_domain, isl_dim_set, 0, nvar);
+	context = isl_set_params(host_domain);
 
 	for (i = 0; i < gen->n_array; ++i) {
 		struct cuda_array_info *array = &gen->array[i];
