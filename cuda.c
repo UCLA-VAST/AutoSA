@@ -1973,7 +1973,7 @@ static void print_private_copy_statement(struct gpucode_info *code,
 							isl_dim_set, i, &c);
 		assert(ok);
 		qp[i] = isl_qpolynomial_from_constraint(c, isl_dim_set, i);
-		qp[i] = isl_qpolynomial_drop_dims(qp[i], isl_dim_set, 0, n_out);
+		qp[i] = isl_qpolynomial_project_domain_on_params(qp[i]);
 	}
 
 	print_indent(code->dst, code->indent);
