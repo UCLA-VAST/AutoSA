@@ -267,7 +267,7 @@ static int extract_array_info(__isl_take isl_set *array, void *user)
 		assert(bound);
 		dom = isl_pw_aff_domain(isl_pw_aff_copy(bound));
 		ls = isl_local_space_from_space(isl_set_get_space(dom));
-		one = isl_aff_zero(ls);
+		one = isl_aff_zero_on_domain(ls);
 		one = isl_aff_add_constant_si(one, 1);
 		bound = isl_pw_aff_add(bound, isl_pw_aff_alloc(dom, one));
 		bound = isl_pw_aff_gist(bound, isl_set_copy(gen->context));
@@ -1395,10 +1395,10 @@ static __isl_give isl_set *group_tile_dim(struct cuda_array_ref_group *group,
 	isl_set *tile_set;
 
 	aff = isl_aff_copy(group->shared_bound[i].lb);
-	aff = isl_aff_add_dims(aff, isl_dim_set, 1);
-	ls = isl_aff_get_local_space(aff);
+	aff = isl_aff_add_dims(aff, isl_dim_in, 1);
+	ls = isl_aff_get_domain_local_space(aff);
 	aff = isl_aff_neg(aff);
-	aff = isl_aff_add_coefficient_si(aff, isl_dim_set, 0, 1);
+	aff = isl_aff_add_coefficient_si(aff, isl_dim_in, 0, 1);
 	c = isl_inequality_from_aff(isl_aff_copy(aff));
 	tile = isl_basic_set_from_constraint(c);
 
@@ -1408,16 +1408,16 @@ static __isl_give isl_set *group_tile_dim(struct cuda_array_ref_group *group,
 	c = isl_inequality_from_aff(aff);
 	tile = isl_basic_set_add_constraint(tile, c);
 
-	aff = isl_aff_zero(ls);
-	aff = isl_aff_add_coefficient_si(aff, isl_dim_set, 0, 1);
+	aff = isl_aff_zero_on_domain(ls);
+	aff = isl_aff_add_coefficient_si(aff, isl_dim_in, 0, 1);
 	c = isl_inequality_from_aff(aff);
 	tile = isl_basic_set_add_constraint(tile, c);
 
 	bound = isl_pw_aff_copy(group->array->bound[i]);
-	bound = isl_pw_aff_add_dims(bound, isl_dim_set, 1);
-	ls = isl_local_space_from_space(isl_pw_aff_get_space(bound));
-	aff = isl_aff_zero(ls);
-	aff = isl_aff_add_coefficient_si(aff, isl_dim_set, 0, 1);
+	bound = isl_pw_aff_add_dims(bound, isl_dim_in, 1);
+	ls = isl_local_space_from_space(isl_pw_aff_get_domain_space(bound));
+	aff = isl_aff_zero_on_domain(ls);
+	aff = isl_aff_add_coefficient_si(aff, isl_dim_in, 0, 1);
 	aff = isl_aff_add_constant_si(aff, 1);
 	dom = isl_pw_aff_domain(isl_pw_aff_copy(bound));
 
@@ -1598,10 +1598,10 @@ static __isl_give isl_qpolynomial *shift_index(__isl_take isl_qpolynomial *qp,
 		shift = isl_qpolynomial_align_params(shift,
 					  isl_qpolynomial_get_space(qp));
 		qp = isl_qpolynomial_add(qp, shift);
-		dim = isl_qpolynomial_get_space(qp);
+		dim = isl_qpolynomial_get_domain_space(qp);
 		isl_int_init(one);
 		isl_int_set_si(one, 1);
-		t = isl_qpolynomial_rat_cst(dim, one, bound->stride);
+		t = isl_qpolynomial_rat_cst_on_domain(dim, one, bound->stride);
 		isl_int_clear(one);
 		qp = isl_qpolynomial_mul(qp, t);
 	}
@@ -2526,7 +2526,7 @@ static void extract_stride(__isl_keep isl_constraint *c,
 	isl_constraint_get_constant(c, &v);
 	if (sign < 0)
 		isl_int_neg(v, v);
-	qp = isl_qpolynomial_rat_cst(isl_space_copy(dim), v, one);
+	qp = isl_qpolynomial_rat_cst_on_domain(isl_space_copy(dim), v, one);
 
 	for (i = 0; i < nparam; ++i) {
 		isl_qpolynomial *t, *p;
@@ -2536,8 +2536,8 @@ static void extract_stride(__isl_keep isl_constraint *c,
 			continue;
 		if (sign < 0)
 			isl_int_neg(v, v);
-		t = isl_qpolynomial_rat_cst(isl_space_copy(dim), v, one);
-		p = isl_qpolynomial_var(isl_space_copy(dim), isl_dim_param, i);
+		t = isl_qpolynomial_rat_cst_on_domain(isl_space_copy(dim), v, one);
+		p = isl_qpolynomial_var_on_domain(isl_space_copy(dim), isl_dim_param, i);
 		t = isl_qpolynomial_mul(t, p);
 		qp = isl_qpolynomial_add(qp, t);
 	}
@@ -2623,13 +2623,13 @@ static __isl_give isl_basic_map *check_stride(struct cuda_gen *gen,
 		return bounds;
 
 	qp = isl_qpolynomial_copy(bound->shift);
-	qp = isl_qpolynomial_add_dims(qp, isl_dim_set, 1);
-	dim = isl_qpolynomial_get_space(qp);
-	t = isl_qpolynomial_var(isl_space_copy(dim), isl_dim_set, 0);
+	qp = isl_qpolynomial_add_dims(qp, isl_dim_in, 1);
+	dim = isl_qpolynomial_get_domain_space(qp);
+	t = isl_qpolynomial_var_on_domain(isl_space_copy(dim), isl_dim_set, 0);
 	qp = isl_qpolynomial_add(qp, t);
 	isl_int_init(one);
 	isl_int_set_si(one, 1);
-	t = isl_qpolynomial_rat_cst(dim, one, bound->stride);
+	t = isl_qpolynomial_rat_cst_on_domain(dim, one, bound->stride);
 	isl_int_clear(one);
 	qp = isl_qpolynomial_mul(qp, t);
 	shift = isl_basic_map_from_qpolynomial(qp);
@@ -2683,7 +2683,7 @@ static int compute_size_in_direction(__isl_take isl_constraint *c, void *user)
 		lb = isl_aff_copy(aff);
 
 		aff = isl_aff_neg(aff);
-		aff = isl_aff_add_coefficient_si(aff, isl_dim_set, size->pos, 1);
+		aff = isl_aff_add_coefficient_si(aff, isl_dim_in, size->pos, 1);
 
 		res = isl_basic_set_max(size->bset, aff, &v);
 		isl_aff_free(aff);
@@ -2693,7 +2693,7 @@ static int compute_size_in_direction(__isl_take isl_constraint *c, void *user)
 			if (isl_int_is_neg(size->bound->size) ||
 			    isl_int_lt(v, size->bound->size)) {
 				isl_int_set(size->bound->size, v);
-				lb = isl_aff_drop_dims(lb, isl_dim_set,
+				lb = isl_aff_drop_dims(lb, isl_dim_in,
 							0, size->pos + 1);
 				isl_aff_free(size->bound->lb);
 				size->bound->lb = isl_aff_copy(lb);
