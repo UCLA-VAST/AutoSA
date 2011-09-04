@@ -2518,9 +2518,7 @@ static void extract_stride(__isl_keep isl_constraint *c,
 	isl_int_set(bound->stride, stride);
 
 	dim = isl_constraint_get_space(c);
-	dim = isl_space_drop_dims(dim, isl_dim_out, 0, 1);
-	dim = isl_space_drop_dims(dim, isl_dim_in, 0, isl_space_dim(dim, isl_dim_in));
-	dim = isl_space_domain(dim);
+	dim = isl_space_params(dim);
 
 	nparam = isl_space_dim(dim, isl_dim_param);
 
