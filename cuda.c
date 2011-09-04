@@ -1594,8 +1594,7 @@ static __isl_give isl_qpolynomial *shift_index(__isl_take isl_qpolynomial *qp,
 		isl_space *dim;
 		shift = bound->shift;
 		shift = isl_qpolynomial_copy(shift);
-		shift = isl_qpolynomial_drop_dims(shift, isl_dim_set, 0,
-			    isl_qpolynomial_dim(shift, isl_dim_set));
+		shift = isl_qpolynomial_project_domain_on_params(shift);
 		shift = isl_qpolynomial_align_params(shift,
 					  isl_qpolynomial_get_space(qp));
 		qp = isl_qpolynomial_add(qp, shift);
@@ -1608,8 +1607,7 @@ static __isl_give isl_qpolynomial *shift_index(__isl_take isl_qpolynomial *qp,
 	}
 
 	lb = isl_qpolynomial_from_aff(isl_aff_copy(bound->lb));
-	lb = isl_qpolynomial_drop_dims(lb, isl_dim_set, 0,
-			isl_qpolynomial_dim(lb, isl_dim_set));
+	lb = isl_qpolynomial_project_domain_on_params(lb);
 
 	lb = isl_qpolynomial_align_params(lb, isl_qpolynomial_get_space(qp));
 
