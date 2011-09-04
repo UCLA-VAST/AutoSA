@@ -1700,8 +1700,7 @@ static void print_access(struct cuda_gen *gen, __isl_take isl_map *access,
 							isl_dim_out, i, &c);
 		assert(ok);
 		qp = isl_qpolynomial_from_constraint(c, isl_dim_out, i);
-		qp = isl_qpolynomial_drop_dims(qp, isl_dim_set, 0,
-				isl_qpolynomial_dim(qp, isl_dim_set));
+		qp = isl_qpolynomial_project_domain_on_params(qp);
 
 		if (!array) {
 			prn = isl_printer_print_qpolynomial(prn, qp);
