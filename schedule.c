@@ -33,18 +33,20 @@ __isl_give isl_map *wavefront(__isl_take isl_space *dim, int len,
     isl_int v;
     isl_basic_map *bmap;
     isl_constraint *c;
+    isl_local_space *ls;
 
     isl_int_init(v);
 
     dim = isl_space_add_dims(dim, isl_dim_in, len);
     dim = isl_space_add_dims(dim, isl_dim_out, len);
     bmap = isl_basic_map_universe(isl_space_copy(dim));
+    ls = isl_local_space_from_space(dim);
 
     for (i = 0; i < len; ++i) {
         if (i == first)
             continue;
 
-        c = isl_equality_alloc(isl_space_copy(dim));
+        c = isl_equality_alloc(isl_local_space_copy(ls));
         isl_int_set_si(v, -1);
         isl_constraint_set_coefficient(c, isl_dim_in, i, v);
         isl_int_set_si(v, 1);
@@ -52,7 +54,7 @@ __isl_give isl_map *wavefront(__isl_take isl_space *dim, int len,
         bmap = isl_basic_map_add_constraint(bmap, c);
     }
 
-    c = isl_equality_alloc(isl_space_copy(dim));
+    c = isl_equality_alloc(isl_local_space_copy(ls));
     isl_int_set_si(v, -1);
     for (i = 0; i < wave_len; ++i)
         isl_constraint_set_coefficient(c, isl_dim_in, first + i, v);
@@ -60,7 +62,7 @@ __isl_give isl_map *wavefront(__isl_take isl_space *dim, int len,
     isl_constraint_set_coefficient(c, isl_dim_out, first, v);
     bmap = isl_basic_map_add_constraint(bmap, c);
 
-    isl_space_free(dim);
+    isl_local_space_free(ls);
     isl_int_clear(v);
 
     return isl_map_from_basic_map(bmap);
@@ -78,17 +80,19 @@ __isl_give isl_map *project_out(__isl_take isl_space *dim,
     isl_constraint *c;
     isl_basic_map *bmap;
     isl_int v;
+    isl_local_space *ls;
 
     isl_int_init(v);
 
     dim = isl_space_add_dims(dim, isl_dim_in, len);
     dim = isl_space_add_dims(dim, isl_dim_out, len - n);
     bmap = isl_basic_map_universe(isl_space_copy(dim));
+    ls = isl_local_space_from_space(dim);
 
     for (i = 0, j = 0; i < len; ++i) {
         if (i >= first && i < first + n)
             continue;
-        c = isl_equality_alloc(isl_space_copy(dim));
+        c = isl_equality_alloc(isl_local_space_copy(ls));
         isl_int_set_si(v, -1);
         isl_constraint_set_coefficient(c, isl_dim_in, i, v);
         isl_int_set_si(v, 1);
@@ -96,7 +100,7 @@ __isl_give isl_map *project_out(__isl_take isl_space *dim,
         bmap = isl_basic_map_add_constraint(bmap, c);
         ++j;
     }
-    isl_space_free(dim);
+    isl_local_space_free(ls);
 
     isl_int_clear(v);
 

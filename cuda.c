@@ -648,18 +648,20 @@ static __isl_give isl_map *tile(__isl_take isl_space *dim, int len,
 	isl_int v;
 	isl_basic_map *bmap;
 	isl_constraint *c;
+	isl_local_space *ls;
 
 	isl_int_init(v);
 
 	dim = isl_space_add_dims(dim, isl_dim_in, len);
 	dim = isl_space_add_dims(dim, isl_dim_out, len + tile_len);
 	bmap = isl_basic_map_universe(isl_space_copy(dim));
+	ls = isl_local_space_from_space(dim);
 
 	for (i = 0; i < len - tile_len; ++i) {
 		int j = i < first ? i : i + tile_len;
 		int k = i < first ? i : i + 2 * tile_len;
 
-		c = isl_equality_alloc(isl_space_copy(dim));
+		c = isl_equality_alloc(isl_local_space_copy(ls));
 		isl_int_set_si(v, -1);
 		isl_constraint_set_coefficient(c, isl_dim_in, j, v);
 		isl_int_set_si(v, 1);
@@ -668,7 +670,7 @@ static __isl_give isl_map *tile(__isl_take isl_space *dim, int len,
 	}
 
 	for (i = 0; i < tile_len; ++i) {
-		c = isl_equality_alloc(isl_space_copy(dim));
+		c = isl_equality_alloc(isl_local_space_copy(ls));
 		isl_int_set_si(v, -1);
 		isl_constraint_set_coefficient(c, isl_dim_in, first + i, v);
 		isl_int_set_si(v, tile_size[i]);
@@ -678,13 +680,13 @@ static __isl_give isl_map *tile(__isl_take isl_space *dim, int len,
 						first + i + tile_len, v);
 		bmap = isl_basic_map_add_constraint(bmap, c);
 
-		c = isl_inequality_alloc(isl_space_copy(dim));
+		c = isl_inequality_alloc(isl_local_space_copy(ls));
 		isl_int_set_si(v, 1);
 		isl_constraint_set_coefficient(c, isl_dim_out,
 						first + i + tile_len, v);
 		bmap = isl_basic_map_add_constraint(bmap, c);
 	
-		c = isl_inequality_alloc(isl_space_copy(dim));
+		c = isl_inequality_alloc(isl_local_space_copy(ls));
 		isl_int_set_si(v, -1);
 		isl_constraint_set_coefficient(c, isl_dim_out,
 						first + i + tile_len, v);
@@ -693,7 +695,7 @@ static __isl_give isl_map *tile(__isl_take isl_space *dim, int len,
 		bmap = isl_basic_map_add_constraint(bmap, c);
 	}
 
-	isl_space_free(dim);
+	isl_local_space_free(ls);
 	isl_int_clear(v);
 
 	return isl_map_from_basic_map(bmap);
@@ -713,22 +715,24 @@ static __isl_give isl_map *wrap(__isl_take isl_space *dim, int len,
 	int i;
 	isl_basic_map *bmap;
 	isl_constraint *c;
+	isl_local_space *ls;
 
 	dim = isl_space_add_dims(dim, isl_dim_in, len);
 	dim = isl_space_add_dims(dim, isl_dim_out, len + 2 * wrap_len);
 	bmap = isl_basic_map_universe(isl_space_copy(dim));
+	ls = isl_local_space_from_space(dim);
 
 	for (i = 0; i < len; ++i) {
 		int k = i < first + wrap_len ? i : i + 2 * wrap_len;
 
-		c = isl_equality_alloc(isl_space_copy(dim));
+		c = isl_equality_alloc(isl_local_space_copy(ls));
 		isl_constraint_set_coefficient_si(c, isl_dim_in, i, -1);
 		isl_constraint_set_coefficient_si(c, isl_dim_out, k, 1);
 		bmap = isl_basic_map_add_constraint(bmap, c);
 	}
 
 	for (i = 0; i < wrap_len; ++i) {
-		c = isl_equality_alloc(isl_space_copy(dim));
+		c = isl_equality_alloc(isl_local_space_copy(ls));
 		isl_constraint_set_coefficient_si(c, isl_dim_out,
 						    first + i, -1);
 		isl_constraint_set_coefficient_si(c, isl_dim_out,
@@ -737,19 +741,19 @@ static __isl_give isl_map *wrap(__isl_take isl_space *dim, int len,
 				    first + 2 * wrap_len + i, wrap_size[i]);
 		bmap = isl_basic_map_add_constraint(bmap, c);
 
-		c = isl_inequality_alloc(isl_space_copy(dim));
+		c = isl_inequality_alloc(isl_local_space_copy(ls));
 		isl_constraint_set_coefficient_si(c, isl_dim_out,
 						    first + wrap_len + i, 1);
 		bmap = isl_basic_map_add_constraint(bmap, c);
 	
-		c = isl_inequality_alloc(isl_space_copy(dim));
+		c = isl_inequality_alloc(isl_local_space_copy(ls));
 		isl_constraint_set_coefficient_si(c, isl_dim_out,
 						    first + wrap_len + i, -1);
 		isl_constraint_set_constant_si(c, wrap_size[i] - 1);
 		bmap = isl_basic_map_add_constraint(bmap, c);
 	}
 
-	isl_space_free(dim);
+	isl_local_space_free(ls);
 
 	bmap = isl_basic_map_project_out(bmap, isl_dim_out,
 				first + 2 * wrap_len, wrap_len);
@@ -790,6 +794,7 @@ static __isl_give isl_set *parametrize(__isl_take isl_set *set,
 	isl_space *dim;
 	isl_basic_set *bset;
 	isl_constraint *c;
+	isl_local_space *ls;
 
 	nparam = isl_set_dim(set, isl_dim_param);
 
@@ -797,11 +802,12 @@ static __isl_give isl_set *parametrize(__isl_take isl_set *set,
 
 	dim = isl_set_get_space(set);
 	bset = isl_basic_set_universe(isl_space_copy(dim));
+	ls = isl_local_space_from_space(dim);
 
 	isl_int_init(v);
 
 	for (i = 0; i < n; ++i) {
-		c = isl_equality_alloc(isl_space_copy(dim));
+		c = isl_equality_alloc(isl_local_space_copy(ls));
 		isl_int_set_si(v, -1);
 		isl_constraint_set_coefficient(c, isl_dim_param, nparam + i, v);
 		isl_int_set_si(v, 1);
@@ -810,7 +816,7 @@ static __isl_give isl_set *parametrize(__isl_take isl_set *set,
 	}
 
 	isl_int_clear(v);
-	isl_space_free(dim);
+	isl_local_space_free(ls);
 
 	return isl_set_intersect(set, isl_set_from_basic_set(bset));
 }
@@ -923,6 +929,7 @@ static __isl_give isl_union_map *scale_tile_loops(struct cuda_gen *gen,
 	isl_space *dim;
 	isl_basic_map *scale;
 	isl_constraint *c;
+	isl_local_space *ls;
 
 	if (!gen->options->scale_tile_loops)
 		return sched;
@@ -931,6 +938,7 @@ static __isl_give isl_union_map *scale_tile_loops(struct cuda_gen *gen,
 	dim = isl_space_add_dims(dim, isl_dim_in, gen->tiled_len);
 	dim = isl_space_add_dims(dim, isl_dim_out, gen->tiled_len);
 	scale = isl_basic_map_universe(isl_space_copy(dim));
+	ls = isl_local_space_from_space(dim);
 
 	for (i = 0; i < gen->tiled_len; ++i) {
 		int f = 1;
@@ -944,13 +952,13 @@ static __isl_give isl_union_map *scale_tile_loops(struct cuda_gen *gen,
 			f = gen->tile_size[i - (gen->tile_first + gen->n_grid)];
 		}
 
-		c = isl_equality_alloc(isl_space_copy(dim));
+		c = isl_equality_alloc(isl_local_space_copy(ls));
 		isl_constraint_set_coefficient_si(c, isl_dim_in, i, f);
 		isl_constraint_set_coefficient_si(c, isl_dim_out, i, -1);
 		scale = isl_basic_map_add_constraint(scale, c);
 	}
 
-	isl_space_free(dim);
+	isl_local_space_free(ls);
 
 	sched = isl_union_map_apply_range(sched,
 		isl_union_map_from_map(isl_map_from_basic_map(scale)));
@@ -968,6 +976,7 @@ static __isl_give isl_union_map *scale_thread_tile_loops(struct cuda_gen *gen,
 	isl_space *dim;
 	isl_basic_map *scale;
 	isl_constraint *c;
+	isl_local_space *ls;
 
 	if (gen->options->wrap)
 		return sched;
@@ -978,6 +987,7 @@ static __isl_give isl_union_map *scale_thread_tile_loops(struct cuda_gen *gen,
 	dim = isl_space_add_dims(dim, isl_dim_in, gen->thread_tiled_len);
 	dim = isl_space_add_dims(dim, isl_dim_out, gen->thread_tiled_len);
 	scale = isl_basic_map_universe(isl_space_copy(dim));
+	ls = isl_local_space_from_space(dim);
 
 	for (i = 0; i < gen->thread_tiled_len; ++i) {
 		int f = 1;
@@ -986,13 +996,13 @@ static __isl_give isl_union_map *scale_thread_tile_loops(struct cuda_gen *gen,
 		    i < gen->shared_len + gen->n_block)
 			f = gen->block_dim[i - gen->shared_len];
 
-		c = isl_equality_alloc(isl_space_copy(dim));
+		c = isl_equality_alloc(isl_local_space_copy(ls));
 		isl_constraint_set_coefficient_si(c, isl_dim_in, i, f);
 		isl_constraint_set_coefficient_si(c, isl_dim_out, i, -1);
 		scale = isl_basic_map_add_constraint(scale, c);
 	}
 
-	isl_space_free(dim);
+	isl_local_space_free(ls);
 
 	sched = isl_union_map_apply_range(sched,
 		isl_union_map_from_map(isl_map_from_basic_map(scale)));
@@ -1010,6 +1020,7 @@ static __isl_give isl_union_map *scale_access_tile_loops(struct cuda_gen *gen,
 	isl_space *dim;
 	isl_basic_map *scale;
 	isl_constraint *c;
+	isl_local_space *ls;
 
 	if (gen->options->wrap)
 		return sched;
@@ -1020,6 +1031,7 @@ static __isl_give isl_union_map *scale_access_tile_loops(struct cuda_gen *gen,
 	dim = isl_space_add_dims(dim, isl_dim_in, len);
 	dim = isl_space_add_dims(dim, isl_dim_out, len);
 	scale = isl_basic_map_universe(isl_space_copy(dim));
+	ls = isl_local_space_from_space(dim);
 
 	for (i = 0; i < len; ++i) {
 		int f = 1;
@@ -1027,13 +1039,13 @@ static __isl_give isl_union_map *scale_access_tile_loops(struct cuda_gen *gen,
 		if (i >= first && i < first + n_tile)
 			f = gen->block_dim[i - first];
 
-		c = isl_equality_alloc(isl_space_copy(dim));
+		c = isl_equality_alloc(isl_local_space_copy(ls));
 		isl_constraint_set_coefficient_si(c, isl_dim_in, i, f);
 		isl_constraint_set_coefficient_si(c, isl_dim_out, i, -1);
 		scale = isl_basic_map_add_constraint(scale, c);
 	}
 
-	isl_space_free(dim);
+	isl_local_space_free(ls);
 
 	sched = isl_union_map_apply_range(sched,
 		isl_union_map_from_map(isl_map_from_basic_map(scale)));
@@ -1109,6 +1121,7 @@ __isl_give isl_set *add_bounded_parameters(__isl_take isl_set *set,
 	isl_space *dim;
 	isl_basic_set *bset;
 	isl_constraint *c;
+	isl_local_space *ls;
 	char name[20];
 
 	nparam = isl_set_dim(set, isl_dim_param);
@@ -1122,16 +1135,17 @@ __isl_give isl_set *add_bounded_parameters(__isl_take isl_set *set,
 
 	dim = isl_set_get_space(set);
 	bset = isl_basic_set_universe(isl_space_copy(dim));
+	ls = isl_local_space_from_space(dim);
 
 	isl_int_init(v);
 
 	for (i = 0; i < len; ++i) {
-		c = isl_inequality_alloc(isl_space_copy(dim));
+		c = isl_inequality_alloc(isl_local_space_copy(ls));
 		isl_int_set_si(v, 1);
 		isl_constraint_set_coefficient(c, isl_dim_param, nparam + i, v);
 		bset = isl_basic_set_add_constraint(bset, c);
 	
-		c = isl_inequality_alloc(isl_space_copy(dim));
+		c = isl_inequality_alloc(isl_local_space_copy(ls));
 		isl_int_set_si(v, -1);
 		isl_constraint_set_coefficient(c, isl_dim_param, nparam + i, v);
 		isl_int_set_si(v, size[i] - 1);
@@ -1140,7 +1154,7 @@ __isl_give isl_set *add_bounded_parameters(__isl_take isl_set *set,
 	}
 
 	isl_int_clear(v);
-	isl_space_free(dim);
+	isl_local_space_free(ls);
 
 	return isl_set_intersect(set, isl_set_from_basic_set(bset));
 }
@@ -2166,18 +2180,20 @@ static __isl_give isl_map *permutation(__isl_take isl_space *dim,
 	int i;
 	isl_constraint *c;
 	isl_basic_map *bmap;
+	isl_local_space *ls;
 
 	dim = isl_space_add_dims(dim, isl_dim_in, len);
 	dim = isl_space_add_dims(dim, isl_dim_out, len);
 	bmap = isl_basic_map_universe(isl_space_copy(dim));
+	ls = isl_local_space_from_space(dim);
 
 	for (i = 0; i < len; ++i) {
-		c = isl_equality_alloc(isl_space_copy(dim));
+		c = isl_equality_alloc(isl_local_space_copy(ls));
 		isl_constraint_set_coefficient_si(c, isl_dim_in, i, -1);
 		isl_constraint_set_coefficient_si(c, isl_dim_out, pos[i], 1);
 		bmap = isl_basic_map_add_constraint(bmap, c);
 	}
-	isl_space_free(dim);
+	isl_local_space_free(ls);
 
 	return isl_map_from_basic_map(bmap);
 }
@@ -2818,14 +2834,16 @@ static __isl_give isl_map *next(__isl_take isl_space *domain_dim, int pos)
 	int len = isl_space_dim(domain_dim, isl_dim_set);
 	isl_space *dim;
 	isl_basic_map *next;
+	isl_local_space *ls;
 
 	dim = isl_space_map_from_set(domain_dim);
 	next = isl_basic_map_universe(isl_space_copy(dim));
+	ls = isl_local_space_from_space(dim);
 
 	for (i = 0; i < len; ++i) {
 		isl_constraint *c;
 
-		c = isl_equality_alloc(isl_space_copy(dim));
+		c = isl_equality_alloc(isl_local_space_copy(ls));
 		isl_constraint_set_coefficient_si(c, isl_dim_in, i, 1);
 		isl_constraint_set_coefficient_si(c, isl_dim_out, i, -1);
 		if (i == pos)
@@ -2833,7 +2851,7 @@ static __isl_give isl_map *next(__isl_take isl_space *domain_dim, int pos)
 		next = isl_basic_map_add_constraint(next, c);
 	}
 
-	isl_space_free(dim);
+	isl_local_space_free(ls);
 
 	return isl_map_from_basic_map(next);
 }
