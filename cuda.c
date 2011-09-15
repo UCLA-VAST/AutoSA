@@ -3797,7 +3797,7 @@ __isl_give isl_set *add_context_from_str(__isl_take isl_set *set,
 		return set;
 
 	ctx = isl_set_get_ctx(set);
-	context = isl_set_read_from_str(ctx, str, -1);
+	context = isl_set_read_from_str(ctx, str);
 	context = isl_set_align_params(context, isl_set_get_space(set));
 	set = isl_set_intersect(set, context);
 
