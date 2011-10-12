@@ -4240,7 +4240,8 @@ static struct cuda_stmt *extract_stmts(isl_ctx *ctx, struct pet_scop *scop,
 		struct cuda_stmt *s = &stmts[i];
 
 		s->domain = isl_set_copy(scop->stmts[i]->domain);
-		s->domain = isl_set_intersect(s->domain, isl_set_copy(context));
+		s->domain = isl_set_intersect_params(s->domain,
+							isl_set_copy(context));
 		s->body = scop->stmts[i]->body;
 		pet_stmt_extract_accesses(s);
 	}
