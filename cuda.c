@@ -1076,7 +1076,7 @@ static void print_cloog_shared_body(struct cuda_gen *gen,
 	sched = isl_union_map_align_params(sched, isl_set_get_space(context));
 
 	options = cloog_options_malloc(gen->state);
-	options->language = LANGUAGE_C;
+	options->language = CLOOG_LANGUAGE_C;
 	options->strides = 1;
 	options->sh = 1;
 	options->f = len;
@@ -2389,7 +2389,7 @@ static void print_cloog_kernel_body(struct cuda_gen *gen,
 	sched = isl_union_map_align_params(sched, isl_set_get_space(context));
 
 	options = cloog_options_malloc(gen->state);
-	options->language = LANGUAGE_C;
+	options->language = CLOOG_LANGUAGE_C;
 	options->strides = 1;
 	options->sh = 1;
 	options->stop = gen->shared_len;
@@ -3721,7 +3721,7 @@ static void print_cloog_host_code(struct cuda_gen *gen)
 	char name[20];
 
 	options = cloog_options_malloc(gen->state);
-	options->language = LANGUAGE_C;
+	options->language = CLOOG_LANGUAGE_C;
 	options->otl = 0;
 	options->strides = 1;
 	options->stop = gen->tile_first;
