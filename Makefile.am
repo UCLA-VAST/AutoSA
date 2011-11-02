@@ -1,6 +1,6 @@
 if BUNDLED_ISL
     MAYBE_ISL = isl
-    ISL_LA = $(top_builddir)/isl/libisl.la
+    ISL_LA = $(top_builddir)/isl/libisl.la -lgmp
     LOCAL_ISL_LA = isl/libisl.la
 endif
 if BUNDLED_PET
