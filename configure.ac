@@ -21,6 +21,7 @@ build)
 	ISL_BUILDDIR=`echo @abs_builddir@ | $with_isl_builddir/config.status --file=-`
 	ppcg_configure_args="$ppcg_configure_args --with-isl-builddir=$ISL_BUILDDIR"
 	ISL_CFLAGS="-I$isl_srcdir/include -I$ISL_BUILDDIR/include"
+	ISL_LIBS="$with_isl_builddir/libisl.la -lgmp"
 	;;
 system)
 	PKG_CHECK_MODULES([ISL], [isl])
