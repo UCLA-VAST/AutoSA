@@ -2746,6 +2746,7 @@ static int compute_array_dim_size(struct cuda_gen *gen,
 	size.pos = isl_basic_map_dim(bounds, isl_dim_in);
 	size.bset = isl_basic_map_wrap(bounds);
 	size.bset = isl_basic_set_flatten(size.bset);
+	size.bset = isl_set_simple_hull(isl_basic_set_compute_divs(size.bset));
 	isl_basic_set_foreach_constraint(size.bset, &compute_size_in_direction,
 					&size);
 	isl_basic_set_free(size.bset);
