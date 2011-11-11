@@ -22,14 +22,13 @@ struct options {
 	char *input;
 };
 
-struct isl_arg options_arg[] = {
-ISL_ARG_CHILD(struct options, isl, "isl", isl_options_arg, "isl options")
-ISL_ARG_CHILD(struct options, ppcg, NULL, ppcg_options_arg, NULL)
+ISL_ARGS_START(struct options, options_args)
+ISL_ARG_CHILD(struct options, isl, "isl", &isl_options_args, "isl options")
+ISL_ARG_CHILD(struct options, ppcg, NULL, &ppcg_options_args, NULL)
 ISL_ARG_ARG(struct options, input, "input", NULL)
-ISL_ARG_END
-};
+ISL_ARGS_END
 
-ISL_ARG_DEF(options, struct options, options_arg)
+ISL_ARG_DEF(options, struct options, options_args)
 
 int main(int argc, char **argv)
 {
@@ -43,7 +42,7 @@ int main(int argc, char **argv)
 	assert(options);
 	argc = options_parse(options, argc, argv, ISL_ARG_ALL);
 
-	ctx = isl_ctx_alloc_with_options(options_arg, options);
+	ctx = isl_ctx_alloc_with_options(&options_args, options);
 
 	scop = pet_scop_extract_from_C_source(ctx, options->input, NULL, 0);
 	r = cuda_pet(ctx, scop, options->ppcg, options->input);

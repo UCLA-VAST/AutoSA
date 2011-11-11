@@ -18,8 +18,6 @@ struct ppcg_options {
 	int use_shared_memory;
 };
 
-ISL_ARG_DECL(ppcg_options, struct ppcg_options, ppcg_options_arg)
-
-extern struct isl_arg ppcg_options_arg[];
+ISL_ARG_DECL(ppcg_options, struct ppcg_options, ppcg_options_args)
 
 #endif

@@ -4171,7 +4171,7 @@ static void compute_schedule(struct cuda_gen *gen,
 	dep = isl_union_map_coalesce(dep);
 
 	domain = extract_domain(gen);
-	options = isl_ctx_peek_options(ctx, isl_options_arg);
+	options = isl_ctx_peek_options(ctx, &isl_options_args);
 	options->schedule_outer_zero_distance = 1;
 	schedule = isl_union_set_compute_schedule(isl_union_set_copy(domain),
 				isl_union_map_copy(dep), dep);

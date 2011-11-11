@@ -10,7 +10,7 @@
 
 #include "ppcg_options.h"
 
-struct isl_arg ppcg_options_arg[] = {
+ISL_ARGS_START(struct ppcg_options, ppcg_options_args)
 ISL_ARG_BOOL(struct ppcg_options, scale_tile_loops, 0,
 	"scale-tile-loops", 1, NULL)
 ISL_ARG_BOOL(struct ppcg_options, wrap, 0, "wrap", 1, NULL)
@@ -21,5 +21,4 @@ ISL_ARG_BOOL(struct ppcg_options, use_private_memory, 0, "private-memory", 1,
 ISL_ARG_STR(struct ppcg_options, ctx, 0, "ctx", "context", NULL,
     "Constraints on parameters")
 ISL_ARG_INT(struct ppcg_options, tile_size, 'S', "tile-size", "size", 32, NULL)
-ISL_ARG_END
-};
+ISL_ARGS_END
