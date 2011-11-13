@@ -12,6 +12,7 @@
 #include <stdio.h>
 #include <isl/ctx.h>
 #include <isl/options.h>
+#include <isl/schedule.h>
 #include <pet.h>
 #include "ppcg_options.h"
 #include "cuda.h"
@@ -40,9 +41,10 @@ int main(int argc, char **argv)
 
 	options = options_new_with_defaults();
 	assert(options);
-	argc = options_parse(options, argc, argv, ISL_ARG_ALL);
 
 	ctx = isl_ctx_alloc_with_options(&options_args, options);
+	isl_options_set_schedule_outer_zero_distance(ctx, 1);
+	argc = options_parse(options, argc, argv, ISL_ARG_ALL);
 
 	scop = pet_scop_extract_from_C_source(ctx, options->input, NULL, 0);
 	r = cuda_pet(ctx, scop, options->ppcg, options->input);
