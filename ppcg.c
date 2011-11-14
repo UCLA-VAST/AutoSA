@@ -19,12 +19,14 @@
 
 struct options {
 	struct isl_options *isl;
+	struct pet_options *pet;
 	struct ppcg_options *ppcg;
 	char *input;
 };
 
 ISL_ARGS_START(struct options, options_args)
 ISL_ARG_CHILD(struct options, isl, "isl", &isl_options_args, "isl options")
+ISL_ARG_CHILD(struct options, pet, "pet", &pet_options_args, "pet options")
 ISL_ARG_CHILD(struct options, ppcg, NULL, &ppcg_options_args, NULL)
 ISL_ARG_ARG(struct options, input, "input", NULL)
 ISL_ARGS_END
@@ -46,7 +48,7 @@ int main(int argc, char **argv)
 	isl_options_set_schedule_outer_zero_distance(ctx, 1);
 	argc = options_parse(options, argc, argv, ISL_ARG_ALL);
 
-	scop = pet_scop_extract_from_C_source(ctx, options->input, NULL, 0);
+	scop = pet_scop_extract_from_C_source(ctx, options->input, NULL);
 	r = cuda_pet(ctx, scop, options->ppcg, options->input);
 	pet_scop_free(scop);
 
