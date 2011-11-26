@@ -17,6 +17,9 @@ struct ppcg_options {
 
 	/* Take advantage of shared memory. */
 	int use_shared_memory;
+
+	/* Maximal amount of shared memory. */
+	int max_shared_memory;
 };
 
 ISL_ARG_DECL(ppcg_options, struct ppcg_options, ppcg_options_args)

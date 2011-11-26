@@ -80,6 +80,8 @@ struct cuda_array_info {
 	isl_space *dim;
 	/* Element type. */
 	char *type;
+	/* Element size. */
+	int size;
 	/* Name of the array. */
 	char *name;
 	/* Number of indices. */
@@ -261,6 +263,7 @@ static int extract_array_info(__isl_take isl_set *array, void *user)
 	assert(pa);
 
 	gen->array[gen->n_array].type = strdup(pa->element_type);
+	gen->array[gen->n_array].size = pa->element_size;
 
 	if (n_index == 0) {
 		isl_set *space;
@@ -3235,6 +3238,68 @@ static void compute_private_size(struct cuda_gen *gen)
 	}
 }
 
+/* Compute the size of the tile specified by the list "bound" of n_index
+ * cuda_array_bounds in number of elements and put the result in *size.
+ */
+static void tile_size(unsigned n_index, struct cuda_array_bound *bound,
+	isl_int *size)
+{
+	int i;
+
+	isl_int_set_si(*size, 1);
+
+	for (i = 0; i < n_index; ++i)
+		isl_int_mul(*size, *size, bound[i].size);
+}
+
+/* If max_shared_memory is not set to infinity (-1), then make
+ * sure that the total amount of shared memory required by the
+ * array reference groups mapped to shared memory is no larger
+ * than this maximum.
+ *
+ * We apply a greedy approach and discard (keep in global memory)
+ * those groups that would result in a total memory size that
+ * is larger than the maximum.
+ */
+static void check_shared_memory_bound(struct cuda_gen *gen)
+{
+	int i, j;
+	isl_int left, size;
+
+	if (gen->options->max_shared_memory < 0)
+		return;
+
+	isl_int_init(left);
+	isl_int_init(size);
+	isl_int_set_si(left, gen->options->max_shared_memory);
+
+	for (i = 0; i < gen->n_array; ++i) {
+		struct cuda_array_info *array = &gen->array[i];
+
+		for (j = 0; j < array->n_group; ++j) {
+			struct cuda_array_ref_group *group;
+
+			group = array->groups[j];
+			if (!group->shared_bound)
+				continue;
+
+			tile_size(array->n_index, group->shared_bound, &size);
+			isl_int_mul_ui(size, size, array->size);
+
+			if (isl_int_le(size, left)) {
+				isl_int_sub(left, left, size);
+				continue;
+			}
+
+			free_bound_list(group->shared_bound, array->n_index);
+			group->shared_bound = NULL;
+		}
+	}
+
+	isl_int_clear(size);
+	isl_int_clear(left);
+}
+
 /* Fill up the groups array with singleton groups, i.e., one group
  * per reference, initializing the array, access, write and refs fields.
  * In particular the access field is initialized to the scheduled
@@ -3801,6 +3866,7 @@ static void print_host_user(struct gpucode_info *code,
 	gen->privatization = compute_privatization(gen);
 	group_references(gen);
 	compute_private_size(gen);
+	check_shared_memory_bound(gen);
 	localize_bounds(gen, host_domain);
 
 	gen->local_sched = interchange_for_unroll(gen, gen->local_sched);
