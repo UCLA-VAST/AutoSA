@@ -49,7 +49,7 @@ struct cuda_array_info;
 /* A group of array references in a kernel that should be handled together.
  * If private_bound is not NULL, then it is mapped to registers.
  * Otherwise, if shared_bound is not NULL, it is mapped to shared memory.
- * Otherwise, it is accesses from global memory.
+ * Otherwise, it is accessed from global memory.
  */
 struct cuda_array_ref_group {
 	/* The references in this group access this array. */
@@ -1819,7 +1819,7 @@ static void print_stmt_body(struct cuda_gen *gen,
 }
 
 /* This function is called for each leaf in the innermost clast,
- * i.e., for each statemetn.
+ * i.e., for each statement.
  * We print the statement body, simplifying the accesses based
  * on the schedule.
  */
