@@ -1314,6 +1314,191 @@ static __isl_give isl_union_map *access_schedule(struct cuda_gen *gen,
 	return usched;
 }
 
+/* Print an access to the element in the global memory copy of the
+ * given array that corresponds to element [aff[0]][aff[1]]...
+ * of the original array.
+ * The copy in global memory has been linearized, so we need to take
+ * the array size into account.
+ */
+static void print_global_index(isl_ctx *ctx, FILE *out,
+	struct cuda_array_info *array, __isl_keep isl_aff **aff)
+{
+	int i;
+	isl_printer *prn;
+
+	if (cuda_array_is_scalar(array)) {
+		fprintf(out, "*%s", array->name);
+		return;
+	}
+
+	fprintf(out, "%s[", array->name);
+	prn = isl_printer_to_file(ctx, out);
+	prn = isl_printer_set_output_format(prn, ISL_FORMAT_C);
+	for (i = 0; i + 1 < array->n_index; ++i)
+		prn = isl_printer_print_str(prn, "(");
+	for (i = 0; i < array->n_index; ++i) {
+		if (i) {
+			prn = isl_printer_print_str(prn, ") * (");
+			prn = isl_printer_print_pw_aff(prn,
+							array->local_bound[i]);
+			prn = isl_printer_print_str(prn, ") + ");
+		}
+		prn = isl_printer_print_aff(prn, aff[i]);
+	}
+	isl_printer_free(prn);
+	fprintf(out, "]");
+}
+
+/* Given an index expression into a tile of an array, adjust the expression
+ * to a shift of the tile to the origin
+ * (based on the lower bounds in array->shared_bound).
+ * If the index is strided, then we first add
+ * bound->shift and divide by bound->stride.
+ */
+static __isl_give isl_aff *shift_index(__isl_take isl_aff *aff,
+	struct cuda_array_info *array,
+	struct cuda_array_bound *bound, __isl_take isl_set *domain)
+{
+	isl_aff *lb;
+
+	if (bound->shift) {
+		isl_aff *shift;
+		shift = bound->shift;
+		shift = isl_aff_copy(shift);
+		shift = isl_aff_project_domain_on_params(shift);
+		shift = isl_aff_align_params(shift, isl_aff_get_space(aff));
+		aff = isl_aff_add(aff, shift);
+		aff = isl_aff_scale_down(aff, bound->stride);
+	}
+
+	lb = isl_aff_copy(bound->lb);
+	lb = isl_aff_project_domain_on_params(lb);
+
+	lb = isl_aff_align_params(lb, isl_aff_get_space(aff));
+
+	aff = isl_aff_sub(aff, lb);
+	aff = isl_aff_gist(aff, domain);
+
+	return aff;
+}
+
+/* Print an access to the element in the private/shared memory copy of the
+ * given array reference group that corresponds to element [affs[0]][affs[1]]...
+ * of the original array.
+ * Since the array in private/shared memory is just a shifted copy of part
+ * of the original array, we simply need to subtract the lower bound,
+ * which was computed in can_tile_for_shared_memory.
+ * If any of the indices is strided, then we first add
+ * bounds[i].shift and divide by bounds[i].stride.
+ */
+static void print_local_index(isl_ctx *ctx, FILE *out,
+	struct cuda_array_ref_group *group, struct cuda_array_bound *bounds,
+	__isl_keep isl_aff **affs, __isl_keep isl_set *domain)
+{
+	int i;
+	isl_printer *prn;
+	struct cuda_array_info *array = group->array;
+
+	print_array_name(out, group);
+	for (i = 0; i < array->n_index; ++i) {
+		isl_aff *aff = isl_aff_copy(affs[i]);
+
+		aff = shift_index(aff, array, &bounds[i], isl_set_copy(domain));
+
+		fprintf(out, "[");
+		prn = isl_printer_to_file(ctx, out);
+		prn = isl_printer_set_output_format(prn, ISL_FORMAT_C);
+		prn = isl_printer_print_aff(prn, aff);
+		isl_printer_free(prn);
+		fprintf(out, "]");
+		isl_aff_free(aff);
+	}
+}
+
+/* This function is called for each leaf in the clast of the code
+ * for copying to or from shared/private memory.
+ * The statement name is {read,write}_{shared,private}_<array>.
+ *
+ * The schedule iterates over the array elements, so we can use
+ * the domain of copy_sched at the current scheduling position
+ * as the index of the array.
+ */
+static void print_copy_statement(struct gpucode_info *code,
+	struct clast_user_stmt *u)
+{
+	struct cuda_gen *gen = code->user;
+	isl_set *domain;
+	isl_map *sched;
+	struct cuda_array_ref_group *group = gen->copy_group;
+	struct cuda_array_bound *bounds = gen->copy_bound;
+	int i;
+	unsigned n_in;
+	unsigned n_out;
+	isl_space *dim;
+	isl_set *param;
+	isl_set *index;
+	isl_basic_set *aff;
+	isl_ctx *ctx;
+	isl_aff **affs;
+	int read;
+
+	read = !strncmp(u->statement->name, "read", 4);
+
+	domain = extract_host_domain(u);
+	assert(domain);
+
+	sched = isl_map_copy(gen->copy_sched);
+	sched = isl_map_reverse(sched);
+	sched = isl_map_intersect_domain(sched, domain);
+	n_in = isl_map_dim(sched, isl_dim_in);
+	n_out = isl_map_dim(sched, isl_dim_out);
+	dim = isl_map_get_space(sched);
+	dim = isl_space_drop_dims(dim, isl_dim_in, 0, n_in);
+	dim = isl_space_drop_dims(dim, isl_dim_out, 0, n_out);
+	param = parametrization(dim, n_in, 0, n_in, "c");
+	sched = isl_map_align_params(sched, isl_set_get_space(param));
+	sched = isl_map_intersect_domain(sched, param);
+	index = isl_map_range(sched);
+	domain = isl_set_copy(index);
+	aff = isl_set_affine_hull(index);
+	domain = isl_set_project_out(domain, isl_dim_set, 0, n_out);
+
+	ctx = isl_basic_set_get_ctx(aff);
+	affs = isl_alloc_array(ctx, isl_aff *, n_out);
+	assert(affs);
+
+	for (i = 0; i < n_out; ++i) {
+		isl_constraint *c;
+		int ok;
+
+		ok = isl_basic_set_has_defining_equality(aff,
+							isl_dim_set, i, &c);
+		assert(ok);
+		affs[i] = isl_constraint_get_bound(c, isl_dim_set, i);
+		isl_constraint_free(c);
+		affs[i] = isl_aff_project_domain_on_params(affs[i]);
+	}
+
+	print_indent(code->dst, code->indent);
+	if (read) {
+		print_local_index(ctx, code->dst, group, bounds, affs, domain);
+		fprintf(code->dst, " = ");
+		print_global_index(ctx, code->dst, group->array, affs);
+	} else {
+		print_global_index(ctx, code->dst, group->array, affs);
+		fprintf(code->dst, " = ");
+		print_local_index(ctx, code->dst, group, bounds, affs, domain);
+	}
+	fprintf(code->dst, ";\n");
+
+	for (i = 0; i < n_out; ++i)
+		isl_aff_free(affs[i]);
+	free(affs);
+
+	isl_basic_set_free(aff);
+	isl_set_free(domain);
+}
+
 static void print_shared_access(struct cuda_gen *gen,
 	__isl_keep isl_set *shared_domain, __isl_take isl_set *access,
 	const char *type, struct cuda_array_ref_group *group)
@@ -1342,9 +1527,15 @@ static void print_shared_access(struct cuda_gen *gen,
 	if (n_tile > nvar)
 		n_tile = nvar;
 
-	print_shared_body(gen, shared_domain, sched, nvar + n_tile, NULL, -1);
+	gen->copy_sched = isl_map_from_union_map(isl_union_map_copy(sched));
+	gen->copy_group = group;
+	gen->copy_bound = group->shared_bound;
+
+	print_shared_body(gen, shared_domain, sched, nvar + n_tile,
+				&print_copy_statement, -1);
 
 	isl_union_map_free(sched);
+	isl_map_free(gen->copy_sched);
 }
 
 /* Return the union of all read (read = 1) and/or write (write = 1)
@@ -1590,39 +1781,6 @@ static void print_shared_accesses(struct cuda_gen *gen,
 	}
 }
 
-/* Given an index expression into a tile of an array, adjust the expression
- * to a shift of the tile to the origin
- * (based on the lower bounds in array->shared_bound).
- * If the index is strided, then we first add
- * bound->shift and divide by bound->stride.
- */
-static __isl_give isl_aff *shift_index(__isl_take isl_aff *aff,
-	struct cuda_array_info *array,
-	struct cuda_array_bound *bound, __isl_take isl_set *domain)
-{
-	isl_aff *lb;
-
-	if (bound->shift) {
-		isl_aff *shift;
-		shift = bound->shift;
-		shift = isl_aff_copy(shift);
-		shift = isl_aff_project_domain_on_params(shift);
-		shift = isl_aff_align_params(shift, isl_aff_get_space(aff));
-		aff = isl_aff_add(aff, shift);
-		aff = isl_aff_scale_down(aff, bound->stride);
-	}
-
-	lb = isl_aff_copy(bound->lb);
-	lb = isl_aff_project_domain_on_params(lb);
-
-	lb = isl_aff_align_params(lb, isl_aff_get_space(aff));
-
-	aff = isl_aff_sub(aff, lb);
-	aff = isl_aff_gist(aff, domain);
-
-	return aff;
-}
-
 /* This function is called for each access to an array in some statement
  * in the original code.
  * Replace that access by an access to shared or (linearized) global memory.
@@ -1859,158 +2017,6 @@ static void print_statement(struct gpucode_info *code,
 	isl_set_free(gen->stmt_domain);
 }
 
-/* Print an access to the element in the global memory copy of the
- * given array that corresponds to element [aff[0]][aff[1]]...
- * of the original array.
- * The copy in global memory has been linearized, so we need to take
- * the array size into account.
- */
-static void print_private_global_index(isl_ctx *ctx, FILE *out,
-	struct cuda_array_info *array, __isl_keep isl_aff **aff)
-{
-	int i;
-	isl_printer *prn;
-
-	if (cuda_array_is_scalar(array)) {
-		fprintf(out, "*%s", array->name);
-		return;
-	}
-
-	fprintf(out, "%s[", array->name);
-	prn = isl_printer_to_file(ctx, out);
-	prn = isl_printer_set_output_format(prn, ISL_FORMAT_C);
-	for (i = 0; i + 1 < array->n_index; ++i)
-		prn = isl_printer_print_str(prn, "(");
-	for (i = 0; i < array->n_index; ++i) {
-		if (i) {
-			prn = isl_printer_print_str(prn, ") * (");
-			prn = isl_printer_print_pw_aff(prn,
-							array->local_bound[i]);
-			prn = isl_printer_print_str(prn, ") + ");
-		}
-		prn = isl_printer_print_aff(prn, aff[i]);
-	}
-	isl_printer_free(prn);
-	fprintf(out, "]");
-}
-
-/* Print an access to the element in the shared memory copy of the
- * given array reference group that corresponds to element [affs[0]][affs[1]]...
- * of the original array.
- * Since the array in shared memory is just a shifted copy of part
- * of the original array, we simply need to subtract the lower bound,
- * which was computed in can_tile_for_shared_memory.
- * If any of the indices is strided, then we first add
- * shared_bound[i].shift and divide by shared_bound[i].stride.
- */
-static void print_private_local_index(isl_ctx *ctx, FILE *out,
-	struct cuda_array_ref_group *group,
-	__isl_keep isl_aff **affs, __isl_keep isl_set *domain)
-{
-	int i;
-	isl_printer *prn;
-	struct cuda_array_info *array = group->array;
-	struct cuda_array_bound *bounds = group->private_bound;
-
-	print_array_name(out, group);
-	for (i = 0; i < array->n_index; ++i) {
-		isl_aff *aff = isl_aff_copy(affs[i]);
-
-		aff = shift_index(aff, array, &bounds[i], isl_set_copy(domain));
-
-		fprintf(out, "[");
-		prn = isl_printer_to_file(ctx, out);
-		prn = isl_printer_set_output_format(prn, ISL_FORMAT_C);
-		prn = isl_printer_print_aff(prn, aff);
-		isl_printer_free(prn);
-		fprintf(out, "]");
-		isl_aff_free(aff);
-	}
-}
-
-/* This function is called for each leaf in the clast of the code
- * for copying to or from private memory.
- * The statement name is read_private_<array> or write_private_<array>.
- *
- * The schedule iterates over the array elements, so we can use
- * the domain of private_sched at the current scheduling position
- * as the index of the array.
- */
-static void print_private_copy_statement(struct gpucode_info *code,
-	struct clast_user_stmt *u)
-{
-	struct cuda_gen *gen = code->user;
-	isl_set *domain;
-	isl_map *sched;
-	struct cuda_array_ref_group *group = gen->private_group;
-	int i;
-	unsigned n_in;
-	unsigned n_out;
-	isl_space *dim;
-	isl_set *param;
-	isl_set *index;
-	isl_basic_set *aff;
-	isl_ctx *ctx;
-	isl_aff **affs;
-	int read;
-
-	read = !strncmp(u->statement->name, "read", 4);
-
-	domain = extract_host_domain(u);
-	assert(domain);
-
-	sched = isl_map_copy(gen->private_sched);
-	sched = isl_map_reverse(sched);
-	sched = isl_map_intersect_domain(sched, domain);
-	n_in = isl_map_dim(sched, isl_dim_in);
-	n_out = isl_map_dim(sched, isl_dim_out);
-	dim = isl_map_get_space(sched);
-	dim = isl_space_drop_dims(dim, isl_dim_in, 0, n_in);
-	dim = isl_space_drop_dims(dim, isl_dim_out, 0, n_out);
-	param = parametrization(dim, n_in, 0, n_in, "c");
-	sched = isl_map_align_params(sched, isl_set_get_space(param));
-	sched = isl_map_intersect_domain(sched, param);
-	index = isl_map_range(sched);
-	domain = isl_set_copy(index);
-	aff = isl_set_affine_hull(index);
-	domain = isl_set_project_out(domain, isl_dim_set, 0, n_out);
-
-	ctx = isl_basic_set_get_ctx(aff);
-	affs = isl_alloc_array(ctx, isl_aff *, n_out);
-	assert(affs);
-
-	for (i = 0; i < n_out; ++i) {
-		isl_constraint *c;
-		int ok;
-
-		ok = isl_basic_set_has_defining_equality(aff,
-							isl_dim_set, i, &c);
-		assert(ok);
-		affs[i] = isl_constraint_get_bound(c, isl_dim_set, i);
-		isl_constraint_free(c);
-		affs[i] = isl_aff_project_domain_on_params(affs[i]);
-	}
-
-	print_indent(code->dst, code->indent);
-	if (read) {
-		print_private_local_index(ctx, code->dst, group, affs, domain);
-		fprintf(code->dst, " = ");
-		print_private_global_index(ctx, code->dst, group->array, affs);
-	} else {
-		print_private_global_index(ctx, code->dst, group->array, affs);
-		fprintf(code->dst, " = ");
-		print_private_local_index(ctx, code->dst, group, affs, domain);
-	}
-	fprintf(code->dst, ";\n");
-
-	for (i = 0; i < n_out; ++i)
-		isl_aff_free(affs[i]);
-	free(affs);
-
-	isl_basic_set_free(aff);
-	isl_set_free(domain);
-}
-
 static void print_private_access(struct cuda_gen *gen,
 	__isl_keep isl_set *shared_domain, __isl_take isl_set *access,
 	const char *type, struct cuda_array_ref_group *group)
@@ -2037,15 +2043,16 @@ static void print_private_access(struct cuda_gen *gen,
 	access = isl_set_set_tuple_name(access, name);
 	free(name);
 
-	gen->private_sched = shift_access(access, group);
-	gen->private_group = group;
+	gen->copy_sched = shift_access(access, group);
+	gen->copy_group = group;
+	gen->copy_bound = group->private_bound;
 
-	usched = isl_union_map_from_map(isl_map_copy(gen->private_sched));
+	usched = isl_union_map_from_map(isl_map_copy(gen->copy_sched));
 	print_shared_body(gen, shared_domain, usched, nvar,
-				&print_private_copy_statement, 1);
+				&print_copy_statement, 1);
 	isl_union_map_free(usched);
 
-	isl_map_free(gen->private_sched);
+	isl_map_free(gen->copy_sched);
 }
 
 /* Print code for reading into or writing from private memory
@@ -3422,136 +3429,6 @@ static void print_iterator_list(FILE *out, int len, const char *prefix,
 	fprintf(out, ")");
 }
 
-/* Print an access to the element in the global memory copy of the
- * given array that corresponds to element [a0][a1]... of the original array.
- * The copy in global memory has been linearized, so we need to take
- * the array size into account.
- */
-static void print_global_index(isl_ctx *ctx, FILE *out,
-	struct cuda_array_info *array)
-{
-	int i;
-	isl_printer *prn;
-
-	if (cuda_array_is_scalar(array)) {
-		fprintf(out, "*%s", array->name);
-		return;
-	}
-
-	fprintf(out, "%s[", array->name);
-	for (i = 0; i + 1 < array->n_index; ++i)
-		fprintf(out, "(");
-	for (i = 0; i < array->n_index; ++i) {
-		if (i) {
-			prn = isl_printer_to_file(ctx, out);
-			prn = isl_printer_set_output_format(prn, ISL_FORMAT_C);
-			prn = isl_printer_print_str(prn, ") * (");
-			prn = isl_printer_print_pw_aff(prn,
-							array->local_bound[i]);
-			prn = isl_printer_print_str(prn, ") + ");
-			isl_printer_free(prn);
-		}
-		fprintf(out, "a%d", i);
-	}
-	fprintf(out, "]");
-}
-
-/* Print an access to the element in the shared memory copy of the
- * given array that corresponds to element [a0][a1]... of the original array.
- * Since the array in shared memory is just a shifted copy of part
- * of the original array, we simply need to subtract the lower bound,
- * which was computed in can_tile_for_shared_memory.
- * If any of the indices is strided, then we first add
- * shared_bound[i].shift and divide by shared_bound[i].stride.
- */
-static void print_local_index(FILE *out, struct cuda_array_ref_group *group)
-{
-	int i;
-	isl_ctx *ctx;
-	isl_printer *prn;
-	struct cuda_array_bound *bounds = group->shared_bound;
-
-	ctx = isl_space_get_ctx(group->array->dim);
-	print_array_name(out, group);
-	for (i = 0; i < group->array->n_index; ++i) {
-		fprintf(out, "[(a%d", i);
-		if (bounds[i].shift) {
-			fprintf(out, " + (");
-			prn = isl_printer_to_file(ctx, out);
-			prn = isl_printer_set_output_format(prn, ISL_FORMAT_C);
-			prn = isl_printer_print_aff(prn, bounds[i].shift);
-			prn = isl_printer_print_str(prn, "))/");
-			prn = isl_printer_print_isl_int(prn,
-						bounds[i].stride);
-			isl_printer_free(prn);
-		} else
-			fprintf(out, ")");
-		fprintf(out, " - (");
-		prn = isl_printer_to_file(ctx, out);
-		prn = isl_printer_set_output_format(prn, ISL_FORMAT_C);
-		prn = isl_printer_print_aff(prn, bounds[i].lb);
-		isl_printer_free(prn);
-		fprintf(out, ")]");
-	}
-}
-
-/* Print '#define's for copying data from global memory to shared
- * memory and back for the given array.
- */
-static void print_array_copy_defines(struct cuda_gen *gen,
-	struct cuda_array_ref_group *group)
-{
-	int i;
-	const char *type[] = { "read", "write" };
-	struct cuda_array_info *array = group->array;
-	int n_index = array->n_index;
-
-	for (i = 0; i < 2; ++i) {
-		fprintf(gen->cuda.kernel_c, "#define %s_", type[i]);
-		print_array_name(gen->cuda.kernel_c, group);
-		print_iterator_list(gen->cuda.kernel_c, n_index, "a", 0);
-		fprintf(gen->cuda.kernel_c, " %s_", type[i]);
-		print_array_name(gen->cuda.kernel_c, group);
-		fprintf(gen->cuda.kernel_c, "_");
-		print_iterator_list(gen->cuda.kernel_c, n_index, "a", 1);
-		fprintf(gen->cuda.kernel_c, "\n");
-
-		fprintf(gen->cuda.kernel_c, "#define %s_", type[i]);
-		print_array_name(gen->cuda.kernel_c, group);
-		fprintf(gen->cuda.kernel_c, "_");
-		print_iterator_list(gen->cuda.kernel_c, n_index, "a", 0);
-		if (i) {
-			fprintf(gen->cuda.kernel_c, " ");
-			print_global_index(gen->ctx, gen->cuda.kernel_c, array);
-			fprintf(gen->cuda.kernel_c, " = ");
-			print_local_index(gen->cuda.kernel_c, group);
-		} else {
-			fprintf(gen->cuda.kernel_c, " ");
-			print_local_index(gen->cuda.kernel_c, group);
-			fprintf(gen->cuda.kernel_c, " = ");
-			print_global_index(gen->ctx, gen->cuda.kernel_c, array);
-		}
-		fprintf(gen->cuda.kernel_c, "\n");
-	}
-}
-
-static void print_copy_defines(struct cuda_gen *gen)
-{
-	int i, j;
-
-	for (i = 0; i < gen->n_array; ++i) {
-		struct cuda_array_info *array = &gen->array[i];
-
-		for (j = 0; j < array->n_group; ++j) {
-			if (array->groups[j]->private_bound)
-				continue;
-			if (!array->groups[j]->shared_bound)
-				continue;
-			print_array_copy_defines(gen, array->groups[j]);
-		}
-	}
-}
-
 /* The sizes of the arrays on the host that have been computed by
  * extract_array_info may depend on the parameters.  Use the extra
  * constraints on the parameters that are valid at "host_domain"
@@ -3664,7 +3541,6 @@ static void print_host_user(struct gpucode_info *code,
 
 	gen->local_sched = interchange_for_unroll(gen, gen->local_sched);
 
-	print_copy_defines(gen);
 	print_kernel_launch(gen, arrays);
 
 	fprintf(gen->cuda.kernel_c, "{\n");

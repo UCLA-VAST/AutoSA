@@ -92,12 +92,14 @@ struct cuda_gen {
 	 */
 	isl_union_map *private_access;
 
-	/* The schedule for the current private access
-	 * (within print_private_access).
+	/* The schedule for the current private/shared access
+	 * (within print_private_access or print_shared_access).
 	 */
-	isl_map *private_sched;
-	/* The array reference group corresponding to private_sched. */
-	struct cuda_array_ref_group *private_group;
+	isl_map *copy_sched;
+	/* The array reference group corresponding to copy_sched. */
+	struct cuda_array_ref_group *copy_group;
+	/* copy_group->private_bound or copy_group->shared_bound */
+	struct cuda_array_bound *copy_bound;
 
 	/* First loop to unroll (or -1 if none). */
 	int first_unroll;
