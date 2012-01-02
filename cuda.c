@@ -2449,7 +2449,7 @@ static void print_kernel_user(struct gpucode_info *code,
 	struct cuda_gen *gen = code->user;
 	isl_set *shared_domain;
 
-	shared_domain = extract_entire_host_domain(u);
+	shared_domain = extract_entire_host_domain(&u->stmt);
 
 	print_shared_accesses(gen, shared_domain, gen->read, "read", -1);
 
@@ -3905,7 +3905,7 @@ static void print_host_user(struct gpucode_info *code,
 	set_tile_len(gen, u);
 	read_sizes(gen);
 
-	host_domain = extract_entire_host_domain(u);
+	host_domain = extract_entire_host_domain(&u->stmt);
 
 	local_sched = isl_union_map_intersect_range(
 		    isl_union_map_copy(gen->sched),

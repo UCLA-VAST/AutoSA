@@ -265,22 +265,34 @@ __isl_give isl_set *extract_host_domain(struct clast_user_stmt *u)
 }
 
 /* Extract the set of scattering dimension values for which the given
- * sequence of user statements is executed.
- * In principle, this set should be the same for each of the user
- * statements in the sequence, but we compute the union just to be safe.
+ * statement is executed, where the statement may be either a user statement
+ * or a guard containing a sequence of (possibly guarded) user statements.
  */
-__isl_give isl_set *extract_entire_host_domain(struct clast_user_stmt *u)
+static __isl_give isl_set *extract_nested_host_domain(struct clast_stmt *s)
 {
-    struct clast_stmt *s;
+	if (CLAST_STMT_IS_A(s, stmt_user)) {
+		struct clast_user_stmt *u = (struct clast_user_stmt *) s;
+		return extract_host_domain(u);
+	} else if (CLAST_STMT_IS_A(s, stmt_guard)) {
+		struct clast_guard *g = (struct clast_guard *) s;
+		return extract_entire_host_domain(g->then);
+	} else
+		assert(0);
+}
+
+/* Extract the set of scattering dimension values for which the given
+ * sequence of user statements is executed.
+ * Some of the user statements in the sequence may be guarded
+ * so we return the union of this set over all user statements.
+ */
+__isl_give isl_set *extract_entire_host_domain(struct clast_stmt *s)
+{
     isl_set *host_domain = NULL;
 
-    for (s = &u->stmt; s; s = s->next) {
+    for (; s; s = s->next) {
         isl_set *set_i;
 
-        assert(CLAST_STMT_IS_A(s, stmt_user));
-        u = (struct clast_user_stmt *) s;
-
-        set_i = extract_host_domain(u);
+        set_i = extract_nested_host_domain(s);
 
         if (!host_domain)
             host_domain = set_i;
