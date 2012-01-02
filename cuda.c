@@ -1871,6 +1871,11 @@ static void print_private_global_index(isl_ctx *ctx, FILE *out,
 	int i;
 	isl_printer *prn;
 
+	if (cuda_array_is_scalar(array)) {
+		fprintf(out, "*%s", array->name);
+		return;
+	}
+
 	fprintf(out, "%s[", array->name);
 	prn = isl_printer_to_file(ctx, out);
 	prn = isl_printer_set_output_format(prn, ISL_FORMAT_C);
