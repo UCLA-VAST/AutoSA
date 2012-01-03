@@ -97,6 +97,9 @@ struct cuda_array_info {
 	int n_group;
 	struct cuda_array_ref_group **groups;
 
+	/* For scalars, is this scalar read-only within the entire program? */
+	int read_only;
+
 	/* Last shared memory tile dimension that affects tile of this array. */
 	int last_shared;
 	/* Dimension at which copying to/from shared memory is printed.
@@ -226,6 +229,9 @@ static struct pet_array *find_array(struct pet_scop *scop,
 
 /* Compute bounds on the host arrays based on the accessed elements
  * and collect all references to the array.
+ *
+ * If the array is zero-dimensional, i.e., a scalar, we check
+ * whether it is read-only.
  */
 static int extract_array_info(__isl_take isl_set *array, void *user)
 {
@@ -255,6 +261,21 @@ static int extract_array_info(__isl_take isl_set *array, void *user)
 	assert(pa);
 
 	gen->array[gen->n_array].type = strdup(pa->element_type);
+
+	if (n_index == 0) {
+		isl_set *space;
+		isl_union_map *write;
+		int empty;
+
+		write = isl_union_map_copy(gen->write);
+		space = isl_set_universe(isl_set_get_space(array));
+		write = isl_union_map_intersect_range(write,
+				    isl_union_set_from_set(space));
+		empty = isl_union_map_is_empty(write);
+		isl_union_map_free(write);
+
+		gen->array[gen->n_array].read_only = empty;
+	}
 
 	for (i = 0; i < n_index; ++i) {
 		isl_set *dom;
@@ -321,13 +342,32 @@ static void free_array_info(struct cuda_gen *gen)
 	free(gen->array);
 }
 
+/* Check if a cuda array is a scalar.  A scalar is a value that is not stored
+ * as an array or through a pointer reference, but as single data element.  At
+ * the moment, scalars are represented as zero dimensional arrays.
+ */
+static int cuda_array_is_scalar(struct cuda_array_info *array)
+{
+	return (array->n_index == 0);
+}
+
+/* Is "array" a read-only scalar?
+ */
+static int cuda_array_is_read_only_scalar(struct cuda_array_info *array)
+{
+	return cuda_array_is_scalar(array) && array->read_only;
+}
+
 static void declare_device_arrays(struct cuda_gen *gen)
 {
 	int i;
 
-	for (i = 0; i < gen->n_array; ++i)
+	for (i = 0; i < gen->n_array; ++i) {
+		if (cuda_array_is_read_only_scalar(&gen->array[i]))
+			continue;
 		fprintf(gen->cuda.host_c, "%s *dev_%s;\n",
 			gen->array[i].type, gen->array[i].name);
+	}
 	fprintf(gen->cuda.host_c, "\n");
 }
 
@@ -355,6 +395,8 @@ static void allocate_device_arrays(struct cuda_gen *gen)
 	int i;
 
 	for (i = 0; i < gen->n_array; ++i) {
+		if (cuda_array_is_read_only_scalar(&gen->array[i]))
+			continue;
 		fprintf(gen->cuda.host_c,
 			"cudaCheckReturn(cudaMalloc((void **) &dev_%s, ",
 			gen->array[i].name);
@@ -368,18 +410,12 @@ static void free_device_arrays(struct cuda_gen *gen)
 {
 	int i;
 
-	for (i = 0; i < gen->n_array; ++i)
+	for (i = 0; i < gen->n_array; ++i) {
+		if (cuda_array_is_read_only_scalar(&gen->array[i]))
+			continue;
 		fprintf(gen->cuda.host_c, "cudaCheckReturn(cudaFree(dev_%s));\n",
 			gen->array[i].name);
-}
-
-/* Check if a cuda array is a scalar.  A scalar is a value that is not stored
- * as an array or through a pointer reference, but as single data element.  At
- * the moment, scalars are represented as zero dimensional arrays.
- */
-static int cuda_array_is_scalar(struct cuda_array_info *array)
-{
-	return (array->n_index == 0);
+	}
 }
 
 static void copy_arrays_to_device(struct cuda_gen *gen)
@@ -390,6 +426,9 @@ static void copy_arrays_to_device(struct cuda_gen *gen)
 		isl_space *dim;
 		isl_set *read_i;
 		int empty;
+
+		if (cuda_array_is_read_only_scalar(&gen->array[i]))
+			continue;
 
 		dim = isl_space_copy(gen->array[i].dim);
 		read_i = isl_union_set_extract_set(gen->copy_in, dim);
@@ -599,11 +638,19 @@ static void print_kernel_launch(struct cuda_gen *gen,
 			fprintf(gen->cuda.kernel_h, ", ");
 		}
 
-		fprintf(gen->code.dst, "dev_%s", gen->array[i].name);
-		fprintf(gen->cuda.kernel_c, "%s *%s",
-			gen->array[i].type, gen->array[i].name);
-		fprintf(gen->cuda.kernel_h, "%s *%s",
-			gen->array[i].type, gen->array[i].name);
+		if (cuda_array_is_read_only_scalar(&gen->array[i])) {
+			fprintf(gen->code.dst, "%s", gen->array[i].name);
+			fprintf(gen->cuda.kernel_c, "%s %s",
+				gen->array[i].type, gen->array[i].name);
+			fprintf(gen->cuda.kernel_h, "%s %s",
+				gen->array[i].type, gen->array[i].name);
+		} else {
+			fprintf(gen->code.dst, "dev_%s", gen->array[i].name);
+			fprintf(gen->cuda.kernel_c, "%s *%s",
+				gen->array[i].type, gen->array[i].name);
+			fprintf(gen->cuda.kernel_h, "%s *%s",
+				gen->array[i].type, gen->array[i].name);
+		}
 
 		first = 0;
 	}
@@ -1830,7 +1877,7 @@ static void print_access(struct cuda_gen *gen, __isl_take isl_map *access,
 		if (!bounds)
 			bounds = group->shared_bound;
 
-		if (!bounds && cuda_array_is_scalar(array))
+		if (!bounds && cuda_array_is_scalar(array) && !array->read_only)
 			fprintf(gen->cuda.kernel_c, "*");
 		print_array_name(gen->cuda.kernel_c, group);
 
@@ -3166,6 +3213,8 @@ static void compute_group_shared_bound(struct cuda_gen *gen,
 	isl_ctx *ctx = isl_space_get_ctx(array->dim);
 
 	if (!gen->options->use_shared_memory)
+		return;
+	if (cuda_array_is_read_only_scalar(array))
 		return;
 
 	group->shared_bound = create_bound_list(ctx, array->n_index);
