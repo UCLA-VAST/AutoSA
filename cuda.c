@@ -4001,6 +4001,7 @@ static void list_select_outer_band(struct cuda_gen *gen,
 			continue;
 		info[i].prefix = extend_range(info[i].prefix,
 					info[i].tile_first, max_tile_first, 0);
+		info[i].tile_first = max_tile_first;
 	}
 
 	qsort(info, n, sizeof(struct band_info), &cmp_band);
