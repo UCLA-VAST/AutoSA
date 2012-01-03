@@ -40,7 +40,7 @@ struct cuda_array_bound {
 	isl_aff *lb;
 
 	isl_int stride;
-	isl_qpolynomial *shift;
+	isl_aff *shift;
 	isl_basic_map *shift_map;
 };
 
@@ -197,7 +197,7 @@ static void free_bound_list(struct cuda_array_bound *bound, int n_index)
 		isl_int_clear(bound[j].size);
 		isl_int_clear(bound[j].stride);
 		isl_aff_free(bound[j].lb);
-		isl_qpolynomial_free(bound[j].shift);
+		isl_aff_free(bound[j].shift);
 		isl_basic_map_free(bound[j].shift_map);
 	}
 	free(bound);
@@ -1596,39 +1596,31 @@ static void print_shared_accesses(struct cuda_gen *gen,
  * If the index is strided, then we first add
  * bound->shift and divide by bound->stride.
  */
-static __isl_give isl_qpolynomial *shift_index(__isl_take isl_qpolynomial *qp,
+static __isl_give isl_aff *shift_index(__isl_take isl_aff *aff,
 	struct cuda_array_info *array,
 	struct cuda_array_bound *bound, __isl_take isl_set *domain)
 {
-	isl_qpolynomial *lb;
+	isl_aff *lb;
 
 	if (bound->shift) {
-		isl_qpolynomial *shift, *t;
-		isl_int one;
-		isl_space *dim;
+		isl_aff *shift;
 		shift = bound->shift;
-		shift = isl_qpolynomial_copy(shift);
-		shift = isl_qpolynomial_project_domain_on_params(shift);
-		shift = isl_qpolynomial_align_params(shift,
-					  isl_qpolynomial_get_space(qp));
-		qp = isl_qpolynomial_add(qp, shift);
-		dim = isl_qpolynomial_get_domain_space(qp);
-		isl_int_init(one);
-		isl_int_set_si(one, 1);
-		t = isl_qpolynomial_rat_cst_on_domain(dim, one, bound->stride);
-		isl_int_clear(one);
-		qp = isl_qpolynomial_mul(qp, t);
+		shift = isl_aff_copy(shift);
+		shift = isl_aff_project_domain_on_params(shift);
+		shift = isl_aff_align_params(shift, isl_aff_get_space(aff));
+		aff = isl_aff_add(aff, shift);
+		aff = isl_aff_scale_down(aff, bound->stride);
 	}
 
-	lb = isl_qpolynomial_from_aff(isl_aff_copy(bound->lb));
-	lb = isl_qpolynomial_project_domain_on_params(lb);
+	lb = isl_aff_copy(bound->lb);
+	lb = isl_aff_project_domain_on_params(lb);
 
-	lb = isl_qpolynomial_align_params(lb, isl_qpolynomial_get_space(qp));
+	lb = isl_aff_align_params(lb, isl_aff_get_space(aff));
 
-	qp = isl_qpolynomial_sub(qp, lb);
-	qp = isl_qpolynomial_gist(qp, domain);
+	aff = isl_aff_sub(aff, lb);
+	aff = isl_aff_gist(aff, domain);
 
-	return qp;
+	return aff;
 }
 
 /* This function is called for each access to an array in some statement
@@ -1707,18 +1699,19 @@ static void print_access(struct cuda_gen *gen, __isl_take isl_map *access,
 
 	for (i = 0; i < n_index; ++i) {
 		isl_constraint *c;
-		isl_qpolynomial *qp;
+		isl_aff *index;
 		int ok;
 
 		ok = isl_basic_set_has_defining_equality(aff,
 							isl_dim_out, i, &c);
 		assert(ok);
-		qp = isl_qpolynomial_from_constraint(c, isl_dim_out, i);
-		qp = isl_qpolynomial_project_domain_on_params(qp);
+		index = isl_constraint_get_bound(c, isl_dim_out, i);
+		isl_constraint_free(c);
+		index = isl_aff_project_domain_on_params(index);
 
 		if (!array) {
-			prn = isl_printer_print_qpolynomial(prn, qp);
-			isl_qpolynomial_free(qp);
+			prn = isl_printer_print_aff(prn, index);
+			isl_aff_free(index);
 			continue;
 		}
 
@@ -1726,9 +1719,9 @@ static void print_access(struct cuda_gen *gen, __isl_take isl_map *access,
 		domain = isl_set_project_out(domain, isl_dim_set, 0,
 					    isl_set_dim(domain, isl_dim_set));
 		if (!bounds)
-			qp = isl_qpolynomial_gist(qp, domain);
+			index = isl_aff_gist(index, domain);
 		else
-			qp = shift_index(qp, array, &bounds[i], domain);
+			index = shift_index(index, array, &bounds[i], domain);
 
 		if (i) {
 			if (!bounds) {
@@ -1739,8 +1732,8 @@ static void print_access(struct cuda_gen *gen, __isl_take isl_map *access,
 			} else
 				prn = isl_printer_print_str(prn, "][");
 		}
-		prn = isl_printer_print_qpolynomial(prn, qp);
-		isl_qpolynomial_free(qp);
+		prn = isl_printer_print_aff(prn, index);
+		isl_aff_free(index);
 	}
 	if (!name)
 		prn = isl_printer_print_str(prn, ")");
@@ -1865,13 +1858,13 @@ static void print_statement(struct gpucode_info *code,
 }
 
 /* Print an access to the element in the global memory copy of the
- * given array that corresponds to element [qp[0]][qp[1]]...
+ * given array that corresponds to element [aff[0]][aff[1]]...
  * of the original array.
  * The copy in global memory has been linearized, so we need to take
  * the array size into account.
  */
 static void print_private_global_index(isl_ctx *ctx, FILE *out,
-	struct cuda_array_info *array, __isl_keep isl_qpolynomial **qp)
+	struct cuda_array_info *array, __isl_keep isl_aff **aff)
 {
 	int i;
 	isl_printer *prn;
@@ -1888,14 +1881,14 @@ static void print_private_global_index(isl_ctx *ctx, FILE *out,
 							array->local_bound[i]);
 			prn = isl_printer_print_str(prn, ") + ");
 		}
-		prn = isl_printer_print_qpolynomial(prn, qp[i]);
+		prn = isl_printer_print_aff(prn, aff[i]);
 	}
 	isl_printer_free(prn);
 	fprintf(out, "]");
 }
 
 /* Print an access to the element in the shared memory copy of the
- * given array reference group that corresponds to element [qps[0]][qps[1]]...
+ * given array reference group that corresponds to element [affs[0]][affs[1]]...
  * of the original array.
  * Since the array in shared memory is just a shifted copy of part
  * of the original array, we simply need to subtract the lower bound,
@@ -1905,7 +1898,7 @@ static void print_private_global_index(isl_ctx *ctx, FILE *out,
  */
 static void print_private_local_index(isl_ctx *ctx, FILE *out,
 	struct cuda_array_ref_group *group,
-	__isl_keep isl_qpolynomial **qps, __isl_keep isl_set *domain)
+	__isl_keep isl_aff **affs, __isl_keep isl_set *domain)
 {
 	int i;
 	isl_printer *prn;
@@ -1914,17 +1907,17 @@ static void print_private_local_index(isl_ctx *ctx, FILE *out,
 
 	print_array_name(out, group);
 	for (i = 0; i < array->n_index; ++i) {
-		isl_qpolynomial *qp = isl_qpolynomial_copy(qps[i]);
+		isl_aff *aff = isl_aff_copy(affs[i]);
 
-		qp = shift_index(qp, array, &bounds[i], isl_set_copy(domain));
+		aff = shift_index(aff, array, &bounds[i], isl_set_copy(domain));
 
 		fprintf(out, "[");
 		prn = isl_printer_to_file(ctx, out);
 		prn = isl_printer_set_output_format(prn, ISL_FORMAT_C);
-		prn = isl_printer_print_qpolynomial(prn, qp);
+		prn = isl_printer_print_aff(prn, aff);
 		isl_printer_free(prn);
 		fprintf(out, "]");
-		isl_qpolynomial_free(qp);
+		isl_aff_free(aff);
 	}
 }
 
@@ -1951,7 +1944,7 @@ static void print_private_copy_statement(struct gpucode_info *code,
 	isl_set *index;
 	isl_basic_set *aff;
 	isl_ctx *ctx;
-	isl_qpolynomial **qp;
+	isl_aff **affs;
 	int read;
 
 	read = !strncmp(u->statement->name, "read", 4);
@@ -1976,8 +1969,8 @@ static void print_private_copy_statement(struct gpucode_info *code,
 	domain = isl_set_project_out(domain, isl_dim_set, 0, n_out);
 
 	ctx = isl_basic_set_get_ctx(aff);
-	qp = isl_alloc_array(ctx, isl_qpolynomial *, n_out);
-	assert(qp);
+	affs = isl_alloc_array(ctx, isl_aff *, n_out);
+	assert(affs);
 
 	for (i = 0; i < n_out; ++i) {
 		isl_constraint *c;
@@ -1986,25 +1979,26 @@ static void print_private_copy_statement(struct gpucode_info *code,
 		ok = isl_basic_set_has_defining_equality(aff,
 							isl_dim_set, i, &c);
 		assert(ok);
-		qp[i] = isl_qpolynomial_from_constraint(c, isl_dim_set, i);
-		qp[i] = isl_qpolynomial_project_domain_on_params(qp[i]);
+		affs[i] = isl_constraint_get_bound(c, isl_dim_set, i);
+		isl_constraint_free(c);
+		affs[i] = isl_aff_project_domain_on_params(affs[i]);
 	}
 
 	print_indent(code->dst, code->indent);
 	if (read) {
-		print_private_local_index(ctx, code->dst, group, qp, domain);
+		print_private_local_index(ctx, code->dst, group, affs, domain);
 		fprintf(code->dst, " = ");
-		print_private_global_index(ctx, code->dst, group->array, qp);
+		print_private_global_index(ctx, code->dst, group->array, affs);
 	} else {
-		print_private_global_index(ctx, code->dst, group->array, qp);
+		print_private_global_index(ctx, code->dst, group->array, affs);
 		fprintf(code->dst, " = ");
-		print_private_local_index(ctx, code->dst, group, qp, domain);
+		print_private_local_index(ctx, code->dst, group, affs, domain);
 	}
 	fprintf(code->dst, ";\n");
 
 	for (i = 0; i < n_out; ++i)
-		isl_qpolynomial_free(qp[i]);
-	free(qp);
+		isl_aff_free(affs[i]);
+	free(affs);
 
 	isl_basic_set_free(aff);
 	isl_set_free(domain);
@@ -2523,10 +2517,9 @@ static void extract_stride(__isl_keep isl_constraint *c,
 {
 	int i;
 	isl_int v;
-	isl_int one;
 	isl_space *dim;
 	unsigned nparam;
-	isl_qpolynomial *qp;
+	isl_aff *aff;
 
 	isl_int_set(bound->stride, stride);
 
@@ -2536,33 +2529,25 @@ static void extract_stride(__isl_keep isl_constraint *c,
 	nparam = isl_space_dim(dim, isl_dim_param);
 
 	isl_int_init(v);
-	isl_int_init(one);
-	isl_int_set_si(one, 1);
 
 	isl_constraint_get_constant(c, &v);
 	if (sign < 0)
 		isl_int_neg(v, v);
-	qp = isl_qpolynomial_rat_cst_on_domain(isl_space_copy(dim), v, one);
+	aff = isl_aff_zero_on_domain(isl_local_space_from_space(dim));
+	aff = isl_aff_set_constant(aff, v);
 
 	for (i = 0; i < nparam; ++i) {
-		isl_qpolynomial *t, *p;
-
 		isl_constraint_get_coefficient(c, isl_dim_param, i, &v);
 		if (isl_int_is_zero(v))
 			continue;
 		if (sign < 0)
 			isl_int_neg(v, v);
-		t = isl_qpolynomial_rat_cst_on_domain(isl_space_copy(dim), v, one);
-		p = isl_qpolynomial_var_on_domain(isl_space_copy(dim), isl_dim_param, i);
-		t = isl_qpolynomial_mul(t, p);
-		qp = isl_qpolynomial_add(qp, t);
+		aff = isl_aff_add_coefficient(aff, isl_dim_param, i, v);
 	}
 
-	isl_space_free(dim);
-	isl_int_clear(one);
 	isl_int_clear(v);
 
-	bound->shift = qp;
+	bound->shift = aff;
 }
 
 /* Given an equality constraint of a map with a single output dimension j,
@@ -2621,11 +2606,9 @@ static int check_stride_constraint(__isl_take isl_constraint *c, void *user)
 static __isl_give isl_basic_map *check_stride(struct cuda_gen *gen,
 	struct cuda_array_bound *bound, __isl_take isl_basic_map *bounds)
 {
-	isl_space *dim;
 	isl_basic_map *aff;
 	isl_basic_map *shift;
-	isl_qpolynomial *qp, *t;
-	isl_int one;
+	isl_aff *aff_shift;
 
 	isl_int_set_si(bound->stride, -1);
 
@@ -2638,17 +2621,11 @@ static __isl_give isl_basic_map *check_stride(struct cuda_gen *gen,
 	if (isl_int_is_neg(bound->stride))
 		return bounds;
 
-	qp = isl_qpolynomial_copy(bound->shift);
-	qp = isl_qpolynomial_add_dims(qp, isl_dim_in, 1);
-	dim = isl_qpolynomial_get_domain_space(qp);
-	t = isl_qpolynomial_var_on_domain(isl_space_copy(dim), isl_dim_set, 0);
-	qp = isl_qpolynomial_add(qp, t);
-	isl_int_init(one);
-	isl_int_set_si(one, 1);
-	t = isl_qpolynomial_rat_cst_on_domain(dim, one, bound->stride);
-	isl_int_clear(one);
-	qp = isl_qpolynomial_mul(qp, t);
-	shift = isl_basic_map_from_qpolynomial(qp);
+	aff_shift = isl_aff_copy(bound->shift);
+	aff_shift = isl_aff_add_dims(aff_shift, isl_dim_in, 1);
+	aff_shift = isl_aff_add_coefficient_si(aff_shift, isl_dim_in, 0, 1);
+	aff_shift = isl_aff_scale_down(aff_shift, bound->stride);
+	shift = isl_basic_map_from_aff(aff_shift);
 
 	bound->shift_map = isl_basic_map_copy(shift);
 	bounds = isl_basic_map_apply_range(bounds, shift);
@@ -2987,7 +2964,7 @@ static void set_last_shared(struct cuda_gen *gen,
 	for (j = gen->shared_len - 1; j >= 0; --j) {
 		for (i = 0; i < n_index; ++i) {
 			isl_aff *lb;
-			isl_qpolynomial *shift;
+			isl_aff *shift;
 
 			lb = bounds[i].lb;
 			if (isl_aff_involves_dims(lb, isl_dim_param,
@@ -2997,7 +2974,7 @@ static void set_last_shared(struct cuda_gen *gen,
 			shift = bounds[i].shift;
 			if (!shift)
 				continue;
-			if (isl_qpolynomial_involves_dims(shift, isl_dim_param,
+			if (isl_aff_involves_dims(shift, isl_dim_param,
 							first_shared + j, 1))
 				break;
 		}
@@ -3495,8 +3472,7 @@ static void print_local_index(FILE *out, struct cuda_array_ref_group *group)
 			fprintf(out, " + (");
 			prn = isl_printer_to_file(ctx, out);
 			prn = isl_printer_set_output_format(prn, ISL_FORMAT_C);
-			prn = isl_printer_print_qpolynomial(prn,
-						bounds[i].shift);
+			prn = isl_printer_print_aff(prn, bounds[i].shift);
 			prn = isl_printer_print_str(prn, "))/");
 			prn = isl_printer_print_isl_int(prn,
 						bounds[i].stride);
