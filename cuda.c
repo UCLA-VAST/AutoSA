@@ -3871,13 +3871,20 @@ static void band_select_outer_band(struct cuda_gen *gen,
 				isl_band_get_suffix_schedule(band));
 		isl_union_map_foreach_map(info->prefix,
 					    &set_stmt_tile_len, info);
-	} else {
+	} else if (isl_band_has_children(band)) {
 		isl_band_list *children;
-		if (!isl_band_has_children(band))
-			isl_die(isl_band_get_ctx(band), isl_error_unknown,
-				"unable to detect any parallelism", abort());
 		children = isl_band_get_children(band);
 		list_select_outer_band(gen, children, pos + n, info);
+	} else {
+		info->gen = gen;
+		info->tile_first = pos + n;
+		info->tile_len = 0;
+		info->prefix = isl_union_map_flat_range_product(
+				isl_band_get_prefix_schedule(band),
+				isl_band_get_partial_schedule(band));
+		info->suffix = isl_band_get_suffix_schedule(band);
+		isl_union_map_foreach_map(info->prefix,
+					    &set_stmt_tile_len, info);
 	}
 
 	isl_band_free(band);
