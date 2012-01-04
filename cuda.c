@@ -1676,6 +1676,8 @@ static void print_access(struct cuda_gen *gen, __isl_take isl_map *access,
 		if (!bounds)
 			bounds = group->shared_bound;
 
+		if (!bounds && cuda_array_is_scalar(array))
+			fprintf(gen->cuda.kernel_c, "*");
 		print_array_name(gen->cuda.kernel_c, group);
 
 		if (cuda_array_is_scalar(array)) {
