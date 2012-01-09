@@ -2728,6 +2728,7 @@ static int compute_array_dim_size(struct cuda_gen *gen,
 {
 	struct cuda_size_info size;
 
+	bounds = isl_basic_map_detect_equalities(bounds);
 	bounds = check_stride(gen, bound, bounds);
 
 	isl_int_set_si(bound->size, -1);
