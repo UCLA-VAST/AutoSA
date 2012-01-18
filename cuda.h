@@ -21,6 +21,9 @@ struct cuda_gen {
 	/* Set of parameter values */
 	isl_set *context;
 
+	/* tile, grid and block sizes for each kernel */
+	isl_union_map *sizes;
+
 	/* Uninitialized data elements (or an overapproximation) */
 	isl_union_set *copy_in;
 

@@ -501,30 +501,122 @@ static void read_sizes_from_file(struct cuda_gen *gen, const char *filename,
 	fclose(file);
 }
 
-static void reverse_list(int *list, int len)
-{
-	int i;
-	int t;
+/* Internal data structure for extract_size_of_type.
+ * "type" specifies the name of the space that we want to extract.
+ * "res" is used to store the subset of that space.
+ */
+struct ppcg_extract_size_data {
+	const char *type;
+	isl_set *res;
+};
 
-	for (i = 0; 2 * i < len; ++i) {
-		t = list[i];
-		list[i] = list[len - 1 - i];
-		list[len - 1 - i] = t;
+/* This function is called for each set in a union_set.
+ * If the name of the set matches data->type, we store the
+ * set in data->res.
+ */
+static int extract_size_of_type(__isl_take isl_set *size, void *user)
+{
+	struct ppcg_extract_size_data *data = user;
+	const char *name;
+
+	name = isl_set_get_tuple_name(size);
+	if (name && !strcmp(name, data->type)) {
+		data->res = size;
+		return -1;
 	}
+
+	isl_set_free(size);
+	return 0;
 }
 
-/* Read user specified sizes from "tile.sizes", "block.sizes" and "grid.sizes"
- * after filling in some potentially useful defaults.
+/* Given a union map { kernel[i] -> *[...] },
+ * return the range in the space called "type" for the kernel with
+ * sequence number "id".
  */
-static void read_sizes(struct cuda_gen *gen)
+static __isl_give isl_set *extract_sizes(__isl_keep isl_union_map *sizes,
+	const char *type, int id)
+{
+	isl_space *space;
+	isl_set *dom;
+	isl_union_set *local_sizes;
+	struct ppcg_extract_size_data data = { type, NULL };
+
+	if (!sizes)
+		return NULL;
+
+	space = isl_union_map_get_space(sizes);
+	space = isl_space_set_from_params(space);
+	space = isl_space_add_dims(space, isl_dim_set, 1);
+	space = isl_space_set_tuple_name(space, isl_dim_set, "kernel");
+	dom = isl_set_universe(space);
+	dom = isl_set_fix_si(dom, isl_dim_set, 0, id);
+
+	local_sizes = isl_union_set_apply(isl_union_set_from_set(dom),
+					isl_union_map_copy(sizes));
+	isl_union_set_foreach_set(local_sizes, &extract_size_of_type, &data);
+	isl_union_set_free(local_sizes);
+	return data.res;
+}
+
+/* Given a singleton set, extract the first (at most *len) elements
+ * of the single integer tuple into *sizes and update *len if needed.
+ */
+static void read_sizes_from_set(__isl_take isl_set *set, int *sizes, int *len)
+{
+	int i;
+	int dim;
+	isl_int v;
+
+	if (!set)
+		return;
+
+	dim = isl_set_dim(set, isl_dim_set);
+	if (dim < *len)
+		*len = dim;
+
+	isl_int_init(v);
+
+	for (i = 0; i < *len; ++i) {
+		int ok;
+
+		ok = isl_set_plain_is_fixed(set, isl_dim_set, i, &v);
+		assert(ok);
+
+		sizes[i] = isl_int_get_si(v);
+	}
+
+	isl_int_clear(v);
+
+	isl_set_free(set);
+}
+
+/* Extract user specified "tile" sizes from the "sizes" command line option,
+ * defaulting to option->tile_size in each dimension.
+ */
+static void read_tile_sizes(struct cuda_gen *gen)
 {
 	int n;
+	isl_set *size;
 
 	gen->tile_size = isl_alloc_array(gen->ctx, int, gen->tile_len);
 	assert(gen->tile_size);
 	for (n = 0; n < gen->tile_len; ++n)
 		gen->tile_size[n] = gen->options->tile_size;
-	read_sizes_from_file(gen, "tile.sizes", gen->tile_size, gen->tile_len);
+
+	size = extract_sizes(gen->sizes, "tile", gen->kernel_id);
+	read_sizes_from_set(size, gen->tile_size, &gen->tile_len);
+
+	if (gen->n_parallel > gen->tile_len)
+		gen->n_parallel = gen->tile_len;
+}
+
+/* Extract user specified "block" sizes from the "sizes" command line option,
+ * after filling in some potentially useful defaults.
+ */
+static void read_block_sizes(struct cuda_gen *gen)
+{
+	int n;
+	isl_set *size;
 
 	n = gen->n_parallel;
 	gen->n_block = (n <= 3) ? n : 3;
@@ -542,8 +634,18 @@ static void read_sizes(struct cuda_gen *gen)
 		gen->block_dim[2] = 4;
 		break;
 	}
-	read_sizes_from_file(gen, "block.sizes", gen->block_dim, gen->n_block);
-	reverse_list(gen->block_dim, gen->n_block);
+
+	size = extract_sizes(gen->sizes, "block", gen->kernel_id);
+	read_sizes_from_set(size, gen->block_dim, &gen->n_block);
+}
+
+/* Extract user specified "grid" sizes from the "sizes" command line option,
+ * after filling in some potentially useful defaults.
+ */
+static void read_grid_sizes(struct cuda_gen *gen)
+{
+	int n = gen->n_parallel;
+	isl_set *size;
 
 	gen->n_grid = (n <= 2) ? n : 2;
 	switch (gen->n_grid) {
@@ -555,8 +657,19 @@ static void read_sizes(struct cuda_gen *gen)
 		gen->grid_dim[1] = 256;
 		break;
 	}
-	read_sizes_from_file(gen, "grid.sizes", gen->grid_dim, gen->n_grid);
-	reverse_list(gen->grid_dim, gen->n_grid);
+
+	size = extract_sizes(gen->sizes, "grid", gen->kernel_id);
+	read_sizes_from_set(size, gen->grid_dim, &gen->n_grid);
+}
+
+/* Extract user specified sizes from the "sizes" command line option
+ * after filling in some potentially useful defaults.
+ */
+static void read_sizes(struct cuda_gen *gen)
+{
+	read_tile_sizes(gen);
+	read_block_sizes(gen);
+	read_grid_sizes(gen);
 }
 
 static void free_stmts(struct cuda_stmt *stmts, int n)
@@ -581,6 +694,7 @@ void clear_cuda_gen(struct cuda_gen *gen)
 {
 	free_stmts(gen->stmts, gen->n_stmts);
 	free_array_info(gen);
+	isl_union_map_free(gen->sizes);
 	isl_set_free(gen->context);
 	isl_union_set_free(gen->copy_in);
 	isl_union_map_free(gen->sched);
@@ -3704,6 +3818,13 @@ __isl_give isl_set *add_context_from_str(__isl_take isl_set *set,
 	return set;
 }
 
+__isl_give isl_union_map *extract_sizes_from_str(isl_ctx *ctx, const char *str)
+{
+	if (!str)
+		return NULL;
+	return isl_union_map_read_from_str(ctx, str);
+}
+
 /* Return the union of all iteration domains of the gen->stmts[i].
  */
 static __isl_give isl_union_set *extract_domain(struct cuda_gen *gen)
@@ -4164,7 +4285,7 @@ static struct cuda_stmt *extract_stmts(isl_ctx *ctx, struct pet_scop *scop,
  *
  *	H		B			G
  *
- * The tilable band "B" is first tiled according to "tile.sizes", resulting
+ * The tilable band "B" is first tiled according to "tile" sizes, resulting
  * in
  *
  *	H	T		P		G
@@ -4180,7 +4301,7 @@ static struct cuda_stmt *extract_stmts(isl_ctx *ctx, struct pet_scop *scop,
  *	H	T1	T2	P1	P2	G
  *
  * The T1/P1 loops are then tiled or "wrapped" over the blocks/threads,
- * according to "grid.sizes"/"block.sizes".
+ * according to "grid"/"block" sizes.
  *
  *	H	T1T T1P	T2	P1T P1P	P2	G
  *
@@ -4210,6 +4331,7 @@ int cuda_pet(isl_ctx *ctx, struct pet_scop *scop, struct ppcg_options *options,
 	gen.ctx = ctx;
 	gen.context = isl_set_copy(scop->context);
 	gen.context = add_context_from_str(gen.context, options->ctx);
+	gen.sizes = extract_sizes_from_str(ctx, options->sizes);
 	gen.n_stmts = scop->n_stmt;
 	gen.stmts = extract_stmts(ctx, scop, gen.context);
 	gen.read = pet_scop_collect_reads(scop);

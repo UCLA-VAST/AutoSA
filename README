@@ -14,3 +14,36 @@ Compilation:
 	./configure
 	make
 	make check
+
+Specifying tile, grid and block sizes
+
+The iterations space tile size, grid size and block size can
+be specified using the --sizes option.  The argument is a union map
+in isl notation mapping kernels identified by their sequence number
+in a "kernel" space to singleton sets in the "tile", "grid" and "block"
+spaces.  The sizes are specified outermost to innermost.
+
+The dimension of the "tile" space indicates the (maximal) number of loop
+dimensions to tile.  The elements of the single integer tuple
+specify the tile sizes in each dimension.
+
+The dimension of the "grid" space indicates the (maximal) number of block
+dimensions in the grid.  The elements of the single integer tuple
+specify the number of blocks in each dimension.
+
+The dimension of the "block" space indicates the (maximal) number of thread
+dimensions in the grid.  The elements of the single integer tuple
+specify the number of threads in each dimension.
+
+For example,
+
+    { kernel[0] -> tile[64,64]; kernel[i] -> block[16] : i != 4 }
+
+specifies that in kernel 0, two loops should be tiled with a tile
+size of 64 in both dimensions and that all kernels except kernel 4
+should be run using a block of 16 threads.
+
+Since PPCG performs some scheduling, it can be difficult to predict
+what exactly will end up in a kernel.  If you want to specify
+tile, grid or block sizes, you may want to run PPCG first with the defaults,
+examine the kernels and then run PPCG again with the desired sizes.

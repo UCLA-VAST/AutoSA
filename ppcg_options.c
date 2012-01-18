@@ -21,4 +21,6 @@ ISL_ARG_BOOL(struct ppcg_options, use_private_memory, 0, "private-memory", 1,
 ISL_ARG_STR(struct ppcg_options, ctx, 0, "ctx", "context", NULL,
     "Constraints on parameters")
 ISL_ARG_INT(struct ppcg_options, tile_size, 'S', "tile-size", "size", 32, NULL)
+ISL_ARG_STR(struct ppcg_options, sizes, 0, "sizes", "sizes", NULL,
+	"Per kernel tile, grid and block sizes")
 ISL_ARGS_END

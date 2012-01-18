@@ -8,6 +8,7 @@ struct ppcg_options {
 	int wrap;
 
 	char *ctx;
+	char *sizes;
 
 	int tile_size;
 
