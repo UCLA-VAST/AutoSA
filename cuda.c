@@ -550,11 +550,16 @@ static void print_reverse_list(FILE *out, int len, int *list)
 {
 	int i;
 
+	if (len == 0)
+		return;
+
+	fprintf(out, "(");
 	for (i = 0; i < len; ++i) {
 		if (i)
 			fprintf(out, ", ");
 		fprintf(out, "%d", list[len - 1 - i]);
 	}
+	fprintf(out, ")");
 }
 
 static void print_kernel_launch(struct cuda_gen *gen,
@@ -3510,14 +3515,14 @@ static void print_host_user(struct gpucode_info *code,
 	arrays = isl_union_map_range(access);
 
 	print_indent(code->dst, code->indent);
-	fprintf(code->dst, "dim3 k%d_dimBlock(", gen->kernel_id);
+	fprintf(code->dst, "dim3 k%d_dimBlock", gen->kernel_id);
 	print_reverse_list(code->dst, gen->n_block, gen->block_dim);
-	fprintf(code->dst, ");\n");
+	fprintf(code->dst, ";\n");
 
 	print_indent(code->dst, code->indent);
-	fprintf(code->dst, "dim3 k%d_dimGrid(", gen->kernel_id);
+	fprintf(code->dst, "dim3 k%d_dimGrid", gen->kernel_id);
 	print_reverse_list(code->dst, gen->n_grid, gen->grid_dim);
-	fprintf(code->dst, ");\n");
+	fprintf(code->dst, ";\n");
 
 	gen->tiled_sched = tile_schedule(gen, local_sched);
 	gen->tiled_sched = parametrize_tiled_schedule(gen, gen->tiled_sched);
