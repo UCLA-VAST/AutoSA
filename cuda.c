@@ -1323,15 +1323,16 @@ static __isl_give isl_union_map *access_schedule(struct cuda_gen *gen,
 }
 
 /* Print an access to the element in the global memory copy of the
- * given array that corresponds to element [aff[0]][aff[1]]...
+ * given array that corresponds to the element described by "pma".
  * of the original array.
  * The copy in global memory has been linearized, so we need to take
  * the array size into account.
  */
-static void print_global_index(isl_ctx *ctx, FILE *out,
-	struct cuda_array_info *array, __isl_keep isl_aff **aff)
+static void print_global_index(FILE *out,
+	struct cuda_array_info *array, __isl_keep isl_pw_multi_aff *pma)
 {
 	int i;
+	isl_ctx *ctx = isl_pw_multi_aff_get_ctx(pma);
 	isl_printer *prn;
 
 	if (cuda_array_is_scalar(array)) {
@@ -1345,13 +1346,16 @@ static void print_global_index(isl_ctx *ctx, FILE *out,
 	for (i = 0; i + 1 < array->n_index; ++i)
 		prn = isl_printer_print_str(prn, "(");
 	for (i = 0; i < array->n_index; ++i) {
+		isl_pw_aff *pa = isl_pw_multi_aff_get_pw_aff(pma, i);
+		pa = isl_pw_aff_coalesce(pa);
 		if (i) {
 			prn = isl_printer_print_str(prn, ") * (");
 			prn = isl_printer_print_pw_aff(prn,
 							array->local_bound[i]);
 			prn = isl_printer_print_str(prn, ") + ");
 		}
-		prn = isl_printer_print_aff(prn, aff[i]);
+		prn = isl_printer_print_pw_aff(prn, pa);
+		isl_pw_aff_free(pa);
 	}
 	isl_printer_free(prn);
 	fprintf(out, "]");
@@ -1363,63 +1367,68 @@ static void print_global_index(isl_ctx *ctx, FILE *out,
  * If the index is strided, then we first add
  * bound->shift and divide by bound->stride.
  */
-static __isl_give isl_aff *shift_index(__isl_take isl_aff *aff,
+static __isl_give isl_pw_aff *shift_index(__isl_take isl_pw_aff *pa,
 	struct cuda_array_info *array,
 	struct cuda_array_bound *bound, __isl_take isl_set *domain)
 {
 	isl_aff *lb;
+	isl_pw_aff *tmp;
 
 	if (bound->shift) {
 		isl_aff *shift;
 		shift = bound->shift;
 		shift = isl_aff_copy(shift);
 		shift = isl_aff_project_domain_on_params(shift);
-		shift = isl_aff_align_params(shift, isl_aff_get_space(aff));
-		aff = isl_aff_add(aff, shift);
-		aff = isl_aff_scale_down(aff, bound->stride);
+		shift = isl_aff_align_params(shift, isl_pw_aff_get_space(pa));
+		tmp = isl_pw_aff_alloc(isl_set_copy(domain), shift);
+		pa = isl_pw_aff_add(pa, tmp);
+		pa = isl_pw_aff_scale_down(pa, bound->stride);
 	}
 
 	lb = isl_aff_copy(bound->lb);
 	lb = isl_aff_project_domain_on_params(lb);
 
-	lb = isl_aff_align_params(lb, isl_aff_get_space(aff));
+	lb = isl_aff_align_params(lb, isl_pw_aff_get_space(pa));
 
-	aff = isl_aff_sub(aff, lb);
-	aff = isl_aff_gist(aff, domain);
+	tmp = isl_pw_aff_alloc(isl_set_copy(domain), lb);
+	pa = isl_pw_aff_sub(pa, tmp);
+	pa = isl_pw_aff_coalesce(pa);
+	pa = isl_pw_aff_gist(pa, domain);
 
-	return aff;
+	return pa;
 }
 
 /* Print an access to the element in the private/shared memory copy of the
- * given array reference group that corresponds to element [affs[0]][affs[1]]...
- * of the original array.
+ * given array reference group that corresponds to the element described
+ * by "pma" of the original array.
  * Since the array in private/shared memory is just a shifted copy of part
  * of the original array, we simply need to subtract the lower bound,
  * which was computed in can_tile_for_shared_memory.
  * If any of the indices is strided, then we first add
  * bounds[i].shift and divide by bounds[i].stride.
  */
-static void print_local_index(isl_ctx *ctx, FILE *out,
+static void print_local_index(FILE *out,
 	struct cuda_array_ref_group *group, struct cuda_array_bound *bounds,
-	__isl_keep isl_aff **affs, __isl_keep isl_set *domain)
+	__isl_keep isl_pw_multi_aff *pma, __isl_keep isl_set *domain)
 {
 	int i;
+	isl_ctx *ctx = isl_pw_multi_aff_get_ctx(pma);
 	isl_printer *prn;
 	struct cuda_array_info *array = group->array;
 
 	print_array_name(out, group);
 	for (i = 0; i < array->n_index; ++i) {
-		isl_aff *aff = isl_aff_copy(affs[i]);
+		isl_pw_aff *pa = isl_pw_multi_aff_get_pw_aff(pma, i);
 
-		aff = shift_index(aff, array, &bounds[i], isl_set_copy(domain));
+		pa = shift_index(pa, array, &bounds[i], isl_set_copy(domain));
 
 		fprintf(out, "[");
 		prn = isl_printer_to_file(ctx, out);
 		prn = isl_printer_set_output_format(prn, ISL_FORMAT_C);
-		prn = isl_printer_print_aff(prn, aff);
+		prn = isl_printer_print_pw_aff(prn, pa);
 		isl_printer_free(prn);
 		fprintf(out, "]");
-		isl_aff_free(aff);
+		isl_pw_aff_free(pa);
 	}
 }
 
@@ -1445,9 +1454,7 @@ static void print_copy_statement(struct gpucode_info *code,
 	isl_space *dim;
 	isl_set *param;
 	isl_set *index;
-	isl_basic_set *aff;
-	isl_ctx *ctx;
-	isl_aff **affs;
+	isl_pw_multi_aff *pma;
 	int read;
 
 	read = !strncmp(u->statement->name, "read", 4);
@@ -1468,42 +1475,23 @@ static void print_copy_statement(struct gpucode_info *code,
 	sched = isl_map_intersect_domain(sched, param);
 	index = isl_map_range(sched);
 	domain = isl_set_copy(index);
-	aff = isl_set_affine_hull(index);
+	pma = isl_pw_multi_aff_from_set(index);
+	pma = isl_pw_multi_aff_coalesce(pma);
 	domain = isl_set_params(domain);
-
-	ctx = isl_basic_set_get_ctx(aff);
-	affs = isl_alloc_array(ctx, isl_aff *, n_out);
-	assert(affs);
-
-	for (i = 0; i < n_out; ++i) {
-		isl_constraint *c;
-		int ok;
-
-		ok = isl_basic_set_has_defining_equality(aff,
-							isl_dim_set, i, &c);
-		assert(ok);
-		affs[i] = isl_constraint_get_bound(c, isl_dim_set, i);
-		isl_constraint_free(c);
-		affs[i] = isl_aff_project_domain_on_params(affs[i]);
-	}
 
 	print_indent(code->dst, code->indent);
 	if (read) {
-		print_local_index(ctx, code->dst, group, bounds, affs, domain);
+		print_local_index(code->dst, group, bounds, pma, domain);
 		fprintf(code->dst, " = ");
-		print_global_index(ctx, code->dst, group->array, affs);
+		print_global_index(code->dst, group->array, pma);
 	} else {
-		print_global_index(ctx, code->dst, group->array, affs);
+		print_global_index(code->dst, group->array, pma);
 		fprintf(code->dst, " = ");
-		print_local_index(ctx, code->dst, group, bounds, affs, domain);
+		print_local_index(code->dst, group, bounds, pma, domain);
 	}
 	fprintf(code->dst, ";\n");
 
-	for (i = 0; i < n_out; ++i)
-		isl_aff_free(affs[i]);
-	free(affs);
-
-	isl_basic_set_free(aff);
+	isl_pw_multi_aff_free(pma);
 	isl_set_free(domain);
 }
 
@@ -1814,7 +1802,7 @@ static void print_access(struct cuda_gen *gen, __isl_take isl_map *access,
 	unsigned n_index;
 	struct cuda_array_info *array = NULL;
 	isl_printer *prn;
-	isl_basic_set *aff;
+	isl_pw_multi_aff *pma;
 	isl_set *data_set;
 	isl_set *domain;
 	struct cuda_array_bound *bounds = NULL;
@@ -1856,7 +1844,8 @@ static void print_access(struct cuda_gen *gen, __isl_take isl_map *access,
 
 
 	n_index = isl_set_dim(data_set, isl_dim_set);
-	aff = isl_set_affine_hull(data_set);
+	pma = isl_pw_multi_aff_from_set(data_set);
+	pma = isl_pw_multi_aff_coalesce(pma);
 
 	prn = isl_printer_to_file(gen->ctx, gen->cuda.kernel_c);
 	prn = isl_printer_set_output_format(prn, ISL_FORMAT_C);
@@ -1866,28 +1855,22 @@ static void print_access(struct cuda_gen *gen, __isl_take isl_map *access,
 			prn = isl_printer_print_str(prn, "(");
 
 	for (i = 0; i < n_index; ++i) {
-		isl_constraint *c;
-		isl_aff *index;
-		int ok;
+		isl_pw_aff *index;
 
-		ok = isl_basic_set_has_defining_equality(aff,
-							isl_dim_out, i, &c);
-		assert(ok);
-		index = isl_constraint_get_bound(c, isl_dim_out, i);
-		isl_constraint_free(c);
-		index = isl_aff_project_domain_on_params(index);
+		index = isl_pw_multi_aff_get_pw_aff(pma, i);
 
 		if (!array) {
-			prn = isl_printer_print_aff(prn, index);
-			isl_aff_free(index);
+			prn = isl_printer_print_pw_aff(prn, index);
+			isl_pw_aff_free(index);
 			continue;
 		}
 
 		domain = isl_set_copy(gen->stmt_domain);
 		domain = isl_set_params(domain);
-		if (!bounds)
-			index = isl_aff_gist(index, domain);
-		else
+		if (!bounds) {
+			index = isl_pw_aff_coalesce(index);
+			index = isl_pw_aff_gist(index, domain);
+		} else
 			index = shift_index(index, array, &bounds[i], domain);
 
 		if (i) {
@@ -1899,8 +1882,8 @@ static void print_access(struct cuda_gen *gen, __isl_take isl_map *access,
 			} else
 				prn = isl_printer_print_str(prn, "][");
 		}
-		prn = isl_printer_print_aff(prn, index);
-		isl_aff_free(index);
+		prn = isl_printer_print_pw_aff(prn, index);
+		isl_pw_aff_free(index);
 	}
 	if (!name)
 		prn = isl_printer_print_str(prn, ")");
@@ -1908,7 +1891,7 @@ static void print_access(struct cuda_gen *gen, __isl_take isl_map *access,
 		prn = isl_printer_print_str(prn, "]");
 	isl_printer_free(prn);
 
-	isl_basic_set_free(aff);
+	isl_pw_multi_aff_free(pma);
 }
 
 static struct cuda_stmt_access *print_expr(struct cuda_gen *gen, FILE *out,
