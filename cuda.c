@@ -1884,8 +1884,7 @@ static void print_access(struct cuda_gen *gen, __isl_take isl_map *access,
 		}
 
 		domain = isl_set_copy(gen->stmt_domain);
-		domain = isl_set_project_out(domain, isl_dim_set, 0,
-					    isl_set_dim(domain, isl_dim_set));
+		domain = isl_set_params(domain);
 		if (!bounds)
 			index = isl_aff_gist(index, domain);
 		else
