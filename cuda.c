@@ -431,9 +431,12 @@ static void copy_arrays_from_device(struct cuda_gen *gen)
 		if (empty)
 			continue;
 
-		fprintf(gen->cuda.host_c,
-			"cudaCheckReturn(cudaMemcpy(%s, dev_%s, ",
-			gen->array[i].name, gen->array[i].name);
+		fprintf(gen->cuda.host_c, "cudaCheckReturn(cudaMemcpy(");
+		if (cuda_array_is_scalar(&gen->array[i]))
+			fprintf(gen->cuda.host_c, "&%s, ", gen->array[i].name);
+		else
+			fprintf(gen->cuda.host_c, "%s, ", gen->array[i].name);
+		fprintf(gen->cuda.host_c, "dev_%s, ",  gen->array[i].name);
 		print_array_size(gen, gen->cuda.host_c, &gen->array[i]);
 		fprintf(gen->cuda.host_c, ", cudaMemcpyDeviceToHost));\n");
 	}
