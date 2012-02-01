@@ -1469,7 +1469,7 @@ static void print_copy_statement(struct gpucode_info *code,
 	index = isl_map_range(sched);
 	domain = isl_set_copy(index);
 	aff = isl_set_affine_hull(index);
-	domain = isl_set_project_out(domain, isl_dim_set, 0, n_out);
+	domain = isl_set_params(domain);
 
 	ctx = isl_basic_set_get_ctx(aff);
 	affs = isl_alloc_array(ctx, isl_aff *, n_out);
