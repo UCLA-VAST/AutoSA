@@ -3656,6 +3656,87 @@ static void set_tile_len(struct cuda_gen *gen, struct clast_user_stmt *u)
 	gen->n_parallel = stmt->n_parallel;
 }
 
+/* Extract a description of the grid, i.e., the possible values
+ * of the block ids, from gen->tiled_sched.
+ * The block ids are parameters in gen->tiled_sched.
+ * We simply need to change them into set dimensions.
+ */
+static __isl_give isl_set *extract_grid(struct cuda_gen *gen)
+{
+	int i;
+	isl_set *grid;
+
+	grid = isl_union_map_params(isl_union_map_copy(gen->tiled_sched));
+	grid = isl_set_from_params(grid);
+	grid = isl_set_add_dims(grid, isl_dim_set, gen->n_grid);
+	for (i = 0; i < gen->n_grid; ++i) {
+		int pos;
+		char name[20];
+
+		snprintf(name, sizeof(name), "b%d", i);
+		pos = isl_set_find_dim_by_name(grid, isl_dim_param, name);
+		assert(pos >= 0);
+		grid = isl_set_equate(grid, isl_dim_param, pos, isl_dim_set, i);
+		grid = isl_set_project_out(grid, isl_dim_param, pos, 1);
+	}
+
+	return grid;
+}
+
+/* Print the effective grid size as a list of the sizes in each
+ * dimension, from innermost to outermost.
+ *
+ * The grid size specified by the user or set by default
+ * in read_grid_sizes() and applied in tile_schedule(),
+ * may be too large for the given code in the sense that
+ * it may contain blocks that don't need to execute anything.
+ * We therefore don't print this grid size, but instead the
+ * smallest grid size that ensures that all blocks that actually
+ * execute code are included in the grid.
+ *
+ * For each block dimension, we compute the maximal value of the block id
+ * and add one.
+ */
+static void print_grid_size(struct cuda_gen *gen, __isl_take isl_set *context)
+{
+	int i;
+	isl_printer *prn;
+	isl_set *grid;
+
+	if (gen->grid_dim == 0)
+		return;
+
+	grid = extract_grid(gen);
+
+	prn = isl_printer_to_file(gen->ctx, gen->cuda.host_c);
+	prn = isl_printer_set_output_format(prn, ISL_FORMAT_C);
+
+	prn = isl_printer_print_str(prn, "(");
+	for (i = gen->n_grid - 1; i >= 0; --i) {
+		isl_space *space;
+		isl_aff *one;
+		isl_pw_aff *bound = isl_set_dim_max(isl_set_copy(grid), i);
+
+		bound = isl_pw_aff_coalesce(bound);
+		bound = isl_pw_aff_gist(bound, isl_set_copy(context));
+
+		space = isl_pw_aff_get_domain_space(bound);
+		one = isl_aff_zero_on_domain(isl_local_space_from_space(space));
+		one = isl_aff_add_constant_si(one, 1);
+		bound = isl_pw_aff_add(bound, isl_pw_aff_from_aff(one));
+		prn = isl_printer_print_pw_aff(prn, bound);
+		isl_pw_aff_free(bound);
+
+		if (i > 0)
+			prn = isl_printer_print_str(prn, ", ");
+	}
+	prn = isl_printer_print_str(prn, ")");
+
+	isl_printer_free(prn);
+	isl_set_free(grid);
+	isl_set_free(context);
+}
+
 /* This function is called for each leaf in the clast of the host code.
  * We first specialize the schedule to the site of the leaf, compute
  * the size of shared memory and then print the body of host code
@@ -3692,14 +3773,14 @@ static void print_host_user(struct gpucode_info *code,
 	print_reverse_list(code->dst, gen->n_block, gen->block_dim);
 	fprintf(code->dst, ";\n");
 
-	print_indent(code->dst, code->indent);
-	fprintf(code->dst, "dim3 k%d_dimGrid", gen->kernel_id);
-	print_reverse_list(code->dst, gen->n_grid, gen->grid_dim);
-	fprintf(code->dst, ";\n");
-
 	gen->tiled_sched = tile_schedule(gen, local_sched);
 	gen->tiled_sched = parametrize_tiled_schedule(gen, gen->tiled_sched);
 	gen->tiled_sched = scale_tile_loops(gen, gen->tiled_sched);
+
+	print_indent(code->dst, code->indent);
+	fprintf(code->dst, "dim3 k%d_dimGrid", gen->kernel_id);
+	print_grid_size(gen, isl_set_params(isl_set_copy(host_domain)));
+	fprintf(code->dst, ";\n");
 
 	gen->local_sched = isl_union_map_copy(gen->tiled_sched);
 
