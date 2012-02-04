@@ -1087,7 +1087,7 @@ static __isl_give isl_union_map *thread_tile_schedule(struct cuda_gen *gen,
 }
 
 /* If the user asked for it, scale the shared memory tile loops
- * (T1P and T2) of "sched" by gen->tile_size[i].
+ * (T1T and T2) of "sched" by gen->tile_size[i].
  * If we are not performing "wrapping", then additionally scale the T1P
  * loops by gen->grid_dim[i].
  */
