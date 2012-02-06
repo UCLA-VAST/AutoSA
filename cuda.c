@@ -2468,22 +2468,18 @@ static void print_kernel_user(struct gpucode_info *code,
  * Any array for which we are allowed to print copying instructions at
  * this level, but haven't done so already, is printed.
  */
-static void print_kernel_for_head(struct gpucode_info *code,
-	struct clast_for *f)
+static void copy_to_local(struct cuda_gen *gen, __isl_keep isl_set *domain)
 {
 	int i;
-	struct cuda_gen *gen = code->user;
-	isl_set *domain;
 	int level;
 	int print = 0;
 
-	domain = isl_set_from_cloog_domain(cloog_domain_copy(f->domain));
-	level = isl_set_dim(domain, isl_dim_set) - 1;
+	level = isl_set_dim(domain, isl_dim_set);
 
 	for (i = 0; i < gen->n_array; ++i) {
 		if (gen->array[i].print_shared_level >= 0)
 			continue;
-		if (gen->array[i].last_shared > level)
+		if (gen->array[i].last_shared >= level)
 			continue;
 		gen->array[i].print_shared_level = level;
 		print = 1;
@@ -2494,6 +2490,22 @@ static void print_kernel_for_head(struct gpucode_info *code,
 		print_private_accesses(gen, domain, gen->read, "read", level);
 	}
 
+}
+
+/* This function is called for each for loop in the clast,
+ * right after the opening brace has been printed.
+ *
+ * Print copying instructions to shared or private memory if needed.
+ */
+static void print_kernel_for_head(struct gpucode_info *code,
+	struct clast_for *f)
+{
+	struct cuda_gen *gen = code->user;
+	isl_set *domain;
+
+	domain = isl_set_from_cloog_domain(cloog_domain_copy(f->domain));
+	copy_to_local(gen, domain);
+
 	isl_set_free(domain);
 }
 
@@ -2501,17 +2513,13 @@ static void print_kernel_for_head(struct gpucode_info *code,
  * for which print_kernel_for_head has added copying instructions
  * to shared memory.
  */
-static void print_kernel_for_foot(struct gpucode_info *code,
-	struct clast_for *f)
+static void copy_from_local(struct cuda_gen *gen, __isl_keep isl_set *domain)
 {
 	int i;
-	struct cuda_gen *gen = code->user;
-	isl_set *domain;
 	int level;
 	int print = 0;
 
-	domain = isl_set_from_cloog_domain(cloog_domain_copy(f->domain));
-	level = isl_set_dim(domain, isl_dim_set) - 1;
+	level = isl_set_dim(domain, isl_dim_set);
 
 	for (i = 0; i < gen->n_array; ++i) {
 		if (gen->array[i].print_shared_level != level)
@@ -2524,6 +2532,21 @@ static void print_kernel_for_foot(struct gpucode_info *code,
 		print_private_accesses(gen, domain, gen->write, "write", level);
 		print_shared_accesses(gen, domain, gen->write, "write", level);
 	}
+}
+
+/* This function is called for each for loop in the clast,
+ * right before the closing brace is printed.
+ *
+ * Print copying instructions from shared or private memory if needed.
+ */
+static void print_kernel_for_foot(struct gpucode_info *code,
+	struct clast_for *f)
+{
+	struct cuda_gen *gen = code->user;
+	isl_set *domain;
+
+	domain = isl_set_from_cloog_domain(cloog_domain_copy(f->domain));
+	copy_from_local(gen, domain);
 
 	isl_set_free(domain);
 }
@@ -2574,7 +2597,9 @@ static void print_cloog_kernel_body(struct cuda_gen *gen,
 	gen->kernel_code.print_for_head = &print_kernel_for_head;
 	gen->kernel_code.print_for_foot = &print_kernel_for_foot;
 	gen->kernel_code.user = gen;
+	copy_to_local(gen, context);
 	gpu_print_host_stmt(&gen->kernel_code, stmt);
+	copy_from_local(gen, context);
 
 	cloog_clast_free(stmt);
 	cloog_options_free(options);
