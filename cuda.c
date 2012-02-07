@@ -2959,7 +2959,7 @@ static int can_tile_for_shared_memory(struct cuda_gen *gen,
 
 /* Construct a map with input the shared tile loops and the loops that
  * will be wrapped around the threads that relates these later loops
- * to the thread indices and the projects them out.
+ * to the thread indices and then projects them out.
  */
 static __isl_give isl_map *compute_privatization(struct cuda_gen *gen)
 {
