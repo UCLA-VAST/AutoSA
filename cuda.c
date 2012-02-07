@@ -3431,10 +3431,39 @@ static void compute_group_shared_bound(struct cuda_gen *gen,
 	}
 }
 
+/* Is the size of the tile specified by "bound" smaller than the sum of
+ * the sizes of the tiles specified by "bound1" and "bound2"?
+ */
+static int smaller_tile(unsigned n_index, struct cuda_array_bound *bound,
+	struct cuda_array_bound *bound1, struct cuda_array_bound *bound2)
+{
+	int smaller;
+	isl_int size, size1, size2;
+
+	isl_int_init(size);
+	isl_int_init(size1);
+	isl_int_init(size2);
+
+	tile_size(n_index, bound, &size);
+	tile_size(n_index, bound1, &size1);
+	tile_size(n_index, bound2, &size2);
+
+	isl_int_sub(size, size, size1);
+	isl_int_sub(size, size, size2);
+	smaller = isl_int_is_neg(size);
+
+	isl_int_clear(size2);
+	isl_int_clear(size1);
+	isl_int_clear(size);
+
+	return smaller;
+}
+
 /* Given an initial grouping of array references and shared memory tiles
  * for each group that allows for a shared memory tile, merge two groups
- * if both have a shared memory tile and if the merged group also has
- * a shared memory tile.
+ * if both have a shared memory tile, the merged group also has
+ * a shared memory tile and the size of the tile for the merge group
+ * is smaller than the sum of the tile sizes of the individual groups.
  *
  * Return the number of group leaders after merging.
  */
@@ -3473,7 +3502,10 @@ static int group_common_shared_memory_tile(struct cuda_gen *gen,
 					    isl_map_copy(groups[j]->access));
 			shared_bound = create_bound_list(ctx, array->n_index);
 			if (!can_tile_for_shared_memory(gen, array, map,
-							shared_bound)) {
+							shared_bound) ||
+			    !smaller_tile(array->n_index, shared_bound,
+					groups[l]->shared_bound,
+					groups[j]->shared_bound)) {
 				isl_map_free(map);
 				free_bound_list(shared_bound, array->n_index);
 				continue;
