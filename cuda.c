@@ -74,6 +74,14 @@ struct cuda_array_ref_group {
 	/* References in this group; point to elements of a linked list. */
 	int n_ref;
 	struct cuda_stmt_access **refs;
+
+	/* Last shared memory tile dimension that affects tile of this group. */
+	int last_shared;
+	/* Dimension at which copying to/from shared memory is printed.
+	 * if >= 0, then the value is >= last_shared
+	 * if -1, then the copying is done at the leaf level.
+	 */
+	int print_shared_level;
 };
 
 struct cuda_array_info {
@@ -101,14 +109,6 @@ struct cuda_array_info {
 
 	/* For scalars, is this scalar read-only within the entire program? */
 	int read_only;
-
-	/* Last shared memory tile dimension that affects tile of this array. */
-	int last_shared;
-	/* Dimension at which copying to/from shared memory is printed.
-	 * if >= 0, then the value is >= last_shared
-	 * if -1, then the copying is done at the leaf level.
-	 */
-	int print_shared_level;
 };
 
 /* Print the name of the local copy of a given group of array references.
@@ -1924,10 +1924,10 @@ static void print_shared_accesses(struct cuda_gen *gen,
 	for (i = 0; i < gen->n_array; ++i) {
 		struct cuda_array_info *array = &gen->array[i];
 
-		if (gen->array[i].print_shared_level != level)
-			continue;
-
 		for (j = 0; j < array->n_group; ++j) {
+			if (array->groups[j]->print_shared_level != level)
+				continue;
+
 			if (print_group_shared_accesses(gen, array->groups[j],
 					    type, shared_domain, sched))
 				sync = 1;
@@ -2295,13 +2295,14 @@ static void print_private_accesses(struct cuda_gen *gen,
 	for (i = 0; i < gen->n_array; ++i) {
 		struct cuda_array_info *array = &gen->array[i];
 
-		if (gen->array[i].print_shared_level != level)
-			continue;
+		for (j = 0; j < array->n_group; ++j) {
+			if (array->groups[j]->print_shared_level != level)
+				continue;
 
-		for (j = 0; j < array->n_group; ++j)
 			print_group_private_accesses(gen, array->groups[j],
 					    type, shared_domain,
 					    first_shared, shared_len, sched);
+		}
 	}
 
 	isl_union_map_free(sched);
@@ -2475,19 +2476,23 @@ static void print_kernel_user(struct gpucode_info *code,
  */
 static void copy_to_local(struct cuda_gen *gen, __isl_keep isl_set *domain)
 {
-	int i;
+	int i, j;
 	int level;
 	int print = 0;
 
 	level = isl_set_dim(domain, isl_dim_set);
 
 	for (i = 0; i < gen->n_array; ++i) {
-		if (gen->array[i].print_shared_level >= 0)
-			continue;
-		if (gen->array[i].last_shared >= level)
-			continue;
-		gen->array[i].print_shared_level = level;
-		print = 1;
+		struct cuda_array_info *array = &gen->array[i];
+
+		for (j = 0; j < array->n_group; ++j) {
+			if (array->groups[j]->print_shared_level >= 0)
+				continue;
+			if (array->groups[j]->last_shared >= level)
+				continue;
+			array->groups[j]->print_shared_level = level;
+			print = 1;
+		}
 	}
 
 	if (print) {
@@ -2520,17 +2525,23 @@ static void print_kernel_for_head(struct gpucode_info *code,
  */
 static void copy_from_local(struct cuda_gen *gen, __isl_keep isl_set *domain)
 {
-	int i;
+	int i, j;
 	int level;
 	int print = 0;
 
 	level = isl_set_dim(domain, isl_dim_set);
 
 	for (i = 0; i < gen->n_array; ++i) {
-		if (gen->array[i].print_shared_level != level)
-			continue;
-		print = 1;
-		break;
+		struct cuda_array_info *array = &gen->array[i];
+
+		for (j = 0; j < array->n_group; ++j) {
+			if (array->groups[j]->print_shared_level != level)
+				continue;
+			print = 1;
+			break;
+		}
+		if (print)
+			break;
 	}
 
 	if (print) {
@@ -3177,7 +3188,7 @@ static void set_last_shared(struct cuda_gen *gen,
 		if (i < n_index)
 			break;
 	}
-	group->array->last_shared = j;
+	group->last_shared = j;
 }
 
 /* Compute the sizes of all private arrays for the current kernel,
@@ -3186,10 +3197,9 @@ static void set_last_shared(struct cuda_gen *gen,
  * we use the shared memory tile sizes computed in
  * compute_group_shared_bound instead.
  *
- * If a given Array only has a single reference group and if we have
- * been able to find a privated or shared tile,
+ * If we have been able to find a private or shared tile,
  * we also look for the last shared tile loop that affects the offset
- * (and therefore the array tile) and store the result in array->last_shared.
+ * (and therefore the group tile) and store the result in group->last_shared.
  *
  * A privatized copy of all access relations from reference groups that
  * are mapped to private memory is stored in gen->privatization.
@@ -3217,12 +3227,11 @@ static void compute_private_size(struct cuda_gen *gen)
 				group_access_relation(array->groups[j], 1, 1));
 		}
 
-		array->last_shared = gen->shared_len - 1;
-		array->print_shared_level = -1;
-
-		if (array->n_group != 1)
-			continue;
-		set_last_shared(gen, array->groups[0]);
+		for (j = 0; j < array->n_group; ++j) {
+			array->groups[j]->last_shared = gen->shared_len - 1;
+			array->groups[j]->print_shared_level = -1;
+			set_last_shared(gen, array->groups[j]);
+		}
 	}
 
 	if (isl_union_map_is_empty(private))
