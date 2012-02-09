@@ -3705,8 +3705,10 @@ static void print_grid_size(struct cuda_gen *gen, __isl_take isl_set *context)
 	isl_printer *prn;
 	isl_set *grid;
 
-	if (gen->n_grid == 0)
+	if (gen->n_grid == 0) {
+		isl_set_free(context);
 		return;
+	}
 
 	grid = extract_grid(gen);
 
