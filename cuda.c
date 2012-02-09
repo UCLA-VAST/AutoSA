@@ -3334,6 +3334,7 @@ static int populate_array_references(struct cuda_gen *gen,
 		}
 
 		map = isl_map_from_union_map(umap);
+		map = isl_map_detect_equalities(map);
 
 		group = isl_calloc_type(ctx, struct cuda_array_ref_group);
 		assert(group);
@@ -3360,8 +3361,54 @@ static void free_array_ref_group(struct cuda_array_ref_group *group,
 	free(group);
 }
 
-/* If two groups have overlapping access relations and if one of them
- * involves a write, then merge the two groups into one.
+/* Given a set where the parameters gen->first_shared up to
+ * gen->first_shared + gen->shared_len represent the tile loops,
+ * eliminate the innermost of those that have a fixed value
+ * until we reach one that does not (obviously) have a fixed value.
+ */
+static __isl_give isl_set *eliminate_fixed_inner_loops(struct cuda_gen *gen,
+	__isl_take isl_set *access)
+{
+	int i;
+
+	for (i = gen->shared_len - 1; i >= 0; --i) {
+		int pos = gen->first_shared + i;
+		if (!isl_set_plain_is_fixed(access, isl_dim_param, pos, NULL))
+			break;
+		access = isl_set_eliminate(access, isl_dim_param, pos, 1);
+	}
+	return access;
+}
+
+/* Check if the accessed set of group1 and group2 overlap within
+ * the innermost loop.  In particular, ignore any inner dimension
+ * with a fixed value.
+ * The copying to and from shared memory will be performed within
+ * the innermost actual loop so we are only allowed to consider
+ * the dimensions up to that innermost loop while checking whether
+ * two access sets overlap.
+ */
+static int accesses_overlap(struct cuda_gen *gen,
+	struct cuda_array_ref_group *group1,
+	struct cuda_array_ref_group *group2)
+{
+	int empty;
+	isl_set *access1, *access2;
+
+	access1 = isl_map_range(isl_map_copy(group1->access));
+	access1 = eliminate_fixed_inner_loops(gen, access1);
+	access2 = isl_map_range(isl_map_copy(group2->access));
+	access2 = eliminate_fixed_inner_loops(gen, access2);
+	access1 = isl_set_intersect(access1, access2);
+	empty = isl_set_is_empty(access1);
+	isl_set_free(access1);
+
+	return !empty;
+}
+
+/* If two groups have overlapping access relations (within the innermost
+ * loop) and if one of them involves a write, then merge the two groups
+ * into one.
  *
  * We keep track of the grouping in "leader".  leader[j] points to
  * an earlier group array element that belongs to the same group,
@@ -3369,7 +3416,7 @@ static void free_array_ref_group(struct cuda_array_ref_group *group,
  *
  * Return the number of group leaders.
  */
-static int group_overlapping_writes(int n,
+static int group_overlapping_writes(struct cuda_gen *gen, int n,
 	struct cuda_array_ref_group **groups, int *leader)
 {
 	int i, j;
@@ -3379,20 +3426,12 @@ static int group_overlapping_writes(int n,
 		int l = i;
 		groups[l]->n_ref = 1;
 		for (j = i - 1; j >= 0; --j) {
-			isl_map *map;
-			int empty;
-
 			if (leader[j] != j)
 				continue;
 			if (!groups[l]->write && !groups[j]->write)
 				continue;
 
-			map = isl_map_intersect(isl_map_copy(groups[l]->access),
-					    isl_map_copy(groups[j]->access));
-			empty = isl_map_is_empty(map);
-			isl_map_free(map);
-
-			if (empty)
+			if (!accesses_overlap(gen, groups[l], groups[j]))
 				continue;
 			
 			groups[j]->access = isl_map_union(groups[j]->access,
@@ -3603,7 +3642,7 @@ static void group_array_references(struct cuda_gen *gen,
 	leader = isl_alloc_array(ctx, int, n);
 	assert(leader);
 
-	n_group = group_overlapping_writes(n, groups, leader);
+	n_group = group_overlapping_writes(gen, n, groups, leader);
 
 	for (i = 0; i < n; ++i)
 		if (leader[i] == i)
