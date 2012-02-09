@@ -1490,7 +1490,8 @@ static __isl_give isl_union_map *access_schedule(struct cuda_gen *gen,
  * the array size into account.
  */
 static void print_global_index(FILE *out,
-	struct cuda_array_info *array, __isl_keep isl_pw_multi_aff *pma)
+	struct cuda_array_info *array, __isl_keep isl_pw_multi_aff *pma,
+	__isl_keep isl_set *domain)
 {
 	int i;
 	isl_ctx *ctx = isl_pw_multi_aff_get_ctx(pma);
@@ -1509,6 +1510,7 @@ static void print_global_index(FILE *out,
 	for (i = 0; i < array->n_index; ++i) {
 		isl_pw_aff *pa = isl_pw_multi_aff_get_pw_aff(pma, i);
 		pa = isl_pw_aff_coalesce(pa);
+		pa = isl_pw_aff_gist(pa, isl_set_copy(domain));
 		if (i) {
 			prn = isl_printer_print_str(prn, ") * (");
 			prn = isl_printer_print_pw_aff(prn,
@@ -1644,9 +1646,9 @@ static void print_copy_statement(struct gpucode_info *code,
 	if (read) {
 		print_local_index(code->dst, group, bounds, pma, domain);
 		fprintf(code->dst, " = ");
-		print_global_index(code->dst, group->array, pma);
+		print_global_index(code->dst, group->array, pma, domain);
 	} else {
-		print_global_index(code->dst, group->array, pma);
+		print_global_index(code->dst, group->array, pma, domain);
 		fprintf(code->dst, " = ");
 		print_local_index(code->dst, group, bounds, pma, domain);
 	}
