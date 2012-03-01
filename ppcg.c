@@ -27,7 +27,7 @@ struct options {
 ISL_ARGS_START(struct options, options_args)
 ISL_ARG_CHILD(struct options, isl, "isl", &isl_options_args, "isl options")
 ISL_ARG_CHILD(struct options, pet, "pet", &pet_options_args, "pet options")
-ISL_ARG_CHILD(struct options, ppcg, NULL, &ppcg_options_args, NULL)
+ISL_ARG_CHILD(struct options, ppcg, NULL, &ppcg_options_args, "ppcg options")
 ISL_ARG_ARG(struct options, input, "input", NULL)
 ISL_ARGS_END
 
