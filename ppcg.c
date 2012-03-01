@@ -38,7 +38,6 @@ int main(int argc, char **argv)
 	int r;
 	isl_ctx *ctx;
 	struct options *options;
-	FILE *input;
 	struct pet_scop *scop;
 
 	options = options_new_with_defaults();
