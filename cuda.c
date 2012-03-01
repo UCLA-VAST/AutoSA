@@ -3738,23 +3738,6 @@ static void free_local_array_info(struct cuda_gen *gen)
 	}
 }
 
-static void print_iterator_list(FILE *out, int len, const char *prefix,
-	int parens)
-{
-	int i;
-
-	fprintf(out, "(");
-	for (i = 0; i < len; ++i) {
-		if (i)
-			fprintf(out, ", ");
-		if (parens)
-			fprintf(out, "(%s%d)", prefix, i);
-		else
-			fprintf(out, "%s%d", prefix, i);
-	}
-	fprintf(out, ")");
-}
-
 /* The sizes of the arrays on the host that have been computed by
  * extract_array_info may depend on the parameters.  Use the extra
  * constraints on the parameters that are valid at "host_domain"
