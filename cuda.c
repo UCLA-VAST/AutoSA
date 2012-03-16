@@ -4374,7 +4374,6 @@ static int set_untiled_len(__isl_take isl_map *map, void *user)
 static void compute_schedule(struct cuda_gen *gen,
 	__isl_take isl_union_map *sched)
 {
-	isl_ctx *ctx = isl_union_map_get_ctx(sched);
 	isl_union_set *domain;
 	isl_union_map *empty;
 	isl_union_map *dep_raw, *dep2, *dep3, *dep;
