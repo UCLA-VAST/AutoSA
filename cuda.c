@@ -4521,8 +4521,8 @@ static struct cuda_stmt *extract_stmts(isl_ctx *ctx, struct pet_scop *scop,
  * to h%d parameters and the T1P loops to the block dimensions.
  * Finally, we generate code for the remaining loops in a similar fashion.
  */
-int cuda_pet(isl_ctx *ctx, struct pet_scop *scop, struct ppcg_options *options,
-	const char *input)
+int generate_cuda(isl_ctx *ctx, struct pet_scop *scop,
+	struct ppcg_options *options, const char *input)
 {
 	isl_union_map *sched;
 	struct cuda_gen gen;

@@ -125,7 +125,7 @@ void collect_array_info(struct cuda_gen *gen);
 void print_host_code(struct cuda_gen *gen);
 void clear_cuda_gen(struct cuda_gen *gen);
 
-int cuda_pet(isl_ctx *ctx, struct pet_scop *scop, struct ppcg_options *options,
-	const char *input);
+int generate_cuda(isl_ctx *ctx, struct pet_scop *scop,
+	struct ppcg_options *options, const char *input);
 
 #endif

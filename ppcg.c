@@ -51,7 +51,7 @@ int main(int argc, char **argv)
 	scop = pet_scop_extract_from_C_source(ctx, options->input, NULL);
 
 	if (options->ppcg->target == PPCG_TARGET_CUDA)
-		r = cuda_pet(ctx, scop, options->ppcg, options->input);
+		r = generate_cuda(ctx, scop, options->ppcg, options->input);
 	else
 		r = generate_cpu(ctx, scop, options->ppcg, options->input);
 
