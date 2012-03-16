@@ -3,14 +3,14 @@
 
 #include <pet.h>
 #include "cuda_common.h"
-#include "gpucode.h"
+#include "clast_printer.h"
 #include "ppcg_options.h"
 
 struct cuda_gen {
 	struct cuda_info cuda;
-	struct gpucode_info code;
-	struct gpucode_info kernel_code;
-	struct gpucode_info stmt_code;
+	struct clast_printer_info code;
+	struct clast_printer_info kernel_code;
+	struct clast_printer_info stmt_code;
 
 	isl_ctx *ctx;
 	struct ppcg_options *options;

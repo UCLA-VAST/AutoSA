@@ -23,7 +23,7 @@
 
 #include "cuda.h"
 #include "cuda_common.h"
-#include "gpucode.h"
+#include "clast_printer.h"
 #include "schedule.h"
 #include "ppcg_options.h"
 
@@ -1232,7 +1232,7 @@ static __isl_give isl_union_map *scale_access_tile_loops(struct cuda_gen *gen,
  */
 static void print_cloog_shared_body(struct cuda_gen *gen,
 	__isl_keep isl_set *context, __isl_keep isl_union_map *sched, int len,
-	void (*print_user_stmt)(struct gpucode_info *info,
+	void (*print_user_stmt)(struct clast_printer_info *info,
 				struct clast_user_stmt *s),
 	int first_unroll)
 {
@@ -1275,7 +1275,7 @@ static void print_cloog_shared_body(struct cuda_gen *gen,
 	gen->stmt_code.print_for_head = NULL;
 	gen->stmt_code.print_for_foot = NULL;
 	gen->stmt_code.user = gen;
-	gpu_print_host_stmt(&gen->stmt_code, stmt);
+	print_clast(&gen->stmt_code, stmt);
 
 	cloog_clast_free(stmt);
 	cloog_options_free(options);
@@ -1333,7 +1333,7 @@ __isl_give isl_set *add_bounded_parameters(__isl_take isl_set *set,
 
 static void print_shared_body(struct cuda_gen *gen,
 	__isl_keep isl_set *shared_domain, __isl_keep isl_union_map *sched,
-	int len, void (*print_user_stmt)(struct gpucode_info *info,
+	int len, void (*print_user_stmt)(struct clast_printer_info *info,
 					 struct clast_user_stmt *s),
 	int first_unroll)
 {
@@ -1606,7 +1606,7 @@ static void print_local_index(FILE *out,
  * the domain of copy_sched at the current scheduling position
  * as the index of the array.
  */
-static void print_copy_statement(struct gpucode_info *code,
+static void print_copy_statement(struct clast_printer_info *code,
 	struct clast_user_stmt *u)
 {
 	struct cuda_gen *gen = code->user;
@@ -2132,7 +2132,7 @@ static void print_stmt_body(struct cuda_gen *gen,
  * We print the statement body, simplifying the accesses based
  * on the schedule.
  */
-static void print_statement(struct gpucode_info *code,
+static void print_statement(struct clast_printer_info *code,
 	struct clast_user_stmt *u)
 {
 	struct cuda_gen *gen = code->user;
@@ -2443,7 +2443,7 @@ static __isl_give isl_union_map *interchange_for_unroll(struct cuda_gen *gen,
  * computations and writing from shared memory, with the required
  * synchronizations.
  */
-static void print_kernel_user(struct gpucode_info *code,
+static void print_kernel_user(struct clast_printer_info *code,
 	struct clast_user_stmt *u)
 {
 	struct cuda_gen *gen = code->user;
@@ -2507,7 +2507,7 @@ static void copy_to_local(struct cuda_gen *gen, __isl_keep isl_set *domain)
  *
  * Print copying instructions to shared or private memory if needed.
  */
-static void print_kernel_for_head(struct gpucode_info *code,
+static void print_kernel_for_head(struct clast_printer_info *code,
 	struct clast_for *f)
 {
 	struct cuda_gen *gen = code->user;
@@ -2555,7 +2555,7 @@ static void copy_from_local(struct cuda_gen *gen, __isl_keep isl_set *domain)
  *
  * Print copying instructions from shared or private memory if needed.
  */
-static void print_kernel_for_foot(struct gpucode_info *code,
+static void print_kernel_for_foot(struct clast_printer_info *code,
 	struct clast_for *f)
 {
 	struct cuda_gen *gen = code->user;
@@ -2569,7 +2569,7 @@ static void print_kernel_for_foot(struct gpucode_info *code,
 
 /* Use CLooG to generate code for the outer gen->shared_first loops
  * of the local schedule "sched".
- * The pretty printing of this code is handled by gpu_print_host_stmt,
+ * The pretty printing of this code is handled by print_clast,
  * which calls print_kernel_user for each iteration of the shared tile loops.
  */
 static void print_cloog_kernel_body(struct cuda_gen *gen,
@@ -2614,7 +2614,7 @@ static void print_cloog_kernel_body(struct cuda_gen *gen,
 	gen->kernel_code.print_for_foot = &print_kernel_for_foot;
 	gen->kernel_code.user = gen;
 	copy_to_local(gen, context);
-	gpu_print_host_stmt(&gen->kernel_code, stmt);
+	print_clast(&gen->kernel_code, stmt);
 	copy_from_local(gen, context);
 
 	cloog_clast_free(stmt);
@@ -3874,7 +3874,7 @@ static void print_grid_size(struct cuda_gen *gen, __isl_take isl_set *context)
  * the size of shared memory and then print the body of host code
  * and the associated kernel (through a call to print_kernel_body).
  */
-static void print_host_user(struct gpucode_info *code,
+static void print_host_user(struct clast_printer_info *code,
 	struct clast_user_stmt *u)
 {
 	struct cuda_gen *gen = code->user;
@@ -3958,7 +3958,7 @@ static void print_host_user(struct gpucode_info *code,
 
 /* Use CLooG to generate code for the outer gen->tile_first loops
  * of the global schedule in gen->sched.
- * The pretty printing of this code is handled by gpu_print_host_stmt,
+ * The pretty printing of this code is handled by print_clast,
  * which calls print_host_user for each kernel invocation location.
  */
 static void print_cloog_host_code(struct cuda_gen *gen)
@@ -4002,7 +4002,7 @@ static void print_cloog_host_code(struct cuda_gen *gen)
 	gen->code.print_for_head = NULL;
 	gen->code.print_for_foot = NULL;
 	gen->code.user = gen;
-	gpu_print_host_stmt(&gen->code, stmt);
+	print_clast(&gen->code, stmt);
 
 	cloog_clast_free(stmt);
 	cloog_options_free(options);

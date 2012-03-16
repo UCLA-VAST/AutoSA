@@ -8,7 +8,7 @@
  * 91893 Orsay, France
  */
 
-#include "gpucode.h"
+#include "clast_printer.h"
 
 void print_cloog_macros(FILE *dst)
 {
@@ -21,7 +21,7 @@ void print_cloog_macros(FILE *dst)
 }
 
 static void print_expr(struct clast_expr *e, FILE *dst);
-static void print_stmt(struct gpucode_info *info, struct clast_stmt *s);
+static void print_stmt(struct clast_printer_info *info, struct clast_stmt *s);
 
 void print_indent(FILE *dst, int indent)
 {
@@ -150,7 +150,7 @@ static void print_ass(struct clast_assignment *a, FILE *dst, int indent,
     fprintf(dst, ";\n");
 }
 
-static void print_guard(struct gpucode_info *info, struct clast_guard *g)
+static void print_guard(struct clast_printer_info *info, struct clast_guard *g)
 {
     int i;
     int n = g->n;
@@ -181,7 +181,7 @@ static void print_guard(struct gpucode_info *info, struct clast_guard *g)
     fprintf(info->dst, "}\n");
 }
 
-static void print_for(struct gpucode_info *info, struct clast_for *f)
+static void print_for(struct clast_printer_info *info, struct clast_for *f)
 {
     assert(f->LB && f->UB);
     print_indent(info->dst, info->indent);
@@ -224,7 +224,7 @@ static void print_user_stmt(struct clast_user_stmt *u, FILE *dst, int indent)
     fprintf(dst, ");\n");
 }
 
-static void print_stmt(struct gpucode_info *info, struct clast_stmt *s)
+static void print_stmt(struct clast_printer_info *info, struct clast_stmt *s)
 {
     int first_ass = 1;
 
@@ -254,7 +254,7 @@ static void print_stmt(struct gpucode_info *info, struct clast_stmt *s)
     }
 }
 
-void gpu_print_host_stmt(struct gpucode_info *info, struct clast_stmt *s)
+void print_clast(struct clast_printer_info *info, struct clast_stmt *s)
 {
     print_stmt(info, s);
 }
