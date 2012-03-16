@@ -2060,8 +2060,27 @@ static void print_access(struct cuda_gen *gen, __isl_take isl_map *access,
 	isl_pw_multi_aff_free(pma);
 }
 
-static struct cuda_stmt_access *print_expr(struct cuda_gen *gen, FILE *out,
-	struct pet_expr *expr, struct cuda_stmt_access *access, int outer)
+struct cuda_access_print_info {
+	struct cuda_gen *gen;
+	struct cuda_stmt_access *access;
+};
+
+/* To print the cuda accesses we walk the list of cuda accesses simultaneously
+ * with the pet printer. This means that whenever the pet printer prints a
+ * pet access expression we have the corresponding cuda access available and can
+ * print the modified access.
+ */
+static void print_cuda_access(struct pet_expr *expr, void *usr)
+{
+	struct cuda_access_print_info *info =
+		(struct cuda_access_print_info *) usr;
+	print_access(info->gen, isl_map_copy(info->access->access),
+		     info->access->group);
+	info->access = info->access->next;
+}
+
+static void print_pet_expr(FILE *out, struct pet_expr *expr, int outer,
+	void (*print_access_fn)(struct pet_expr *expr, void *usr), void *usr)
 {
 	int i;
 
@@ -2070,40 +2089,39 @@ static struct cuda_stmt_access *print_expr(struct cuda_gen *gen, FILE *out,
 		fprintf(out, "%g", expr->d);
 		break;
 	case pet_expr_access:
-		print_access(gen, isl_map_copy(access->access), access->group);
-		access = access->next;
+		print_access_fn(expr, usr);
 		break;
 	case pet_expr_unary:
 		if (!outer)
 			fprintf(out, "(");
 		fprintf(out, " %s ", pet_op_str(expr->op));
-		access = print_expr(gen, out, expr->args[pet_un_arg],
-					access, 0);
+		print_pet_expr(out, expr->args[pet_un_arg], 0,
+			       print_access_fn, usr);
 		if (!outer)
 			fprintf(out, ")");
 		break;
 	case pet_expr_binary:
 		if (!outer)
 			fprintf(out, "(");
-		access = print_expr(gen, out, expr->args[pet_bin_lhs],
-					access, 0);
+		print_pet_expr(out, expr->args[pet_bin_lhs], 0,
+			       print_access_fn, usr);
 		fprintf(out, " %s ", pet_op_str(expr->op));
-		access = print_expr(gen, out, expr->args[pet_bin_rhs],
-					access, 0);
+		print_pet_expr(out, expr->args[pet_bin_rhs], 0,
+			       print_access_fn, usr);
 		if (!outer)
 			fprintf(out, ")");
 		break;
 	case pet_expr_ternary:
 		if (!outer)
 			fprintf(out, "(");
-		access = print_expr(gen, out, expr->args[pet_ter_cond],
-					access, 0);
+		print_pet_expr(out, expr->args[pet_ter_cond], 0,
+			       print_access_fn, usr);
 		fprintf(out, " ? ");
-		access = print_expr(gen, out, expr->args[pet_ter_true],
-					access, 0);
+		print_pet_expr(out, expr->args[pet_ter_true], 0,
+			       print_access_fn, usr);
 		fprintf(out, " : ");
-		access = print_expr(gen, out, expr->args[pet_ter_false],
-					access, 0);
+		print_pet_expr(out, expr->args[pet_ter_false], 0,
+			       print_access_fn, usr);
 		if (!outer)
 			fprintf(out, ")");
 		break;
@@ -2112,18 +2130,22 @@ static struct cuda_stmt_access *print_expr(struct cuda_gen *gen, FILE *out,
 		for (i = 0; i < expr->n_arg; ++i) {
 			if (i)
 				fprintf(out, ", ");
-			access = print_expr(gen, out, expr->args[i],
-						access, 1);
+			print_pet_expr(out, expr->args[i], 1,
+				       print_access_fn, usr);
 		}
 		fprintf(out, ")");
 	}
-	return access;
 }
 
 static void print_stmt_body(struct cuda_gen *gen,
 	FILE *out, struct cuda_stmt *stmt)
 {
-	print_expr(gen, out, stmt->body, stmt->accesses, 1);
+	struct cuda_access_print_info info;
+
+	info.gen = gen;
+	info.access = stmt->accesses;
+
+	print_pet_expr(out, stmt->body, 1, print_cuda_access, &info);
 	fprintf(out, ";\n");
 }
 
