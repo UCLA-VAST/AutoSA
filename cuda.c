@@ -25,6 +25,7 @@
 #include "cuda_common.h"
 #include "clast_printer.h"
 #include "schedule.h"
+#include "pet_printer.h"
 #include "ppcg_options.h"
 
 /* The fields stride, shift and shift_map only contain valid information
@@ -2079,64 +2080,6 @@ static void print_cuda_access(struct pet_expr *expr, void *usr)
 	info->access = info->access->next;
 }
 
-static void print_pet_expr(FILE *out, struct pet_expr *expr, int outer,
-	void (*print_access_fn)(struct pet_expr *expr, void *usr), void *usr)
-{
-	int i;
-
-	switch (expr->type) {
-	case pet_expr_double:
-		fprintf(out, "%g", expr->d);
-		break;
-	case pet_expr_access:
-		print_access_fn(expr, usr);
-		break;
-	case pet_expr_unary:
-		if (!outer)
-			fprintf(out, "(");
-		fprintf(out, " %s ", pet_op_str(expr->op));
-		print_pet_expr(out, expr->args[pet_un_arg], 0,
-			       print_access_fn, usr);
-		if (!outer)
-			fprintf(out, ")");
-		break;
-	case pet_expr_binary:
-		if (!outer)
-			fprintf(out, "(");
-		print_pet_expr(out, expr->args[pet_bin_lhs], 0,
-			       print_access_fn, usr);
-		fprintf(out, " %s ", pet_op_str(expr->op));
-		print_pet_expr(out, expr->args[pet_bin_rhs], 0,
-			       print_access_fn, usr);
-		if (!outer)
-			fprintf(out, ")");
-		break;
-	case pet_expr_ternary:
-		if (!outer)
-			fprintf(out, "(");
-		print_pet_expr(out, expr->args[pet_ter_cond], 0,
-			       print_access_fn, usr);
-		fprintf(out, " ? ");
-		print_pet_expr(out, expr->args[pet_ter_true], 0,
-			       print_access_fn, usr);
-		fprintf(out, " : ");
-		print_pet_expr(out, expr->args[pet_ter_false], 0,
-			       print_access_fn, usr);
-		if (!outer)
-			fprintf(out, ")");
-		break;
-	case pet_expr_call:
-		fprintf(out, "%s(", expr->name);
-		for (i = 0; i < expr->n_arg; ++i) {
-			if (i)
-				fprintf(out, ", ");
-			print_pet_expr(out, expr->args[i], 1,
-				       print_access_fn, usr);
-		}
-		fprintf(out, ")");
-	}
-}
-
 static void print_stmt_body(struct cuda_gen *gen,
 	FILE *out, struct cuda_stmt *stmt)
 {
@@ -2145,7 +2088,7 @@ static void print_stmt_body(struct cuda_gen *gen,
 	info.gen = gen;
 	info.access = stmt->accesses;
 
-	print_pet_expr(out, stmt->body, 1, print_cuda_access, &info);
+	print_pet_expr(out, stmt->body, print_cuda_access, &info);
 	fprintf(out, ";\n");
 }
 

@@ -43,6 +43,8 @@ ppcg_SOURCES = \
 	rewrite.h \
 	schedule.c \
 	schedule.h \
+	pet_printer.c \
+	pet_printer.h \
 	ppcg_options.c \
 	ppcg_options.h \
 	ppcg.c
