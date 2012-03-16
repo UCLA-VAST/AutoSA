@@ -488,23 +488,6 @@ static void copy_arrays_from_device(struct cuda_gen *gen)
 	fprintf(gen->cuda.host_c, "\n");
 }
 
-static void read_sizes_from_file(struct cuda_gen *gen, const char *filename,
-	int *sizes, int len)
-{
-	int i;
-	FILE *file;
-
-	file = fopen(filename, "r");
-	if (!file)
-		return;
-
-	for (i = 0; i < len; ++i)
-		if (fscanf(file, "%d", &sizes[i]) < 1)
-			break;
-
-	fclose(file);
-}
-
 /* Internal data structure for extract_size_of_type.
  * "type" specifies the name of the space that we want to extract.
  * "res" is used to store the subset of that space.
