@@ -13,41 +13,7 @@
 #include <string.h>
 
 #include "cuda_common.h"
-
-static char *skip_spaces(char *s)
-{
-    while (isspace(*s))
-        ++s;
-    return s;
-}
-
-static int is_begin_scop(char *line)
-{
-    line = skip_spaces(line);
-    if (*line != '#')
-        return 0;
-    line = skip_spaces(line + 1);
-    if (strncmp(line, "pragma", sizeof("pragma") - 1))
-        return 0;
-    line = skip_spaces(line + sizeof("pragma") - 1);
-    if (strncmp(line, "scop", sizeof("scop") - 1))
-        return 0;
-    return 1;
-}
-
-static int is_end_scop(char *line)
-{
-    line = skip_spaces(line);
-    if (*line != '#')
-        return 0;
-    line = skip_spaces(line + 1);
-    if (strncmp(line, "pragma", sizeof("pragma") - 1))
-        return 0;
-    line = skip_spaces(line + sizeof("pragma") - 1);
-    if (strncmp(line, "endscop", sizeof("endscop") - 1))
-        return 0;
-    return 1;
-}
+#include "rewrite.h"
 
 /* Open the "input" file for reading and open the host .cu file
  * and the kernel .hu and .cu files for writing.
@@ -60,7 +26,6 @@ void cuda_open_files(struct cuda_info *info, const char *input)
     const char *base;
     const char *ext;
     int len;
-    char line[1024];
 
     base = strrchr(input, '/');
     if (base)
@@ -85,11 +50,7 @@ void cuda_open_files(struct cuda_info *info, const char *input)
     fprintf(info->kernel_h, "#include \"cuda.h\"\n\n");
 
     info->input = fopen(input, "r");
-    while (fgets(line, sizeof(line), info->input)) {
-        fprintf(info->host_c, "%s", line);
-        if (is_begin_scop(line))
-            break;
-    }
+    copy_before_scop(info->input, info->host_c);
 }
 
 /* Copy all code starting at the endscop pragma from the input
@@ -97,18 +58,7 @@ void cuda_open_files(struct cuda_info *info, const char *input)
  */
 void cuda_close_files(struct cuda_info *info)
 {
-    char line[1024];
-
-    while (fgets(line, sizeof(line), info->input)) {
-        if (is_end_scop(line)) {
-            fprintf(info->host_c, "%s", line);
-            break;
-        }
-    }
-    while (fgets(line, sizeof(line), info->input)) {
-        fprintf(info->host_c, "%s", line);
-    }
-
+    copy_after_scop(info->input, info->host_c);
     fclose(info->input);
     fclose(info->kernel_c);
     fclose(info->kernel_h);

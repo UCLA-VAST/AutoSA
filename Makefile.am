@@ -39,6 +39,8 @@ ppcg_SOURCES = \
 	cuda_common.c \
 	gpucode.c \
 	gpucode.h \
+	rewrite.c \
+	rewrite.h \
 	schedule.c \
 	schedule.h \
 	ppcg_options.c \
