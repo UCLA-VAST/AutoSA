@@ -1615,7 +1615,6 @@ static void print_copy_statement(struct clast_printer_info *code,
 	isl_map *sched;
 	struct cuda_array_ref_group *group = gen->copy_group;
 	struct cuda_array_bound *bounds = gen->copy_bound;
-	int i;
 	unsigned n_in;
 	unsigned n_out;
 	isl_space *dim;
