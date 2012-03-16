@@ -20,8 +20,14 @@ struct ppcg_options {
 
 	/* Maximal amount of shared memory. */
 	int max_shared_memory;
+
+	/* The target we generate code for. */
+	int target;
 };
 
 ISL_ARG_DECL(ppcg_options, struct ppcg_options, ppcg_options_args)
+
+#define		PPCG_TARGET_C		0
+#define		PPCG_TARGET_CUDA	1
 
 #endif

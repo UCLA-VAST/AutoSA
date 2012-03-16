@@ -35,6 +35,8 @@ bin_PROGRAMS = ppcg
 ppcg_SOURCES = \
 	clast_printer.c \
 	clast_printer.h \
+	cpu.c \
+	cpu.h \
 	cuda.c \
 	cuda.h \
 	cuda_common.h \

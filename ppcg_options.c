@@ -10,6 +10,12 @@
 
 #include "ppcg_options.h"
 
+static struct isl_arg_choice target[] = {
+	{"c",		PPCG_TARGET_C},
+	{"cuda",	PPCG_TARGET_CUDA},
+	{0}
+};
+
 ISL_ARGS_START(struct ppcg_options, ppcg_options_args)
 ISL_ARG_BOOL(struct ppcg_options, scale_tile_loops, 0,
 	"scale-tile-loops", 1, NULL)
@@ -25,4 +31,6 @@ ISL_ARG_STR(struct ppcg_options, sizes, 0, "sizes", "sizes", NULL,
 	"Per kernel tile, grid and block sizes")
 ISL_ARG_INT(struct ppcg_options, max_shared_memory, 0,
 	"max-shared-memory", "size", 8192, "maximal amount of shared memory")
+ISL_ARG_CHOICE(struct ppcg_options, target, 0, "target", target,
+	PPCG_TARGET_CUDA, "the target to generate code for")
 ISL_ARGS_END

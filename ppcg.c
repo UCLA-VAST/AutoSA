@@ -16,6 +16,7 @@
 #include <pet.h>
 #include "ppcg_options.h"
 #include "cuda.h"
+#include "cpu.h"
 
 struct options {
 	struct isl_options *isl;
@@ -48,7 +49,12 @@ int main(int argc, char **argv)
 	argc = options_parse(options, argc, argv, ISL_ARG_ALL);
 
 	scop = pet_scop_extract_from_C_source(ctx, options->input, NULL);
-	r = cuda_pet(ctx, scop, options->ppcg, options->input);
+
+	if (options->ppcg->target == PPCG_TARGET_CUDA)
+		r = cuda_pet(ctx, scop, options->ppcg, options->input);
+	else
+		r = generate_cpu(ctx, scop, options->ppcg, options->input);
+
 	pet_scop_free(scop);
 
 	isl_ctx_free(ctx);
