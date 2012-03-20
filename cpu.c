@@ -228,8 +228,10 @@ static __isl_give isl_id *ast_build_before_for(
  * 	  that is marked as openmp parallel.
  *
  */
-static __isl_give isl_ast_node *ast_build_after_for(__isl_take isl_ast_node *node,
-        __isl_keep isl_ast_build *build, void *user) {
+static __isl_give isl_ast_node *ast_build_after_for(
+	__isl_take isl_ast_node *node, __isl_keep isl_ast_build *build,
+	void *user)
+{
 	isl_id *id;
 	struct ast_build_userinfo *build_info;
 	struct ast_node_userinfo *info;
