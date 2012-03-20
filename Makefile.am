@@ -52,6 +52,7 @@ ppcg_SOURCES = \
 	ppcg.h \
 	print.c \
 	print.h \
+	util.c \
 	util.h \
 	version.c
 
