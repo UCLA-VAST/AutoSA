@@ -29,6 +29,7 @@
 #include "cpu.h"
 #include "print.h"
 #include "schedule.h"
+#include "util.h"
 
 /* Representation of a statement inside a generated AST.
  *
@@ -501,6 +502,42 @@ error:
 	return NULL;
 }
 
+/* Tile the band node "node" with tile sizes "sizes" and
+ * mark all members of the resulting tile node as "atomic".
+ */
+static __isl_give isl_schedule_node *tile(__isl_take isl_schedule_node *node,
+	__isl_take isl_multi_val *sizes)
+{
+	node = isl_schedule_node_band_tile(node, sizes);
+	node = ppcg_set_schedule_node_type(node, isl_ast_loop_atomic);
+
+	return node;
+}
+
+/* Tile "node", if it is a band node with at least 2 members.
+ * The tile sizes are set from the "tile_size" option.
+ */
+static __isl_give isl_schedule_node *tile_band(
+	__isl_take isl_schedule_node *node, void *user)
+{
+	struct ppcg_scop *scop = user;
+	int i, n;
+	isl_space *space;
+	isl_multi_val *sizes;
+
+	if (isl_schedule_node_get_type(node) != isl_schedule_node_band)
+		return node;
+
+	n = isl_schedule_node_band_n_member(node);
+	if (n <= 1)
+		return node;
+
+	space = isl_schedule_node_band_get_space(node);
+	sizes = ppcg_multi_val_from_int(space, scop->options->tile_size);
+
+	return tile(node, sizes);
+}
+
 /* Construct schedule constraints from the dependences in ps
  * for the purpose of computing a schedule for a CPU.
  *
@@ -603,7 +640,8 @@ static __isl_give isl_schedule *optionally_compute_schedule(void *user)
 	return compute_cpu_schedule(ps);
 }
 
-/* Compute a schedule based on the dependences in "ps".
+/* Compute a schedule based on the dependences in "ps" and
+ * tile it if requested by the user.
  */
 static __isl_give isl_schedule *get_schedule(struct ppcg_scop *ps,
 	struct ppcg_options *options)
@@ -617,6 +655,9 @@ static __isl_give isl_schedule *get_schedule(struct ppcg_scop *ps,
 	ctx = isl_union_set_get_ctx(ps->domain);
 	schedule = ppcg_get_schedule(ctx, options,
 				    &optionally_compute_schedule, ps);
+	if (ps->options->tile)
+		schedule = isl_schedule_map_schedule_node_bottom_up(schedule,
+							&tile_band, ps);
 
 	return schedule;
 }

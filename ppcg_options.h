@@ -26,6 +26,8 @@ struct ppcg_options {
 	char *ctx;
 	char *sizes;
 
+	/* Perform tiling (C target). */
+	int tile;
 	int tile_size;
 
 	/* Take advantage of private memory. */

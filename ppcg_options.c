@@ -93,6 +93,8 @@ ISL_ARG_STR(struct ppcg_options, ctx, 0, "ctx", "context", NULL,
 ISL_ARG_BOOL(struct ppcg_options, non_negative_parameters, 0,
 	"assume-non-negative-parameters", 0,
 	"assume all parameters are non-negative)")
+ISL_ARG_BOOL(struct ppcg_options, tile, 0, "tile", 0,
+	"perform tiling (C target)")
 ISL_ARG_INT(struct ppcg_options, tile_size, 'S', "tile-size", "size", 32, NULL)
 ISL_ARG_STR(struct ppcg_options, sizes, 0, "sizes", "sizes", NULL,
 	"Per kernel tile, grid and block sizes")
