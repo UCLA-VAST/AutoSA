@@ -1,11 +1,14 @@
 /*
  * Copyright 2012 INRIA Paris-Rocquencourt
+ * Copyright 2012 Ecole Normale Superieure
  *
  * Use of this software is governed by the MIT license
  *
  * Written by Tobias Grosser, INRIA Paris-Rocquencourt,
  * Domaine de Voluceau, Rocquenqourt, B.P. 105,
  * 78153 Le Chesnay Cedex France
+ * and Sven Verdoolaege,
+ * Ecole Normale Superieure, 45 rue d'Ulm, 75230 Paris, France
  */
 
 #include <limits.h>
@@ -14,6 +17,7 @@
 
 #include <isl/aff.h>
 #include <isl/ctx.h>
+#include <isl/flow.h>
 #include <isl/map.h>
 #include <isl/ast_build.h>
 #include <isl/schedule.h>
@@ -24,6 +28,7 @@
 #include "ppcg_options.h"
 #include "cpu.h"
 #include "print.h"
+#include "schedule.h"
 
 /* Representation of a statement inside a generated AST.
  *
@@ -496,6 +501,126 @@ error:
 	return NULL;
 }
 
+/* Construct schedule constraints from the dependences in ps
+ * for the purpose of computing a schedule for a CPU.
+ *
+ * The proximity constraints are set to the flow dependences.
+ *
+ * If live-range reordering is allowed then the conditional validity
+ * constraints are set to the order dependences with the flow dependences
+ * as condition.  That is, a live-range (flow dependence) will be either
+ * local to an iteration of a band or all adjacent order dependences
+ * will be respected by the band.
+ * The validity constraints are set to the union of the flow dependences
+ * and the forced dependences, while the coincidence constraints
+ * are set to the union of the flow dependences, the forced dependences and
+ * the order dependences.
+ *
+ * If live-range reordering is not allowed, then both the validity
+ * and the coincidence constraints are set to the union of the flow
+ * dependences and the false dependences.
+ *
+ * Note that the coincidence constraints are only set when the "openmp"
+ * options is set.  Even though the way openmp pragmas are introduced
+ * does not rely on the coincident property of the schedule band members,
+ * the coincidence constraints do affect the way the schedule is constructed,
+ * such that more schedule dimensions should be detected as parallel
+ * by ast_schedule_dim_is_parallel.
+ * Since the order dependences are also taken into account by
+ * ast_schedule_dim_is_parallel, they are also added to
+ * the coincidence constraints.  If the openmp handling learns
+ * how to privatize some memory, then the corresponding order
+ * dependences can be removed from the coincidence constraints.
+ */
+static __isl_give isl_schedule_constraints *construct_cpu_schedule_constraints(
+	struct ppcg_scop *ps)
+{
+	isl_schedule_constraints *sc;
+	isl_union_map *validity, *coincidence;
+
+	sc = isl_schedule_constraints_on_domain(isl_union_set_copy(ps->domain));
+	if (ps->options->live_range_reordering) {
+		sc = isl_schedule_constraints_set_conditional_validity(sc,
+				isl_union_map_copy(ps->tagged_dep_flow),
+				isl_union_map_copy(ps->tagged_dep_order));
+		validity = isl_union_map_copy(ps->dep_flow);
+		validity = isl_union_map_union(validity,
+				isl_union_map_copy(ps->dep_forced));
+		if (ps->options->openmp) {
+			coincidence = isl_union_map_copy(validity);
+			coincidence = isl_union_map_union(coincidence,
+					isl_union_map_copy(ps->dep_order));
+		}
+	} else {
+		validity = isl_union_map_copy(ps->dep_flow);
+		validity = isl_union_map_union(validity,
+				isl_union_map_copy(ps->dep_false));
+		if (ps->options->openmp)
+			coincidence = isl_union_map_copy(validity);
+	}
+	if (ps->options->openmp)
+		sc = isl_schedule_constraints_set_coincidence(sc, coincidence);
+	sc = isl_schedule_constraints_set_validity(sc, validity);
+	sc = isl_schedule_constraints_set_proximity(sc,
+					isl_union_map_copy(ps->dep_flow));
+
+	return sc;
+}
+
+/* Compute a schedule for the scop "ps".
+ *
+ * First derive the appropriate schedule constraints from the dependences
+ * in "ps" and then compute a schedule from those schedule constraints.
+ */
+static __isl_give isl_schedule *compute_cpu_schedule(struct ppcg_scop *ps)
+{
+	isl_schedule_constraints *sc;
+	isl_schedule *schedule;
+
+	if (!ps)
+		return NULL;
+
+	sc = construct_cpu_schedule_constraints(ps);
+
+	if (ps->options->debug->dump_schedule_constraints)
+		isl_schedule_constraints_dump(sc);
+	schedule = isl_schedule_constraints_compute_schedule(sc);
+
+	return schedule;
+}
+
+/* Compute a new schedule to the scop "ps" if the reschedule option is set.
+ * Otherwise, return a copy of the original schedule.
+ */
+static __isl_give isl_schedule *optionally_compute_schedule(void *user)
+{
+	struct ppcg_scop *ps = user;
+
+	if (!ps)
+		return NULL;
+	if (!ps->options->reschedule)
+		return isl_schedule_copy(ps->schedule);
+	return compute_cpu_schedule(ps);
+}
+
+/* Compute a schedule based on the dependences in "ps".
+ */
+static __isl_give isl_schedule *get_schedule(struct ppcg_scop *ps,
+	struct ppcg_options *options)
+{
+	isl_ctx *ctx;
+	isl_schedule *schedule;
+
+	if (!ps)
+		return NULL;
+
+	ctx = isl_union_set_get_ctx(ps->domain);
+	schedule = ppcg_get_schedule(ctx, options,
+				    &optionally_compute_schedule, ps);
+
+	return schedule;
+}
+
 /* Generate CPU code for the scop "ps" using "schedule" and
  * print the corresponding C code to "p", including variable declarations.
  */
@@ -545,14 +670,29 @@ __isl_give isl_printer *print_cpu(__isl_take isl_printer *p,
 	return print_cpu_with_schedule(p, ps, schedule, options);
 }
 
-/* Wrapper around print_cpu for use as a ppcg_transform callback.
+/* Generate CPU code for "scop" and print it to "p".
+ *
+ * First obtain a schedule for "scop" and then print code for "scop"
+ * using that schedule.
+ */
+static __isl_give isl_printer *generate(__isl_take isl_printer *p,
+	struct ppcg_scop *scop, struct ppcg_options *options)
+{
+	isl_schedule *schedule;
+
+	schedule = get_schedule(scop, options);
+
+	return print_cpu_with_schedule(p, scop, schedule, options);
+}
+
+/* Wrapper around generate for use as a ppcg_transform callback.
  */
 static __isl_give isl_printer *print_cpu_wrap(__isl_take isl_printer *p,
 	struct ppcg_scop *scop, void *user)
 {
 	struct ppcg_options *options = user;
 
-	return print_cpu(p, scop, options);
+	return generate(p, scop, options);
 }
 
 /* Transform the code in the file called "input" by replacing
