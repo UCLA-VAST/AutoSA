@@ -1060,7 +1060,7 @@ int main(int argc, char **argv)
 	assert(options);
 
 	ctx = isl_ctx_alloc_with_options(&options_args, options);
-	isl_options_set_schedule_outer_coincidence(ctx, 1);
+	ppcg_options_set_target_defaults(options->ppcg);
 	isl_options_set_schedule_maximize_band_depth(ctx, 1);
 	pet_options_set_encapsulate_dynamic_control(ctx, 1);
 	argc = options_parse(options, argc, argv, ISL_ARG_ALL);

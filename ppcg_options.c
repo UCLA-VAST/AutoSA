@@ -17,6 +17,36 @@ static struct isl_arg_choice target[] = {
 	{0}
 };
 
+/* Set defaults that depend on the target.
+ * In particular, set --schedule-outer-coincidence iff target is a GPU.
+ */
+void ppcg_options_set_target_defaults(struct ppcg_options *options)
+{
+	char *argv[2] = { NULL };
+
+	argv[0] = "ppcg_options_set_target_defaults";
+	if (options->target == PPCG_TARGET_C)
+		argv[1] = "--no-schedule-outer-coincidence";
+	else
+		argv[1] = "--schedule-outer-coincidence";
+
+	isl_options_parse(options->isl, 2, argv, ISL_ARG_ALL);
+}
+
+/* Callback that is called whenever the "target" option is set (to "val").
+ * The callback is called after target has been updated.
+ *
+ * Call ppcg_options_set_target_defaults to reset the target-dependent options.
+ */
+static int set_target(void *opt, unsigned val)
+{
+	struct ppcg_options *options = opt;
+
+	ppcg_options_set_target_defaults(options);
+
+	return 0;
+}
+
 ISL_ARGS_START(struct ppcg_debug_options, ppcg_debug_options_args)
 ISL_ARG_BOOL(struct ppcg_debug_options, dump_schedule_constraints, 0,
 	"dump-schedule-constraints", 0, "dump schedule constraints")
@@ -70,8 +100,9 @@ ISL_ARG_INT(struct ppcg_options, max_shared_memory, 0,
 	"max-shared-memory", "size", 8192, "maximal amount of shared memory")
 ISL_ARG_BOOL(struct ppcg_options, openmp, 0, "openmp", 0,
 	"Generate OpenMP macros (only for C target)")
-ISL_ARG_CHOICE(struct ppcg_options, target, 0, "target", target,
-	PPCG_TARGET_CUDA, "the target to generate code for")
+ISL_ARG_USER_OPT_CHOICE(struct ppcg_options, target, 0, "target", target,
+	&set_target, PPCG_TARGET_CUDA, PPCG_TARGET_CUDA,
+	"the target to generate code for")
 ISL_ARG_BOOL(struct ppcg_options, linearize_device_arrays, 0,
 	"linearize-device-arrays", 1,
 	"linearize all device arrays, even those of fixed size")
