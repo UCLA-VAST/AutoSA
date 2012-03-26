@@ -16,6 +16,7 @@
 #include <isl/options.h>
 #include <isl/schedule.h>
 #include <isl/ast_build.h>
+#include <isl/schedule.h>
 #include <pet.h>
 #include "ppcg.h"
 #include "ppcg_options.h"
@@ -391,6 +392,7 @@ int main(int argc, char **argv)
 
 	ctx = isl_ctx_alloc_with_options(&options_args, options);
 	isl_options_set_schedule_outer_zero_distance(ctx, 1);
+	isl_options_set_schedule_maximize_band_depth(ctx, 1);
 	argc = options_parse(options, argc, argv, ISL_ARG_ALL);
 
 	if (check_options(ctx) < 0)
