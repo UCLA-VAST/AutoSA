@@ -11,17 +11,44 @@
 #include <limits.h>
 #include <stdio.h>
 
-#include <cloog/cloog.h>
-#include <cloog/isl/cloog.h>
 #include <isl/aff.h>
 #include <isl/ctx.h>
 #include <isl/map.h>
+#include <isl/ast_build.h>
 #include <pet.h>
 
-#include "clast_printer.h"
 #include "cpu.h"
 #include "pet_printer.h"
 #include "rewrite.h"
+
+/* Representation of a statement inside a generated AST.
+ *
+ * "stmt" refers to the original statement.
+ * "n_access" is the number of accesses in the statement.
+ * "access" is the list of accesses transformed to refer to the iterators
+ * in the generated AST.
+ */
+struct ppcg_stmt {
+	struct pet_stmt *stmt;
+
+	int n_access;
+	isl_ast_expr_list **access;
+};
+
+static void ppcg_stmt_free(void *user)
+{
+	struct ppcg_stmt *stmt = user;
+	int i;
+
+	if (!stmt)
+		return;
+
+	for (i = 0; i < stmt->n_access; ++i)
+		isl_ast_expr_list_free(stmt->access[i]);
+
+	free(stmt->access);
+	free(stmt);
+}
 
 struct ppcg_scop {
 	isl_set *context;
@@ -105,130 +132,241 @@ FILE *get_output_file(const char *input)
 
 /* Print a memory access 'access' to the printer 'p'.
  *
- * Given a map [a,b,c] -> {S[i,j] -> A[i,j+a]} we will print: A[i][j+a].
+ * "expr" refers to the original access.
+ * "access" is the list of index expressions transformed to refer
+ * to the iterators of the generated AST.
  *
- * In case the output dimensions is one dimensional and unnamed we assume this
- * is not a memory access, but just an expression.  This means the example
- * [a,b,c] -> {S[i,j] -> [j+a]} will be printed as: j+a
- *
- * The code that is printed is C code and the variable parameter and input
- * dimension names are derived from the isl_dim names.
+ * In case the original access is unnamed (and presumably single-dimensional),
+ * we assume this is not a memory access, but just an expression.
  */
 static __isl_give isl_printer *print_access(__isl_take isl_printer *p,
-	__isl_take isl_map *access)
+	struct pet_expr *expr, __isl_keep isl_ast_expr_list *access)
 {
 	int i;
 	const char *name;
 	unsigned n_index;
-	isl_pw_multi_aff *pma;
 
-	n_index = isl_map_dim(access, isl_dim_out);
-	name = isl_map_get_tuple_name(access, isl_dim_out);
-	pma = isl_pw_multi_aff_from_map(access);
-	pma = isl_pw_multi_aff_coalesce(pma);
+	n_index = isl_ast_expr_list_n_ast_expr(access);
+	name = isl_map_get_tuple_name(expr->acc.access, isl_dim_out);
 
 	if (name == NULL) {
-		isl_pw_aff *index;
-		index = isl_pw_multi_aff_get_pw_aff(pma, 0);
+		isl_ast_expr *index;
+		index = isl_ast_expr_list_get_ast_expr(access, 0);
 		p = isl_printer_print_str(p, "(");
-		p = isl_printer_print_pw_aff(p, index);
+		p = isl_printer_print_ast_expr(p, index);
 		p = isl_printer_print_str(p, ")");
-		isl_pw_aff_free(index);
-		isl_pw_multi_aff_free(pma);
+		isl_ast_expr_free(index);
 		return p;
 	}
 
 	p = isl_printer_print_str(p, name);
 
 	for (i = 0; i < n_index; ++i) {
-		isl_pw_aff *index;
+		isl_ast_expr *index;
 
-		index = isl_pw_multi_aff_get_pw_aff(pma, i);
+		index = isl_ast_expr_list_get_ast_expr(access, i);
 
 		p = isl_printer_print_str(p, "[");
-		p = isl_printer_print_pw_aff(p, index);
+		p = isl_printer_print_ast_expr(p, index);
 		p = isl_printer_print_str(p, "]");
-		isl_pw_aff_free(index);
+		isl_ast_expr_free(index);
 	}
-
-	isl_pw_multi_aff_free(pma);
 
 	return p;
 }
 
-static __isl_give isl_printer *print_cpu_access(__isl_take isl_printer *p,
-	struct pet_expr *expr, void *usr)
-{
-	isl_map *access = isl_map_copy(expr->acc.access);
-
-	return print_access(p, access);
-}
-
-static void print_stmt_body(FILE *out, struct pet_stmt *stmt)
-{
-	isl_ctx *ctx = isl_set_get_ctx(stmt->domain);
-	isl_printer *p;
-
-	p = isl_printer_to_file(ctx, out);
-	p = isl_printer_set_output_format(p, ISL_FORMAT_C);
-	p = print_pet_expr(p, stmt->body, &print_cpu_access, out);
-	isl_printer_free(p);
-}
-
-/* Create a CloogInput data structure that describes the 'scop'.
+/* Find the element in scop->stmts that has the given "id".
  */
-static CloogInput *cloog_input_from_scop(CloogState *state,
-	struct ppcg_scop *scop)
+static struct pet_stmt *find_stmt(struct ppcg_scop *scop, __isl_keep isl_id *id)
 {
-	CloogDomain *cloog_context;
-	CloogUnionDomain *ud;
-	CloogInput *input;
-	isl_set *context;
-	isl_union_set *domain_set;
-	isl_union_map *schedule_map;
-
-	context = isl_set_copy(scop->context);
-	domain_set = isl_union_set_copy(scop->domain);
-	schedule_map = isl_union_map_copy(scop->schedule);
-	schedule_map = isl_union_map_intersect_domain(schedule_map, domain_set);
-
-	ud = cloog_union_domain_from_isl_union_map(schedule_map);
-
-	cloog_context = cloog_domain_from_isl_set(context);
-
-	input = cloog_input_alloc(cloog_context, ud);
-
-	return input;
-}
-
-/* Print a #define macro for every statement in the 'scop'.
- */
-static void print_stmt_definitions(struct ppcg_scop *scop, FILE *output)
-{
-	int i, j;
+	int i;
 
 	for (i = 0; i < scop->n_stmt; ++i) {
 		struct pet_stmt *stmt = scop->stmts[i];
-		const char *name = isl_set_get_tuple_name(stmt->domain);
+		isl_id *id_i;
 
-		fprintf(output, "#define %s(", name);
+		id_i = isl_set_get_tuple_id(stmt->domain);
+		isl_id_free(id_i);
 
-		for (j = 0; j < isl_set_dim(stmt->domain, isl_dim_set); ++j) {
-			const char *name;
-
-			if (j)
-				fprintf(output, ", ");
-
-			name = isl_set_get_dim_name(stmt->domain, isl_dim_set, j);
-			fprintf(output, "%s", name);
-		}
-
-		fprintf(output, ") ");
-
-		print_stmt_body(output, stmt);
-
-		fprintf(output, "\n");
+		if (id_i == id)
+			return stmt;
 	}
+
+	isl_die(isl_id_get_ctx(id), isl_error_internal,
+		"statement not found", return NULL);
+}
+
+/* To print the transformed accesses we walk the list of transformed accesses
+ * simultaneously with the pet printer. This means that whenever
+ * the pet printer prints a pet access expression we have
+ * the corresponding transformed access available for printing.
+ */
+static __isl_give isl_printer *print_access_expr(__isl_take isl_printer *p,
+	struct pet_expr *expr, void *user)
+{
+	isl_ast_expr_list ***access = user;
+
+	p = print_access(p, expr, **access);
+	(*access)++;
+
+	return p;
+}
+
+/* Print a user statement in the generated AST.
+ * The ppcg_stmt has been attached to the node in at_each_domain.
+ */
+static __isl_give isl_printer *print_user(__isl_take isl_printer *p,
+	__isl_keep isl_ast_node *node, void *user)
+{
+	struct ppcg_stmt *stmt;
+	isl_ast_expr_list **access;
+	isl_id *id;
+
+	id = isl_ast_node_get_annotation(node);
+	stmt = isl_id_get_user(id);
+	isl_id_free(id);
+
+	access = stmt->access;
+
+	p = isl_printer_start_line(p);
+	p = print_pet_expr(p, stmt->stmt->body, &print_access_expr, &access);
+	p = isl_printer_print_str(p, ";");
+	p = isl_printer_end_line(p);
+
+	return p;
+}
+
+/* Call "fn" on each access expression in "expr".
+ */
+static int foreach_access_expr(struct pet_expr *expr,
+	int (*fn)(struct pet_expr *expr, void *user), void *user)
+{
+	int i;
+
+	if (!expr)
+		return -1;
+
+	if (expr->type == pet_expr_access)
+		return fn(expr, user);
+
+	for (i = 0; i < expr->n_arg; ++i)
+		if (foreach_access_expr(expr->args[i], fn, user) < 0)
+			return -1;
+
+	return 0;
+}
+
+static int inc_n_access(struct pet_expr *expr, void *user)
+{
+	struct ppcg_stmt *stmt = user;
+	stmt->n_access++;
+	return 0;
+}
+
+/* Internal data for add_access.
+ *
+ * "stmt" is the statement to which an access needs to be added.
+ * "build" is the current AST build.
+ * "map" maps the AST loop iterators to the iteration domain of the statement.
+ */
+struct ppcg_add_access_data {
+	struct ppcg_stmt *stmt;
+	isl_ast_build *build;
+	isl_map *map;
+};
+
+/* Given an access expression, add it to data->stmt after
+ * transforming it to refer to the AST loop iterators.
+ */
+static int add_access(struct pet_expr *expr, void *user)
+{
+	int i, n;
+	isl_ctx *ctx;
+	isl_map *access;
+	isl_pw_multi_aff *pma;
+	struct ppcg_add_access_data *data = user;
+	isl_ast_expr_list *index;
+
+	ctx = isl_map_get_ctx(expr->acc.access);
+	n = isl_map_dim(expr->acc.access, isl_dim_out);
+	access = isl_map_copy(expr->acc.access);
+	access = isl_map_apply_range(isl_map_copy(data->map), access);
+	pma = isl_pw_multi_aff_from_map(access);
+	pma = isl_pw_multi_aff_coalesce(pma);
+
+	index = isl_ast_expr_list_alloc(ctx, n);
+	for (i = 0; i < n; ++i) {
+		isl_pw_aff *pa;
+		isl_ast_expr *expr;
+
+		pa = isl_pw_multi_aff_get_pw_aff(pma, i);
+		expr = isl_ast_build_expr_from_pw_aff(data->build, pa);
+		index = isl_ast_expr_list_add(index, expr);
+	}
+	isl_pw_multi_aff_free(pma);
+
+	data->stmt->access[data->stmt->n_access] = index;
+	data->stmt->n_access++;
+	return 0;
+}
+
+/* Transform the accesses in the statement associated to the domain
+ * called by "node" to refer to the AST loop iterators,
+ * collect them in a ppcg_stmt and annotate the node with the ppcg_stmt.
+ */
+static __isl_give isl_ast_node *at_each_domain(__isl_take isl_ast_node *node,
+	__isl_keep isl_ast_build *build, void *user)
+{
+	struct ppcg_scop *scop = user;
+	isl_ast_expr *expr, *arg;
+	isl_ctx *ctx;
+	isl_id *id;
+	isl_map *map;
+	struct ppcg_stmt *stmt;
+	struct ppcg_add_access_data data;
+
+	ctx = isl_ast_node_get_ctx(node);
+	stmt = isl_calloc_type(ctx, struct ppcg_stmt);
+	if (!stmt)
+		goto error;
+
+	expr = isl_ast_node_user_get_expr(node);
+	arg = isl_ast_expr_get_op_arg(expr, 0);
+	isl_ast_expr_free(expr);
+	id = isl_ast_expr_get_id(arg);
+	isl_ast_expr_free(arg);
+	stmt->stmt = find_stmt(scop, id);
+	isl_id_free(id);
+	if (!stmt->stmt)
+		goto error;
+
+	stmt->n_access = 0;
+	if (foreach_access_expr(stmt->stmt->body, &inc_n_access, stmt) < 0)
+		goto error;
+
+	stmt->access = isl_calloc_array(ctx, isl_ast_expr_list *,
+					stmt->n_access);
+	if (!stmt->access)
+		goto error;
+
+	map = isl_map_from_union_map(isl_ast_build_get_schedule(build));
+	map = isl_map_reverse(map);
+
+	stmt->n_access = 0;
+	data.stmt = stmt;
+	data.build = build;
+	data.map = map;
+	if (foreach_access_expr(stmt->stmt->body, &add_access, &data) < 0)
+		node = isl_ast_node_free(node);
+
+	isl_map_free(map);
+
+	id = isl_id_alloc(isl_ast_node_get_ctx(node), NULL, stmt);
+	id = isl_id_set_free_user(id, &ppcg_stmt_free);
+	return isl_ast_node_set_annotation(node, id);
+error:
+	ppcg_stmt_free(stmt);
+	return isl_ast_node_free(node);
 }
 
 /* Code generate the scop 'scop' and print the corresponding C code to
@@ -236,38 +374,37 @@ static void print_stmt_definitions(struct ppcg_scop *scop, FILE *output)
  */
 static void print_scop(isl_ctx *ctx, struct ppcg_scop *scop, FILE *output)
 {
-	CloogState *state;
-	CloogOptions *options;
-	CloogInput *input;
-	struct clast_stmt *stmt;
-	struct clast_printer_info code;
+	isl_set *context;
+	isl_union_set *domain_set;
+	isl_union_map *schedule_map;
+	isl_ast_build *build;
+	isl_ast_print_options *print_options;
+	isl_ast_node *tree;
+	isl_printer *p;
 
-	state = cloog_isl_state_malloc(ctx);
+	context = isl_set_copy(scop->context);
+	domain_set = isl_union_set_copy(scop->domain);
+	schedule_map = isl_union_map_copy(scop->schedule);
+	schedule_map = isl_union_map_intersect_domain(schedule_map, domain_set);
 
-	options = cloog_options_malloc(state);
-	options->language = CLOOG_LANGUAGE_C;
-	options->otl = 1;
-	options->strides = 1;
+	build = isl_ast_build_from_context(context);
+	build = isl_ast_build_set_at_each_domain(build, &at_each_domain, scop);
+	tree = isl_ast_build_ast_from_schedule(build, schedule_map);
+	isl_ast_build_free(build);
 
-	input = cloog_input_from_scop(state, scop);
-	stmt = cloog_clast_create_from_input(input, options);
+	print_options = isl_ast_print_options_alloc(ctx);
+	print_options = isl_ast_print_options_set_print_user(print_options,
+							&print_user, NULL);
 
-	code.indent = 0;
-	code.dst = output;
-	code.print_user_stmt = NULL;
-	code.print_user_stmt_list = NULL;
-	code.print_for_head = NULL;
-	code.print_for_foot = NULL;
+	p = isl_printer_to_file(ctx, output);
+	p = isl_printer_set_output_format(p, ISL_FORMAT_C);
+	p = isl_ast_node_print_macros(tree, p);
+	p = isl_ast_node_print(tree, p, print_options);
+	isl_printer_free(p);
 
-	print_cloog_macros(output);
-	fprintf(output, "\n");
-	print_stmt_definitions(scop, output);
-	fprintf(output, "\n");
-	print_clast(&code, stmt);
+	isl_ast_print_options_free(print_options);
 
-	cloog_clast_free(stmt);
-	cloog_options_free(options);
-	cloog_state_free(state);
+	isl_ast_node_free(tree);
 
 	fprintf(output, "\n");
 }

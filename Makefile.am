@@ -33,8 +33,6 @@ LDADD = $(LIB_CLOOG) $(LIB_PET) $(LIB_ISL)
 
 bin_PROGRAMS = ppcg
 ppcg_SOURCES = \
-	clast_printer.c \
-	clast_printer.h \
 	cpu.c \
 	cpu.h \
 	cuda.c \
