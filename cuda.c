@@ -1950,14 +1950,13 @@ static void print_shared_accesses(struct cuda_gen *gen,
  * If the array space (range of access) has no name, then we are
  * accessing an iterator in the original program.
  */
-static void print_access(struct cuda_gen *gen, __isl_take isl_map *access,
-	int group_nr)
+static __isl_give isl_printer *print_access(__isl_take isl_printer *p,
+	struct cuda_gen *gen, __isl_take isl_map *access, int group_nr)
 {
 	int i;
 	const char *name;
 	unsigned n_index;
 	struct cuda_array_info *array = NULL;
-	isl_printer *prn;
 	isl_pw_multi_aff *pma;
 	isl_set *data_set;
 	isl_set *domain;
@@ -1988,13 +1987,11 @@ static void print_access(struct cuda_gen *gen, __isl_take isl_map *access,
 
 		if (!bounds && cuda_array_is_scalar(array) && !array->read_only)
 			fprintf(gen->cuda.kernel_c, "*");
-		prn = isl_printer_to_file(gen->ctx, gen->cuda.kernel_c);
-		prn = print_array_name(prn, group);
-		isl_printer_free(prn);
+		p = print_array_name(p, group);
 
 		if (cuda_array_is_scalar(array)) {
 			isl_set_free(data_set);
-			return;
+			return p;
 		}
 
 		fprintf(gen->cuda.kernel_c, "[");
@@ -2005,12 +2002,9 @@ static void print_access(struct cuda_gen *gen, __isl_take isl_map *access,
 	pma = isl_pw_multi_aff_from_set(data_set);
 	pma = isl_pw_multi_aff_coalesce(pma);
 
-	prn = isl_printer_to_file(gen->ctx, gen->cuda.kernel_c);
-	prn = isl_printer_set_output_format(prn, ISL_FORMAT_C);
-
 	if (!bounds)
 		for (i = 0; i + 1 < n_index; ++i)
-			prn = isl_printer_print_str(prn, "(");
+			p = isl_printer_print_str(p, "(");
 
 	for (i = 0; i < n_index; ++i) {
 		isl_pw_aff *index;
@@ -2018,7 +2012,7 @@ static void print_access(struct cuda_gen *gen, __isl_take isl_map *access,
 		index = isl_pw_multi_aff_get_pw_aff(pma, i);
 
 		if (!array) {
-			prn = isl_printer_print_pw_aff(prn, index);
+			p = isl_printer_print_pw_aff(p, index);
 			isl_pw_aff_free(index);
 			continue;
 		}
@@ -2033,23 +2027,24 @@ static void print_access(struct cuda_gen *gen, __isl_take isl_map *access,
 
 		if (i) {
 			if (!bounds) {
-				prn = isl_printer_print_str(prn, ") * (");
-				prn = isl_printer_print_pw_aff(prn,
+				p = isl_printer_print_str(p, ") * (");
+				p = isl_printer_print_pw_aff(p,
 							array->local_bound[i]);
-				prn = isl_printer_print_str(prn, ") + ");
+				p = isl_printer_print_str(p, ") + ");
 			} else
-				prn = isl_printer_print_str(prn, "][");
+				p = isl_printer_print_str(p, "][");
 		}
-		prn = isl_printer_print_pw_aff(prn, index);
+		p = isl_printer_print_pw_aff(p, index);
 		isl_pw_aff_free(index);
 	}
 	if (!name)
-		prn = isl_printer_print_str(prn, ")");
+		p = isl_printer_print_str(p, ")");
 	else
-		prn = isl_printer_print_str(prn, "]");
-	isl_printer_free(prn);
+		p = isl_printer_print_str(p, "]");
 
 	isl_pw_multi_aff_free(pma);
+
+	return p;
 }
 
 struct cuda_access_print_info {
@@ -2062,25 +2057,35 @@ struct cuda_access_print_info {
  * pet access expression we have the corresponding cuda access available and can
  * print the modified access.
  */
-static void print_cuda_access(struct pet_expr *expr, void *usr)
+static __isl_give isl_printer *print_cuda_access(__isl_take isl_printer *p,
+	struct pet_expr *expr, void *usr)
 {
 	struct cuda_access_print_info *info =
 		(struct cuda_access_print_info *) usr;
-	print_access(info->gen, isl_map_copy(info->access->access),
+
+	p = print_access(p, info->gen, isl_map_copy(info->access->access),
 		     info->access->group);
 	info->access = info->access->next;
+
+	return p;
 }
 
 static void print_stmt_body(struct cuda_gen *gen,
 	FILE *out, struct cuda_stmt *stmt)
 {
 	struct cuda_access_print_info info;
+	isl_printer *p;
+
+	p = isl_printer_to_file(gen->ctx, out);
+	p = isl_printer_set_output_format(p, ISL_FORMAT_C);
 
 	info.gen = gen;
 	info.access = stmt->accesses;
 
-	print_pet_expr(out, stmt->body, print_cuda_access, &info);
+	p = print_pet_expr(p, stmt->body, &print_cuda_access, &info);
 	fprintf(out, ";\n");
+
+	isl_printer_free(p);
 }
 
 /* This function is called for each leaf in the innermost clast,

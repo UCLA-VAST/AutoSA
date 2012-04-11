@@ -53,7 +53,7 @@ FILE *get_output_file(const char *input)
 	return fopen(name, "w");
 }
 
-/* Print a memory access 'access' to the output file 'out'.
+/* Print a memory access 'access' to the printer 'p'.
  *
  * Given a map [a,b,c] -> {S[i,j] -> A[i,j+a]} we will print: A[i][j+a].
  *
@@ -64,60 +64,65 @@ FILE *get_output_file(const char *input)
  * The code that is printed is C code and the variable parameter and input
  * dimension names are derived from the isl_dim names.
  */
-static void print_access(__isl_take isl_map *access, FILE *out)
+static __isl_give isl_printer *print_access(__isl_take isl_printer *p,
+	__isl_take isl_map *access)
 {
 	int i;
 	const char *name;
 	unsigned n_index;
-	isl_printer *prn;
 	isl_pw_multi_aff *pma;
 
 	n_index = isl_map_dim(access, isl_dim_out);
 	name = isl_map_get_tuple_name(access, isl_dim_out);
 	pma = isl_pw_multi_aff_from_map(access);
 	pma = isl_pw_multi_aff_coalesce(pma);
-	prn = isl_printer_to_file(isl_map_get_ctx(access), out);
-	prn = isl_printer_set_output_format(prn, ISL_FORMAT_C);
 
 	if (name == NULL) {
 		isl_pw_aff *index;
 		index = isl_pw_multi_aff_get_pw_aff(pma, 0);
-		isl_printer_print_str(prn, "(");
-		prn = isl_printer_print_pw_aff(prn, index);
-		isl_printer_print_str(prn, ")");
+		p = isl_printer_print_str(p, "(");
+		p = isl_printer_print_pw_aff(p, index);
+		p = isl_printer_print_str(p, ")");
 		isl_pw_aff_free(index);
-		isl_printer_free(prn);
 		isl_pw_multi_aff_free(pma);
-		return;
+		return p;
 	}
 
-	fprintf(out, "%s", name);
+	p = isl_printer_print_str(p, name);
 
 	for (i = 0; i < n_index; ++i) {
 		isl_pw_aff *index;
 
 		index = isl_pw_multi_aff_get_pw_aff(pma, i);
 
-		isl_printer_print_str(prn, "[");
-		prn = isl_printer_print_pw_aff(prn, index);
-		isl_printer_print_str(prn, "]");
+		p = isl_printer_print_str(p, "[");
+		p = isl_printer_print_pw_aff(p, index);
+		p = isl_printer_print_str(p, "]");
 		isl_pw_aff_free(index);
 	}
 
-	isl_printer_free(prn);
 	isl_pw_multi_aff_free(pma);
+
+	return p;
 }
 
-static void print_cpu_access(struct pet_expr *expr, void *usr)
+static __isl_give isl_printer *print_cpu_access(__isl_take isl_printer *p,
+	struct pet_expr *expr, void *usr)
 {
-	FILE *out = (FILE *) usr;
 	isl_map *access = isl_map_copy(expr->acc.access);
-	print_access(access, out);
+
+	return print_access(p, access);
 }
 
 static void print_stmt_body(FILE *out, struct pet_stmt *stmt)
 {
-	print_pet_expr(out, stmt->body, print_cpu_access, out);
+	isl_ctx *ctx = isl_set_get_ctx(stmt->domain);
+	isl_printer *p;
+
+	p = isl_printer_to_file(ctx, out);
+	p = isl_printer_set_output_format(p, ISL_FORMAT_C);
+	p = print_pet_expr(p, stmt->body, &print_cpu_access, out);
+	isl_printer_free(p);
 }
 
 /* Create a CloogInput data structure that describes the 'scop'.
