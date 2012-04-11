@@ -4697,6 +4697,8 @@ static void compute_schedule(struct gpu_gen *gen)
 				isl_set_copy(gen->prog->scop->context));
 	schedule = isl_union_set_compute_schedule(isl_union_set_copy(domain),
 				isl_union_map_copy(dep), dep);
+	if (gen->options->debug->dump_schedule)
+		isl_schedule_dump(schedule);
 
 	sched = select_outer_tilable_band(gen, schedule);
 

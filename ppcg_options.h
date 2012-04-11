@@ -3,7 +3,13 @@
 
 #include <isl/arg.h>
 
+struct ppcg_debug_options {
+	int dump_schedule;
+};
+
 struct ppcg_options {
+	struct ppcg_debug_options *debug;
+
 	int scale_tile_loops;
 	int wrap;
 
@@ -28,6 +34,8 @@ struct ppcg_options {
 	int openmp;
 };
 
+ISL_ARG_DECL(ppcg_debug_options, struct ppcg_debug_options,
+	ppcg_debug_options_args)
 ISL_ARG_DECL(ppcg_options, struct ppcg_options, ppcg_options_args)
 
 #define		PPCG_TARGET_C		0
