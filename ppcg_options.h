@@ -4,6 +4,7 @@
 #include <isl/arg.h>
 
 struct ppcg_debug_options {
+	int dump_schedule_constraints;
 	int dump_schedule;
 };
 

@@ -5041,6 +5041,8 @@ static void compute_schedule(struct gpu_gen *gen)
 	sc = isl_schedule_constraints_set_validity(sc, isl_union_map_copy(dep));
 	sc = isl_schedule_constraints_set_proximity(sc, dep);
 
+	if (gen->options->debug->dump_schedule_constraints)
+		isl_schedule_constraints_dump(sc);
 	schedule = isl_schedule_constraints_compute_schedule(sc);
 	if (gen->options->debug->dump_schedule)
 		isl_schedule_dump(schedule);

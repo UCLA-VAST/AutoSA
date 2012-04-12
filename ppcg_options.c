@@ -17,6 +17,8 @@ static struct isl_arg_choice target[] = {
 };
 
 ISL_ARGS_START(struct ppcg_debug_options, ppcg_debug_options_args)
+ISL_ARG_BOOL(struct ppcg_debug_options, dump_schedule_constraints, 0,
+	"dump-schedule-constraints", 0, "dump schedule constraints")
 ISL_ARG_BOOL(struct ppcg_debug_options, dump_schedule, 0,
 	"dump-schedule", 0, "dump isl computed schedule")
 ISL_ARGS_END
