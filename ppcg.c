@@ -168,6 +168,65 @@ static void compute_dependences(struct ppcg_scop *scop)
 				&scop->dep_flow, NULL, &scop->live_in, NULL);
 }
 
+/* Eliminate dead code from ps->domain.
+ *
+ * In particular, intersect ps->domain with the (parts of) iteration
+ * domains that are needed to produce the output or for statement
+ * iterations that call functions.
+ *
+ * We start with the iteration domains that call functions
+ * and the set of iterations that last write to an array
+ * (except those that are later killed).
+ *
+ * Then we add those statement iterations that produce
+ * something needed by the "live" statements iterations.
+ * We keep doing this until no more statement iterations can be added.
+ * To ensure that the procedure terminates, we compute the affine
+ * hull of the live iterations (bounded to the original iteration
+ * domains) each time we have added extra iterations.
+ */
+static void eliminate_dead_code(struct ppcg_scop *ps)
+{
+	isl_union_map *exposed;
+	isl_union_set *live;
+	isl_union_map *dep;
+
+	exposed = isl_union_map_union(isl_union_map_copy(ps->writes),
+					    isl_union_map_copy(ps->kills));
+	exposed = isl_union_map_reverse(exposed);
+	exposed = isl_union_map_apply_range(exposed,
+					    isl_union_map_copy(ps->schedule));
+	exposed = isl_union_map_lexmax(exposed);
+	exposed = isl_union_map_apply_range(exposed,
+		    isl_union_map_reverse(isl_union_map_copy(ps->schedule)));
+
+	live = isl_union_map_range(exposed);
+	live = isl_union_set_union(live, isl_union_set_copy(ps->call));
+
+	dep = isl_union_map_copy(ps->dep_flow);
+	dep = isl_union_map_reverse(dep);
+
+	for (;;) {
+		isl_union_set *extra;
+
+		extra = isl_union_set_apply(isl_union_set_copy(live),
+					    isl_union_map_copy(dep));
+		if (isl_union_set_is_subset(extra, live)) {
+			isl_union_set_free(extra);
+			break;
+		}
+
+		live = isl_union_set_union(live, extra);
+		live = isl_union_set_affine_hull(live);
+		live = isl_union_set_intersect(live,
+					    isl_union_set_copy(ps->domain));
+	}
+
+	isl_union_map_free(dep);
+
+	ps->domain = isl_union_set_intersect(ps->domain, live);
+}
+
 /* Extract a ppcg_scop from a pet_scop.
  *
  * The constructed ppcg_scop refers to elements from the pet_scop
@@ -200,6 +259,7 @@ static struct ppcg_scop *ppcg_scop_from_pet_scop(struct pet_scop *scop)
 	ps->stmts = scop->stmts;
 
 	compute_dependences(ps);
+	eliminate_dead_code(ps);
 
 	return ps;
 }
