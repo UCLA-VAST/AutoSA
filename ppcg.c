@@ -386,6 +386,7 @@ static struct ppcg_scop *ppcg_scop_from_pet_scop(struct pet_scop *scop,
 	if (!ps)
 		return NULL;
 
+	ps->options = options;
 	ps->start = scop->start;
 	ps->end = scop->end;
 	ps->context = isl_set_copy(scop->context);

@@ -12,6 +12,9 @@ int ppcg_extract_base_name(char *name, const char *input);
 
 /* Representation of the scop for use inside PPCG.
  *
+ * "options" are the options specified by the user.
+ * Some fields in this structure may depend on some of the options.
+ *
  * "start" and "end" are file offsets of the corresponding program text.
  * "context" represents constraints on the parameters.
  * "domain" is the union of all iteration domains.
@@ -29,6 +32,8 @@ int ppcg_extract_base_name(char *name, const char *input);
  * of the original pet_scop.
  */
 struct ppcg_scop {
+	struct ppcg_options *options;
+
 	unsigned start;
 	unsigned end;
 
