@@ -3182,6 +3182,9 @@ static void compute_private_size(struct cuda_gen *gen)
 	for (i = 0; i < gen->n_array; ++i) {
 		struct cuda_array_info *array = &gen->array[i];
 
+		if (cuda_array_is_read_only_scalar(array))
+			continue;
+
 		for (j = 0; j < array->n_group; ++j) {
 			check_private_group_access(gen, array->groups[j]);
 
