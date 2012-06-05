@@ -114,19 +114,24 @@ struct cuda_array_info {
 
 /* Print the name of the local copy of a given group of array references.
  */
-static void print_array_name(FILE *out, struct cuda_array_ref_group *group)
+static __isl_give isl_printer *print_array_name(__isl_take isl_printer *p,
+	struct cuda_array_ref_group *group)
 {
 	int global = 0;
 
 	if (group->private_bound)
-		fprintf(out, "private_");
+		p = isl_printer_print_str(p, "private_");
 	else if (group->shared_bound)
-		fprintf(out, "shared_");
+		p = isl_printer_print_str(p, "shared_");
 	else
 		global = 1;
-	fprintf(out, "%s", group->array->name);
-	if (!global && group->array->n_group > 1)
-		fprintf(out, "_%d", group->nr);
+	p = isl_printer_print_str(p, group->array->name);
+	if (!global && group->array->n_group > 1) {
+		p = isl_printer_print_str(p, "_");
+		p = isl_printer_print_int(p, group->nr);
+	}
+
+	return p;
 }
 
 /* Collect all references to the given array and store pointers to them
@@ -1566,20 +1571,22 @@ static void print_local_index(FILE *out,
 	isl_printer *prn;
 	struct cuda_array_info *array = group->array;
 
-	print_array_name(out, group);
+	prn = isl_printer_to_file(ctx, out);
+	prn = isl_printer_set_output_format(prn, ISL_FORMAT_C);
+
+	prn = print_array_name(prn, group);
 	for (i = 0; i < array->n_index; ++i) {
 		isl_pw_aff *pa = isl_pw_multi_aff_get_pw_aff(pma, i);
 
 		pa = shift_index(pa, array, &bounds[i], isl_set_copy(domain));
 
 		fprintf(out, "[");
-		prn = isl_printer_to_file(ctx, out);
-		prn = isl_printer_set_output_format(prn, ISL_FORMAT_C);
 		prn = isl_printer_print_pw_aff(prn, pa);
-		isl_printer_free(prn);
 		fprintf(out, "]");
 		isl_pw_aff_free(pa);
 	}
+
+	isl_printer_free(prn);
 }
 
 /* This function is called for each leaf in the clast of the code
@@ -1981,7 +1988,9 @@ static void print_access(struct cuda_gen *gen, __isl_take isl_map *access,
 
 		if (!bounds && cuda_array_is_scalar(array) && !array->read_only)
 			fprintf(gen->cuda.kernel_c, "*");
-		print_array_name(gen->cuda.kernel_c, group);
+		prn = isl_printer_to_file(gen->ctx, gen->cuda.kernel_c);
+		prn = print_array_name(prn, group);
+		isl_printer_free(prn);
 
 		if (cuda_array_is_scalar(array)) {
 			isl_set_free(data_set);
@@ -2605,6 +2614,7 @@ static void print_group_shared_array(struct cuda_gen *gen,
 {
 	int j;
 	struct cuda_array_bound *bounds;
+	isl_printer *p;
 
 	bounds = group->private_bound;
 	if (!bounds)
@@ -2615,7 +2625,9 @@ static void print_group_shared_array(struct cuda_gen *gen,
 	print_indent(gen->cuda.kernel_c, 4);
 	fprintf(gen->cuda.kernel_c, "%s%s ",
 		group->private_bound ? "" : "__shared__ ", group->array->type);
-	print_array_name(gen->cuda.kernel_c, group);
+	p = isl_printer_to_file(gen->ctx, gen->cuda.kernel_c);
+	p = print_array_name(p, group);
+	isl_printer_free(p);
 	for (j = 0; j < group->array->n_index; ++j) {
 		fprintf(gen->cuda.kernel_c, "[");
 		isl_int_print(gen->cuda.kernel_c, bounds[j].size, 0);
