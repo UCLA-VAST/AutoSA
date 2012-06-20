@@ -1945,7 +1945,7 @@ static void print_shared_accesses(struct cuda_gen *gen,
  *
  * If the given array is accessed directly from global memory,
  * we don't need to perform any shifting and simply simplify
- * expression in the context of the domain instead.
+ * the expression in the context of the domain instead.
  *
  * If the array space (range of access) has no name, then we are
  * accessing an iterator in the original program.
@@ -2729,7 +2729,7 @@ static void extract_stride(__isl_keep isl_constraint *c,
  * with a(p,i) an expression in the parameters and input dimensions
  * and f(e) an expression in the existentially quantified variables.
  * If so, and if g is larger than any such g from a previously considered
- * constraint, then call extract_stride. to record the stride information
+ * constraint, then call extract_stride to record the stride information
  * in bound.
  */
 static int check_stride_constraint(__isl_take isl_constraint *c, void *user)
@@ -3425,8 +3425,8 @@ static int group_overlapping_writes(struct cuda_gen *gen, int n,
 	return n_group;
 }
 
-/* Compute the size of the shared array corresponding to the given array
- * array refrence group, based on the accesses from the current kernel,
+/* Compute the size of the shared array corresponding to the given
+ * array reference group, based on the accesses from the current kernel,
  * as well as the offset of the shared piece in the original array.
  */
 static void compute_group_shared_bound(struct cuda_gen *gen,
