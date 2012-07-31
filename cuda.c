@@ -2330,6 +2330,9 @@ static __isl_give isl_map *permutation(__isl_take isl_space *dim,
  * The loops involved should all be parallel because of the checks
  * we performed in check_private_group_access.  Moving them innermost
  * is therefore a valid transformation.
+ *
+ * Loops up to gen->shared_len are generated before the mapping to
+ * threads is applied.  They should therefore be ignored.
  */
 static __isl_give isl_union_map *interchange_for_unroll(struct cuda_gen *gen,
 	__isl_take isl_union_map *sched)
@@ -2366,10 +2369,6 @@ static __isl_give isl_union_map *interchange_for_unroll(struct cuda_gen *gen,
 		}
 	}
 
-	for (i = 0; i < gen->shared_len; ++i)
-		if (unroll[i])
-			return sched;
-
 	for (i = gen->shared_len; i < len; ++i)
 		if (unroll[i])
 			break;
@@ -2382,11 +2381,13 @@ static __isl_give isl_union_map *interchange_for_unroll(struct cuda_gen *gen,
 			return sched;
 
 	j = 0;
-	for (i = 0; i < gen->thread_tiled_len; ++i)
+	for (i = 0; i < gen->shared_len; ++i)
+		perm[i] = j++;
+	for (i = gen->shared_len; i < gen->thread_tiled_len; ++i)
 		if (!unroll[i])
 			perm[i] = j++;
 	gen->first_unroll = 1 + j;
-	for (i = 0; i < len; ++i)
+	for (i = gen->shared_len; i < len; ++i)
 		if (unroll[i])
 			perm[i] = j++;
 
