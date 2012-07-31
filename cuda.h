@@ -3,18 +3,13 @@
 
 #include <pet.h>
 #include "cuda_common.h"
-#include "clast_printer.h"
 #include "ppcg_options.h"
 
 struct cuda_gen {
 	struct cuda_info cuda;
-	struct clast_printer_info code;
-	struct clast_printer_info kernel_code;
-	struct clast_printer_info stmt_code;
 
 	isl_ctx *ctx;
 	struct ppcg_options *options;
-	CloogState *state;
 
 	struct pet_scop *scop;
 
@@ -66,13 +61,7 @@ struct cuda_gen {
 	isl_union_map *tiled_sched;
 	/* Local schedule per shared memory tile loop iteration. */
 	isl_union_map *local_sched;
-	/* Domain of the current statement (within print_statement). */
-	isl_set *stmt_domain;
 
-	/* Position of first parameter corresponding to shared tile loop
-	 * in shared_sched.
-	 */
-	unsigned first_shared;
 	/* Local tiled schedule projected onto the shared tile loops and
 	 * the loops that will be wrapped over the threads,
 	 * with all shared tile loops parametrized.
@@ -104,7 +93,9 @@ struct cuda_gen {
 	/* copy_group->private_bound or copy_group->shared_bound */
 	struct cuda_array_bound *copy_bound;
 
-	/* First loop to unroll (or -1 if none). */
+	/* First loop to unroll (or -1 if none) in the current part of the
+	 * schedule.
+	 */
 	int first_unroll;
 
 	int n_grid;

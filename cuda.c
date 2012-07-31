@@ -1,11 +1,13 @@
 /*
  * Copyright 2010-2011 INRIA Saclay
+ * Copyright 2012      Ecole Normale Superieure
  *
  * Use of this software is governed by the GNU LGPLv2.1 license
  *
  * Written by Sven Verdoolaege, INRIA Saclay - Ile-de-France,
  * Parc Club Orsay Universite, ZAC des vignes, 4 rue Jacques Monod,
  * 91893 Orsay, France
+ * and Ecole Normale Superieure, 45 rue d’Ulm, 75230 Paris, France
  */
 
 #include <assert.h>
@@ -19,14 +21,18 @@
 #include <isl/band.h>
 #include <isl/schedule.h>
 #include <isl/options.h>
-#include <cloog/isl/cloog.h>
+#include <isl/ast_build.h>
 
 #include "cuda.h"
 #include "cuda_common.h"
-#include "clast_printer.h"
 #include "schedule.h"
 #include "pet_printer.h"
 #include "ppcg_options.h"
+
+static void print_indent(FILE *dst, int indent)
+{
+	fprintf(dst, "%*s", indent, "");
+}
 
 /* The fields stride, shift and shift_map only contain valid information
  * if shift != NULL.
@@ -35,6 +41,15 @@
  * shift_map contains the mapping
  *
  *	i -> (i + shift)/stride
+ *
+ * Let D represent the initial shared_len dimensions of the computed schedule.
+ * The spaces of "lb" and "shift" are of the form
+ *
+ *	D -> [b]
+ *
+ * "shift_map" is of the form
+ *
+ *	[D -> i] -> [D -> (i + shift(D))/stride]
  */
 struct cuda_array_bound {
 	isl_int size;
@@ -60,7 +75,8 @@ struct cuda_array_ref_group {
 
 	/* The following fields are use during the construction of the groups.
 	 * access is the combined access relation relative to the shared
-	 * memory tiling.
+	 * memory tiling.  In particular, the domain of the map corresponds
+	 * to the first shared_len dimensions of the computed schedule.
 	 * write is set if any access in the group is a write.
 	 */
 	isl_map *access;
@@ -78,11 +94,6 @@ struct cuda_array_ref_group {
 
 	/* Last shared memory tile dimension that affects tile of this group. */
 	int last_shared;
-	/* Dimension at which copying to/from shared memory is printed.
-	 * if >= 0, then the value is >= last_shared
-	 * if -1, then the copying is done at the leaf level.
-	 */
-	int print_shared_level;
 };
 
 struct cuda_array_info {
@@ -710,92 +721,6 @@ static void print_reverse_list(FILE *out, int len, int *list)
 	fprintf(out, ")");
 }
 
-static void print_kernel_launch(struct cuda_gen *gen,
-	__isl_keep isl_union_set *arrays)
-{
-	int i;
-	int first = 1;
-	unsigned nparam;
-	isl_space *dim;
-
-	print_indent(gen->code.dst, gen->code.indent);
-	fprintf(gen->code.dst, "kernel%d <<<k%d_dimGrid, k%d_dimBlock>>> (",
-		gen->kernel_id, gen->kernel_id, gen->kernel_id);
-	fprintf(gen->cuda.kernel_c, "__global__ void kernel%d(",
-		gen->kernel_id);
-	fprintf(gen->cuda.kernel_h, "__global__ void kernel%d(",
-		gen->kernel_id);
-
-	for (i = 0; i < gen->n_array; ++i) {
-		isl_space *dim;
-		isl_set *arr;
-		int empty;
-
-		dim = isl_space_copy(gen->array[i].dim);
-		arr = isl_union_set_extract_set(arrays, dim);
-		empty = isl_set_fast_is_empty(arr);
-		isl_set_free(arr);
-		if (empty)
-			continue;
-
-		if (!first) {
-			fprintf(gen->code.dst, ", ");
-			fprintf(gen->cuda.kernel_c, ", ");
-			fprintf(gen->cuda.kernel_h, ", ");
-		}
-
-		if (cuda_array_is_read_only_scalar(&gen->array[i])) {
-			fprintf(gen->code.dst, "%s", gen->array[i].name);
-			fprintf(gen->cuda.kernel_c, "%s %s",
-				gen->array[i].type, gen->array[i].name);
-			fprintf(gen->cuda.kernel_h, "%s %s",
-				gen->array[i].type, gen->array[i].name);
-		} else {
-			fprintf(gen->code.dst, "dev_%s", gen->array[i].name);
-			fprintf(gen->cuda.kernel_c, "%s *%s",
-				gen->array[i].type, gen->array[i].name);
-			fprintf(gen->cuda.kernel_h, "%s *%s",
-				gen->array[i].type, gen->array[i].name);
-		}
-
-		first = 0;
-	}
-
-	dim = isl_union_set_get_space(arrays);
-	nparam = isl_space_dim(dim, isl_dim_param);
-	for (i = 0; i < nparam; ++i) {
-		const char *name = isl_space_get_dim_name(dim, isl_dim_param, i);
-		if (!first) {
-			fprintf(gen->code.dst, ", ");
-			fprintf(gen->cuda.kernel_c, ", ");
-			fprintf(gen->cuda.kernel_h, ", ");
-		}
-		fprintf(gen->code.dst, "%s", name);
-		fprintf(gen->cuda.kernel_c, "int %s", name);
-		fprintf(gen->cuda.kernel_h, "int %s", name);
-		first = 0;
-	}
-	isl_space_free(dim);
-
-	for (i = 0; i < gen->tile_first; ++i) {
-		if (!first) {
-			fprintf(gen->code.dst, ", ");
-			fprintf(gen->cuda.kernel_c, ", ");
-			fprintf(gen->cuda.kernel_h, ", ");
-		}
-		fprintf(gen->code.dst, "h%d", i);
-		fprintf(gen->cuda.kernel_c, "int h%d", i);
-		fprintf(gen->cuda.kernel_h, "int h%d", i);
-		first = 0;
-	}
-
-	fprintf(gen->code.dst, ");\n");
-	fprintf(gen->cuda.kernel_c, ")\n");
-	fprintf(gen->cuda.kernel_h, ");\n");
-
-	fprintf(gen->code.dst, "cudaCheckKernel();\n");
-}
-
 /* Construct a map from a domain of dimensionality "len"
  * to a domain of dimensionality "len" + "tile_len" that tiles
  * the "tile_len" coordinates starting at "first".
@@ -1040,11 +965,6 @@ static __isl_give isl_union_map *parametrize_tiled_schedule(
 	isl_set *par;
 
 	dim = isl_union_map_get_space(sched);
-	par = parametrization(dim, gen->tiled_len, 0, gen->tile_first, "h");
-	sched = isl_union_map_intersect_range(sched,
-						isl_union_set_from_set(par));
-
-	dim = isl_union_map_get_space(sched);
 	par = parametrization(dim, gen->tiled_len,
 		gen->tile_first + gen->n_grid, gen->n_grid, "b");
 	sched = isl_union_map_intersect_range(sched,
@@ -1222,62 +1142,6 @@ static __isl_give isl_union_map *scale_access_tile_loops(struct cuda_gen *gen,
 	return sched;
 }
 
-/* If print_user_stmt is set, we want to print the statements ourselves,
- * instead of relying on the C preprocessor.  If so, we need to use
- * the stop option so that the domains will be saved on the statement
- * nodes.
- */
-static void print_cloog_shared_body(struct cuda_gen *gen,
-	__isl_keep isl_set *context, __isl_keep isl_union_map *sched, int len,
-	void (*print_user_stmt)(struct clast_printer_info *info,
-				struct clast_user_stmt *s),
-	int first_unroll)
-{
-	int i;
-	CloogOptions *options;
-	CloogDomain *cloog_context;
-	CloogUnionDomain *ud;
-	CloogInput *input;
-	struct clast_stmt *stmt;
-	char name[20];
-
-	sched = isl_union_map_copy(sched);
-	sched = isl_union_map_align_params(sched, isl_set_get_space(context));
-
-	options = cloog_options_malloc(gen->state);
-	options->language = CLOOG_LANGUAGE_C;
-	options->strides = 1;
-	options->sh = 1;
-	options->f = len;
-	options->l = -1;
-	options->override = 1;
-	options->save_domains = 1;
-	options->noscalars = 1;
-	options->first_unroll = first_unroll;
-
-	ud = cloog_union_domain_from_isl_union_map(sched);
-	for (i = 0; i < len; ++i) {
-		snprintf(name, sizeof(name), "c%d", i);
-		ud = cloog_union_domain_set_name(ud, CLOOG_SCAT, i, name);
-	}
-	cloog_context = cloog_domain_from_isl_set(isl_set_copy(context));
-	input = cloog_input_alloc(cloog_context, ud);
-
-	stmt = cloog_clast_create_from_input(input, options);
-
-	gen->stmt_code.indent = gen->kernel_code.indent;
-	gen->stmt_code.dst = gen->cuda.kernel_c;
-	gen->stmt_code.print_user_stmt = print_user_stmt;
-	gen->stmt_code.print_user_stmt_list = NULL;
-	gen->stmt_code.print_for_head = NULL;
-	gen->stmt_code.print_for_foot = NULL;
-	gen->stmt_code.user = gen;
-	print_clast(&gen->stmt_code, stmt);
-
-	cloog_clast_free(stmt);
-	cloog_options_free(options);
-}
-
 /* Add "len" parameters p[i] called prefix%d,
  * with bounds to 0 <= p[i] < size[i].
  */
@@ -1328,47 +1192,146 @@ __isl_give isl_set *add_bounded_parameters(__isl_take isl_set *set,
 	return isl_set_intersect(set, isl_set_from_basic_set(bset));
 }
 
-static void print_shared_body(struct cuda_gen *gen,
-	__isl_keep isl_set *shared_domain, __isl_keep isl_union_map *sched,
-	int len, void (*print_user_stmt)(struct clast_printer_info *info,
-					 struct clast_user_stmt *s),
-	int first_unroll)
+/* Given a mapping "sched" of the form
+ *
+ *	[D -> A] -> [D -> T(A)]
+ *
+ * apply the mapping encoded in bounds[i].shift_map to the range of "sched".
+ * The mappings in bounds[i].shift_map are of the form
+ *
+ *	[D -> a] -> [D -> s(D,a)]
+ *
+ * We first compose them with a mapping
+ *
+ *	[D -> v] -> v
+ *
+ * (If bounds[i].shift_map is not set, then it is assumed to be
+ * an identity mapping and then we use this second mapping instead.)
+ * This results in
+ *
+ *	[D -> a] -> s(D,a)
+ *
+ * We precompose them with a projection on the i th dimension to obtain
+ *
+ *	[D -> T] -> s(D,T)
+ *
+ * and collect these into
+ *
+ *	[D -> T] -> S(D,T)
+ *
+ * Introducing D in the range yields
+ *
+ *	[D -> T] -> [D -> S(D,T)]
+ *
+ * and application to "sched" yields
+ *
+ *	[D -> A] -> [D -> S(D,T(A))]
+ */
+static __isl_give isl_map *pre_shift(__isl_take isl_map *sched,
+	int n_index, struct cuda_array_bound *bounds)
 {
-	isl_set *context;
+	int i;
+	isl_ctx *ctx = isl_map_get_ctx(sched);
+	isl_space *space, *space2;
+	isl_basic_map *def;
+	isl_map *map, *id, *pre_shift;
 
-	context = isl_set_copy(shared_domain);
-	context = parametrize(context, 0, gen->shared_len, "g");
-	context = isl_set_project_out(context, isl_dim_set, 0, gen->shared_len);
-	context = add_bounded_parameters(context,
-					gen->n_block, gen->block_dim, "t");
+	space = isl_space_range(isl_map_get_space(sched));
+	space2 = isl_space_from_domain(isl_space_copy(space));
+	pre_shift = isl_map_universe(space2);
+	space = isl_space_domain(isl_space_unwrap(space));
+	id = isl_map_identity(isl_space_map_from_set(isl_space_copy(space)));
+	space = isl_space_from_domain(space);
+	space = isl_space_add_dims(space, isl_dim_out, 1);
+	def = isl_basic_map_range_map(isl_basic_map_universe(space));
 
-	print_cloog_shared_body(gen, context, sched, len, print_user_stmt,
-				first_unroll);
+	for (i = 0; i < n_index; ++i) {
+		isl_basic_map *bmap, *drop;
+		isl_map *proj;
 
-	isl_set_free(context);
+		space = isl_space_alloc(ctx, 0, n_index, n_index);
+		proj = isl_map_identity(space);
+		proj = isl_map_project_out(proj, isl_dim_out,
+						i + 1, n_index - (i + 1));
+		proj = isl_map_project_out(proj, isl_dim_out, 0, i);
+		proj = isl_map_product(isl_map_copy(id), proj);
+
+		if (!bounds[i].shift_map)
+			bmap = isl_basic_map_copy(def);
+		else {
+			bmap = isl_basic_map_copy(bounds[i].shift_map);
+			bmap = isl_basic_map_apply_range(bmap,
+						isl_basic_map_copy(def));
+		}
+
+		map = isl_map_from_basic_map(bmap);
+		map = isl_map_apply_range(proj, map);
+		pre_shift = isl_map_flat_range_product(pre_shift, map);
+	}
+
+	isl_map_free(id);
+	isl_basic_map_free(def);
+
+	space = isl_space_domain(isl_map_get_space(pre_shift));
+	map = isl_map_domain_map(isl_map_universe(isl_space_unwrap(space)));
+	pre_shift = isl_map_range_product(map, pre_shift);
+
+	sched = isl_map_apply_range(sched, pre_shift);
+
+	return sched;
 }
 
-/* Given a tile of an array, construct a map that maps each element
- * of the tile to a copy of the tile shifted to the origin
+/* Given an access relation to a tile of an array, construct a map that
+ * maps each element in the space of the access relation
+ * to a copy of the tile shifted to the origin
  * (based on the lower bounds in group->private_bound or group->shared_bound).
  * If any of the indices is strided, then {private,shared}_bound[i].shift_map
  * is applied to the index first.
- * The domain of the resulting map is "access",
+ * The domain space of the resulting map is that of access "access",
  * while the range space is anonymous.
+ * The resulting map only encodes the mapping to the shift tile and
+ * not the constraints of "access".
+ *
+ * Let the space of the access relation be
+ *
+ *	D -> A
+ *
+ * We first construct an identity relation on a wrapped copy of this space,
+ * except that it strips off the name of array
+ *
+ *	[D -> A] -> [D -> T(A)]					(1)
+ *
+ * The bounds in bounds[i].lb are of the form
+ *
+ *	D -> b(D)
+ *
+ * We collect them into
+ *
+ *	D -> B(D)
+ *
+ * and then transform them into
+ *
+ *	[D -> T] -> T - B(D)					(2)
+ *
+ * Combining those two mappings (1) and (2) yields
+ *
+ *	[D -> A] -> T(A) - B(D)
+ *
+ * If there are any strides, then (1) is first transformed into (1')
+ *
+ *	[D -> A] -> [D -> T'(A)]				(1')
+ *
+ * by a call to pre_shift.
  */
-static __isl_give isl_map *shift_access(__isl_take isl_set *access,
+static __isl_give isl_map *shift_access(__isl_take isl_map *access,
 	struct cuda_array_ref_group *group)
 {
 	int i;
-	isl_space *dim;
-	isl_basic_set *bset;
-	isl_basic_map *bmap;
-	isl_aff *lb;
-	isl_basic_set *offset;
-	isl_basic_map *shift;
-	isl_basic_map *pre_shift;
+	isl_space *space;
+	isl_map *id1, *id2;
+	isl_map *map;
+	isl_map *shift;
 	isl_map *sched;
-	const char *name;
 	struct cuda_array_bound *bounds;
 	int n_index = group->array->n_index;
 
@@ -1376,74 +1339,63 @@ static __isl_give isl_map *shift_access(__isl_take isl_set *access,
 	if (!bounds)
 		bounds = group->shared_bound;
 
-	dim = isl_set_get_space(access);
-	dim = isl_space_drop_dims(dim, isl_dim_set, 0, n_index);
-	offset = isl_basic_set_universe(dim);
+	space = isl_space_domain(isl_map_get_space(access));
+	space = isl_space_map_from_set(space);
+	id1 = isl_map_identity(space);
+	space = isl_space_range(isl_map_get_space(access));
+	space = isl_space_map_from_set(space);
+	space = isl_space_set_tuple_name(space, isl_dim_out, NULL);
+	id2 = isl_map_identity(space);
+	sched = isl_map_product(id1, id2);
+
+	space = isl_space_unwrap(isl_space_range(isl_map_get_space(sched)));
+	space = isl_space_from_domain(isl_space_domain(space));
+	shift = isl_map_universe(space);
 	for (i = 0; i < n_index; ++i) {
-		lb = isl_aff_copy(bounds[i].lb);
-		bmap = isl_basic_map_from_aff(lb);
-		bset = isl_basic_map_range(bmap);
-		offset = isl_basic_set_flat_product(offset, bset);
+		map = isl_map_from_aff(isl_aff_copy(bounds[i].lb));
+		shift = isl_map_flat_range_product(shift, map);
 	}
-	offset = isl_basic_set_neg(offset);
 
-	dim = isl_space_map_from_set(isl_set_get_space(access));
-	shift = isl_basic_map_identity(dim);
-	shift = isl_basic_map_set_tuple_name(shift, isl_dim_out, NULL);
+	space = isl_space_unwrap(isl_space_range(isl_map_get_space(sched)));
+	map = isl_map_universe(space);
+	id1 = isl_map_range_map(isl_map_copy(map));
+	map = isl_map_domain_map(map);
+	shift = isl_map_neg(shift);
+	shift = isl_map_apply_range(map, shift);
+	shift = isl_map_sum(id1, shift);
 
-	bset = isl_basic_set_universe(isl_set_get_space(access));
-	bmap = isl_basic_map_from_domain_and_range(bset, offset);
+	for (i = 0; i < n_index; ++i)
+		if (bounds[i].shift_map)
+			break;
 
-	shift = isl_basic_map_sum(shift, bmap);
+	if (i < n_index)
+		sched = pre_shift(sched, n_index, bounds);
 
-	dim = isl_set_get_space(access);
-	dim = isl_space_drop_dims(dim, isl_dim_set, 0, n_index);
-	dim = isl_space_map_from_set(dim);
-	pre_shift = isl_basic_map_universe(isl_space_copy(dim));
-	dim = isl_space_add_dims(dim, isl_dim_in, 1);
-	dim = isl_space_add_dims(dim, isl_dim_out, 1);
-	for (i = 0; i < n_index; ++i) {
-		if (!bounds[i].shift_map)
-			bmap = isl_basic_map_identity(isl_space_copy(dim));
-		else
-			bmap = isl_basic_map_copy(bounds[i].shift_map);
-		pre_shift = isl_basic_map_flat_product(pre_shift, bmap);
-	}
-	isl_space_free(dim);
-	name = isl_basic_map_get_tuple_name(shift, isl_dim_in);
-	pre_shift = isl_basic_map_set_tuple_name(pre_shift, isl_dim_in, name);
-	pre_shift = isl_basic_map_set_tuple_name(pre_shift, isl_dim_out, name);
-	shift = isl_basic_map_apply_range(pre_shift, shift);
+	sched = isl_map_apply_range(sched, shift);
 
-	sched = isl_map_from_basic_map(shift);
-	sched = isl_map_intersect_domain(sched, access);
+	isl_map_free(access);
 
 	return sched;
 }
 
-/* Construct a schedule for iterating over all elements in the given
- * piece of an array.  The schedule iterates over a copy of the piece
- * that is shifted to the origin.
- * We subsequently also perform the tiling/wrapping over the threads.
+/* Given a schedule that iterates over all elements in a piece of an array,
+ * perform tiling/wrapping over the threads.
  *
  * In particular, we tile the final iterators so that the final thread
  * dimension runs over the final array dimension.
  * However, if those final iterators have only a single iteration,
  * we try to tile earlier iterators instead.
  */
-static __isl_give isl_union_map *access_schedule(struct cuda_gen *gen,
-	__isl_take isl_set *access, struct cuda_array_ref_group *group)
+static __isl_give isl_map *tile_access_schedule(struct cuda_gen *gen,
+	__isl_take isl_map *sched)
 {
 	isl_space *dim;
-	isl_map *sched;
 	isl_union_map *usched;
 	isl_map *tiling;
 	isl_set *par;
-	unsigned nvar = isl_set_dim(access, isl_dim_set);
+	unsigned nvar = isl_map_dim(sched, isl_dim_out);
 	int n_tile;
 	int first;
-
-	sched = shift_access(access, group);
 
 	n_tile = gen->n_block;
 	if (n_tile > nvar) {
@@ -1478,220 +1430,54 @@ static __isl_give isl_union_map *access_schedule(struct cuda_gen *gen,
 	usched = isl_union_map_from_map(sched);
 	usched = scale_access_tile_loops(gen, usched, nvar + n_tile,
 					 first, n_tile);
+	sched = isl_map_from_union_map(usched);
 
-	return usched;
+	return sched;
 }
 
-/* Print an access to the element in the global memory copy of the
- * given array that corresponds to the element described by "pma".
- * of the original array.
- * The copy in global memory has been linearized, so we need to take
- * the array size into account.
- */
-static void print_global_index(FILE *out,
-	struct cuda_array_info *array, __isl_keep isl_pw_multi_aff *pma,
-	__isl_keep isl_set *domain)
-{
-	int i;
-	isl_ctx *ctx = isl_pw_multi_aff_get_ctx(pma);
-	isl_printer *prn;
-
-	if (cuda_array_is_scalar(array)) {
-		fprintf(out, "*%s", array->name);
-		return;
-	}
-
-	fprintf(out, "%s[", array->name);
-	prn = isl_printer_to_file(ctx, out);
-	prn = isl_printer_set_output_format(prn, ISL_FORMAT_C);
-	for (i = 0; i + 1 < array->n_index; ++i)
-		prn = isl_printer_print_str(prn, "(");
-	for (i = 0; i < array->n_index; ++i) {
-		isl_pw_aff *pa = isl_pw_multi_aff_get_pw_aff(pma, i);
-		pa = isl_pw_aff_coalesce(pa);
-		pa = isl_pw_aff_gist(pa, isl_set_copy(domain));
-		if (i) {
-			prn = isl_printer_print_str(prn, ") * (");
-			prn = isl_printer_print_pw_aff(prn,
-							array->local_bound[i]);
-			prn = isl_printer_print_str(prn, ") + ");
-		}
-		prn = isl_printer_print_pw_aff(prn, pa);
-		isl_pw_aff_free(pa);
-	}
-	isl_printer_free(prn);
-	fprintf(out, "]");
-}
-
-/* Given an index expression into a tile of an array, adjust the expression
+/* Given an index expression "pa" into a tile of an array, adjust the expression
  * to a shift of the tile to the origin
- * (based on the lower bounds in array->shared_bound).
+ * (based on the lower bounds in "bound".
  * If the index is strided, then we first add
  * bound->shift and divide by bound->stride.
+ * In the end, we compute the gist with respect to "domain".
+ *
+ * All of the input expression "pa", the set "domain" and
+ * the output are expressed in terms of the AST schedule domain.
+ * The expressions in "bound" are expressed
+ * in terms of the first shared_len dimensions of the schedule computed by PPCG.
+ * The mapping "sched2shared" maps the former domain to the latter domain.
  */
 static __isl_give isl_pw_aff *shift_index(__isl_take isl_pw_aff *pa,
 	struct cuda_array_info *array,
-	struct cuda_array_bound *bound, __isl_take isl_set *domain)
+	struct cuda_array_bound *bound, __isl_take isl_set *domain,
+	__isl_take isl_map *sched2shared)
 {
-	isl_aff *lb;
+	isl_map *map;
 	isl_pw_aff *tmp;
+	isl_pw_multi_aff *pma;
 
 	if (bound->shift) {
-		isl_aff *shift;
-		shift = bound->shift;
-		shift = isl_aff_copy(shift);
-		shift = isl_aff_project_domain_on_params(shift);
-		shift = isl_aff_align_params(shift, isl_pw_aff_get_space(pa));
-		tmp = isl_pw_aff_alloc(isl_set_copy(domain), shift);
+		map = isl_map_from_aff(isl_aff_copy(bound->shift));
+		map = isl_map_apply_range(isl_map_copy(sched2shared), map);
+		pma = isl_pw_multi_aff_from_map(map);
+		tmp = isl_pw_multi_aff_get_pw_aff(pma, 0);
+		isl_pw_multi_aff_free(pma);
 		pa = isl_pw_aff_add(pa, tmp);
 		pa = isl_pw_aff_scale_down(pa, bound->stride);
 	}
 
-	lb = isl_aff_copy(bound->lb);
-	lb = isl_aff_project_domain_on_params(lb);
 
-	lb = isl_aff_align_params(lb, isl_pw_aff_get_space(pa));
-
-	tmp = isl_pw_aff_alloc(isl_set_copy(domain), lb);
+	map = isl_map_from_aff(isl_aff_copy(bound->lb));
+	map = isl_map_apply_range(sched2shared, map);
+	pma = isl_pw_multi_aff_from_map(map);
+	tmp = isl_pw_multi_aff_get_pw_aff(pma, 0);
+	isl_pw_multi_aff_free(pma);
 	pa = isl_pw_aff_sub(pa, tmp);
 	pa = isl_pw_aff_coalesce(pa);
 	pa = isl_pw_aff_gist(pa, domain);
 
 	return pa;
-}
-
-/* Print an access to the element in the private/shared memory copy of the
- * given array reference group that corresponds to the element described
- * by "pma" of the original array.
- * Since the array in private/shared memory is just a shifted copy of part
- * of the original array, we simply need to subtract the lower bound,
- * which was computed in can_tile_for_shared_memory.
- * If any of the indices is strided, then we first add
- * bounds[i].shift and divide by bounds[i].stride.
- */
-static void print_local_index(FILE *out,
-	struct cuda_array_ref_group *group, struct cuda_array_bound *bounds,
-	__isl_keep isl_pw_multi_aff *pma, __isl_keep isl_set *domain)
-{
-	int i;
-	isl_ctx *ctx = isl_pw_multi_aff_get_ctx(pma);
-	isl_printer *prn;
-	struct cuda_array_info *array = group->array;
-
-	prn = isl_printer_to_file(ctx, out);
-	prn = isl_printer_set_output_format(prn, ISL_FORMAT_C);
-
-	prn = print_array_name(prn, group);
-	for (i = 0; i < array->n_index; ++i) {
-		isl_pw_aff *pa = isl_pw_multi_aff_get_pw_aff(pma, i);
-
-		pa = shift_index(pa, array, &bounds[i], isl_set_copy(domain));
-
-		fprintf(out, "[");
-		prn = isl_printer_print_pw_aff(prn, pa);
-		fprintf(out, "]");
-		isl_pw_aff_free(pa);
-	}
-
-	isl_printer_free(prn);
-}
-
-/* This function is called for each leaf in the clast of the code
- * for copying to or from shared/private memory.
- * The statement name is {read,write}_{shared,private}_<array>.
- *
- * The schedule iterates over the array elements, so we can use
- * the domain of copy_sched at the current scheduling position
- * as the index of the array.
- */
-static void print_copy_statement(struct clast_printer_info *code,
-	struct clast_user_stmt *u)
-{
-	struct cuda_gen *gen = code->user;
-	isl_set *domain;
-	isl_map *sched;
-	struct cuda_array_ref_group *group = gen->copy_group;
-	struct cuda_array_bound *bounds = gen->copy_bound;
-	unsigned n_in;
-	isl_space *dim;
-	isl_set *param;
-	isl_set *index;
-	isl_pw_multi_aff *pma;
-	int read;
-
-	read = !strncmp(u->statement->name, "read", 4);
-
-	domain = extract_host_domain(u);
-	assert(domain);
-
-	sched = isl_map_copy(gen->copy_sched);
-	sched = isl_map_reverse(sched);
-	sched = isl_map_intersect_domain(sched, domain);
-	n_in = isl_map_dim(sched, isl_dim_in);
-	dim = isl_map_get_space(sched);
-	dim = isl_space_params(dim);
-	param = parametrization(dim, n_in, 0, n_in, "c");
-	sched = isl_map_align_params(sched, isl_set_get_space(param));
-	sched = isl_map_intersect_domain(sched, param);
-	index = isl_map_range(sched);
-	domain = isl_set_copy(index);
-	pma = isl_pw_multi_aff_from_set(index);
-	pma = isl_pw_multi_aff_coalesce(pma);
-	domain = isl_set_params(domain);
-
-	print_indent(code->dst, code->indent);
-	if (read) {
-		print_local_index(code->dst, group, bounds, pma, domain);
-		fprintf(code->dst, " = ");
-		print_global_index(code->dst, group->array, pma, domain);
-	} else {
-		print_global_index(code->dst, group->array, pma, domain);
-		fprintf(code->dst, " = ");
-		print_local_index(code->dst, group, bounds, pma, domain);
-	}
-	fprintf(code->dst, ";\n");
-
-	isl_pw_multi_aff_free(pma);
-	isl_set_free(domain);
-}
-
-static void print_shared_access(struct cuda_gen *gen,
-	__isl_keep isl_set *shared_domain, __isl_take isl_set *access,
-	const char *type, struct cuda_array_ref_group *group)
-{
-	const char *array_name;
-	char *name;
-	isl_ctx *ctx;
-	isl_union_map *sched;
-	unsigned nvar = isl_set_dim(access, isl_dim_set);
-	int n_tile;
-
-	ctx = isl_set_get_ctx(access);
-	array_name = isl_set_get_tuple_name(access);
-	name = isl_alloc_array(ctx, char,
-		strlen(type) + sizeof("_shared_") + strlen(array_name) + 20);
-	if (group->array->n_group > 1)
-		sprintf(name, "%s_shared_%s_%d", type, array_name, group->nr);
-	else
-		sprintf(name, "%s_shared_%s", type, array_name);
-	access = isl_set_set_tuple_name(access, name);
-	free(name);
-
-	sched = access_schedule(gen, access, group);
-
-	n_tile = gen->n_block;
-	if (n_tile > nvar)
-		n_tile = nvar;
-
-	gen->copy_sched = isl_map_from_union_map(isl_union_map_copy(sched));
-	gen->copy_group = group;
-	gen->copy_bound = group->shared_bound;
-
-	print_shared_body(gen, shared_domain, sched, nvar + n_tile,
-				&print_copy_statement, -1);
-
-	isl_union_map_free(sched);
-	isl_map_free(gen->copy_sched);
 }
 
 /* Return the union of all read (read = 1) and/or write (write = 1)
@@ -1732,546 +1518,100 @@ static int no_strides(struct cuda_array_ref_group *group)
 	return 1;
 }
 
-/* Return a set containing the values of the given index i
+/* Return a map from the first shared_len dimensions of the computed
+ * schedule to the values of the given index "i"
  * of the elements in the array tile in global memory that corresponds
  * to the shared memory copy.
- * In particular, if a is the index, we return a set with constraints
+ * In particular, if a is the index, then the range of the map
  *
- *	tile_offset <= a <= tile_offset + tile_size - 1
+ *	{ D -> [a] }
+ *
+ * is constrained as follows
+ *
+ *	tile_offset(D) <= a <= tile_offset(D) + tile_size - 1
  *
  * and
  *
  *	0 <= a <= array_size - 1
  *
  */
-static __isl_give isl_set *group_tile_dim(struct cuda_array_ref_group *group,
+static __isl_give isl_map *group_tile_dim(struct cuda_array_ref_group *group,
 	int i)
 {
-	isl_basic_set *tile;
 	isl_aff *aff;
-	isl_constraint *c;
-	isl_local_space *ls;
-	isl_pw_aff *bound;
-	isl_set *dom;
-	isl_set *tile_set;
+	isl_space *space;
+	isl_map *map, *tile, *gt;
+	isl_set *bound;
+
+	map = isl_map_from_aff(isl_aff_copy(group->shared_bound[i].lb));
+	space = isl_space_range(isl_map_get_space(map));
+	map = isl_map_apply_range(map, isl_map_lex_le(isl_space_copy(space)));
+	tile = map;
 
 	aff = isl_aff_copy(group->shared_bound[i].lb);
-	aff = isl_aff_add_dims(aff, isl_dim_in, 1);
-	ls = isl_aff_get_domain_local_space(aff);
-	aff = isl_aff_neg(aff);
-	aff = isl_aff_add_coefficient_si(aff, isl_dim_in, 0, 1);
-	c = isl_inequality_from_aff(isl_aff_copy(aff));
-	tile = isl_basic_set_from_constraint(c);
-
-	aff = isl_aff_neg(aff);
 	aff = isl_aff_add_constant(aff, group->shared_bound[i].size);
-	aff = isl_aff_add_constant_si(aff, -1);
-	c = isl_inequality_from_aff(aff);
-	tile = isl_basic_set_add_constraint(tile, c);
+	map = isl_map_from_aff(aff);
+	gt = isl_map_lex_gt(space);
+	map = isl_map_apply_range(map, isl_map_copy(gt));
+	tile = isl_map_intersect(tile, map);
 
-	aff = isl_aff_zero_on_domain(ls);
-	aff = isl_aff_add_coefficient_si(aff, isl_dim_in, 0, 1);
-	c = isl_inequality_from_aff(aff);
-	tile = isl_basic_set_add_constraint(tile, c);
+	tile = isl_map_lower_bound_si(tile, isl_dim_out, 0, 0);
 
-	bound = isl_pw_aff_copy(group->array->bound[i]);
-	bound = isl_pw_aff_add_dims(bound, isl_dim_in, 1);
-	ls = isl_local_space_from_space(isl_pw_aff_get_domain_space(bound));
-	aff = isl_aff_zero_on_domain(ls);
-	aff = isl_aff_add_coefficient_si(aff, isl_dim_in, 0, 1);
-	aff = isl_aff_add_constant_si(aff, 1);
-	dom = isl_pw_aff_domain(isl_pw_aff_copy(bound));
-
-	tile_set = isl_pw_aff_ge_set(bound, isl_pw_aff_alloc(dom, aff));
-	tile_set = isl_set_align_params(tile_set, isl_basic_set_get_space(tile));
-	tile_set = isl_set_intersect(tile_set, isl_set_from_basic_set(tile));
-
-	return tile_set;
-}
-
-/* Return a set containing the elements in the array tile in
- * global memory that corresponds to the shared memory copy.
- */
-static __isl_give isl_set *group_tile(struct cuda_array_ref_group *group)
-{
-	int i;
-	int n_index = group->array->n_index;
-	isl_set *tile;
-
-	tile = group_tile_dim(group, 0);
-	for (i = 1; i < n_index; ++i) {
-		isl_set *tile_i;
-
-		tile_i = group_tile_dim(group, i);
-		tile = isl_set_flat_product(tile, tile_i);
-	}
-
-	tile = isl_set_set_tuple_name(tile, group->array->name);
+	bound = isl_set_from_pw_aff(isl_pw_aff_copy(group->array->bound[i]));
+	bound = isl_set_apply(bound, gt);
+	tile = isl_map_intersect_range(tile, bound);
 
 	return tile;
 }
 
-/* Print code for reading into or writing from shared memory
- * the given array reference group.
- *
- * sched maps the original iteration domains to the shared memory tile loops.
- *
- * If we are performing a read from global memory to shared memory,
- * if the array involved is not a scalar and if the definition of the
- * shared memory tiles does not involve any strides, then we copy
- * the entire tile to shared memory.  This may result in some extra
- * elements getting copied, but it should lead to simpler code
- * (which means that fewer registers may be needed) and less divergence.
- *
- * Otherwise, we only copy the elements that will be read or have been written
- * in the kernel.
- *
- * Note that the absence of stride requirement can easily be lifted.
- * We would just need to add constraints of the form
- *
- *	shift + a = stride * alpha
+/* Return a map from the first shared_len dimensions of the computed
+ * schedule to the array tile in
+ * global memory that corresponds to the shared memory copy.
  */
-static int print_group_shared_accesses(struct cuda_gen *gen,
-	struct cuda_array_ref_group *group, const char *type,
-	__isl_keep isl_set *shared_domain, __isl_keep isl_union_map *sched)
-{
-	int read;
-	isl_union_map *access;
-	isl_union_set *uset;
-	isl_set *access_set;
-
-	if (group->private_bound)
-		return 0;
-	if (!group->shared_bound)
-		return 0;
-
-	read = !strcmp(type, "read");
-
-	access = group_access_relation(group, read, !read);
-	access = isl_union_map_apply_domain(access, isl_union_map_copy(sched));
-	uset = isl_union_map_range(access);
-
-	if (isl_union_set_is_empty(uset)) {
-		isl_union_set_free(uset);
-		return 0;
-	}
-
-	if (read && group->array->n_index > 0 && no_strides(group)) {
-		isl_union_set_free(uset);
-		access_set = group_tile(group);
-		print_shared_access(gen, shared_domain, access_set,
-				    type, group);
-		return 1;
-	}
-
-	access_set = isl_set_from_union_set(uset);
-	access_set = isl_set_coalesce(access_set);
-
-	print_shared_access(gen, shared_domain, access_set, type, group);
-
-	return 1;
-}
-
-/* Print code for reading into or writing from shared memory at
- * the given level (-1 for innermost).
- *
- * If we are not printing at the innermost level, then the dimensionality
- * of shared_domain may be smaller than gen->shared_len.
- * As the rest of the code assumes that the domain of access has
- * gen->shared_len dimensions, we therefore may need to embed this domain
- * in a higher dimensional space after intersection with shared_domain.
- */
-static void print_shared_accesses(struct cuda_gen *gen,
-	__isl_keep isl_set *shared_domain, __isl_keep isl_union_map *access,
-	const char *type, int level)
-{
-	int i, j;
-	isl_space *dim;
-	isl_map *proj;
-	isl_set *par;
-	int shared_len = isl_set_dim(shared_domain, isl_dim_set);
-	int sync = 0;
-	isl_union_map *sched;
-
-	shared_domain = isl_set_copy(shared_domain);
-	sched = isl_union_map_copy(gen->tiled_sched);
-	dim = isl_union_map_get_space(sched);
-	proj = projection(dim, gen->tiled_len, shared_len);
-	sched = isl_union_map_apply_range(sched, isl_union_map_from_map(proj));
-	sched = isl_union_map_intersect_range(sched,
-			isl_union_set_from_set(isl_set_copy(shared_domain)));
-	if (shared_len != gen->shared_len) {
-		dim = isl_union_map_get_space(sched);
-		proj = projection(dim, gen->shared_len, shared_len);
-		proj = isl_map_reverse(proj);
-		shared_domain = isl_set_apply(shared_domain,
-						isl_map_copy(proj));
-		sched = isl_union_map_apply_range(sched,
-				isl_union_map_from_map(proj));
-	}
-
-	dim = isl_union_map_get_space(sched);
-	par = parametrization(dim, gen->shared_len, 0, gen->shared_len, "g");
-	sched = isl_union_map_intersect_range(sched,
-						isl_union_set_from_set(par));
-
-	for (i = 0; i < gen->n_array; ++i) {
-		struct cuda_array_info *array = &gen->array[i];
-
-		for (j = 0; j < array->n_group; ++j) {
-			if (array->groups[j]->print_shared_level != level)
-				continue;
-
-			if (print_group_shared_accesses(gen, array->groups[j],
-					    type, shared_domain, sched))
-				sync = 1;
-		}
-	}
-
-	isl_union_map_free(sched);
-	isl_set_free(shared_domain);
-
-	if (sync) {
-		print_indent(gen->cuda.kernel_c, gen->kernel_code.indent);
-		fprintf(gen->cuda.kernel_c, "__syncthreads();\n");
-	}
-}
-
-/* This function is called for each access to an array in some statement
- * in the original code.
- * Replace that access by an access to shared or (linearized) global memory.
- * Since the array in shared memory is just
- * a shifted copy of part of the original array, we simply need
- * to subtract the lower bound, which was computed
- * in can_tile_for_shared_memory.
- * If any of the indices is strided, then we first add
- * shared_bound[i].shift and divide by shared_bound[i].stride.
- *
- * If the given array is accessed directly from global memory,
- * we don't need to perform any shifting and simply simplify
- * the expression in the context of the domain instead.
- *
- * If the array space (range of access) has no name, then we are
- * accessing an iterator in the original program.
- */
-static __isl_give isl_printer *print_access(__isl_take isl_printer *p,
-	struct cuda_gen *gen, __isl_take isl_map *access, int group_nr)
+static __isl_give isl_map *group_tile(struct cuda_array_ref_group *group)
 {
 	int i;
-	const char *name;
-	unsigned n_index;
-	struct cuda_array_info *array = NULL;
-	isl_pw_multi_aff *pma;
-	isl_set *data_set;
-	isl_set *domain;
-	struct cuda_array_bound *bounds = NULL;
+	int n_index = group->array->n_index;
+	isl_map *tile;
 
-	access = isl_map_align_params(access,
-					isl_set_get_space(gen->stmt_domain));
+	tile = group_tile_dim(group, 0);
+	for (i = 1; i < n_index; ++i) {
+		isl_map *tile_i;
 
-	data_set = isl_set_apply(isl_set_copy(gen->stmt_domain), access);
-
-	name = isl_set_get_tuple_name(data_set);
-
-	if (!name)
-		fprintf(gen->cuda.kernel_c, "(");
-	else {
-		struct cuda_array_ref_group *group;
-
-		for (i = 0; i < gen->n_array; ++i) {
-			if (strcmp(name, gen->array[i].name))
-				continue;
-			array = &gen->array[i];
-		}
-		assert(array);
-		group = array->groups[group_nr];
-		bounds = group->private_bound;
-		if (!bounds)
-			bounds = group->shared_bound;
-
-		if (!bounds && cuda_array_is_scalar(array) && !array->read_only)
-			fprintf(gen->cuda.kernel_c, "*");
-		p = print_array_name(p, group);
-
-		if (cuda_array_is_scalar(array)) {
-			isl_set_free(data_set);
-			return p;
-		}
-
-		fprintf(gen->cuda.kernel_c, "[");
+		tile_i = group_tile_dim(group, i);
+		tile = isl_map_flat_range_product(tile, tile_i);
 	}
 
+	tile = isl_map_set_tuple_name(tile, isl_dim_out, group->array->name);
 
-	n_index = isl_set_dim(data_set, isl_dim_set);
-	pma = isl_pw_multi_aff_from_set(data_set);
-	pma = isl_pw_multi_aff_coalesce(pma);
-
-	if (!bounds)
-		for (i = 0; i + 1 < n_index; ++i)
-			p = isl_printer_print_str(p, "(");
-
-	for (i = 0; i < n_index; ++i) {
-		isl_pw_aff *index;
-
-		index = isl_pw_multi_aff_get_pw_aff(pma, i);
-
-		if (!array) {
-			p = isl_printer_print_pw_aff(p, index);
-			isl_pw_aff_free(index);
-			continue;
-		}
-
-		domain = isl_set_copy(gen->stmt_domain);
-		domain = isl_set_params(domain);
-		if (!bounds) {
-			index = isl_pw_aff_coalesce(index);
-			index = isl_pw_aff_gist(index, domain);
-		} else
-			index = shift_index(index, array, &bounds[i], domain);
-
-		if (i) {
-			if (!bounds) {
-				p = isl_printer_print_str(p, ") * (");
-				p = isl_printer_print_pw_aff(p,
-							array->local_bound[i]);
-				p = isl_printer_print_str(p, ") + ");
-			} else
-				p = isl_printer_print_str(p, "][");
-		}
-		p = isl_printer_print_pw_aff(p, index);
-		isl_pw_aff_free(index);
-	}
-	if (!name)
-		p = isl_printer_print_str(p, ")");
-	else
-		p = isl_printer_print_str(p, "]");
-
-	isl_pw_multi_aff_free(pma);
-
-	return p;
+	return tile;
 }
 
-struct cuda_access_print_info {
-	struct cuda_gen *gen;
-	struct cuda_stmt_access *access;
-};
-
-/* To print the cuda accesses we walk the list of cuda accesses simultaneously
- * with the pet printer. This means that whenever the pet printer prints a
- * pet access expression we have the corresponding cuda access available and can
- * print the modified access.
+/* Given a mapping "sched" from the AST schedule to a domain,
+ * return the corresponding mapping from the AST schedule to
+ * to the first shared_len dimensions of the schedule computed by PPCG.
  */
-static __isl_give isl_printer *print_cuda_access(__isl_take isl_printer *p,
-	struct pet_expr *expr, void *usr)
+static __isl_give isl_map *compute_sched_to_shared(struct cuda_gen *gen,
+	__isl_take isl_map *sched)
 {
-	struct cuda_access_print_info *info =
-		(struct cuda_access_print_info *) usr;
+	isl_union_map *umap;
+	isl_space *space;
+	isl_map *map;
 
-	p = print_access(p, info->gen, isl_map_copy(info->access->access),
-		     info->access->group);
-	info->access = info->access->next;
+	space = isl_space_range(isl_map_get_space(sched));
+	space = isl_space_from_domain(space);
+	space = isl_space_add_dims(space, isl_dim_out, gen->shared_len);
 
-	return p;
-}
+	umap = isl_union_map_copy(gen->shared_sched);
+	umap = isl_union_map_apply_range(umap,
+			isl_union_map_copy(gen->shared_proj));
+	map = isl_union_map_extract_map(umap, space);
+	isl_union_map_free(umap);
 
-static void print_stmt_body(struct cuda_gen *gen,
-	FILE *out, struct cuda_stmt *stmt)
-{
-	struct cuda_access_print_info info;
-	isl_printer *p;
+	sched = isl_map_apply_range(sched, map);
+	sched = isl_map_detect_equalities(sched);
 
-	p = isl_printer_to_file(gen->ctx, out);
-	p = isl_printer_set_output_format(p, ISL_FORMAT_C);
-
-	info.gen = gen;
-	info.access = stmt->accesses;
-
-	p = print_pet_expr(p, stmt->body, &print_cuda_access, &info);
-	fprintf(out, ";\n");
-
-	isl_printer_free(p);
-}
-
-/* This function is called for each leaf in the innermost clast,
- * i.e., for each statement.
- * We print the statement body, simplifying the accesses based
- * on the schedule.
- */
-static void print_statement(struct clast_printer_info *code,
-	struct clast_user_stmt *u)
-{
-	struct cuda_gen *gen = code->user;
-	isl_space *dim;
-	isl_set *par;
-	isl_set *stmt_domain;
-	isl_union_map *stmt_sched;
-	isl_union_set *uset;
-	int nr;
-	struct cuda_stmt *stmt;
-
-	nr = atoi(u->statement->name + 2);
-	stmt = &gen->stmts[nr];
-
-	stmt_domain = extract_host_domain(u);
-
-	stmt_sched = isl_union_map_intersect_range(
-		    isl_union_map_copy(gen->local_sched),
-		    isl_union_set_from_set(extend(stmt_domain,
-						  gen->thread_tiled_len)));
-	dim = isl_union_map_get_space(stmt_sched);
-	par = parametrization(dim, gen->thread_tiled_len, 0,
-				gen->thread_tiled_len, "c");
-	stmt_sched = isl_union_map_intersect_range(stmt_sched,
-						isl_union_set_from_set(par));
-
-	uset = isl_union_map_domain(stmt_sched);
-	dim = isl_union_set_get_space(uset);
-	dim = isl_space_add_dims(dim, isl_dim_set,
-			  isl_set_dim(stmt->domain, isl_dim_set));
-	dim = isl_space_set_tuple_name(dim, isl_dim_set, u->statement->name);
-	gen->stmt_domain = isl_union_set_extract_set(uset, dim);
-	isl_union_set_free(uset);
-
-	print_indent(code->dst, code->indent);
-	print_stmt_body(gen, code->dst, stmt);
-
-	isl_set_free(gen->stmt_domain);
-}
-
-static void print_private_access(struct cuda_gen *gen,
-	__isl_keep isl_set *shared_domain, __isl_take isl_set *access,
-	const char *type, struct cuda_array_ref_group *group)
-{
-	const char *array_name;
-	char *name;
-	isl_ctx *ctx;
-	unsigned nvar = isl_set_dim(access, isl_dim_set);
-	isl_union_map *usched;
-
-	if (isl_set_fast_is_empty(access)) {
-		isl_set_free(access);
-		return;
-	}
-
-	ctx = isl_set_get_ctx(access);
-	array_name = isl_set_get_tuple_name(access);
-	name = isl_alloc_array(ctx, char,
-		strlen(type) + sizeof("_private_") + strlen(array_name) + 20);
-	if (group->array->n_group > 1)
-		sprintf(name, "%s_private_%s_%d", type, array_name, group->nr);
-	else
-		sprintf(name, "%s_private_%s", type, array_name);
-	access = isl_set_set_tuple_name(access, name);
-	free(name);
-
-	gen->copy_sched = shift_access(access, group);
-	gen->copy_group = group;
-	gen->copy_bound = group->private_bound;
-
-	usched = isl_union_map_from_map(isl_map_copy(gen->copy_sched));
-	print_shared_body(gen, shared_domain, usched, nvar,
-				&print_copy_statement, 1);
-	isl_union_map_free(usched);
-
-	isl_map_free(gen->copy_sched);
-}
-
-/* Print code for reading into or writing from private memory
- * the given array reference group.
- *
- * sched maps the original iteration domains to the shared memory tile loops.
- */
-static void print_group_private_accesses(struct cuda_gen *gen,
-	struct cuda_array_ref_group *group,
-	 const char *type, __isl_keep isl_set *shared_domain,
-	unsigned first_shared, int shared_len, __isl_keep isl_union_map *sched)
-{
-	int read;
-	isl_union_map *access;
-	isl_union_set *uset;
-	isl_set *access_set;
-
-	if (!group->private_bound)
-		return;
-
-	read = !strcmp(type, "read");
-
-	access = group_access_relation(group, read, !read);
-	access = isl_union_map_apply_domain(access, isl_union_map_copy(sched));
-	access = isl_union_map_intersect(access,
-				    isl_union_map_copy(gen->private_access));
-	uset = isl_union_map_range(access);
-
-	if (isl_union_set_is_empty(uset)) {
-		isl_union_set_free(uset);
-		return;
-	}
-
-	access_set = isl_set_from_union_set(uset);
-	access_set = isl_set_coalesce(access_set);
-	access_set = isl_set_eliminate(access_set, isl_dim_param,
-			first_shared + shared_len,
-			gen->shared_len - shared_len);
-
-	print_private_access(gen, shared_domain, access_set, type, group);
-}
-
-/* Print code for reading into or writing from private memory at
- * the given level (-1 for innermost).
- *
- * If we are not printing at the innermost level, then the dimensionality
- * of shared_domain may be smaller than gen->shared_len.
- * As the rest of the code assumes that the domain of access has
- * gen->shared_len dimensions, we therefore may need to embed this domain
- * in a higher dimensional space after intersection with shared_domain.
- *
- * This code is very similar to print_shared_accesses.
- * The main difference is that we to take into account gen->private_access.
- */
-static void print_private_accesses(struct cuda_gen *gen,
-	__isl_keep isl_set *shared_domain, __isl_keep isl_union_map *access,
-	const char *type, int level)
-{
-	int i, j;
-	isl_space *dim;
-	isl_map *proj;
-	int shared_len = isl_set_dim(shared_domain, isl_dim_set);
-	unsigned first_shared;
-	isl_union_map *sched;
-
-	shared_domain = isl_set_copy(shared_domain);
-	sched = isl_union_map_copy(gen->tiled_sched);
-	dim = isl_union_map_get_space(sched);
-	first_shared = isl_space_dim(dim, isl_dim_param);
-	proj = projection(dim, gen->tiled_len, shared_len);
-	sched = isl_union_map_apply_range(sched, isl_union_map_from_map(proj));
-	sched = isl_union_map_intersect_range(sched,
-			isl_union_set_from_set(isl_set_copy(shared_domain)));
-	if (shared_len != gen->shared_len) {
-		dim = isl_union_map_get_space(sched);
-		proj = projection(dim, gen->shared_len, shared_len);
-		proj = isl_map_reverse(proj);
-		shared_domain = isl_set_apply(shared_domain,
-						isl_map_copy(proj));
-		sched = isl_union_map_apply_range(sched,
-				isl_union_map_from_map(proj));
-	}
-
-	for (i = 0; i < gen->n_array; ++i) {
-		struct cuda_array_info *array = &gen->array[i];
-
-		for (j = 0; j < array->n_group; ++j) {
-			if (array->groups[j]->print_shared_level != level)
-				continue;
-
-			print_group_private_accesses(gen, array->groups[j],
-					    type, shared_domain,
-					    first_shared, shared_len, sched);
-		}
-	}
-
-	isl_union_map_free(sched);
-	isl_set_free(shared_domain);
+	return sched;
 }
 
 /* Set unroll[j] if the input dimension j is involved in
@@ -2390,7 +1730,7 @@ static __isl_give isl_union_map *interchange_for_unroll(struct cuda_gen *gen,
 	for (i = gen->shared_len; i < gen->thread_tiled_len; ++i)
 		if (!unroll[i])
 			perm[i] = j++;
-	gen->first_unroll = 1 + j;
+	gen->first_unroll = j - gen->shared_len;
 	for (i = gen->shared_len; i < len; ++i)
 		if (unroll[i])
 			perm[i] = j++;
@@ -2401,190 +1741,6 @@ static __isl_give isl_union_map *interchange_for_unroll(struct cuda_gen *gen,
 					  isl_union_map_from_map(permute));
 
 	return sched;
-}
-
-/* This function is called for each leaf in the clast of the kernel code.
- * We first specialize the schedule to the site of the leaf and
- * print code for reading into shared memory, performing the actual
- * computations and writing from shared memory, with the required
- * synchronizations.
- */
-static void print_kernel_user(struct clast_printer_info *code,
-	struct clast_user_stmt *u)
-{
-	struct cuda_gen *gen = code->user;
-	isl_set *shared_domain;
-
-	shared_domain = extract_entire_host_domain(&u->stmt);
-
-	print_shared_accesses(gen, shared_domain, gen->read, "read", -1);
-
-	print_private_accesses(gen, shared_domain, gen->read, "read", -1);
-
-	print_shared_body(gen, shared_domain, gen->local_sched,
-			    gen->thread_tiled_len, &print_statement,
-			    gen->first_unroll);
-
-	print_private_accesses(gen, shared_domain, gen->write, "write", -1);
-
-	print_indent(gen->cuda.kernel_c, gen->kernel_code.indent);
-	fprintf(gen->cuda.kernel_c, "__syncthreads();\n");
-
-	print_shared_accesses(gen, shared_domain, gen->write, "write", -1);
-
-	isl_set_free(shared_domain);
-}
-
-/* Check if we need to perform any copying to shared memory at this level
- * and if so, print the copying instructions.
- * Any array for which we are allowed to print copying instructions at
- * this level, but haven't done so already, is printed.
- */
-static void copy_to_local(struct cuda_gen *gen, __isl_keep isl_set *domain)
-{
-	int i, j;
-	int level;
-	int print = 0;
-
-	level = isl_set_dim(domain, isl_dim_set);
-
-	for (i = 0; i < gen->n_array; ++i) {
-		struct cuda_array_info *array = &gen->array[i];
-
-		for (j = 0; j < array->n_group; ++j) {
-			if (array->groups[j]->print_shared_level >= 0)
-				continue;
-			if (array->groups[j]->last_shared >= level)
-				continue;
-			array->groups[j]->print_shared_level = level;
-			print = 1;
-		}
-	}
-
-	if (print) {
-		print_shared_accesses(gen, domain, gen->read, "read", level);
-		print_private_accesses(gen, domain, gen->read, "read", level);
-	}
-
-}
-
-/* This function is called for each for loop in the clast,
- * right after the opening brace has been printed.
- *
- * Print copying instructions to shared or private memory if needed.
- */
-static void print_kernel_for_head(struct clast_printer_info *code,
-	struct clast_for *f)
-{
-	struct cuda_gen *gen = code->user;
-	isl_set *domain;
-
-	domain = isl_set_from_cloog_domain(cloog_domain_copy(f->domain));
-	copy_to_local(gen, domain);
-
-	isl_set_free(domain);
-}
-
-/* Print instructions for copying from shared memory for each array
- * for which print_kernel_for_head has added copying instructions
- * to shared memory.
- */
-static void copy_from_local(struct cuda_gen *gen, __isl_keep isl_set *domain)
-{
-	int i, j;
-	int level;
-	int print = 0;
-
-	level = isl_set_dim(domain, isl_dim_set);
-
-	for (i = 0; i < gen->n_array; ++i) {
-		struct cuda_array_info *array = &gen->array[i];
-
-		for (j = 0; j < array->n_group; ++j) {
-			if (array->groups[j]->print_shared_level != level)
-				continue;
-			print = 1;
-			break;
-		}
-		if (print)
-			break;
-	}
-
-	if (print) {
-		print_private_accesses(gen, domain, gen->write, "write", level);
-		print_shared_accesses(gen, domain, gen->write, "write", level);
-	}
-}
-
-/* This function is called for each for loop in the clast,
- * right before the closing brace is printed.
- *
- * Print copying instructions from shared or private memory if needed.
- */
-static void print_kernel_for_foot(struct clast_printer_info *code,
-	struct clast_for *f)
-{
-	struct cuda_gen *gen = code->user;
-	isl_set *domain;
-
-	domain = isl_set_from_cloog_domain(cloog_domain_copy(f->domain));
-	copy_from_local(gen, domain);
-
-	isl_set_free(domain);
-}
-
-/* Use CLooG to generate code for the outer gen->shared_first loops
- * of the local schedule "sched".
- * The pretty printing of this code is handled by print_clast,
- * which calls print_kernel_user for each iteration of the shared tile loops.
- */
-static void print_cloog_kernel_body(struct cuda_gen *gen,
-	__isl_keep isl_set *context, __isl_keep isl_union_map *sched)
-{
-	int i;
-	CloogOptions *options;
-	CloogDomain *cloog_context;
-	CloogUnionDomain *ud;
-	CloogInput *input;
-	struct clast_stmt *stmt;
-	char name[20];
-
-	sched = isl_union_map_copy(sched);
-	sched = isl_union_map_align_params(sched, isl_set_get_space(context));
-
-	options = cloog_options_malloc(gen->state);
-	options->language = CLOOG_LANGUAGE_C;
-	options->strides = 1;
-	options->sh = 1;
-	options->stop = gen->shared_len;
-	options->f = gen->tiled_len;
-	options->l = gen->tiled_len;
-	options->save_domains = 1;
-	options->noscalars = 1;
-
-	ud = cloog_union_domain_from_isl_union_map(sched);
-	for (i = 0; i < gen->shared_len; ++i) {
-		snprintf(name, sizeof(name), "g%d", i);
-		ud = cloog_union_domain_set_name(ud, CLOOG_SCAT, i, name);
-	}
-	cloog_context = cloog_domain_from_isl_set(isl_set_copy(context));
-	input = cloog_input_alloc(cloog_context, ud);
-
-	stmt = cloog_clast_create_from_input(input, options);
-
-	gen->kernel_code.indent = 4;
-	gen->kernel_code.dst = gen->cuda.kernel_c;
-	gen->kernel_code.print_user_stmt = NULL;
-	gen->kernel_code.print_user_stmt_list = &print_kernel_user;
-	gen->kernel_code.print_for_head = &print_kernel_for_head;
-	gen->kernel_code.print_for_foot = &print_kernel_for_foot;
-	gen->kernel_code.user = gen;
-	copy_to_local(gen, context);
-	print_clast(&gen->kernel_code, stmt);
-	copy_from_local(gen, context);
-
-	cloog_clast_free(stmt);
-	cloog_options_free(options);
 }
 
 static void print_kernel_iterators(struct cuda_gen *gen)
@@ -2658,57 +1814,39 @@ static void print_shared_arrays(struct cuda_gen *gen)
 	}
 }
 
-static void print_kernel_body(struct cuda_gen *gen,
-	__isl_keep isl_set *host_domain, __isl_keep isl_union_map *sched)
-{
-	isl_set *context;
-
-	context = isl_set_copy(host_domain);
-	context = parametrize(context, 0, gen->tile_first, "h");
-	context = isl_set_project_out(context, isl_dim_set, 0, gen->tile_first);
-	context = add_bounded_parameters(context,
-					gen->n_grid, gen->grid_dim, "b");
-
-	print_kernel_iterators(gen);
-	print_shared_arrays(gen);
-
-	fprintf(gen->cuda.kernel_c, "\n");
-
-	print_cloog_kernel_body(gen, context, sched);
-
-	isl_set_free(context);
-}
-
 /* Given a constraint
  *
  *		a(p,i) + j = g f(e)
  *
  * or -a(p,i) - j = g f(e) if sign < 0,
  * store a(p,i) in bound->shift and g (stride) in bound->stride.
- * a(p,i) is assumed to be an expression in only the parameters.
+ * a(p,i) is assumed to be an expression in only the parameters
+ * and the input dimensions.
  */
 static void extract_stride(__isl_keep isl_constraint *c,
 	struct cuda_array_bound *bound, isl_int stride, int sign)
 {
 	int i;
 	isl_int v;
-	isl_space *dim;
+	isl_space *space;
 	unsigned nparam;
+	unsigned nvar;
 	isl_aff *aff;
 
 	isl_int_set(bound->stride, stride);
 
-	dim = isl_constraint_get_space(c);
-	dim = isl_space_params(dim);
+	space = isl_constraint_get_space(c);
+	space = isl_space_domain(space);
 
-	nparam = isl_space_dim(dim, isl_dim_param);
+	nparam = isl_space_dim(space, isl_dim_param);
+	nvar = isl_space_dim(space, isl_dim_set);
 
 	isl_int_init(v);
 
 	isl_constraint_get_constant(c, &v);
 	if (sign < 0)
 		isl_int_neg(v, v);
-	aff = isl_aff_zero_on_domain(isl_local_space_from_space(dim));
+	aff = isl_aff_zero_on_domain(isl_local_space_from_space(space));
 	aff = isl_aff_set_constant(aff, v);
 
 	for (i = 0; i < nparam; ++i) {
@@ -2718,6 +1856,15 @@ static void extract_stride(__isl_keep isl_constraint *c,
 		if (sign < 0)
 			isl_int_neg(v, v);
 		aff = isl_aff_add_coefficient(aff, isl_dim_param, i, v);
+	}
+
+	for (i = 0; i < nvar; ++i) {
+		isl_constraint_get_coefficient(c, isl_dim_in, i, &v);
+		if (isl_int_is_zero(v))
+			continue;
+		if (sign < 0)
+			isl_int_neg(v, v);
+		aff = isl_aff_add_coefficient(aff, isl_dim_in, i, v);
 	}
 
 	isl_int_clear(v);
@@ -2777,37 +1924,90 @@ static int check_stride_constraint(__isl_take isl_constraint *c, void *user)
  * i -> (i + a(p))/g to the array index in bounds and return
  * the new constraints.
  * If not, simply return the original constraints.
+ *
+ * If bounds is a subset of the space
+ *
+ *	D -> i
+ *
+ * then the bound recorded in bound->shift is of the form
+ *
+ *	D -> s(D)
+ *
+ * with s(D) equal to a(p) above.
+ * The mapping recorded in bound->shift_map is of the form
+ *
+ *	[D -> i] -> [D -> (i + S(D))/g]
+ *
+ * This mapping is computed as follows.
+ * We first introduce "i" in the domain through precomposition
+ * with [D -> i] -> D obtaining
+ *
+ *	[D -> i] -> s(D)
+ *
+ * Adding [D -> i] -> i produces
+ *
+ *	[D -> i] -> i + s(D)
+ *
+ * and the domain product with [D -> i] -> D yields
+ *
+ *	[D -> i] -> [D -> i + s(D)]
+ *
+ * Composition with [D -> i] -> [D -> i/g] gives the desired result.
  */
 static __isl_give isl_basic_map *check_stride(struct cuda_array_bound *bound,
 	__isl_take isl_basic_map *bounds)
 {
-	isl_basic_map *aff;
-	isl_basic_map *shift;
-	isl_aff *aff_shift;
+	isl_space *space;
+	isl_basic_map *hull;
+	isl_basic_map *shift, *id, *bmap, *scale;
+	isl_basic_set *bset;
+	isl_aff *aff;
 
 	isl_int_set_si(bound->stride, -1);
 
-	aff = isl_basic_map_affine_hull(isl_basic_map_copy(bounds));
+	hull = isl_basic_map_affine_hull(isl_basic_map_copy(bounds));
 
-	isl_basic_map_foreach_constraint(aff, &check_stride_constraint, bound);
+	isl_basic_map_foreach_constraint(hull, &check_stride_constraint, bound);
 
-	isl_basic_map_free(aff);
+	isl_basic_map_free(hull);
 
 	if (isl_int_is_neg(bound->stride))
 		return bounds;
 
-	aff_shift = isl_aff_copy(bound->shift);
-	aff_shift = isl_aff_add_dims(aff_shift, isl_dim_in, 1);
-	aff_shift = isl_aff_add_coefficient_si(aff_shift, isl_dim_in, 0, 1);
-	aff_shift = isl_aff_scale_down(aff_shift, bound->stride);
-	shift = isl_basic_map_from_aff(aff_shift);
+	shift = isl_basic_map_from_aff(isl_aff_copy(bound->shift));
+	space = isl_basic_map_get_space(bounds);
+	bmap = isl_basic_map_domain_map(isl_basic_map_universe(space));
+	shift = isl_basic_map_apply_range(bmap, shift);
+	space = isl_basic_map_get_space(bounds);
+	id = isl_basic_map_range_map(isl_basic_map_universe(space));
+	shift = isl_basic_map_sum(id, shift);
+	space = isl_basic_map_get_space(bounds);
+	id = isl_basic_map_domain_map(isl_basic_map_universe(space));
+	shift = isl_basic_map_range_product(id, shift);
 
-	bound->shift_map = isl_basic_map_copy(shift);
-	bounds = isl_basic_map_apply_range(bounds, shift);
+	space = isl_space_domain(isl_basic_map_get_space(bounds));
+	id = isl_basic_map_identity(isl_space_map_from_set(space));
+	space = isl_space_range(isl_basic_map_get_space(bounds));
+	aff = isl_aff_zero_on_domain(isl_local_space_from_space(space));
+	aff = isl_aff_add_coefficient_si(aff, isl_dim_in, 0, 1);
+	aff = isl_aff_scale_down(aff, bound->stride);
+	scale = isl_basic_map_from_aff(aff);
+	scale = isl_basic_map_product(id, scale);
+
+	bound->shift_map = isl_basic_map_apply_range(shift, scale);
+	bmap = isl_basic_map_copy(bound->shift_map);
+	bset = isl_basic_set_apply(isl_basic_map_wrap(bounds), bmap);
+	bounds = isl_basic_set_unwrap(bset);
 
 	return bounds;
 }
 
+/* Data used in compute_array_dim_size and compute_size_in_direction.
+ *
+ * pos is the position of the variable representing the array index,
+ * i.e., the variable for which want to compute the size.  This variable
+ * is also the last variable in the set.
+ */
 struct cuda_size_info {
 	isl_basic_set *bset;
 	struct cuda_array_bound *bound;
@@ -2862,7 +2062,7 @@ static int compute_size_in_direction(__isl_take isl_constraint *c, void *user)
 			    isl_int_lt(v, size->bound->size)) {
 				isl_int_set(size->bound->size, v);
 				lb = isl_aff_drop_dims(lb, isl_dim_in,
-							0, size->pos + 1);
+							size->pos, 1);
 				isl_aff_free(size->bound->lb);
 				size->bound->lb = isl_aff_copy(lb);
 			}
@@ -3050,6 +2250,28 @@ static int access_is_coalesced(struct cuda_gen *gen,
 	return coalesced;
 }
 
+/* Given an access relation in terms of the first gen->shared_len + gen->n_block
+ * dimensions of the computed schedule, check if it is bijective for
+ * fixed values of the first gen->shared_len dimensions.
+ * We perform this check by equating these dimensions to parameters.
+ */
+static int access_is_bijective(struct cuda_gen *gen, __isl_keep isl_map *access)
+{
+	int res;
+	isl_set *par;
+	isl_space *space;
+
+	access = isl_map_copy(access);
+	space = isl_space_params(isl_map_get_space(access));
+	par = parametrization(space, gen->shared_len + gen->n_block,
+				0, gen->shared_len, "s");
+	access = isl_map_intersect_domain(access, par);
+	res = isl_map_is_bijective(access);
+	isl_map_free(access);
+
+	return res;
+}
+
 /* For the given array reference group, check whether the access is private
  * to the thread.  That is, check that any given array element
  * is only accessed by a single thread.
@@ -3102,13 +2324,12 @@ static void check_private_group_access(struct cuda_gen *gen,
 
 	acc = isl_map_from_union_map(access);
 
-	if (!isl_map_is_bijective(acc)) {
+	if (!access_is_bijective(gen, acc)) {
 		isl_map_free(acc);
 		return;
 	}
 
 	group->private_bound = create_bound_list(gen->ctx, n_index);
-	acc = isl_map_align_params(acc, isl_map_get_space(gen->privatization));
 	acc = isl_map_apply_domain(acc, isl_map_copy(gen->privatization));
 	if (!can_tile_for_shared_memory(group->array, acc,
 					group->private_bound)) {
@@ -3121,13 +2342,14 @@ static void check_private_group_access(struct cuda_gen *gen,
 
 /* Look for the last shared tile loop that affects the offset of the
  * shared or private tile and store the result in array->last_shared.
+ * If there is no such loop, then array->last_shared is set to a value
+ * before the first shared tile loop, in particular gen->tile_first - 1.
  */
 static void set_last_shared(struct cuda_gen *gen,
 	struct cuda_array_ref_group *group)
 {
 	int i, j;
 	struct cuda_array_bound *bounds;
-	unsigned first_shared = gen->first_shared;
 	int n_index = group->array->n_index;
 
 	bounds = group->private_bound;
@@ -3136,21 +2358,19 @@ static void set_last_shared(struct cuda_gen *gen,
 	if (!bounds)
 		return;
 
-	for (j = gen->shared_len - 1; j >= 0; --j) {
+	for (j = gen->shared_len - 1; j >= gen->tile_first; --j) {
 		for (i = 0; i < n_index; ++i) {
 			isl_aff *lb;
 			isl_aff *shift;
 
 			lb = bounds[i].lb;
-			if (isl_aff_involves_dims(lb, isl_dim_param,
-							first_shared + j, 1))
+			if (isl_aff_involves_dims(lb, isl_dim_in, j, 1))
 				break;
 
 			shift = bounds[i].shift;
 			if (!shift)
 				continue;
-			if (isl_aff_involves_dims(shift, isl_dim_param,
-							first_shared + j, 1))
+			if (isl_aff_involves_dims(shift, isl_dim_in, j, 1))
 				break;
 		}
 		if (i < n_index)
@@ -3200,7 +2420,6 @@ static void compute_private_size(struct cuda_gen *gen)
 
 		for (j = 0; j < array->n_group; ++j) {
 			array->groups[j]->last_shared = gen->shared_len - 1;
-			array->groups[j]->print_shared_level = -1;
 			set_last_shared(gen, array->groups[j]);
 		}
 	}
@@ -3340,47 +2559,46 @@ static void free_array_ref_group(struct cuda_array_ref_group *group,
 	free(group);
 }
 
-/* Given a set where the parameters gen->first_shared up to
- * gen->first_shared + gen->shared_len represent the tile loops,
+/* Given a map where the input dimensions represent the tile loops,
  * eliminate the innermost of those that have a fixed value
  * until we reach one that does not (obviously) have a fixed value.
  */
-static __isl_give isl_set *eliminate_fixed_inner_loops(struct cuda_gen *gen,
-	__isl_take isl_set *access)
+static __isl_give isl_map *eliminate_fixed_inner_loops(
+	__isl_take isl_map *access)
 {
-	int i;
+	int i, n;
 
-	for (i = gen->shared_len - 1; i >= 0; --i) {
-		int pos = gen->first_shared + i;
-		if (!isl_set_plain_is_fixed(access, isl_dim_param, pos, NULL))
+	n = isl_map_dim(access, isl_dim_in);
+
+	for (i = n - 1; i >= 0; --i) {
+		if (!isl_map_plain_is_fixed(access, isl_dim_in, i, NULL))
 			break;
-		access = isl_set_eliminate(access, isl_dim_param, pos, 1);
+		access = isl_map_eliminate(access, isl_dim_in, i, 1);
 	}
 	return access;
 }
 
-/* Check if the accessed set of group1 and group2 overlap within
+/* Check if the access relations of group1 and group2 overlap within
  * the innermost loop.  In particular, ignore any inner dimension
  * with a fixed value.
  * The copying to and from shared memory will be performed within
  * the innermost actual loop so we are only allowed to consider
  * the dimensions up to that innermost loop while checking whether
- * two access sets overlap.
+ * two access relations overlap.
  */
-static int accesses_overlap(struct cuda_gen *gen,
-	struct cuda_array_ref_group *group1,
+static int accesses_overlap(struct cuda_array_ref_group *group1,
 	struct cuda_array_ref_group *group2)
 {
 	int empty;
-	isl_set *access1, *access2;
+	isl_map *access1, *access2;
 
-	access1 = isl_map_range(isl_map_copy(group1->access));
-	access1 = eliminate_fixed_inner_loops(gen, access1);
-	access2 = isl_map_range(isl_map_copy(group2->access));
-	access2 = eliminate_fixed_inner_loops(gen, access2);
-	access1 = isl_set_intersect(access1, access2);
-	empty = isl_set_is_empty(access1);
-	isl_set_free(access1);
+	access1 = isl_map_copy(group1->access);
+	access1 = eliminate_fixed_inner_loops(access1);
+	access2 = isl_map_copy(group2->access);
+	access2 = eliminate_fixed_inner_loops(access2);
+	access1 = isl_map_intersect(access1, access2);
+	empty = isl_map_is_empty(access1);
+	isl_map_free(access1);
 
 	return !empty;
 }
@@ -3395,7 +2613,7 @@ static int accesses_overlap(struct cuda_gen *gen,
  *
  * Return the number of group leaders.
  */
-static int group_overlapping_writes(struct cuda_gen *gen, int n,
+static int group_overlapping_writes(int n,
 	struct cuda_array_ref_group **groups, int *leader)
 {
 	int i, j;
@@ -3410,9 +2628,9 @@ static int group_overlapping_writes(struct cuda_gen *gen, int n,
 			if (!groups[l]->write && !groups[j]->write)
 				continue;
 
-			if (!accesses_overlap(gen, groups[l], groups[j]))
+			if (!accesses_overlap(groups[l], groups[j]))
 				continue;
-			
+
 			groups[j]->access = isl_map_union(groups[j]->access,
 							groups[l]->access);
 			groups[j]->write = 1;
@@ -3485,8 +2703,7 @@ static int smaller_tile(unsigned n_index, struct cuda_array_bound *bound,
  *
  * Return the number of group leaders after merging.
  */
-static int group_common_shared_memory_tile(struct cuda_gen *gen,
-	struct cuda_array_info *array, int n,
+static int group_common_shared_memory_tile(struct cuda_array_info *array, int n,
 	struct cuda_array_ref_group **groups, int *leader, int n_group)
 {
 	int i, j;
@@ -3621,13 +2838,13 @@ static void group_array_references(struct cuda_gen *gen,
 	leader = isl_alloc_array(ctx, int, n);
 	assert(leader);
 
-	n_group = group_overlapping_writes(gen, n, groups, leader);
+	n_group = group_overlapping_writes(n, groups, leader);
 
 	for (i = 0; i < n; ++i)
 		if (leader[i] == i)
 			compute_group_shared_bound(gen, array, groups[i]);
 
-	n_group = group_common_shared_memory_tile(gen, array, n, groups,
+	n_group = group_common_shared_memory_tile(array, n, groups,
 						  leader, n_group);
 
 	extract_array_groups(ctx, array, n, groups, leader, n_group);
@@ -3637,9 +2854,8 @@ static void group_array_references(struct cuda_gen *gen,
 }
 
 /* Take tiled_sched, project it onto the shared tile loops and
- * the loops that will be wrapped over the threads,
- * parametrize the shared tile loops and store the result in gen->shared_sched.
- * The position of the first of these parameters is stored in gen->first_shared.
+ * the loops that will be wrapped over the threads and
+ * store the result in gen->shared_sched.
  * Also compute a projection that projects out the loops that will be
  * wrapped over the threads and store this projection in gen->shared_proj.
  */
@@ -3653,15 +2869,8 @@ static void compute_shared_sched(struct cuda_gen *gen)
 	sched = isl_union_map_copy(gen->tiled_sched);
 
 	dim = isl_union_map_get_space(sched);
-	gen->first_shared = isl_space_dim(dim, isl_dim_param);
 	proj = projection(dim, gen->tiled_len, gen->shared_len + gen->n_block);
 	sched = isl_union_map_apply_range(sched, isl_union_map_from_map(proj));
-
-	dim = isl_union_map_get_space(sched);
-	par = parametrization(dim, gen->shared_len + gen->n_block,
-				0, gen->shared_len, "g");
-	sched = isl_union_map_intersect_range(sched,
-						isl_union_set_from_set(par));
 
 	dim = isl_union_map_get_space(sched);
 	proj = projection(dim, gen->shared_len + gen->n_block, gen->shared_len);
@@ -3739,23 +2948,6 @@ static void localize_bounds(struct cuda_gen *gen,
 	isl_set_free(context);
 }
 
-/* Set gen->tile_len and gen->n_parallel to those of the first statement
- * in the statement list u.
- * Because of the way the schedule is constructed, the other statements
- * in the list, if any, should have the same values for these properties.
- */
-static void set_tile_len(struct cuda_gen *gen, struct clast_user_stmt *u)
-{
-	int nr;
-	struct cuda_stmt *stmt;
-
-	nr = atoi(u->statement->name + 2);
-	stmt = &gen->stmts[nr];
-
-	gen->tile_len = stmt->tile_len;
-	gen->n_parallel = stmt->n_parallel;
-}
-
 /* Extract a description of the grid, i.e., the possible values
  * of the block ids, from gen->tiled_sched.
  * The block ids are parameters in gen->tiled_sched.
@@ -3783,6 +2975,1848 @@ static __isl_give isl_set *extract_grid(struct cuda_gen *gen)
 	return grid;
 }
 
+/* Representation of a kernel.
+ *
+ * id is the sequence number of the kernel.
+ *
+ * the first n_block elements of block_dim represent the size of the block.
+ *
+ * grid contains the values of the block ids.
+ *
+ * context is a parametric set containing the values of the parameters
+ * for which this kernel may be run.
+ *
+ * arrays is the set of accessed array elements.
+ *
+ * space is the schedule space of the AST context.  That is, it represents
+ * the loops of the generated host code containing the kernel launch.
+ */
+struct ppcg_kernel {
+	int id;
+
+	int n_block;
+	int block_dim[3];
+
+	isl_set *grid;
+	isl_set *context;
+
+	isl_union_set *arrays;
+
+	isl_space *space;
+};
+
+void ppcg_kernel_free(void *user)
+{
+	struct ppcg_kernel *kernel = user;
+
+	if (!kernel)
+		return;
+
+	isl_set_free(kernel->grid);
+	isl_set_free(kernel->context);
+	isl_union_set_free(kernel->arrays);
+	isl_space_free(kernel->space);
+
+	free(kernel);
+}
+
+/* Find the element in gen->stmt that has the given "id".
+ * Return NULL if no such cuda_stmt can be found.
+ */
+static struct cuda_stmt *find_stmt(struct cuda_gen *gen, __isl_keep isl_id *id)
+{
+	int i;
+
+	for (i = 0; i < gen->n_stmts; ++i) {
+		isl_id *id_i;
+
+		id_i = isl_set_get_tuple_id(gen->stmts[i].domain);
+		isl_id_free(id_i);
+		if (id == id_i)
+			break;
+	}
+
+	return i < gen->n_stmts ? &gen->stmts[i] : NULL;
+}
+
+/* Set gen->tile_len and gen->n_parallel to those of the statement
+ * affected by the first map (part of the schedule)
+ * on which this function is called.
+ * Because of the way the schedule is constructed, the other statements
+ * in the list, if any, should have the same values for these properties.
+ */
+static int extract_tile_len(__isl_take isl_map *map, void *user)
+{
+	struct cuda_gen *gen = (struct cuda_gen *) user;
+	isl_id *id;
+	struct cuda_stmt *stmt;
+
+	id = isl_map_get_tuple_id(map, isl_dim_in);
+	stmt = find_stmt(gen, id);
+	isl_id_free(id);
+
+	isl_map_free(map);
+
+	if (!stmt)
+		isl_die(gen->ctx, isl_error_unknown,
+			"statement not found", return -1);
+
+	gen->tile_len = stmt->tile_len;
+	gen->n_parallel = stmt->n_parallel;
+
+	return -1;
+}
+
+/* Print the arguments to a kernel declaration or call.  If "types" is set,
+ * then print a declaration (including the types of the arguments).
+ *
+ * The arguments are printed in the following order
+ * - the arrays accessed by the kernel
+ * - the parameters
+ * - the host loop iterators
+ */
+static __isl_give isl_printer *print_kernel_arguments(__isl_take isl_printer *p,
+	struct cuda_gen *gen, struct ppcg_kernel *kernel, int types)
+{
+	int i, n;
+	int first = 1;
+	unsigned nparam;
+	isl_space *space;
+	const char *type;
+
+	for (i = 0; i < gen->n_array; ++i) {
+		isl_set *arr;
+		int empty;
+
+		space = isl_space_copy(gen->array[i].dim);
+		arr = isl_union_set_extract_set(kernel->arrays, space);
+		empty = isl_set_fast_is_empty(arr);
+		isl_set_free(arr);
+		if (empty)
+			continue;
+
+		if (!first)
+			p = isl_printer_print_str(p, ", ");
+
+		if (types) {
+			p = isl_printer_print_str(p, gen->array[i].type);
+			p = isl_printer_print_str(p, " ");
+		}
+
+		if (cuda_array_is_read_only_scalar(&gen->array[i])) {
+			p = isl_printer_print_str(p, gen->array[i].name);
+		} else {
+			if (types)
+				p = isl_printer_print_str(p, "*");
+			else
+				p = isl_printer_print_str(p, "dev_");
+			p = isl_printer_print_str(p, gen->array[i].name);
+		}
+
+		first = 0;
+	}
+
+	space = isl_union_set_get_space(kernel->arrays);
+	nparam = isl_space_dim(space, isl_dim_param);
+	for (i = 0; i < nparam; ++i) {
+		const char *name;
+
+		name = isl_space_get_dim_name(space, isl_dim_param, i);
+
+		if (!first)
+			p = isl_printer_print_str(p, ", ");
+		if (types)
+			p = isl_printer_print_str(p, "int ");
+		p = isl_printer_print_str(p, name);
+
+		first = 0;
+	}
+	isl_space_free(space);
+
+	n = isl_space_dim(kernel->space, isl_dim_set);
+	type = isl_options_get_ast_iterator_type(gen->ctx);
+	for (i = 0; i < n; ++i) {
+		const char *name;
+		isl_id *id;
+
+		if (!first)
+			p = isl_printer_print_str(p, ", ");
+		name = isl_space_get_dim_name(kernel->space, isl_dim_set, i);
+		if (types) {
+			p = isl_printer_print_str(p, type);
+			p = isl_printer_print_str(p, " ");
+		}
+		p = isl_printer_print_str(p, name);
+
+		first = 0;
+	}
+
+	return p;
+}
+
+/* Print the header of the given kernel.
+ */
+static __isl_give isl_printer *print_kernel_header(__isl_take isl_printer *p,
+	struct cuda_gen *gen, struct ppcg_kernel *kernel)
+{
+	p = isl_printer_start_line(p);
+	p = isl_printer_print_str(p, "__global__ void kernel");
+	p = isl_printer_print_int(p, kernel->id);
+	p = isl_printer_print_str(p, "(");
+	p = print_kernel_arguments(p, gen, kernel, 1);
+	p = isl_printer_print_str(p, ")");
+
+	return p;
+}
+
+/* Print the header of the given kernel to both gen->cuda.kernel_h
+ * and gen->cuda.kernel_c.
+ */
+static void print_kernel_headers(struct cuda_gen *gen,
+	struct ppcg_kernel *kernel)
+{
+	isl_printer *p;
+
+	p = isl_printer_to_file(gen->ctx, gen->cuda.kernel_h);
+	p = isl_printer_set_output_format(p, ISL_FORMAT_C);
+	p = print_kernel_header(p, gen, kernel);
+	p = isl_printer_print_str(p, ";");
+	p = isl_printer_end_line(p);
+	isl_printer_free(p);
+
+	p = isl_printer_to_file(gen->ctx, gen->cuda.kernel_c);
+	p = isl_printer_set_output_format(p, ISL_FORMAT_C);
+	p = print_kernel_header(p, gen, kernel);
+	p = isl_printer_end_line(p);
+	isl_printer_free(p);
+}
+
+enum ppcg_kernel_stmt_type {
+	ppcg_kernel_copy,
+	ppcg_kernel_domain,
+	ppcg_kernel_sync
+};
+
+enum ppcg_kernel_access_type {
+	ppcg_access_global,
+	ppcg_access_shared,
+	ppcg_access_private
+};
+
+/* Instance specific information about an access inside a kernel statement.
+ *
+ * type indicates whether it is a global, shared or private access
+ * array is the original array information and may be NULL in case
+ *	of an affine expression
+ * local_name is the name of the array or its local copy
+ * index is the sequence of local index expressions
+ */
+struct ppcg_kernel_access {
+	enum ppcg_kernel_access_type type;
+	struct cuda_array_info *array;
+	char *local_name;
+	isl_ast_expr_list *index;
+};
+
+/* Representation of special statements, in particular copy statements
+ * and __syncthreads statements, inside a kernel.
+ *
+ * type represents the kind of statement
+ *
+ *
+ * for ppcg_kernel_copy statements we have
+ *
+ * read is set if the statement should copy data from global memory
+ * to shared memory or registers.
+ *
+ * domain is the (parametric) domain of index and local_index
+ *
+ * index expresses the array element that needs to be copied in terms
+ * of parameters
+ * local_index expresses the corresponding element in the tile
+ *
+ * array refers to the original array being copied
+ *
+ *
+ * for ppcg_kernel_domain statements we have
+ *
+ * stmt is the corresponding input statement
+ *
+ * n_access is the number of accesses in stmt
+ * access is an array of local information about the accesses
+ */
+struct ppcg_kernel_stmt {
+	enum ppcg_kernel_stmt_type type;
+
+	union {
+		struct {
+			int read;
+			isl_set *domain;
+			isl_pw_multi_aff *index;
+			isl_pw_multi_aff *local_index;
+			struct cuda_array_info *array;
+		} c;
+		struct {
+			struct cuda_stmt *stmt;
+
+			int n_access;
+			struct ppcg_kernel_access *access;
+		} d;
+	} u;
+
+};
+
+void ppcg_kernel_stmt_free(void *user)
+{
+	int i;
+	struct ppcg_kernel_stmt *stmt = user;
+
+	if (!stmt)
+		return;
+
+	switch (stmt->type) {
+	case ppcg_kernel_copy:
+		isl_set_free(stmt->u.c.domain);
+		isl_pw_multi_aff_free(stmt->u.c.index);
+		isl_pw_multi_aff_free(stmt->u.c.local_index);
+		break;
+	case ppcg_kernel_domain:
+		for (i = 0; i < stmt->u.d.n_access; ++i) {
+			isl_ast_expr_list_free(stmt->u.d.access[i].index);
+			free(stmt->u.d.access[i].local_name);
+		}
+		free(stmt->u.d.access);
+		break;
+	case ppcg_kernel_sync:
+		break;
+	}
+
+	free(stmt);
+}
+
+/* Print an access based on the information in "access".
+ * If this an access to global memory, then the index expression
+ * is linearized.
+ *
+ * If access->array is NULL, then we are
+ * accessing an iterator in the original program.
+ */
+static __isl_give isl_printer *print_access(__isl_take isl_printer *p,
+	struct ppcg_kernel_access *access)
+{
+	int i;
+	unsigned n_index;
+	struct cuda_array_info *array;
+
+	array = access->array;
+	if (!array)
+		p = isl_printer_print_str(p, "(");
+	else {
+		if (access->type == ppcg_access_global &&
+		    cuda_array_is_scalar(array) && !array->read_only)
+			p = isl_printer_print_str(p, "*");
+		p = isl_printer_print_str(p, access->local_name);
+		if (cuda_array_is_scalar(array))
+			return p;
+		p = isl_printer_print_str(p, "[");
+	}
+
+	n_index = isl_ast_expr_list_n_ast_expr(access->index);
+	if (access->type == ppcg_access_global)
+		for (i = 0; i + 1 < n_index; ++i)
+			p = isl_printer_print_str(p, "(");
+
+	for (i = 0; i < n_index; ++i) {
+		isl_ast_expr *index;
+
+		index = isl_ast_expr_list_get_ast_expr(access->index, i);
+		if (array && i) {
+			if (access->type == ppcg_access_global) {
+				p = isl_printer_print_str(p, ") * (");
+				p = isl_printer_print_pw_aff(p,
+							array->local_bound[i]);
+				p = isl_printer_print_str(p, ") + ");
+			} else
+				p = isl_printer_print_str(p, "][");
+		}
+		p = isl_printer_print_ast_expr(p, index);
+		isl_ast_expr_free(index);
+	}
+	if (!array)
+		p = isl_printer_print_str(p, ")");
+	else
+		p = isl_printer_print_str(p, "]");
+
+	return p;
+}
+
+struct cuda_access_print_info {
+	int i;
+	struct ppcg_kernel_stmt *stmt;
+};
+
+/* To print the cuda accesses we walk the list of cuda accesses simultaneously
+ * with the pet printer. This means that whenever the pet printer prints a
+ * pet access expression we have the corresponding cuda access available and can
+ * print the modified access.
+ */
+static __isl_give isl_printer *print_cuda_access(__isl_take isl_printer *p,
+	struct pet_expr *expr, void *usr)
+{
+	struct cuda_access_print_info *info =
+		(struct cuda_access_print_info *) usr;
+
+	p = print_access(p, &info->stmt->u.d.access[info->i]);
+	info->i++;
+
+	return p;
+}
+
+static __isl_give isl_printer *print_stmt_body(__isl_take isl_printer *p,
+	struct ppcg_kernel_stmt *stmt)
+{
+	struct cuda_access_print_info info;
+
+	info.i = 0;
+	info.stmt = stmt;
+
+	p = isl_printer_start_line(p);
+	p = print_pet_expr(p, stmt->u.d.stmt->body, &print_cuda_access, &info);
+	p = isl_printer_print_str(p, ";");
+	p = isl_printer_end_line(p);
+
+	return p;
+}
+
+/* Set the options of "context" to
+ *
+ *	{ space -> [x] : x >= first }
+ */
+static __isl_give isl_ast_build *set_unroll(
+	__isl_take isl_ast_build *build, __isl_take isl_space *space,
+	int first)
+{
+	isl_ctx *ctx;
+	isl_map *unroll;
+	isl_union_map *opt;
+
+	ctx = isl_ast_build_get_ctx(build);
+
+	space = isl_space_from_domain(space);
+	space = isl_space_add_dims(space, isl_dim_out, 1);
+	space = isl_space_set_tuple_name(space, isl_dim_out, "unroll");
+	unroll = isl_map_universe(space);
+	unroll = isl_map_lower_bound_si(unroll, isl_dim_out, 0, first);
+	opt = isl_union_map_from_map(unroll);
+
+	build = isl_ast_build_set_options(build, opt);
+
+	return build;
+}
+
+/* Return a list of isl_ids of the form "prefix%d".
+ */
+static __isl_give isl_id_list *generate_names(isl_ctx *ctx,
+	int n, const char *prefix)
+{
+	int i;
+	char name[10];
+	isl_id_list *names;
+
+	names = isl_id_list_alloc(ctx, n);
+	for (i = 0; i < n; ++i) {
+		isl_id *id;
+
+		snprintf(name, sizeof(name), "%s%d", prefix, i);
+		id = isl_id_alloc(ctx, name, NULL);
+		names = isl_id_list_add(names, id);
+	}
+
+	return names;
+}
+
+/* Extend the schedule "schedule" with the part of "extension"
+ * starting at "first" up to "len".
+ */
+static __isl_give isl_union_map *extend_schedule(
+	__isl_take isl_union_map *schedule,
+	__isl_take isl_union_map *extension, int first, int len)
+{
+	isl_space *space;
+	isl_map *proj;
+	isl_union_map *umap;
+	isl_set *set;
+
+	space = isl_union_map_get_space(schedule);
+	space = isl_space_set_from_params(space);
+	space = isl_space_add_dims(space, isl_dim_set, len);
+	proj = isl_set_identity(isl_set_universe(space));
+	proj = isl_map_project_out(proj, isl_dim_out, 0, first);
+	extension = isl_union_map_apply_range(extension,
+						isl_union_map_from_map(proj));
+
+	schedule = isl_union_map_range_product(schedule, extension);
+
+	return schedule;
+}
+
+/* This function is called for each access to an array in each instance
+ * in the kernel of some statement in the original code.
+ * Replace that access by an access to global, shared or private memory
+ * and store the results in *kernel_access.
+ *
+ * Since the array in shared or private memory is just
+ * a shifted copy of part of the original array, we simply need
+ * to subtract the lower bound, which was computed
+ * in can_tile_for_shared_memory.
+ * If any of the indices is strided, then we first add
+ * shared_bound[i].shift and divide by shared_bound[i].stride.
+ *
+ * If the given array is accessed directly from global memory,
+ * we don't need to perform any shifting and simply simplify
+ * the expression in the context of the domain instead.
+ *
+ * If the array space (range of access) has no name, then we are
+ * accessing an iterator in the original program.
+ *
+ * The input stmt_access->access relation maps the iteration domain
+ * of the current statement to an array element.
+ * The first step is to reformulate
+ * this access relation in terms of the loop iterators of the generated
+ * code through precomposition with gen->stmt_it.
+ *
+ * The expressions in "bounds" are formulated in terms of the first
+ * gen->shared_len dimensions of the computed schedule using the mapping
+ * sched2shared which maps the loop iterators to these dimensions.
+ */
+static void compute_index_expression(struct cuda_gen *gen,
+	struct ppcg_kernel_access *kernel_access,
+	struct cuda_stmt_access *stmt_access, __isl_keep isl_map *stmt_it,
+	__isl_keep isl_map *sched2shared, __isl_keep isl_ast_build *build)
+{
+	isl_map *access;
+	isl_pw_multi_aff *pma;
+	int i;
+	unsigned n_index;
+	struct cuda_array_bound *bounds = NULL;
+
+	if (isl_map_has_tuple_name(stmt_access->access, isl_dim_out)) {
+		int i;
+		const char *name;
+		struct cuda_array_ref_group *group;
+		isl_printer *p;
+
+		name = isl_map_get_tuple_name(stmt_access->access, isl_dim_out);
+
+		for (i = 0; i < gen->n_array; ++i) {
+			if (strcmp(name, gen->array[i].name))
+				continue;
+			kernel_access->array = &gen->array[i];
+		}
+		assert(kernel_access->array);
+		group = kernel_access->array->groups[stmt_access->group];
+		p = isl_printer_to_str(gen->ctx);
+		p = print_array_name(p, group);
+		kernel_access->local_name = isl_printer_get_str(p);
+		isl_printer_free(p);
+		bounds = group->private_bound;
+		kernel_access->type = ppcg_access_private;
+		if (!bounds) {
+			bounds = group->shared_bound;
+			kernel_access->type = ppcg_access_shared;
+		}
+	}
+	if (!bounds)
+		kernel_access->type = ppcg_access_global;
+
+	n_index = isl_map_dim(stmt_access->access, isl_dim_out);
+	kernel_access->index = isl_ast_expr_list_alloc(gen->ctx, n_index);
+
+	if (n_index == 0)
+		return;
+
+	access = isl_map_copy(stmt_access->access);
+	access = isl_map_apply_range(isl_map_copy(stmt_it), access);
+	pma = isl_pw_multi_aff_from_map(access);
+	pma = isl_pw_multi_aff_coalesce(pma);
+
+	for (i = 0; i < n_index; ++i) {
+		isl_set *domain;
+		isl_pw_aff *index;
+		isl_ast_expr *expr;
+
+		index = isl_pw_multi_aff_get_pw_aff(pma, i);
+
+		if (!kernel_access->array) {
+		} else if (!bounds) {
+			domain = isl_map_domain(isl_map_copy(stmt_it));
+			index = isl_pw_aff_coalesce(index);
+			index = isl_pw_aff_gist(index, domain);
+		} else {
+			domain = isl_map_domain(isl_map_copy(stmt_it));
+			index = shift_index(index, kernel_access->array,
+				&bounds[i], domain, isl_map_copy(sched2shared));
+		}
+
+		expr = isl_ast_build_expr_from_pw_aff(build, index);
+
+		kernel_access->index = isl_ast_expr_list_add(
+			kernel_access->index, expr);
+	}
+
+	isl_pw_multi_aff_free(pma);
+}
+
+/* This function is called for each instance of a user statement
+ * in the kernel.
+ *
+ * We attach a struct ppcg_kernel_stmt to the "node", containing
+ * local information about the accesses.
+ * This information is computed from stmt_it, which expresses the domain
+ * elements in terms of the generated loops, and sched2shared,
+ * which expresses the first shared_len dimensions of the schedule
+ * computed by PPCG in terms of the generated loops.
+ */
+static __isl_give isl_ast_node *at_each_domain(__isl_take isl_ast_node *node,
+	__isl_keep isl_ast_build *build, void *user)
+{
+	struct cuda_gen *gen = (struct cuda_gen *) user;
+	struct ppcg_kernel_stmt *stmt;
+	isl_id *id;
+	isl_map *stmt_it, *sched2shared;
+	isl_ast_expr *expr, *arg;
+	isl_union_map *schedule;
+	int i, n;
+	struct cuda_stmt_access *access;
+
+	stmt = isl_calloc_type(gen->ctx, struct ppcg_kernel_stmt);
+	if (!stmt)
+		return isl_ast_node_free(node);
+
+	expr = isl_ast_node_user_get_expr(node);
+	arg = isl_ast_expr_get_op_arg(expr, 0);
+	id = isl_ast_expr_get_id(arg);
+
+	schedule = isl_ast_build_get_schedule(build);
+	stmt_it = isl_map_reverse(isl_map_from_union_map(schedule));
+	sched2shared = compute_sched_to_shared(gen, isl_map_copy(stmt_it));
+
+	stmt->type = ppcg_kernel_domain;
+	stmt->u.d.stmt = find_stmt(gen, id);
+	if (!stmt->u.d.stmt)
+		goto error;
+
+	n = 0;
+	for (access = stmt->u.d.stmt->accesses; access; access = access->next)
+		++n;
+
+	stmt->u.d.access = isl_calloc_array(gen->ctx,
+						struct ppcg_kernel_access, n);
+	if (!stmt->u.d.access)
+		goto error;
+
+	stmt->u.d.n_access = n;
+
+	access = stmt->u.d.stmt->accesses;
+	for (i = 0; i < n; ++i, access = access->next) {
+		compute_index_expression(gen, &stmt->u.d.access[i], access,
+					    stmt_it, sched2shared, build);
+	}
+
+	isl_id_free(id);
+	isl_map_free(stmt_it);
+	isl_map_free(sched2shared);
+	isl_ast_expr_free(arg);
+	isl_ast_expr_free(expr);
+
+	id = isl_id_alloc(gen->ctx, NULL, stmt);
+	id = isl_id_set_free_user(id, &ppcg_kernel_stmt_free);
+	return isl_ast_node_set_annotation(node, id);
+error:
+	isl_id_free(id);
+	isl_map_free(stmt_it);
+	ppcg_kernel_stmt_free(stmt);
+	isl_map_free(sched2shared);
+	return isl_ast_node_free(node);
+}
+
+/* This function is called when code has been generated for the shared
+ * tile loops.  The "schedule" refers only to the original statements.
+ *
+ * We extend the schedule with that part of gen->local_sched that hasn't
+ * been taken into account yet.  This introduces parameters referring
+ * to thread ids in the schedule, so we add them (with the appropriate
+ * bounds to the context as well).
+ * Finally, we set the appropriate unrolling options
+ * if gen->first_unroll is set.
+ */
+static __isl_give isl_ast_node *create_domain_leaf(
+	__isl_take isl_union_map *schedule, __isl_take isl_ast_build *build,
+	void *user)
+{
+	struct cuda_gen *gen = (struct cuda_gen *) user;
+	isl_space *space;
+	isl_union_map *sched;
+	isl_ast_node *tree;
+	isl_set *set;
+	isl_id_list *iterators;
+	int n;
+
+	schedule = extend_schedule(schedule,
+			isl_union_map_copy(gen->local_sched),
+			gen->shared_len, gen->thread_tiled_len);
+
+	space = isl_ast_build_get_schedule_space(build);
+	set = isl_set_universe(space);
+	set = add_bounded_parameters(set, gen->n_block, gen->block_dim, "t");
+	build = isl_ast_build_restrict(build, set);
+
+	n = gen->thread_tiled_len - gen->shared_len;
+
+	if (gen->first_unroll >= 0) {
+		space = isl_space_set_alloc(gen->ctx, 0, n);
+		build = set_unroll(build, space, gen->first_unroll);
+	}
+	iterators = generate_names(gen->ctx, n, "c");
+	build = isl_ast_build_set_iterators(build, iterators);
+	build = isl_ast_build_set_at_each_domain(build, &at_each_domain, gen);
+	tree = isl_ast_build_ast_from_schedule(build, schedule);
+	isl_ast_build_free(build);
+
+	return tree;
+}
+
+/* Add parameters corresponding to the dimensions in the schedule
+ * space of "context" and equate them to the dimensions in the range
+ * of "map".
+ */
+static __isl_give isl_map *parametrize_iterators(__isl_take isl_map *map,
+	__isl_keep isl_ast_build *build)
+{
+	int i, n, n_param;
+	isl_space *space;
+
+	space = isl_ast_build_get_schedule_space(build);
+	n = isl_map_dim(map, isl_dim_out);
+	n_param = isl_map_dim(map, isl_dim_param);
+	map = isl_map_add_dims(map, isl_dim_param, n);
+	for (i = 0; i < n; ++i) {
+		isl_id *id;
+
+		id = isl_space_get_dim_id(space, isl_dim_set, i);
+		map = isl_map_set_dim_id(map, isl_dim_param, n_param + i, id);
+		map = isl_map_equate(map, isl_dim_param, n_param + i,
+					isl_dim_out, i);
+	}
+
+	isl_space_free(space);
+
+	return map;
+}
+
+/* This function is called for each leaf in the AST of the code
+ * for copying to or from shared/private memory.
+ * The statement name is {read,write}_{shared,private}_<array>.
+ *
+ * The schedule is of the form
+ *
+ *	[A -> T] -> L
+ *
+ * where A refers to a piece of an array and T to the corresponding
+ * shifted tile.  We first turn the iterators in L into parameters
+ * and then store A in stmt->index and T in stmt->local_index,
+ * where stmt represents the copy statement.
+ */
+static __isl_give isl_ast_node *create_copy_leaf(
+	__isl_take isl_ast_build *build, void *user)
+{
+	struct cuda_gen *gen = (struct cuda_gen *) user;
+	struct ppcg_kernel_stmt *stmt;
+	isl_id *id;
+	isl_ast_expr *expr;
+	isl_ast_node *node;
+	isl_space *space;
+	isl_map *access;
+	isl_set *local_access;
+	const char *name;
+
+	stmt = isl_calloc_type(gen->ctx, struct ppcg_kernel_stmt);
+	if (!stmt)
+		return isl_ast_build_free(build);
+
+	access = isl_map_from_union_map(isl_ast_build_get_schedule(build));
+	name = isl_map_get_tuple_name(access, isl_dim_in);
+	stmt->u.c.read = !strncmp(name, "read", 4);
+	access = parametrize_iterators(access, build);
+	access = isl_set_unwrap(isl_map_domain(access));
+
+	local_access = isl_map_range(isl_map_copy(access));
+
+	stmt->u.c.domain = isl_map_params(isl_map_copy(access));
+	stmt->u.c.index = isl_pw_multi_aff_from_set(isl_map_domain(access));
+	stmt->u.c.local_index = isl_pw_multi_aff_from_set(local_access);
+	stmt->u.c.array = gen->copy_group->array;
+	stmt->type = ppcg_kernel_copy;
+
+	space = isl_ast_build_get_schedule_space(build);
+	space = isl_space_from_domain(space);
+	space = isl_space_set_tuple_name(space, isl_dim_out, name);
+	expr = isl_ast_build_call_from_pw_multi_aff(build,
+		    isl_pw_multi_aff_from_multi_aff(isl_multi_aff_zero(space)));
+	node = isl_ast_node_alloc_user(expr);
+	isl_ast_build_free(build);
+
+	id = isl_id_alloc(gen->ctx, NULL, stmt);
+	id = isl_id_set_free_user(id, &ppcg_kernel_stmt_free);
+	return isl_ast_node_set_annotation(node, id);
+}
+
+/* Given a schedule of the form
+ *
+ *	[S -> A] -> L
+ *
+ * (with S the first shared_len dimensions of the computed schedule,
+ * A the array and L the schedule correponding to the generated loops),
+ * indicating where the copying the array elements that need to be copied,
+ * construct code for performing the copying.
+ *
+ * "group" is the array reference group that is being copied
+ * "type" is either "read" or "write"
+ * private is set if copying needs to be performed to/from registers
+ *
+ * We first construct a mapping to a shifted tile of the array,
+ *
+ *	[S -> A] -> T(S,A)					(1)
+ *
+ * If private is set, then we also use this mapping as a schedule
+ * (which is already thread-specific and will be completely unrolled).
+ * Otherwise, we wrap/tile the range over the threads.
+ * The result is
+ *
+ *	[S -> A] -> T'(S,A)
+ *
+ * Combined with the given schedule, we have
+ *
+ *	[S -> A] -> [L -> T'(S,A)]				(2)
+ *
+ * From the shifted tile mapping, we construct a mapping
+ *
+ *	[S -> A] -> [A -> T(S,A)]
+ *
+ * and apply it to the schedule (2), obtaining
+ *
+ *	[A -> T(S(L),A)] -> [L -> T'(S(L),A)]
+ *
+ * Note that we can project out S because it is uniquely defined by L.
+ */
+static __isl_give isl_ast_node *copy_access(struct cuda_gen *gen,
+	__isl_take isl_map *sched,
+	const char *type, struct cuda_array_ref_group *group,
+	__isl_take isl_ast_build *build, int private)
+{
+	const char *array_name;
+	const char *mem = private ? "private" : "shared";
+	char *name;
+	isl_space *space;
+	isl_ast_node *tree;
+	isl_map *schedule, *shift, *map;
+	isl_set *set;
+	isl_id_list *iterators;
+	int n;
+
+	shift = isl_set_unwrap(isl_map_domain(isl_map_copy(sched)));
+	array_name = isl_map_get_tuple_name(shift, isl_dim_out);
+	shift = shift_access(shift, group);
+
+	schedule = isl_map_copy(shift);
+	if (!private)
+		schedule = tile_access_schedule(gen, schedule);
+
+	n = isl_map_dim(schedule, isl_dim_out);
+	set = isl_set_universe(isl_ast_build_get_schedule_space(build));
+	set = add_bounded_parameters(set, gen->n_block, gen->block_dim, "t");
+
+	schedule = isl_map_range_product(sched, schedule);
+
+	assert(array_name);
+	name = isl_alloc_array(gen->ctx, char,
+		strlen(type) + sizeof("_private_") + strlen(array_name) + 20);
+	if (group->array->n_group > 1)
+		sprintf(name, "%s_%s_%s_%d", type, mem, array_name, group->nr);
+	else
+		sprintf(name, "%s_%s_%s", type, mem, array_name);
+	shift = isl_map_set_tuple_name(shift,
+					isl_dim_out, name + strlen(type) + 1);
+
+	space = isl_space_domain(isl_map_get_space(shift));
+	map = isl_map_range_map(isl_map_universe(isl_space_unwrap(space)));
+	map = isl_map_range_product(map, shift);
+
+	schedule = isl_map_apply_domain(schedule, map);
+
+	schedule = isl_map_set_tuple_name(schedule, isl_dim_in, name);
+	free(name);
+
+	build = isl_ast_build_restrict(build, set);
+
+	gen->copy_group = group;
+	gen->copy_bound = group->shared_bound;
+
+	if (private) {
+		space = isl_space_range(isl_map_get_space(schedule));
+		space = isl_space_range(isl_space_unwrap(space));
+		build = set_unroll(build, space, 0);
+	}
+	iterators = generate_names(gen->ctx, n, "c");
+	build = isl_ast_build_set_iterators(build, iterators);
+	build = isl_ast_build_set_create_leaf(build, &create_copy_leaf, gen);
+	tree = isl_ast_build_ast_from_schedule(build,
+					    isl_union_map_from_map(schedule));
+	isl_ast_build_free(build);
+
+	return tree;
+}
+
+/* Return code for reading into or writing from shared memory
+ * the given array reference group.
+ *
+ * If we are performing a read from global memory to shared memory,
+ * if the array involved is not a scalar and if the definition of the
+ * shared memory tiles does not involve any strides, then we copy
+ * the entire tile to shared memory.  This may result in some extra
+ * elements getting copied, but it should lead to simpler code
+ * (which means that fewer registers may be needed) and less divergence.
+ *
+ * Otherwise, we only copy the elements that will be read or have been written
+ * in the kernel.
+ *
+ * Note that the absence of stride requirement can easily be lifted.
+ * We would just need to add constraints of the form
+ *
+ *	shift + a = stride * alpha
+ *
+ *
+ * The input "sched" is of the form.
+ *
+ *	type[S -> A] -> L
+ *
+ * with S the first shared_len dimensions of the computed schedule,
+ * A the array and L the schedule correponding to the generated loops.
+ *
+ * We first drop "type",
+ *
+ *	[S -> A] -> L
+ *
+ * If the above conditions are satisfied, we project out A,
+ * resulting in
+ *
+ *	S -> L
+ *
+ * and then introduce the group tile [S -> T], resulting in
+ *
+ *	[S -> T] -> L
+ */
+static __isl_give isl_ast_node *copy_group_shared_accesses(
+	struct cuda_gen *gen, struct cuda_array_ref_group *group,
+	__isl_take isl_map *sched, __isl_take isl_ast_build *build)
+{
+	const char *type;
+	int read;
+	isl_union_map *access;
+
+	type = isl_map_get_tuple_name(sched, isl_dim_in);
+	read = !strcmp(type, "read");
+
+	sched = isl_map_reset_tuple_id(sched, isl_dim_in);
+
+	if (read && group->array->n_index > 0 && no_strides(group)) {
+		isl_space *space;
+		isl_map *map;
+
+		space = isl_space_domain(isl_map_get_space(sched));
+		space = isl_space_unwrap(space);
+		map = isl_map_domain_map(isl_map_universe(space));
+		sched = isl_map_apply_domain(sched, map);
+
+		map = group_tile(group);
+		map = isl_map_reverse(isl_map_domain_map(map));
+		sched = isl_map_apply_domain(sched, map);
+	}
+
+	return copy_access(gen, sched, type, group, build, 0);
+}
+
+/* Return code for reading into or writing from private memory
+ * the given array reference group.
+ *
+ * Let S be the first shared_len dimensions of the computed schedule,
+ * D the iteration domains, A the array and L the schedule correponding
+ * to the generated loops.
+ * "sched" is of the form
+ *
+ *	type[S -> A] -> L
+ *
+ * where type is either "read" or "write".
+ * We apply the privatization D -> S(t), with t the thread ids,
+ * to the access relation D -> A to obtain the privatized access relation
+ *
+ *	S(t) -> A
+ *
+ * We drop the type from "sched" and intersect with the privatized access
+ * relation to obtain
+ *
+ *	[S(t) -> A] -> L
+ */
+static __isl_give isl_ast_node *copy_group_private_accesses(
+	struct cuda_gen *gen, struct cuda_array_ref_group *group,
+	__isl_take isl_map *sched, __isl_take isl_ast_build *build)
+{
+	const char *type;
+	int read;
+	isl_union_map *priv;
+	isl_union_map *access;
+	isl_map *access_map;
+
+	type = isl_map_get_tuple_name(sched, isl_dim_in);
+	read = !strcmp(type, "read");
+
+	priv = isl_union_map_from_map(isl_map_copy(gen->privatization));
+	priv = isl_union_map_apply_range(isl_union_map_copy(gen->shared_sched),
+					priv);
+
+	access = group_access_relation(group, read, !read);
+	access = isl_union_map_apply_domain(access, priv);
+	access_map = isl_map_from_union_map(access);
+
+	sched = isl_map_reset_tuple_id(sched, isl_dim_in);
+	sched = isl_map_intersect_domain(sched, isl_map_wrap(access_map));
+
+	return copy_access(gen, sched, type, group, build, 1);
+}
+
+/* Return code for reading into or writing from shared or private memory.
+ *
+ * "schedule" is of the form
+ *
+ *	type[S -> A] -> L
+ *
+ * with S be the first shared_len dimensions of the computed schedule,
+ * A the array and L the schedule correponding to the generated loops.
+ * The array reference group is attached to "type".
+ */
+static __isl_give isl_ast_node *create_access_leaf(
+	struct cuda_gen *gen, __isl_take isl_map *schedule,
+	__isl_take isl_ast_build *build)
+{
+	struct cuda_array_ref_group *group;
+	isl_id *id;
+
+	id = isl_map_get_tuple_id(schedule, isl_dim_in);
+	group = isl_id_get_user(id);
+	isl_id_free(id);
+
+	if (group->private_bound)
+		return copy_group_private_accesses(gen, group, schedule,
+							build);
+	else
+		return copy_group_shared_accesses(gen, group, schedule,
+							build);
+}
+
+/* Create a domain node representing a synchronization.
+ */
+static __isl_give isl_ast_node *create_sync_leaf(
+	struct cuda_gen *gen, __isl_take isl_map *schedule,
+	__isl_take isl_ast_build *build)
+{
+	struct ppcg_kernel_stmt *stmt;
+	isl_id *id;
+	isl_space *space;
+	isl_ast_node *node;
+	isl_ast_expr *expr;
+
+	isl_map_free(schedule);
+
+	stmt = isl_calloc_type(gen->ctx, struct ppcg_kernel_stmt);
+	if (!stmt)
+		return NULL;
+
+	stmt->type = ppcg_kernel_sync;
+
+	space = isl_ast_build_get_schedule_space(build);
+	space = isl_space_from_domain(space);
+	space = isl_space_set_tuple_name(space, isl_dim_out, "sync");
+	expr = isl_ast_build_call_from_pw_multi_aff(build,
+		    isl_pw_multi_aff_from_multi_aff(isl_multi_aff_zero(space)));
+	node = isl_ast_node_alloc_user(expr);
+	isl_ast_build_free(build);
+
+	id = isl_id_alloc(gen->ctx, NULL, stmt);
+	id = isl_id_set_free_user(id, &ppcg_kernel_stmt_free);
+	return isl_ast_node_set_annotation(node, id);
+}
+
+/* This function is called during the code generation at the point
+ * where the schedule domain element is completely determined by
+ * the generated code.  The input schedule contains the original
+ * statements as well as synchronization and copy "statements".
+ * The latter are scheduled at different points than any of the original
+ * statements, so they will only arrive here in isolation.
+ *
+ * If the current schedule only refers to a single statement,
+ * we check if it is a copy or synchronization statement and
+ * call the appropriate functions.
+ * Otherwise, we assume we are dealing with the original statements
+ * and we call create_domain_leaf.
+ */
+static __isl_give isl_ast_node *create_kernel_leaf(
+	__isl_take isl_ast_build *build, void *user)
+{
+	struct cuda_gen *gen = (struct cuda_gen *) user;
+	isl_map *map;
+	isl_union_map *schedule;
+	const char *name;
+
+	schedule = isl_ast_build_get_schedule(build);
+
+	if (isl_union_map_n_map(schedule) != 1)
+		return create_domain_leaf(schedule, build, user);
+
+	map = isl_map_from_union_map(schedule);
+	name = isl_map_get_tuple_name(map, isl_dim_in);
+	if (!strcmp(name, "read") || !strcmp(name, "write"))
+		return create_access_leaf(gen, map, build);
+	if (!strcmp(name, "sync"))
+		return create_sync_leaf(gen, map, build);
+
+	return create_domain_leaf(isl_union_map_from_map(map), build, user);
+}
+
+/* Mark all odd schedule dimensions as "atomic" (when the even dimensions
+ * have value 0) and all even schedule dimensions as "unroll".
+ *
+ * That is, the options look as follows
+ *
+ *	{ [0, b, 0, d, ..., 0] -> atomic[i] : exists a : i = 2 a + 1;
+ *	  [a, b, c, d, ..., z] -> unroll[i] : exists a : i = 2 a }
+ *
+ * The even positions are used to be able to schedule copying blocks
+ * and synchronization before or after each level of the shared memory
+ * tile loops and we want to make sure that code for these is generated
+ * separately (within each level).
+ */
+static __isl_give isl_ast_build *set_atomic_and_unroll(
+	__isl_take isl_ast_build *build,
+	__isl_take isl_space *space, int sched_len)
+{
+	isl_ctx *ctx;
+	isl_map *map;
+	isl_constraint *c;
+	isl_union_map *opt;
+	isl_local_space *ls;
+	int i, n;
+
+	ctx = isl_ast_build_get_ctx(build);
+
+	space = isl_space_params(space);
+	space = isl_space_add_dims(space, isl_dim_set, sched_len);
+	space = isl_space_from_domain(space);
+	space = isl_space_add_dims(space, isl_dim_out, 2);
+	map = isl_map_universe(isl_space_copy(space));
+	for (i = 0; i < sched_len; i += 2)
+		map = isl_map_fix_si(map, isl_dim_in, i, 0);
+	ls = isl_local_space_from_space(isl_map_get_space(map));
+	c = isl_equality_alloc(ls);
+	c = isl_constraint_set_coefficient_si(c, isl_dim_out, 0, 1);
+	c = isl_constraint_set_coefficient_si(c, isl_dim_out, 1, 2);
+	c = isl_constraint_set_constant_si(c, 1);
+	map = isl_map_add_constraint(map, c);
+	map = isl_map_project_out(map, isl_dim_out, 1, 1);
+	map = isl_map_set_tuple_name(map, isl_dim_out, "atomic");
+	opt = isl_union_map_from_map(map);
+
+	map = isl_map_universe(space);
+	ls = isl_local_space_from_space(isl_map_get_space(map));
+	c = isl_equality_alloc(ls);
+	c = isl_constraint_set_coefficient_si(c, isl_dim_out, 0, 1);
+	c = isl_constraint_set_coefficient_si(c, isl_dim_out, 1, 2);
+	map = isl_map_add_constraint(map, c);
+	map = isl_map_project_out(map, isl_dim_out, 1, 1);
+	map = isl_map_set_tuple_name(map, isl_dim_out, "unroll");
+	opt = isl_union_map_add_map(opt, map);
+
+	build = isl_ast_build_set_options(build, opt);
+
+	return build;
+}
+
+/* Print an access to the element in the private/shared memory copy
+ * described by "stmt".  The index of the copy is recorded in
+ * stmt->local_index.
+ */
+static __isl_give isl_printer *stmt_print_local_index(__isl_take isl_printer *p,
+	struct ppcg_kernel_stmt *stmt)
+{
+	int i;
+	const char *name;
+	struct cuda_array_info *array = stmt->u.c.array;
+
+	name = isl_pw_multi_aff_get_tuple_name(stmt->u.c.local_index,
+						isl_dim_out);
+	p = isl_printer_print_str(p, name);
+	for (i = 0; i < array->n_index; ++i) {
+		isl_pw_aff *pa;
+		pa = isl_pw_multi_aff_get_pw_aff(stmt->u.c.local_index, i);
+
+		p = isl_printer_print_str(p, "[");
+		p = isl_printer_print_pw_aff(p, pa);
+		p = isl_printer_print_str(p, "]");
+
+		isl_pw_aff_free(pa);
+	}
+
+	return p;
+}
+
+/* Print an access to the element in the global memory copy
+ * described by "stmt".  The index of the copy is recorded in
+ * stmt->index.
+ *
+ * The copy in global memory has been linearized, so we need to take
+ * the array size into account.
+ */
+static __isl_give isl_printer *stmt_print_global_index(
+	__isl_take isl_printer *p, struct ppcg_kernel_stmt *stmt)
+{
+	int i;
+	struct cuda_array_info *array = stmt->u.c.array;
+
+	if (cuda_array_is_scalar(array)) {
+		if (!array->read_only)
+			p = isl_printer_print_str(p, "*");
+		p = isl_printer_print_str(p, array->name);
+		return p;
+	}
+
+	p = isl_printer_print_str(p, array->name);
+	p = isl_printer_print_str(p, "[");
+	for (i = 0; i + 1 < array->n_index; ++i)
+		p = isl_printer_print_str(p, "(");
+	for (i = 0; i < array->n_index; ++i) {
+		isl_pw_aff *pa = isl_pw_multi_aff_get_pw_aff(stmt->u.c.index, i);
+		pa = isl_pw_aff_coalesce(pa);
+		pa = isl_pw_aff_gist_params(pa, isl_set_copy(stmt->u.c.domain));
+		if (i) {
+			p = isl_printer_print_str(p, ") * (");
+			p = isl_printer_print_pw_aff(p, array->local_bound[i]);
+			p = isl_printer_print_str(p, ") + ");
+		}
+		p = isl_printer_print_pw_aff(p, pa);
+		isl_pw_aff_free(pa);
+	}
+	p = isl_printer_print_str(p, "]");
+
+	return p;
+}
+
+/* Print a copy statement.
+ *
+ * A read copy statement is printed as
+ *
+ *	local = global;
+ *
+ * while a write copy statement is printed as
+ *
+ *	global = local;
+ */
+static __isl_give isl_printer *print_copy(__isl_take isl_printer *p,
+	struct ppcg_kernel_stmt *stmt)
+{
+	p = isl_printer_start_line(p);
+	if (stmt->u.c.read) {
+		p = stmt_print_local_index(p, stmt);
+		p = isl_printer_print_str(p, " = ");
+		p = stmt_print_global_index(p, stmt);
+	} else {
+		p = stmt_print_global_index(p, stmt);
+		p = isl_printer_print_str(p, " = ");
+		p = stmt_print_local_index(p, stmt);
+	}
+	p = isl_printer_print_str(p, ";");
+	p = isl_printer_end_line(p);
+
+	return p;
+}
+
+/* Print a sync statement.
+ */
+static __isl_give isl_printer *print_sync(__isl_take isl_printer *p,
+	struct ppcg_kernel_stmt *stmt)
+{
+	p = isl_printer_start_line(p);
+	p = isl_printer_print_str(p, "__syncthreads();");
+	p = isl_printer_end_line(p);
+
+	return p;
+}
+
+/* Return a map that maps a space of dimension gen->shared_len
+ * to its last dimensions starting at gen->tile_first.
+ * The range is of dimension
+ *
+ *	2 * (gen->shared_len - gen->tile_first) + 1
+ *
+ * The input dimensions are mapped to the odd dimensions in the output,
+ * while the even dimensions (except 2*pos) are fixed to 0.
+ * Output dimension 2*pos (if pos >= 0) is fixed to "val".
+ * If pos >= 0, then only the pos first dimensions starting at gen->tile_first
+ * are mapped to the output.  The remaining input dimensions are projected
+ * out and the corresponding output dimensions are fixed to 0.
+ */
+static __isl_give isl_map *insert_even(struct cuda_gen *gen,
+	__isl_take isl_space *space, int pos, int val)
+{
+	int i, n;
+	isl_map *proj;
+
+	space = isl_space_set_from_params(space);
+	space = isl_space_add_dims(space, isl_dim_set, gen->shared_len);
+	space = isl_space_map_from_set(space);
+	proj = isl_map_identity(space);
+	proj = isl_map_project_out(proj, isl_dim_out, 0, gen->tile_first);
+	n = gen->shared_len - gen->tile_first;
+	for (i = 0; i <= n; ++i) {
+		proj = isl_map_insert_dims(proj, isl_dim_out, 2 * i, 1);
+		if (i == pos)
+			proj = isl_map_fix_si(proj, isl_dim_out, 2 * i, val);
+		else
+			proj = isl_map_fix_si(proj, isl_dim_out, 2 * i, 0);
+	}
+
+	if (pos < 0)
+		return proj;
+
+	proj = isl_map_eliminate(proj, isl_dim_in, gen->tile_first + pos,
+				gen->shared_len - (gen->tile_first + pos));
+	for (i = pos; i < n; ++i)
+		proj = isl_map_fix_si(proj, isl_dim_out, 2 * i + 1, 0);
+
+	return proj;
+}
+
+/* Given the AST context schedule "schedule" and the mapping from
+ * domains to the shared tile loops "shared_sched", add a schedule
+ * for a synchronization operation at position "val" of loop level "pos".
+ *
+ * schedule is of the form
+ *
+ *	D -> L
+ *
+ * (with D the iteration domains and L the already generated loops),
+ * while shared_sched is of the form
+ *
+ *	D -> S
+ *
+ * We combine them into
+ *
+ *	L -> S
+ *
+ * apply a mapping
+ *
+ *	[s_0,...] -> [0,s_{tile_first},0,..., val, 0, 0, ... 0]
+ *
+ * and use the result as a schedule for "sync".
+ */
+static __isl_give isl_union_map *add_sync_schedule(struct cuda_gen *gen,
+	__isl_take isl_union_map *res, __isl_keep isl_union_map *schedule,
+	__isl_keep isl_union_map *shared_sched, int pos, int val)
+{
+	isl_space *space;
+	isl_map *proj, *map;
+
+	shared_sched = isl_union_map_copy(shared_sched);
+	schedule = isl_union_map_copy(schedule);
+
+	space = isl_union_map_get_space(shared_sched);
+	schedule = isl_union_map_apply_domain(shared_sched, schedule);
+	map = isl_map_from_union_map(schedule);
+
+	proj = insert_even(gen, space, pos, val);
+	map = isl_map_apply_range(map, proj);
+	map = isl_map_from_range(isl_map_wrap(map));
+	map = isl_map_set_tuple_name(map, isl_dim_in, "sync");
+
+	res = isl_union_map_add_map(res, map);
+
+	return res;
+}
+
+/* Given the AST context schedule "schedule" and the mapping from
+ * domains to the shared tile loops "shared_sched", add a schedule
+ * for copying an array reference group to/from shared/private memory.
+ * "read" is set if data should be copied from global memory
+ * to shared/private memory.
+ * "k" represents the current group
+ * "s" is the total number of groups
+ *
+ * We schedule an operation before or after the innermost loop
+ * of "shared_sched" that affects the tile of the array reference group.
+ *
+ * schedule is of the form
+ *
+ *	D -> L
+ *
+ * (with D the iteration domains and L the already generated loops),
+ * while shared_sched is of the form
+ *
+ *	D -> S
+ *
+ * We first compute the access relation for the reference group
+ *
+ *	D -> A
+ *
+ * and combine it with shared_sched into
+ *
+ *	D -> [S -> A]
+ *
+ * If this results in an empty relation, no copying needs to be performed
+ * at this point.
+ * Otherwise, we invert the relation and combine it with "schedule" into
+ *
+ *	[S -> A] -> L
+ *
+ * The actual additional piece of the schedule is obtained from combining
+ *
+ *	[S -> A] -> S
+ *
+ * with a mapping
+ *
+ *	[s_0,...] -> [0,s_{tile_first},0,..., val, 0, 0, ... 0]
+ *
+ * The position of "val" corresponds to the innermost loop that affects
+ * the tile and the value indicates where the copying is scheduled
+ * with respect to the actual kernel code (at value 0).
+ * Reads are schedule before the code, writes to global memory from
+ * private memory are scheduled at values 1 to s, writes to global
+ * memory from shared memory are scheduled at values s + 2 to 2 * s + 1.
+ *
+ * If we are scheduling a read from global memory to shared memory,
+ * we insert a synchronization before the kernel code (at the innermost
+ * level).
+ * If we are scheduling a write to global memory, then we add
+ * a synchronization after all writes (at value 2 *s + 2).
+ * However, there is no need for a synchronization after the outermost loop.
+ * A write to global memory from private memory at the innermost level
+ * does not require a synchronization, because it is covered by
+ * the synchronization after the kernel inserted by body_schedule.
+ */
+static __isl_give isl_union_map *add_group_schedule(struct cuda_gen *gen,
+	__isl_take isl_union_map *res, __isl_keep isl_union_map *schedule,
+	__isl_keep isl_union_map *shared_sched,
+	struct cuda_array_ref_group *group, int read, int k, int s)
+{
+	int n;
+	int pos, val;
+	isl_space *space;
+	isl_union_map *access;
+	isl_map *map, *proj, *access_map;
+	isl_id *id;
+
+	access = group_access_relation(group, read, !read);
+	access = isl_union_map_range_product(isl_union_map_copy(shared_sched),
+						access);
+
+	if (isl_union_map_is_empty(access)) {
+		isl_union_map_free(access);
+		return res;
+	}
+
+	access = isl_union_map_reverse(access);
+	access = isl_union_map_apply_range(access,
+					    isl_union_map_copy(schedule));
+	access_map = isl_map_from_union_map(access);
+
+	space = isl_space_copy(group->array->dim);
+	space = isl_space_from_range(space);
+	space = isl_space_add_dims(space, isl_dim_in, gen->shared_len);
+	map = isl_map_domain_map(isl_map_universe(space));
+
+	space = isl_union_map_get_space(schedule);
+	pos = group->last_shared + 1 - gen->tile_first;
+	if (read)
+		val = -2 - k;
+	else if (group->private_bound)
+		val = 1 + k;
+	else
+		val = 1 + s + 1 + k;
+	proj = insert_even(gen, space, pos, val);
+	map = isl_map_apply_range(map, proj);
+
+	access_map = isl_map_range_product(access_map, map);
+
+	id = isl_id_alloc(gen->ctx, read ? "read" : "write", group);
+	access_map = isl_map_set_tuple_id(access_map, isl_dim_in, id);
+
+	res = isl_union_map_add_map(res, access_map);
+
+	n = gen->shared_len - gen->tile_first;
+	if (read) {
+		if (!group->private_bound)
+			res = add_sync_schedule(gen, res, schedule,
+						shared_sched, n, -1);
+	} else {
+		if (pos == 0)
+			return res;
+		if (pos == n && group->private_bound)
+			return res;
+		res = add_sync_schedule(gen, res, schedule, shared_sched,
+					pos, 2 * s + 2);
+	}
+
+	return res;
+}
+
+/* Return a schedule for the shared tile loops based on the current
+ * AST context schedule.
+ *
+ * We create a "shared_sched" that maps the domains to the first
+ * shared_len dimensions of the computed schedule, project out the
+ * first tile_first dimensions (as these are already covered by
+ * the host code) and insert "statement-level" dimensions at even
+ * positions so that we can schedule copy blocks and synchronization
+ * before/after each level.
+ *
+ * In particular, copy blocks are inserted inside the innermost
+ * level that affect the tile.  For the copying to global memory,
+ * those from private memory are scheduled before those from shared
+ * memory such that synchronization can be inserted between the two
+ * at the innermost level.
+ * Synchronization is inserted at the innermost level before the
+ * actual kernel code if there is any copying from global memory
+ * to shared memory.  It is inserted unconditionally at the innermost
+ * level after the actual kernel code and the copying to global memory
+ * from private memory (if any).  Finally, it is inserted after
+ * any copying to global memory, except at the outermost level
+ * and at the innermost level if there is no copying from shared
+ * memory.  The copying from private memory is covered by the unconditional
+ * synchronization at the innermost level.
+ */
+static __isl_give isl_union_map *body_schedule(struct cuda_gen *gen,
+	__isl_take isl_union_map *schedule)
+{
+	isl_space *space;
+	isl_union_map *res;
+	isl_union_map *shared_sched;
+	isl_union_map *sched;
+	isl_map *proj, *map;
+	int i, j, k, s;
+
+	shared_sched = isl_union_map_copy(gen->tiled_sched);
+	proj = projection(isl_union_map_get_space(shared_sched),
+				gen->tiled_len, gen->shared_len);
+	shared_sched = isl_union_map_apply_range(shared_sched,
+				isl_union_map_from_map(proj));
+	space = isl_union_map_get_space(shared_sched);
+	proj = insert_even(gen, space, -1, 0);
+	sched = isl_union_map_apply_range(isl_union_map_copy(shared_sched),
+				isl_union_map_from_map(proj));
+
+	res = isl_union_map_range_product(isl_union_map_copy(schedule), sched);
+
+	s = 0;
+	for (i = 0; i < gen->n_array; ++i)
+		s += gen->array[i].n_group;
+
+	k = 0;
+	for (i = 0; i < gen->n_array; ++i) {
+		struct cuda_array_info *array = &gen->array[i];
+
+		for (j = 0; j < array->n_group; ++j) {
+			struct cuda_array_ref_group *group;
+
+			group = array->groups[j];
+			if (!group->private_bound && !group->shared_bound)
+				continue;
+			res = add_group_schedule(gen, res, schedule,
+						shared_sched, group, 0, k, s);
+			res = add_group_schedule(gen, res, schedule,
+						shared_sched, group, 1, k, s);
+			++k;
+		}
+	}
+
+	res = add_sync_schedule(gen, res, schedule, shared_sched,
+			    gen->shared_len - gen->tile_first, 1 + s);
+
+	isl_union_map_free(shared_sched);
+	isl_union_map_free(schedule);
+
+	return res;
+}
+
+/* This function is called for each user statement in the AST,
+ * i.e., for each kernel body statement, copy statement or sync statement.
+ */
+static __isl_give isl_printer *print_kernel_stmt(__isl_take isl_printer *p,
+	__isl_keep isl_ast_node *node, void *user)
+{
+	isl_id *id;
+	struct ppcg_kernel_stmt *stmt;
+
+	id = isl_ast_node_get_annotation(node);
+	stmt = isl_id_get_user(id);
+	isl_id_free(id);
+
+	switch (stmt->type) {
+	case ppcg_kernel_copy:
+		return print_copy(p, stmt);
+	case ppcg_kernel_sync:
+		return print_sync(p, stmt);
+	case ppcg_kernel_domain:
+		return print_stmt_body(p, stmt);
+	}
+
+	return p;
+}
+
+static int print_macro(enum isl_ast_op_type type, void *user)
+{
+	isl_printer **p = user;
+
+	if (type == isl_ast_op_fdiv_q)
+		return 0;
+
+	*p = isl_ast_op_type_print_macro(type, *p);
+
+	return 0;
+}
+
+/* Print the required macros for "node", including one for floord.
+ * We always print a macro for floord as it may also appear in the statements.
+ */
+static __isl_give isl_printer *print_macros(
+	__isl_keep isl_ast_node *node, __isl_take isl_printer *p)
+{
+	p = isl_ast_op_type_print_macro(isl_ast_op_fdiv_q, p);
+	if (isl_ast_node_foreach_ast_op_type(node, &print_macro, &p) < 0)
+		return isl_printer_free(p);
+	return p;
+}
+
+/* Generate code for "kernel" in the given "context" and print
+ * the result to gen->cuda.kernel_c.
+ *
+ * We first generate code for the shared tile loops (T1T, T1P and T2)
+ * in a context that includes the block ids.
+ * Within each iteration of these loops an additional code generation
+ * is performed (within create_kernel_leaf) for the rest of the schedule
+ * in a context that includes the thread ids.
+ */
+static void print_kernel(struct cuda_gen *gen, struct ppcg_kernel *kernel,
+	__isl_keep isl_ast_build *build, __isl_keep isl_set *host_domain)
+{
+	isl_space *space;
+	isl_set *set;
+	isl_ast_node *tree;
+	isl_ast_print_options *print_options;
+	isl_printer *p;
+	isl_id_list *iterators;
+	isl_union_map *schedule;
+	int sched_len;
+
+	schedule = isl_ast_build_get_schedule(build);
+
+	build = isl_ast_build_copy(build);
+	build = isl_ast_build_restrict(build, isl_set_copy(host_domain));
+	space = isl_ast_build_get_schedule_space(build);
+	set = isl_set_universe(isl_space_copy(space));
+	set = add_bounded_parameters(set, gen->n_grid, gen->grid_dim, "b");
+	build = isl_ast_build_restrict(build, set);
+
+	schedule = body_schedule(gen, schedule);
+
+	sched_len = 2 * (gen->shared_len - gen->tile_first) + 1;
+
+	build = set_atomic_and_unroll(build, space, sched_len);
+	iterators = generate_names(gen->ctx, sched_len, "g");
+	build = isl_ast_build_set_iterators(build, iterators);
+	build = isl_ast_build_set_create_leaf(build, &create_kernel_leaf, gen);
+	tree = isl_ast_build_ast_from_schedule(build, schedule);
+	isl_ast_build_free(build);
+
+	print_kernel_headers(gen, kernel);
+	fprintf(gen->cuda.kernel_c, "{\n");
+	print_kernel_iterators(gen);
+	print_shared_arrays(gen);
+	fprintf(gen->cuda.kernel_c, "\n");
+
+	print_options = isl_ast_print_options_alloc(gen->ctx);
+	print_options = isl_ast_print_options_set_print_user(print_options,
+						    &print_kernel_stmt, gen);
+
+	p = isl_printer_to_file(gen->ctx, gen->cuda.kernel_c);
+	p = isl_printer_set_output_format(p, ISL_FORMAT_C);
+	p = isl_printer_indent(p, 4);
+	p = print_macros(tree, p);
+	p = isl_ast_node_print(tree, p, print_options);
+	isl_printer_free(p);
+
+	isl_ast_print_options_free(print_options);
+
+	isl_ast_node_free(tree);
+
+	fprintf(gen->cuda.kernel_c, "}\n");
+}
+
+/* Attach "id" to the given node.
+ */
+static __isl_give isl_ast_node *attach_id(__isl_take isl_ast_node *node,
+	__isl_keep isl_ast_build *build, void *user)
+{
+	isl_id *id = user;
+
+	node = isl_ast_node_set_annotation(node, id);
+
+	return node;
+}
+
+/* Construct an AST node for performing a kernel launch and attach
+ * the information about the kernel to that node.
+ *
+ * The kernel AST has been constructed in the context of the range
+ * of "schedule".  In particular, the grid size has been computed
+ * in the context.  We therefore still need to make sure that these
+ * constraints are expressed in the code.  We do this by creating a schedule
+ *
+ *	kernel[] -> [S -> []]
+ *
+ * where S is the schedule domain, i.e., the range of "schedule".
+ * The AST generation will then create a single call surrounded by
+ * all the condition in "S" that have not been expressed yet.
+ *
+ * The kernel information is attached to this node in attach_id.
+ */
+static __isl_give isl_ast_node *construct_launch(
+	__isl_take isl_ast_build *build, __isl_take isl_union_map *schedule,
+	__isl_take struct ppcg_kernel *kernel)
+{
+	isl_id *id;
+	isl_ctx *ctx;
+	isl_union_set *domain;
+	isl_set *set;
+	isl_map *map;
+	isl_ast_node *node;
+
+	ctx = isl_ast_build_get_ctx(build);
+
+	id = isl_id_alloc(ctx, NULL, kernel);
+	id = isl_id_set_free_user(id, &ppcg_kernel_free);
+
+	domain = isl_union_map_range(schedule);
+	set = isl_set_from_union_set(domain);
+	map = isl_map_from_domain(set);
+	map = isl_map_from_range(isl_map_wrap(map));
+	map = isl_map_set_tuple_name(map, isl_dim_in, "kernel");
+	schedule = isl_union_map_from_map(map);
+
+	build = isl_ast_build_set_at_each_domain(build, &attach_id, id);
+	node = isl_ast_build_ast_from_schedule(build, schedule);
+	isl_ast_build_free(build);
+
+	return node;
+}
+
+/* This function is called for each leaf in the AST of the host code.
+ * We first specialize the schedule to the site of the leaf, compute
+ * the size of shared memory and then construct the body of host code
+ * and the associated kernel.
+ *
+ * The necessary information for printing the kernel launch is
+ * stored in a struct ppcg_kernel and attached to the leaf node
+ * created to represent the launch.
+ */
+static __isl_give isl_ast_node *create_host_leaf(
+	__isl_take isl_ast_build *build, void *user)
+{
+	struct cuda_gen *gen = (struct cuda_gen *) user;
+	isl_id *id;
+	isl_ast_node *node;
+	struct ppcg_kernel *kernel;
+	isl_set *host_domain;
+	isl_union_map *schedule;
+	isl_union_map *local_sched;
+	isl_union_map *access;
+	isl_union_set *domain;
+	int i;
+
+	schedule = isl_ast_build_get_schedule(build);
+
+	isl_union_map_foreach_map(schedule, &extract_tile_len, gen);
+	read_sizes(gen);
+
+	domain = isl_union_map_domain(isl_union_map_copy(schedule));
+
+	local_sched = isl_union_map_copy(gen->sched);
+	local_sched = isl_union_map_intersect_domain(local_sched, domain);
+	access = isl_union_map_union(isl_union_map_copy(gen->read),
+				     isl_union_map_copy(gen->write));
+	access = isl_union_map_apply_domain(access,
+					    isl_union_map_copy(local_sched));
+
+	gen->tiled_sched = tile_schedule(gen, local_sched);
+	gen->tiled_sched = parametrize_tiled_schedule(gen, gen->tiled_sched);
+	gen->tiled_sched = scale_tile_loops(gen, gen->tiled_sched);
+
+	kernel = isl_calloc_type(gen->ctx, struct ppcg_kernel);
+	if (!kernel)
+		goto error;
+
+	kernel->id = gen->kernel_id++;
+	kernel->n_block = gen->n_block;
+	for (i = 0; i < gen->n_block; ++i)
+		kernel->block_dim[i] = gen->block_dim[i];
+	kernel->grid = extract_grid(gen);
+	kernel->context = isl_union_map_params(isl_union_map_copy(schedule));
+	kernel->arrays = isl_union_map_range(access);
+	kernel->space = isl_ast_build_get_schedule_space(build);
+
+	gen->local_sched = isl_union_map_copy(gen->tiled_sched);
+
+	gen->local_sched = thread_tile_schedule(gen, gen->local_sched);
+	gen->local_sched = scale_thread_tile_loops(gen, gen->local_sched);
+
+	gen->private_access = NULL;
+	compute_shared_sched(gen);
+	gen->privatization = compute_privatization(gen);
+	group_references(gen);
+	compute_private_size(gen);
+	check_shared_memory_bound(gen);
+	host_domain = isl_set_from_union_set(isl_union_map_range(
+						isl_union_map_copy(schedule)));
+	localize_bounds(gen, host_domain);
+
+	gen->local_sched = interchange_for_unroll(gen, gen->local_sched);
+
+	print_kernel(gen, kernel, build, host_domain);
+
+	free_local_array_info(gen);
+	isl_map_free(gen->privatization);
+	isl_union_map_free(gen->private_access);
+	isl_union_map_free(gen->local_sched);
+	isl_union_map_free(gen->tiled_sched);
+	isl_union_map_free(gen->shared_sched);
+	isl_union_map_free(gen->shared_proj);
+	isl_set_free(host_domain);
+	free(gen->tile_size);
+
+	node = construct_launch(build, schedule, kernel);
+
+	return node;
+error:
+	isl_union_map_free(schedule);
+	return NULL;
+}
+
 /* Print the effective grid size as a list of the sizes in each
  * dimension, from innermost to outermost.
  *
@@ -3797,186 +4831,158 @@ static __isl_give isl_set *extract_grid(struct cuda_gen *gen)
  * For each block dimension, we compute the maximal value of the block id
  * and add one.
  */
-static void print_grid_size(struct cuda_gen *gen, __isl_take isl_set *context)
+static __isl_give isl_printer *print_grid_size(__isl_take isl_printer *p,
+	struct ppcg_kernel *kernel)
 {
 	int i;
-	isl_printer *prn;
-	isl_set *grid;
+	int dim;
 
-	if (gen->n_grid == 0) {
-		isl_set_free(context);
-		return;
-	}
+	dim = isl_set_dim(kernel->grid, isl_dim_set);
+	if (dim == 0)
+		return p;
 
-	grid = extract_grid(gen);
-
-	prn = isl_printer_to_file(gen->ctx, gen->cuda.host_c);
-	prn = isl_printer_set_output_format(prn, ISL_FORMAT_C);
-
-	prn = isl_printer_print_str(prn, "(");
-	for (i = gen->n_grid - 1; i >= 0; --i) {
+	p = isl_printer_print_str(p, "(");
+	for (i = dim - 1; i >= 0; --i) {
 		isl_space *space;
 		isl_aff *one;
-		isl_pw_aff *bound = isl_set_dim_max(isl_set_copy(grid), i);
+		isl_pw_aff *bound ;
 
+		bound = isl_set_dim_max(isl_set_copy(kernel->grid), i);
 		bound = isl_pw_aff_coalesce(bound);
-		bound = isl_pw_aff_gist(bound, isl_set_copy(context));
+		bound = isl_pw_aff_gist(bound, isl_set_copy(kernel->context));
 
 		space = isl_pw_aff_get_domain_space(bound);
 		one = isl_aff_zero_on_domain(isl_local_space_from_space(space));
 		one = isl_aff_add_constant_si(one, 1);
 		bound = isl_pw_aff_add(bound, isl_pw_aff_from_aff(one));
-		prn = isl_printer_print_pw_aff(prn, bound);
+		p = isl_printer_print_pw_aff(p, bound);
 		isl_pw_aff_free(bound);
 
 		if (i > 0)
-			prn = isl_printer_print_str(prn, ", ");
+			p = isl_printer_print_str(p, ", ");
 	}
-	prn = isl_printer_print_str(prn, ")");
 
-	isl_printer_free(prn);
-	isl_set_free(grid);
-	isl_set_free(context);
+	p = isl_printer_print_str(p, ")");
+
+	return p;
 }
 
-/* This function is called for each leaf in the clast of the host code.
- * We first specialize the schedule to the site of the leaf, compute
- * the size of shared memory and then print the body of host code
- * and the associated kernel (through a call to print_kernel_body).
+/* Print the grid definition.
  */
-static void print_host_user(struct clast_printer_info *code,
-	struct clast_user_stmt *u)
+static __isl_give isl_printer *print_grid(__isl_take isl_printer *p,
+	struct ppcg_kernel *kernel)
 {
-	struct cuda_gen *gen = code->user;
-	isl_space *dim;
-	isl_set *par;
-	isl_set *host_domain;
-	isl_union_map *access;
-	isl_union_map *local_sched;
-	isl_union_set *arrays;
+	p = isl_printer_start_line(p);
+	p = isl_printer_print_str(p, "dim3 k");
+	p = isl_printer_print_int(p, kernel->id);
+	p = isl_printer_print_str(p, "_dimGrid");
+	p = print_grid_size(p, kernel);
+	p = isl_printer_print_str(p, ";");
+	p = isl_printer_end_line(p);
 
-	set_tile_len(gen, u);
-	read_sizes(gen);
-
-	host_domain = extract_entire_host_domain(&u->stmt);
-
-	local_sched = isl_union_map_intersect_range(
-		    isl_union_map_copy(gen->sched),
-		    isl_union_set_from_set(extend(isl_set_copy(host_domain),
-						  gen->untiled_len)));
-	access = isl_union_map_union(isl_union_map_copy(gen->read),
-				     isl_union_map_copy(gen->write));
-	access = isl_union_map_apply_domain(access,
-					    isl_union_map_copy(local_sched));
-	arrays = isl_union_map_range(access);
-
-	print_indent(code->dst, code->indent);
-	fprintf(code->dst, "dim3 k%d_dimBlock", gen->kernel_id);
-	print_reverse_list(code->dst, gen->n_block, gen->block_dim);
-	fprintf(code->dst, ";\n");
-
-	gen->tiled_sched = tile_schedule(gen, local_sched);
-	gen->tiled_sched = parametrize_tiled_schedule(gen, gen->tiled_sched);
-	gen->tiled_sched = scale_tile_loops(gen, gen->tiled_sched);
-
-	print_indent(code->dst, code->indent);
-	fprintf(code->dst, "dim3 k%d_dimGrid", gen->kernel_id);
-	print_grid_size(gen, isl_set_params(isl_set_copy(host_domain)));
-	fprintf(code->dst, ";\n");
-
-	gen->local_sched = isl_union_map_copy(gen->tiled_sched);
-
-	dim = isl_union_map_get_space(gen->local_sched);
-	par = parametrization(dim, gen->tiled_len, 0, gen->shared_len, "g");
-	gen->local_sched = isl_union_map_intersect_range(gen->local_sched,
-						isl_union_set_from_set(par));
-
-	gen->local_sched = thread_tile_schedule(gen, gen->local_sched);
-	gen->local_sched = scale_thread_tile_loops(gen, gen->local_sched);
-
-	gen->private_access = NULL;
-	compute_shared_sched(gen);
-	gen->privatization = compute_privatization(gen);
-	group_references(gen);
-	compute_private_size(gen);
-	check_shared_memory_bound(gen);
-	localize_bounds(gen, host_domain);
-
-	gen->local_sched = interchange_for_unroll(gen, gen->local_sched);
-
-	print_kernel_launch(gen, arrays);
-
-	fprintf(gen->cuda.kernel_c, "{\n");
-
-	print_kernel_body(gen, host_domain, gen->tiled_sched);
-
-	fprintf(gen->cuda.kernel_c, "}\n");
-
-	free_local_array_info(gen);
-	isl_map_free(gen->privatization);
-	isl_union_map_free(gen->private_access);
-	isl_union_map_free(gen->local_sched);
-	isl_union_map_free(gen->tiled_sched);
-	isl_union_map_free(gen->shared_sched);
-	isl_union_map_free(gen->shared_proj);
-	isl_union_set_free(arrays);
-	isl_set_free(host_domain);
-
-	free(gen->tile_size);
-	gen->kernel_id++;
+	return p;
 }
 
-/* Use CLooG to generate code for the outer gen->tile_first loops
- * of the global schedule in gen->sched.
- * The pretty printing of this code is handled by print_clast,
- * which calls print_host_user for each kernel invocation location.
+/* Print the user statement of the host code to "p".
+ *
+ * In particular, print a block of statements that defines the grid
+ * and the block and then launches the kernel.
  */
-static void print_cloog_host_code(struct cuda_gen *gen)
+static __isl_give isl_printer *print_host_user(__isl_take isl_printer *p,
+	__isl_keep isl_ast_node *node, void *user)
 {
-	int i;
-	isl_set *context;
+	struct cuda_gen *gen = (struct cuda_gen *) user;
+	isl_id *id;
+	struct ppcg_kernel *kernel;
+
+	id = isl_ast_node_get_annotation(node);
+	kernel = isl_id_get_user(id);
+	isl_id_free(id);
+
+	p = isl_printer_start_line(p);
+	p = isl_printer_print_str(p, "{");
+	p = isl_printer_end_line(p);
+	p = isl_printer_indent(p, 2);
+
+	p = isl_printer_start_line(p);
+	p = isl_printer_print_str(p, "dim3 k");
+	p = isl_printer_print_int(p, kernel->id);
+	p = isl_printer_print_str(p, "_dimBlock");
+	print_reverse_list(isl_printer_get_file(p),
+				kernel->n_block, kernel->block_dim);
+	p = isl_printer_print_str(p, ";");
+	p = isl_printer_end_line(p);
+
+	p = print_grid(p, kernel);
+
+	p = isl_printer_start_line(p);
+	p = isl_printer_print_str(p, "kernel");
+	p = isl_printer_print_int(p, kernel->id);
+	p = isl_printer_print_str(p, " <<<k");
+	p = isl_printer_print_int(p, kernel->id);
+	p = isl_printer_print_str(p, "_dimGrid, k");
+	p = isl_printer_print_int(p, kernel->id);
+	p = isl_printer_print_str(p, "_dimBlock>>> (");
+	p = print_kernel_arguments(p, gen, kernel, 0);
+	p = isl_printer_print_str(p, ");");
+	p = isl_printer_end_line(p);
+
+	p = isl_printer_start_line(p);
+	p = isl_printer_print_str(p, "cudaCheckKernel();");
+	p = isl_printer_end_line(p);
+
+	p = isl_printer_indent(p, -2);
+	p = isl_printer_start_line(p);
+	p = isl_printer_print_str(p, "}");
+	p = isl_printer_end_line(p);
+
+	p = isl_printer_start_line(p);
+	p = isl_printer_end_line(p);
+
+	return p;
+}
+
+/* Use isl to generate code for the outer gen->tile_first loops
+ * of the global schedule in gen->sched, resulting in the host code.
+ * Within each iteration of this partial schedule, i.e., for each kernel
+ * launch, create_host_leaf takes care of generating the kernel code.
+ */
+static void print_isl_host_code(struct cuda_gen *gen)
+{
+	isl_ast_build *build;
+	isl_ast_node *tree;
+	isl_ast_print_options *print_options;
+	isl_printer *p;
 	isl_union_map *sched;
-	CloogOptions *options;
-	CloogDomain *cloog_context;
-	CloogUnionDomain *ud;
-	CloogInput *input;
-	struct clast_stmt *stmt;
-	char name[20];
-
-	options = cloog_options_malloc(gen->state);
-	options->language = CLOOG_LANGUAGE_C;
-	options->otl = 0;
-	options->strides = 1;
-	options->stop = gen->tile_first;
-	options->f = gen->untiled_len;
-	options->l = gen->untiled_len;
-	options->save_domains = 1;
-	options->noscalars = 1;
+	isl_map *proj;
+	isl_id_list *iterators;
 
 	sched = isl_union_map_copy(gen->sched);
-	ud = cloog_union_domain_from_isl_union_map(sched);
-	for (i = 0; i < options->stop; ++i) {
-		snprintf(name, sizeof(name), "h%d", i);
-		ud = cloog_union_domain_set_name(ud, CLOOG_SCAT, i, name);
-	}
-	context = isl_set_copy(gen->context);
-	cloog_context = cloog_domain_from_isl_set(context);
-	input = cloog_input_alloc(cloog_context, ud);
+	proj = projection(isl_union_map_get_space(sched),
+			    gen->untiled_len, gen->tile_first);
+	sched = isl_union_map_apply_range(sched, isl_union_map_from_map(proj));
 
-	stmt = cloog_clast_create_from_input(input, options);
+	isl_options_set_ast_build_group_coscheduled(gen->ctx, 1);
+	build = isl_ast_build_from_context(isl_set_copy(gen->context));
+	iterators = generate_names(gen->ctx, gen->tile_first, "h");
+	build = isl_ast_build_set_iterators(build, iterators);
+	build = isl_ast_build_set_create_leaf(build, &create_host_leaf, gen);
+	tree = isl_ast_build_ast_from_schedule(build, sched);
+	isl_ast_build_free(build);
 
-	gen->code.indent = 0;
-	gen->code.dst = gen->cuda.host_c;
-	gen->code.print_user_stmt = NULL;
-	gen->code.print_user_stmt_list = &print_host_user;
-	gen->code.print_for_head = NULL;
-	gen->code.print_for_foot = NULL;
-	gen->code.user = gen;
-	print_clast(&gen->code, stmt);
+	print_options = isl_ast_print_options_alloc(gen->ctx);
+	print_options = isl_ast_print_options_set_print_user(print_options,
+						    &print_host_user, gen);
 
-	cloog_clast_free(stmt);
-	cloog_options_free(options);
-	fprintf(gen->cuda.host_c, "\n");
+	p = isl_printer_to_file(gen->ctx, gen->cuda.host_c);
+	p = isl_printer_set_output_format(p, ISL_FORMAT_C);
+	p = print_macros(tree, p);
+	p = isl_ast_node_print(tree, p, print_options);
+	isl_printer_free(p);
+
+	isl_ast_print_options_free(print_options);
+
+	isl_ast_node_free(tree);
 }
 
 void print_cuda_macros(struct cuda_gen *gen)
@@ -3991,8 +4997,6 @@ void print_cuda_macros(struct cuda_gen *gen)
 void print_host_code(struct cuda_gen *gen)
 {
 	fprintf(gen->cuda.host_c, "{\n");
-	print_cloog_macros(gen->cuda.host_c);
-	print_cloog_macros(gen->cuda.kernel_c);
 
 	print_cuda_macros(gen);
 
@@ -4002,7 +5006,7 @@ void print_host_code(struct cuda_gen *gen)
 	copy_arrays_to_device(gen);
 
 	gen->kernel_id = 0;
-	print_cloog_host_code(gen);
+	print_isl_host_code(gen);
 
 	copy_arrays_from_device(gen);
 	free_device_arrays(gen);
@@ -4080,11 +5084,12 @@ struct band_info {
 static int set_stmt_tile_len(__isl_take isl_map *map, void *user)
 {
 	struct band_info *info = user;
-	int nr;
 	struct cuda_stmt *stmt;
+	isl_id *id;
 
-	nr = atoi(isl_map_get_tuple_name(map, isl_dim_in) + 2);
-	stmt = &info->gen->stmts[nr];
+	id = isl_map_get_tuple_id(map, isl_dim_in);
+	stmt = find_stmt(info->gen, id);
+	isl_id_free(id);
 
 	stmt->tile_len = info->tile_len;
 	stmt->n_parallel = info->n_parallel;
@@ -4158,8 +5163,8 @@ static int cmp_band(const void *p1, const void *p2)
 /* Extend "umap" with coordinates with fixed value "val"
  * to a total length of "dst_len", assuming the original dimension is "src_len".
  */
-static __isl_give isl_union_map *extend_range(__isl_take isl_union_map *umap,
-	int src_len, int dst_len, int val)
+static __isl_give isl_union_map *extend_range(
+	__isl_take isl_union_map *umap, int src_len, int dst_len, int val)
 {
 	isl_space *dim;
 	isl_map *map;
@@ -4485,7 +5490,6 @@ int generate_cuda(isl_ctx *ctx, struct pet_scop *scop,
 	gen.read = pet_scop_collect_reads(scop);
 	gen.write = pet_scop_collect_writes(scop);
 	gen.options = options;
-	gen.state = cloog_isl_state_malloc(gen.ctx);
 	gen.scop = scop;
 
 	cuda_open_files(&gen.cuda, input);
@@ -4498,7 +5502,6 @@ int generate_cuda(isl_ctx *ctx, struct pet_scop *scop,
 
 	print_host_code(&gen);
 
-	cloog_state_free(gen.state);
 	clear_cuda_gen(&gen);
 
 	cuda_close_files(&gen.cuda);
