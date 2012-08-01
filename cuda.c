@@ -2779,8 +2779,8 @@ static int check_stride_constraint(__isl_take isl_constraint *c, void *user)
  * the new constraints.
  * If not, simply return the original constraints.
  */
-static __isl_give isl_basic_map *check_stride(struct cuda_gen *gen,
-	struct cuda_array_bound *bound, __isl_take isl_basic_map *bounds)
+static __isl_give isl_basic_map *check_stride(struct cuda_array_bound *bound,
+	__isl_take isl_basic_map *bounds)
 {
 	isl_basic_map *aff;
 	isl_basic_map *shift;
@@ -2885,13 +2885,13 @@ static int compute_size_in_direction(__isl_take isl_constraint *c, void *user)
  * In particular, we currently only consider lower bounds on the output
  * dimension as candidate expressions.
  */
-static int compute_array_dim_size(struct cuda_gen *gen,
-	struct cuda_array_bound *bound, __isl_take isl_basic_map *bounds)
+static int compute_array_dim_size(struct cuda_array_bound *bound,
+	__isl_take isl_basic_map *bounds)
 {
 	struct cuda_size_info size;
 
 	bounds = isl_basic_map_detect_equalities(bounds);
-	bounds = check_stride(gen, bound, bounds);
+	bounds = check_stride(bound, bounds);
 
 	isl_int_set_si(bound->size, -1);
 	bound->lb = NULL;
@@ -2915,9 +2915,8 @@ static int compute_array_dim_size(struct cuda_gen *gen,
  * We project the accesses on each index in turn and look for a parametric
  * offset such that the size is constant.
  */
-static int can_tile_for_shared_memory(struct cuda_gen *gen,
-	struct cuda_array_info *array, __isl_keep isl_map *access,
-	struct cuda_array_bound *bounds)
+static int can_tile_for_shared_memory(struct cuda_array_info *array,
+	__isl_keep isl_map *access, struct cuda_array_bound *bounds)
 {
 	int i;
 
@@ -2931,7 +2930,7 @@ static int can_tile_for_shared_memory(struct cuda_gen *gen,
 					    1, array->n_index - (i + 1));
 		access_i = isl_map_compute_divs(access_i);
 		hull = isl_map_simple_hull(access_i);
-		if (compute_array_dim_size(gen, &bounds[i], hull) < 0)
+		if (compute_array_dim_size(&bounds[i], hull) < 0)
 			return 0;
 	}
 
@@ -3112,7 +3111,7 @@ static void check_private_group_access(struct cuda_gen *gen,
 	group->private_bound = create_bound_list(gen->ctx, n_index);
 	acc = isl_map_align_params(acc, isl_map_get_space(gen->privatization));
 	acc = isl_map_apply_domain(acc, isl_map_copy(gen->privatization));
-	if (!can_tile_for_shared_memory(gen, group->array, acc,
+	if (!can_tile_for_shared_memory(group->array, acc,
 					group->private_bound)) {
 		free_bound_list(group->private_bound, n_index);
 		group->private_bound = NULL;
@@ -3444,7 +3443,7 @@ static void compute_group_shared_bound(struct cuda_gen *gen,
 		return;
 
 	group->shared_bound = create_bound_list(ctx, array->n_index);
-	if (!can_tile_for_shared_memory(gen, array, group->access,
+	if (!can_tile_for_shared_memory(array, group->access,
 					group->shared_bound)) {
 		free_bound_list(group->shared_bound, array->n_index);
 		group->shared_bound = NULL;
@@ -3521,7 +3520,7 @@ static int group_common_shared_memory_tile(struct cuda_gen *gen,
 			map = isl_map_union(isl_map_copy(groups[l]->access),
 					    isl_map_copy(groups[j]->access));
 			shared_bound = create_bound_list(ctx, array->n_index);
-			if (!can_tile_for_shared_memory(gen, array, map,
+			if (!can_tile_for_shared_memory(array, map,
 							shared_bound) ||
 			    !smaller_tile(array->n_index, shared_bound,
 					groups[l]->shared_bound,
