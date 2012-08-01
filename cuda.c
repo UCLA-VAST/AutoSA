@@ -3290,9 +3290,8 @@ static void check_shared_memory_bound(struct cuda_gen *gen)
  * Return the number of elements initialized, i.e., the number of
  * active references in the current kernel.
  */
-static int populate_array_references(struct cuda_gen *gen,
-	struct cuda_array_info *array, __isl_keep isl_union_map *sched,
-	struct cuda_array_ref_group **groups)
+static int populate_array_references(struct cuda_array_info *array,
+	__isl_keep isl_union_map *sched, struct cuda_array_ref_group **groups)
 {
 	int i;
 	int n;
@@ -3619,7 +3618,7 @@ static void group_array_references(struct cuda_gen *gen,
 					array->n_ref);
 	assert(groups);
 
-	n = populate_array_references(gen, array, sched, groups);
+	n = populate_array_references(array, sched, groups);
 
 	leader = isl_alloc_array(ctx, int, n);
 	assert(leader);
