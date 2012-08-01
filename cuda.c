@@ -1473,10 +1473,9 @@ static __isl_give isl_union_map *access_schedule(struct cuda_gen *gen,
 	sched = isl_map_apply_range(sched, tiling);
 
 	par = parametrization(dim, nvar + n_tile, first + n_tile, n_tile, "t");
-	usched = isl_union_map_from_map(sched);
-	usched = isl_union_map_intersect_range(usched,
-						isl_union_set_from_set(par));
+	sched = isl_map_intersect_range(sched, par);
 
+	usched = isl_union_map_from_map(sched);
 	usched = scale_access_tile_loops(gen, usched, nvar + n_tile,
 					 first, n_tile);
 
