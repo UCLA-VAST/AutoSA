@@ -982,13 +982,18 @@ static __isl_give isl_set *parametrize(__isl_take isl_set *set,
 	return isl_set_intersect(set, isl_set_from_basic_set(bset));
 }
 
-static __isl_give isl_set *parametrization(__isl_take isl_space *dim,
+/* Given a parameter space "space", create a set of dimension "len"
+ * of which the "n" dimensions starting at "first" are equated to
+ * freshly created parameters named prefix%d.
+ */
+static __isl_give isl_set *parametrization(__isl_take isl_space *space,
 	int len, int first, int n, const char *prefix)
 {
 	isl_set *set;
 
-	dim = isl_space_add_dims(dim, isl_dim_set, len);
-	set = isl_set_universe(dim);
+	space = isl_space_set_from_params(space);
+	space = isl_space_add_dims(space, isl_dim_set, len);
+	set = isl_set_universe(space);
 
 	return parametrize(set, first, n, prefix);
 }
@@ -1025,6 +1030,9 @@ static __isl_give isl_union_map *tile_schedule(struct cuda_gen *gen,
 	return sched;
 }
 
+/* Equate the "T1P" iterators in the tiled schedule "sched"
+ * to the block dimensions.
+ */
 static __isl_give isl_union_map *parametrize_tiled_schedule(
 	struct cuda_gen *gen, __isl_take isl_union_map *sched)
 {
@@ -1606,7 +1614,6 @@ static void print_copy_statement(struct clast_printer_info *code,
 	struct cuda_array_ref_group *group = gen->copy_group;
 	struct cuda_array_bound *bounds = gen->copy_bound;
 	unsigned n_in;
-	unsigned n_out;
 	isl_space *dim;
 	isl_set *param;
 	isl_set *index;
@@ -1622,10 +1629,8 @@ static void print_copy_statement(struct clast_printer_info *code,
 	sched = isl_map_reverse(sched);
 	sched = isl_map_intersect_domain(sched, domain);
 	n_in = isl_map_dim(sched, isl_dim_in);
-	n_out = isl_map_dim(sched, isl_dim_out);
 	dim = isl_map_get_space(sched);
-	dim = isl_space_drop_dims(dim, isl_dim_in, 0, n_in);
-	dim = isl_space_drop_dims(dim, isl_dim_out, 0, n_out);
+	dim = isl_space_params(dim);
 	param = parametrization(dim, n_in, 0, n_in, "c");
 	sched = isl_map_align_params(sched, isl_set_get_space(param));
 	sched = isl_map_intersect_domain(sched, param);
