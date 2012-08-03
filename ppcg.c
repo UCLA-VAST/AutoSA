@@ -15,7 +15,7 @@
 #include <isl/schedule.h>
 #include <pet.h>
 #include "ppcg_options.h"
-#include "gpu.h"
+#include "cuda.h"
 #include "cpu.h"
 
 struct options {

@@ -24,15 +24,8 @@
 #include <isl/ast_build.h>
 
 #include "gpu.h"
-#include "cuda_common.h"
 #include "schedule.h"
-#include "pet_printer.h"
 #include "ppcg_options.h"
-
-static void print_indent(FILE *dst, int indent)
-{
-	fprintf(dst, "%*s", indent, "");
-}
 
 /* The fields stride, shift and shift_map only contain valid information
  * if shift != NULL.
@@ -96,29 +89,90 @@ struct gpu_array_ref_group {
 	int last_shared;
 };
 
-struct gpu_array_info {
-	isl_space *dim;
-	/* Element type. */
-	char *type;
-	/* Element size. */
-	int size;
-	/* Name of the array. */
-	char *name;
-	/* Number of indices. */
-	unsigned n_index;
-	/* For each index, a bound on the array in that direction. */
-	isl_pw_aff **bound;
+struct gpu_gen {
+	isl_ctx *ctx;
+	struct ppcg_options *options;
 
-	/* All references to this array; point to elements of a linked list. */
-	int n_ref;
-	struct gpu_stmt_access **refs;
+	struct gpu_prog *prog;
 
-	/* The reference groups associated to this array. */
-	int n_group;
-	struct gpu_array_ref_group **groups;
+	/* tile, grid and block sizes for each kernel */
+	isl_union_map *sizes;
 
-	/* For scalars, is this scalar read-only within the entire program? */
-	int read_only;
+	/* Identifier of current kernel. */
+	int kernel_id;
+	/* Pointer to the current kernel. */
+	struct ppcg_kernel *kernel;
+
+	/* First tile dimension. */
+	int tile_first;
+	/* Number of tile dimensions. */
+	int tile_len;
+	/* Number of initial parallel loops among tile dimensions. */
+	int n_parallel;
+
+	/* Number of dimensions determining shared memory. */
+	int shared_len;
+
+	/* Number of rows in the untiled schedule. */
+	int untiled_len;
+	/* Number of rows in the tiled schedule. */
+	int tiled_len;
+	/* Number of rows in schedule after tiling/wrapping over threads. */
+	int thread_tiled_len;
+
+	/* Global untiled schedule. */
+	isl_union_map *sched;
+	/* Local (per kernel launch) tiled schedule. */
+	isl_union_map *tiled_sched;
+	/* Local schedule per shared memory tile loop iteration. */
+	isl_union_map *local_sched;
+
+	/* Local tiled schedule projected onto the shared tile loops and
+	 * the loops that will be wrapped over the threads,
+	 * with all shared tile loops parametrized.
+	 */
+	isl_union_map *shared_sched;
+	/* Projects out the loops that will be wrapped over the threads
+	 * from shared_sched.
+	 */
+	isl_union_map *shared_proj;
+
+	/* A map that takes the range of shared_sched as input,
+	 * wraps the appropriate loops over the threads and then projects
+	 * out these loops.
+	 */
+	isl_map *privatization;
+
+	/* A map from the shared memory tile loops and the thread indices
+	 * (as parameters) to the set of accessed memory elements that
+	 * will be accessed through private copies.
+	 */
+	isl_union_map *private_access;
+
+	/* The schedule for the current private/shared access
+	 * (within print_private_access or print_shared_access).
+	 */
+	isl_map *copy_sched;
+	/* The array reference group corresponding to copy_sched. */
+	struct gpu_array_ref_group *copy_group;
+	/* copy_group->private_bound or copy_group->shared_bound */
+	struct gpu_array_bound *copy_bound;
+
+	/* First loop to unroll (or -1 if none) in the current part of the
+	 * schedule.
+	 */
+	int first_unroll;
+
+	int n_grid;
+	int n_block;
+	/* Note: in the input file, the sizes of the grid and the blocks
+	 * are specified in the order x, y, z, but internally, the sizes
+	 * are stored in reverse order, so that the last element always
+	 * refers to the x dimension.
+	 */
+	int grid_dim[2];
+	int block_dim[3];
+	int *tile_size;
 };
 
 /* Print the name of the local copy of a given group of array references.
@@ -146,15 +200,15 @@ static __isl_give isl_printer *print_array_name(__isl_take isl_printer *p,
 /* Collect all references to the given array and store pointers to them
  * in array->refs.
  */
-static void collect_references(struct gpu_gen *gen,
+static void collect_references(struct gpu_prog *prog,
 	struct gpu_array_info *array)
 {
 	int i;
 	int n;
 
 	n = 0;
-	for (i = 0; i < gen->n_stmts; ++i) {
-		struct gpu_stmt *stmt = &gen->stmts[i];
+	for (i = 0; i < prog->n_stmts; ++i) {
+		struct gpu_stmt *stmt = &prog->stmts[i];
 		struct gpu_stmt_access *access;
 
 		for (access = stmt->accesses; access; access = access->next) {
@@ -167,12 +221,12 @@ static void collect_references(struct gpu_gen *gen,
 	}
 
 	array->n_ref = n;
-	array->refs = isl_alloc_array(gen->ctx, struct gpu_stmt_access *, n);
+	array->refs = isl_alloc_array(prog->ctx, struct gpu_stmt_access *, n);
 	assert(array->refs);
 
 	n = 0;
-	for (i = 0; i < gen->n_stmts; ++i) {
-		struct gpu_stmt *stmt = &gen->stmts[i];
+	for (i = 0; i < prog->n_stmts; ++i) {
+		struct gpu_stmt *stmt = &prog->stmts[i];
 		struct gpu_stmt_access *access;
 
 		for (access = stmt->accesses; access; access = access->next) {
@@ -253,7 +307,7 @@ static struct pet_array *find_array(struct pet_scop *scop,
 static int extract_array_info(__isl_take isl_set *array, void *user)
 {
 	int i;
-	struct gpu_gen *gen = (struct gpu_gen *)user;
+	struct gpu_prog *prog = (struct gpu_prog *)user;
 	const char *name;
 	int n_index;
 	isl_pw_aff **bounds;
@@ -264,30 +318,30 @@ static int extract_array_info(__isl_take isl_set *array, void *user)
 	bounds = isl_alloc_array(isl_set_get_ctx(array),
 				 isl_pw_aff *, n_index);
 	assert(bounds);
-	gen->array[gen->n_array].dim = isl_set_get_space(array);
-	gen->array[gen->n_array].name = strdup(name);
-	gen->array[gen->n_array].n_index = n_index;
-	gen->array[gen->n_array].bound = bounds;
+	prog->array[prog->n_array].dim = isl_set_get_space(array);
+	prog->array[prog->n_array].name = strdup(name);
+	prog->array[prog->n_array].n_index = n_index;
+	prog->array[prog->n_array].bound = bounds;
 
-	pa = find_array(gen->scop, array);
+	pa = find_array(prog->scop, array);
 	assert(pa);
 
-	gen->array[gen->n_array].type = strdup(pa->element_type);
-	gen->array[gen->n_array].size = pa->element_size;
+	prog->array[prog->n_array].type = strdup(pa->element_type);
+	prog->array[prog->n_array].size = pa->element_size;
 
 	if (n_index == 0) {
 		isl_set *space;
 		isl_union_map *write;
 		int empty;
 
-		write = isl_union_map_copy(gen->write);
+		write = isl_union_map_copy(prog->write);
 		space = isl_set_universe(isl_set_get_space(array));
 		write = isl_union_map_intersect_range(write,
 				    isl_union_set_from_set(space));
 		empty = isl_union_map_is_empty(write);
 		isl_union_map_free(write);
 
-		gen->array[gen->n_array].read_only = empty;
+		prog->array[prog->n_array].read_only = empty;
 	}
 
 	for (i = 0; i < n_index; ++i) {
@@ -304,194 +358,68 @@ static int extract_array_info(__isl_take isl_set *array, void *user)
 		one = isl_aff_zero_on_domain(ls);
 		one = isl_aff_add_constant_si(one, 1);
 		bound = isl_pw_aff_add(bound, isl_pw_aff_alloc(dom, one));
-		bound = isl_pw_aff_gist(bound, isl_set_copy(gen->context));
+		bound = isl_pw_aff_gist(bound, isl_set_copy(prog->context));
 
 		bounds[i] = bound;
 	}
 
-	collect_references(gen, &gen->array[gen->n_array]);
+	collect_references(prog, &prog->array[prog->n_array]);
 
-	gen->n_array++;
+	prog->n_array++;
 
 	isl_set_free(array);
 	return 0;
 }
 
-void collect_array_info(struct gpu_gen *gen)
+void collect_array_info(struct gpu_prog *prog)
 {
 	isl_union_set *arrays;
 
-	arrays = isl_union_map_range(isl_union_map_copy(gen->read));
+	arrays = isl_union_map_range(isl_union_map_copy(prog->read));
 	arrays = isl_union_set_union(arrays,
-			isl_union_map_range(isl_union_map_copy(gen->write)));
+			isl_union_map_range(isl_union_map_copy(prog->write)));
 	arrays = isl_union_set_coalesce(arrays);
 
-	gen->n_array = isl_union_set_n_set(arrays);
-	gen->array = isl_alloc_array(gen->ctx,
-				     struct gpu_array_info, gen->n_array);
-	assert(gen->array);
-	gen->n_array = 0;
-	isl_union_set_foreach_set(arrays, &extract_array_info, gen);
+	prog->n_array = isl_union_set_n_set(arrays);
+	prog->array = isl_alloc_array(prog->ctx,
+				     struct gpu_array_info, prog->n_array);
+	assert(prog->array);
+	prog->n_array = 0;
+	isl_union_set_foreach_set(arrays, &extract_array_info, prog);
 	isl_union_set_free(arrays);
 }
 
-static void free_array_info(struct gpu_gen *gen)
+static void free_array_info(struct gpu_prog *prog)
 {
 	int i, j;
 
-	for (i = 0; i < gen->n_array; ++i) {
-		int n_index = gen->array[i].n_index;
-		free(gen->array[i].type);
-		free(gen->array[i].name);
+	for (i = 0; i < prog->n_array; ++i) {
+		int n_index = prog->array[i].n_index;
+		free(prog->array[i].type);
+		free(prog->array[i].name);
 		for (j = 0; j < n_index; ++j)
-			isl_pw_aff_free(gen->array[i].bound[j]);
-		isl_space_free(gen->array[i].dim);
-		free(gen->array[i].bound);
-		free(gen->array[i].refs);
+			isl_pw_aff_free(prog->array[i].bound[j]);
+		isl_space_free(prog->array[i].dim);
+		free(prog->array[i].bound);
+		free(prog->array[i].refs);
 	}
-	free(gen->array);
+	free(prog->array);
 }
 
 /* Check if a gpu array is a scalar.  A scalar is a value that is not stored
  * as an array or through a pointer reference, but as single data element.  At
  * the moment, scalars are represented as zero dimensional arrays.
  */
-static int gpu_array_is_scalar(struct gpu_array_info *array)
+int gpu_array_is_scalar(struct gpu_array_info *array)
 {
 	return (array->n_index == 0);
 }
 
 /* Is "array" a read-only scalar?
  */
-static int gpu_array_is_read_only_scalar(struct gpu_array_info *array)
+int gpu_array_is_read_only_scalar(struct gpu_array_info *array)
 {
 	return gpu_array_is_scalar(array) && array->read_only;
-}
-
-static void declare_device_arrays(struct gpu_gen *gen)
-{
-	int i;
-
-	for (i = 0; i < gen->n_array; ++i) {
-		if (gpu_array_is_read_only_scalar(&gen->array[i]))
-			continue;
-		fprintf(gen->cuda.host_c, "%s *dev_%s;\n",
-			gen->array[i].type, gen->array[i].name);
-	}
-	fprintf(gen->cuda.host_c, "\n");
-}
-
-static void print_array_size(struct gpu_gen *gen, FILE *out,
-	struct gpu_array_info *array)
-{
-	int i;
-	isl_printer *prn;
-
-	prn = isl_printer_to_file(gen->ctx, out);
-	prn = isl_printer_set_output_format(prn, ISL_FORMAT_C);
-	for (i = 0; i < array->n_index; ++i) {
-		prn = isl_printer_print_str(prn, "(");
-		prn = isl_printer_print_pw_aff(prn, array->bound[i]);
-		prn = isl_printer_print_str(prn, ") * ");
-	}
-	prn = isl_printer_print_str(prn, "sizeof(");
-	prn = isl_printer_print_str(prn, array->type);
-	prn = isl_printer_print_str(prn, ")");
-	isl_printer_free(prn);
-}
-
-static void allocate_device_arrays(struct gpu_gen *gen)
-{
-	int i;
-
-	for (i = 0; i < gen->n_array; ++i) {
-		if (gpu_array_is_read_only_scalar(&gen->array[i]))
-			continue;
-		fprintf(gen->cuda.host_c,
-			"cudaCheckReturn(cudaMalloc((void **) &dev_%s, ",
-			gen->array[i].name);
-		print_array_size(gen, gen->cuda.host_c, &gen->array[i]);
-		fprintf(gen->cuda.host_c, "));\n");
-	}
-	fprintf(gen->cuda.host_c, "\n");
-}
-
-static void free_device_arrays(struct gpu_gen *gen)
-{
-	int i;
-
-	for (i = 0; i < gen->n_array; ++i) {
-		if (gpu_array_is_read_only_scalar(&gen->array[i]))
-			continue;
-		fprintf(gen->cuda.host_c, "cudaCheckReturn(cudaFree(dev_%s));\n",
-			gen->array[i].name);
-	}
-}
-
-static void copy_arrays_to_device(struct gpu_gen *gen)
-{
-	int i;
-
-	for (i = 0; i < gen->n_array; ++i) {
-		isl_space *dim;
-		isl_set *read_i;
-		int empty;
-
-		if (gpu_array_is_read_only_scalar(&gen->array[i]))
-			continue;
-
-		dim = isl_space_copy(gen->array[i].dim);
-		read_i = isl_union_set_extract_set(gen->copy_in, dim);
-		empty = isl_set_fast_is_empty(read_i);
-		isl_set_free(read_i);
-		if (empty)
-			continue;
-
-		fprintf(gen->cuda.host_c, "cudaCheckReturn(cudaMemcpy(dev_%s,",
-			gen->array[i].name);
-
-		if (gpu_array_is_scalar(&(gen->array[i])))
-			fprintf(gen->cuda.host_c, " &%s, ",
-				gen->array[i].name);
-		else
-			fprintf(gen->cuda.host_c, " %s, ", gen->array[i].name);
-
-		print_array_size(gen, gen->cuda.host_c, &gen->array[i]);
-		fprintf(gen->cuda.host_c, ", cudaMemcpyHostToDevice));\n");
-	}
-	fprintf(gen->cuda.host_c, "\n");
-}
-
-static void copy_arrays_from_device(struct gpu_gen *gen)
-{
-	int i;
-	isl_union_set *write;
-	write = isl_union_map_range(isl_union_map_copy(gen->write));
-
-	for (i = 0; i < gen->n_array; ++i) {
-		isl_space *dim;
-		isl_set *write_i;
-		int empty;
-
-		dim = isl_space_copy(gen->array[i].dim);
-		write_i = isl_union_set_extract_set(write, dim);
-		empty = isl_set_fast_is_empty(write_i);
-		isl_set_free(write_i);
-		if (empty)
-			continue;
-
-		fprintf(gen->cuda.host_c, "cudaCheckReturn(cudaMemcpy(");
-		if (gpu_array_is_scalar(&gen->array[i]))
-			fprintf(gen->cuda.host_c, "&%s, ", gen->array[i].name);
-		else
-			fprintf(gen->cuda.host_c, "%s, ", gen->array[i].name);
-		fprintf(gen->cuda.host_c, "dev_%s, ",  gen->array[i].name);
-		print_array_size(gen, gen->cuda.host_c, &gen->array[i]);
-		fprintf(gen->cuda.host_c, ", cudaMemcpyDeviceToHost));\n");
-	}
-
-	isl_union_set_free(write);
-	fprintf(gen->cuda.host_c, "\n");
 }
 
 /* Internal data structure for extract_size_of_type.
@@ -685,30 +613,8 @@ static void free_stmts(struct gpu_stmt *stmts, int n)
 
 void clear_gpu_gen(struct gpu_gen *gen)
 {
-	free_stmts(gen->stmts, gen->n_stmts);
-	free_array_info(gen);
 	isl_union_map_free(gen->sizes);
-	isl_set_free(gen->context);
-	isl_union_set_free(gen->copy_in);
 	isl_union_map_free(gen->sched);
-	isl_union_map_free(gen->read);
-	isl_union_map_free(gen->write);
-}
-
-static void print_reverse_list(FILE *out, int len, int *list)
-{
-	int i;
-
-	if (len == 0)
-		return;
-
-	fprintf(out, "(");
-	for (i = 0; i < len; ++i) {
-		if (i)
-			fprintf(out, ", ");
-		fprintf(out, "%d", list[len - 1 - i]);
-	}
-	fprintf(out, ")");
 }
 
 /* Construct a map from a domain of dimensionality "len"
@@ -1682,8 +1588,8 @@ static __isl_give isl_union_map *interchange_for_unroll(struct gpu_gen *gen,
 
 	for (i = 0; i < gen->thread_tiled_len; ++i)
 		unroll[i] = 0;
-	for (i = 0; i < gen->n_array; ++i) {
-		struct gpu_array_info *array = &gen->array[i];
+	for (i = 0; i < gen->prog->n_array; ++i) {
+		struct gpu_array_info *array = &gen->prog->array[i];
 
 		for (j = 0; j < array->n_group; ++j) {
 			isl_union_map *access;
@@ -1731,38 +1637,6 @@ static __isl_give isl_union_map *interchange_for_unroll(struct gpu_gen *gen,
 					  isl_union_map_from_map(permute));
 
 	return sched;
-}
-
-static void print_kernel_iterators(struct gpu_gen *gen)
-{
-	int i;
-	const char *block_dims[] = { "blockIdx.x", "blockIdx.y" };
-	const char *thread_dims[] = { "threadIdx.x", "threadIdx.y",
-					"threadIdx.z" };
-
-	if (gen->n_grid > 0) {
-		print_indent(gen->cuda.kernel_c, 4);
-		fprintf(gen->cuda.kernel_c, "int ");
-		for (i = 0; i < gen->n_grid; ++i) {
-			if (i)
-				fprintf(gen->cuda.kernel_c, ", ");
-			fprintf(gen->cuda.kernel_c, "b%d = %s",
-				i, block_dims[gen->n_grid - 1 - i]);
-		}
-		fprintf(gen->cuda.kernel_c, ";\n");
-	}
-
-	if (gen->n_block > 0) {
-		print_indent(gen->cuda.kernel_c, 4);
-		fprintf(gen->cuda.kernel_c, "int ");
-		for (i = 0; i < gen->n_block; ++i) {
-			if (i)
-				fprintf(gen->cuda.kernel_c, ", ");
-			fprintf(gen->cuda.kernel_c, "t%d = %s",
-				i, thread_dims[gen->n_block - 1 - i]);
-		}
-		fprintf(gen->cuda.kernel_c, ";\n");
-	}
 }
 
 /* Given a constraint
@@ -2353,8 +2227,8 @@ static void compute_private_size(struct gpu_gen *gen)
 
 	private = isl_union_map_empty(isl_union_map_get_space(gen->shared_sched));
 
-	for (i = 0; i < gen->n_array; ++i) {
-		struct gpu_array_info *array = &gen->array[i];
+	for (i = 0; i < gen->prog->n_array; ++i) {
+		struct gpu_array_info *array = &gen->prog->array[i];
 
 		if (gpu_array_is_read_only_scalar(array))
 			continue;
@@ -2423,8 +2297,8 @@ static void check_shared_memory_bound(struct gpu_gen *gen)
 	isl_int_init(size);
 	isl_int_set_si(left, gen->options->max_shared_memory);
 
-	for (i = 0; i < gen->n_array; ++i) {
-		struct gpu_array_info *array = &gen->array[i];
+	for (i = 0; i < gen->prog->n_array; ++i) {
+		struct gpu_array_info *array = &gen->prog->array[i];
 
 		for (j = 0; j < array->n_group; ++j) {
 			struct gpu_array_ref_group *group;
@@ -2840,8 +2714,8 @@ static void group_references(struct gpu_gen *gen)
 	sched = isl_union_map_apply_range(isl_union_map_copy(gen->shared_sched),
 					  isl_union_map_copy(gen->shared_proj));
 
-	for (i = 0; i < gen->n_array; ++i)
-		group_array_references(gen, &gen->array[i], sched);
+	for (i = 0; i < gen->prog->n_array; ++i)
+		group_array_references(gen, &gen->prog->array[i], sched);
 
 	isl_union_map_free(sched);
 }
@@ -2852,8 +2726,8 @@ static void free_local_array_info(struct gpu_gen *gen)
 {
 	int i, j;
 
-	for (i = 0; i < gen->n_array; ++i) {
-		struct gpu_array_info *array = &gen->array[i];
+	for (i = 0; i < gen->prog->n_array; ++i) {
+		struct gpu_array_info *array = &gen->prog->array[i];
 
 		for (j = 0; j < array->n_group; ++j)
 			free_array_ref_group(array->groups[j], array->n_index);
@@ -2888,63 +2762,6 @@ static __isl_give isl_set *extract_grid(struct gpu_gen *gen)
 	return grid;
 }
 
-enum ppcg_kernel_access_type {
-	ppcg_access_global,
-	ppcg_access_shared,
-	ppcg_access_private
-};
-
-/* Representation of a local variable in a kernel.
- */
-struct ppcg_kernel_var {
-	struct gpu_array_info *array;
-	enum ppcg_kernel_access_type type;
-	char *name;
-	isl_vec *size;
-};
-
-/* Representation of a kernel.
- *
- * id is the sequence number of the kernel.
- *
- * the first n_block elements of block_dim represent the size of the block.
- *
- * grid contains the values of the block ids.
- *
- * context is a parametric set containing the values of the parameters
- * for which this kernel may be run.
- *
- * arrays is the set of accessed array elements.
- *
- * space is the schedule space of the AST context.  That is, it represents
- * the loops of the generated host code containing the kernel launch.
- *
- * n_array is the total number of arrays in the input program and also
- * the number of element in the array array.
- * array contains information about each array that is local
- * to the current kernel.  If an array is not ussed in a kernel,
- * then the corresponding entry does not contain any information.
- */
-struct ppcg_kernel {
-	int id;
-
-	int n_block;
-	int block_dim[3];
-
-	isl_set *grid;
-	isl_set *context;
-
-	isl_union_set *arrays;
-
-	isl_space *space;
-
-	int n_array;
-	struct gpu_local_array_info *array;
-
-	int n_var;
-	struct ppcg_kernel_var *var;
-};
-
 void ppcg_kernel_free(void *user)
 {
 	struct ppcg_kernel *kernel = user;
@@ -2957,6 +2774,7 @@ void ppcg_kernel_free(void *user)
 	isl_set_free(kernel->context);
 	isl_union_set_free(kernel->arrays);
 	isl_space_free(kernel->space);
+	isl_ast_node_free(kernel->tree);
 
 	for (i = 0; i < kernel->n_array; ++i)
 		isl_pw_aff_list_free(kernel->array[i].bound);
@@ -2999,33 +2817,13 @@ static void create_kernel_var(isl_ctx *ctx, struct gpu_array_ref_group *group,
 		var->size = isl_vec_set_element(var->size, j, bounds[j].size);
 }
 
-static void print_kernel_var(FILE *out, struct ppcg_kernel_var *var)
-{
-	int j;
-	isl_int v;
-
-	print_indent(out, 4);
-	if (var->type == ppcg_access_shared)
-		fprintf(out, "__shared__ ");
-	fprintf(out, "%s %s", var->array->type, var->name);
-	isl_int_init(v);
-	for (j = 0; j < var->array->n_index; ++j) {
-		fprintf(out, "[");
-		isl_vec_get_element(var->size, j, &v);
-		isl_int_print(out, v, 0);
-		fprintf(out, "]");
-	}
-	isl_int_clear(v);
-	fprintf(out, ";\n");
-}
-
-static void print_shared_arrays(struct gpu_gen *gen, struct ppcg_kernel *kernel)
+static void create_kernel_vars(struct gpu_gen *gen, struct ppcg_kernel *kernel)
 {
 	int i, j, n;
 
 	n = 0;
-	for (i = 0; i < gen->n_array; ++i) {
-		struct gpu_array_info *array = &gen->array[i];
+	for (i = 0; i < gen->prog->n_array; ++i) {
+		struct gpu_array_info *array = &gen->prog->array[i];
 
 		for (j = 0; j < array->n_group; ++j) {
 			struct gpu_array_ref_group *group = array->groups[j];
@@ -3039,8 +2837,8 @@ static void print_shared_arrays(struct gpu_gen *gen, struct ppcg_kernel *kernel)
 	assert(kernel->var);
 
 	n = 0;
-	for (i = 0; i < gen->n_array; ++i) {
-		struct gpu_array_info *array = &gen->array[i];
+	for (i = 0; i < gen->prog->n_array; ++i) {
+		struct gpu_array_info *array = &gen->prog->array[i];
 
 		for (j = 0; j < array->n_group; ++j) {
 			struct gpu_array_ref_group *group = array->groups[j];
@@ -3050,9 +2848,6 @@ static void print_shared_arrays(struct gpu_gen *gen, struct ppcg_kernel *kernel)
 			++n;
 		}
 	}
-
-	for (i = 0; i < kernel->n_var; ++i)
-		print_kernel_var(gen->cuda.kernel_c, &kernel->var[i]);
 }
 
 /* The sizes of the arrays on the host that have been computed by
@@ -3067,15 +2862,15 @@ static void localize_bounds(struct gpu_gen *gen, struct ppcg_kernel *kernel,
 	isl_set *context;
 
 	kernel->array = isl_calloc_array(gen->ctx,
-				    struct gpu_local_array_info, gen->n_array);
+			    struct gpu_local_array_info, gen->prog->n_array);
 	assert(kernel->array);
-	kernel->n_array = gen->n_array;
+	kernel->n_array = gen->prog->n_array;
 
 	context = isl_set_copy(host_domain);
 	context = isl_set_params(context);
 
-	for (i = 0; i < gen->n_array; ++i) {
-		struct gpu_array_info *array = &gen->array[i];
+	for (i = 0; i < gen->prog->n_array; ++i) {
+		struct gpu_array_info *array = &gen->prog->array[i];
 		isl_pw_aff_list *local;
 
 		if (array->n_group == 0)
@@ -3099,20 +2894,20 @@ static void localize_bounds(struct gpu_gen *gen, struct ppcg_kernel *kernel,
 /* Find the element in gen->stmt that has the given "id".
  * Return NULL if no such gpu_stmt can be found.
  */
-static struct gpu_stmt *find_stmt(struct gpu_gen *gen, __isl_keep isl_id *id)
+static struct gpu_stmt *find_stmt(struct gpu_prog *prog, __isl_keep isl_id *id)
 {
 	int i;
 
-	for (i = 0; i < gen->n_stmts; ++i) {
+	for (i = 0; i < prog->n_stmts; ++i) {
 		isl_id *id_i;
 
-		id_i = isl_set_get_tuple_id(gen->stmts[i].domain);
+		id_i = isl_set_get_tuple_id(prog->stmts[i].domain);
 		isl_id_free(id_i);
 		if (id == id_i)
 			break;
 	}
 
-	return i < gen->n_stmts ? &gen->stmts[i] : NULL;
+	return i < prog->n_stmts ? &prog->stmts[i] : NULL;
 }
 
 /* Set gen->tile_len and gen->n_parallel to those of the statement
@@ -3128,7 +2923,7 @@ static int extract_tile_len(__isl_take isl_map *map, void *user)
 	struct gpu_stmt *stmt;
 
 	id = isl_map_get_tuple_id(map, isl_dim_in);
-	stmt = find_stmt(gen, id);
+	stmt = find_stmt(gen->prog, id);
 	isl_id_free(id);
 
 	isl_map_free(map);
@@ -3142,205 +2937,6 @@ static int extract_tile_len(__isl_take isl_map *map, void *user)
 
 	return -1;
 }
-
-/* Print the arguments to a kernel declaration or call.  If "types" is set,
- * then print a declaration (including the types of the arguments).
- *
- * The arguments are printed in the following order
- * - the arrays accessed by the kernel
- * - the parameters
- * - the host loop iterators
- */
-static __isl_give isl_printer *print_kernel_arguments(__isl_take isl_printer *p,
-	struct gpu_gen *gen, struct ppcg_kernel *kernel, int types)
-{
-	int i, n;
-	int first = 1;
-	unsigned nparam;
-	isl_space *space;
-	const char *type;
-
-	for (i = 0; i < gen->n_array; ++i) {
-		isl_set *arr;
-		int empty;
-
-		space = isl_space_copy(gen->array[i].dim);
-		arr = isl_union_set_extract_set(kernel->arrays, space);
-		empty = isl_set_fast_is_empty(arr);
-		isl_set_free(arr);
-		if (empty)
-			continue;
-
-		if (!first)
-			p = isl_printer_print_str(p, ", ");
-
-		if (types) {
-			p = isl_printer_print_str(p, gen->array[i].type);
-			p = isl_printer_print_str(p, " ");
-		}
-
-		if (gpu_array_is_read_only_scalar(&gen->array[i])) {
-			p = isl_printer_print_str(p, gen->array[i].name);
-		} else {
-			if (types)
-				p = isl_printer_print_str(p, "*");
-			else
-				p = isl_printer_print_str(p, "dev_");
-			p = isl_printer_print_str(p, gen->array[i].name);
-		}
-
-		first = 0;
-	}
-
-	space = isl_union_set_get_space(kernel->arrays);
-	nparam = isl_space_dim(space, isl_dim_param);
-	for (i = 0; i < nparam; ++i) {
-		const char *name;
-
-		name = isl_space_get_dim_name(space, isl_dim_param, i);
-
-		if (!first)
-			p = isl_printer_print_str(p, ", ");
-		if (types)
-			p = isl_printer_print_str(p, "int ");
-		p = isl_printer_print_str(p, name);
-
-		first = 0;
-	}
-	isl_space_free(space);
-
-	n = isl_space_dim(kernel->space, isl_dim_set);
-	type = isl_options_get_ast_iterator_type(gen->ctx);
-	for (i = 0; i < n; ++i) {
-		const char *name;
-		isl_id *id;
-
-		if (!first)
-			p = isl_printer_print_str(p, ", ");
-		name = isl_space_get_dim_name(kernel->space, isl_dim_set, i);
-		if (types) {
-			p = isl_printer_print_str(p, type);
-			p = isl_printer_print_str(p, " ");
-		}
-		p = isl_printer_print_str(p, name);
-
-		first = 0;
-	}
-
-	return p;
-}
-
-/* Print the header of the given kernel.
- */
-static __isl_give isl_printer *print_kernel_header(__isl_take isl_printer *p,
-	struct gpu_gen *gen, struct ppcg_kernel *kernel)
-{
-	p = isl_printer_start_line(p);
-	p = isl_printer_print_str(p, "__global__ void kernel");
-	p = isl_printer_print_int(p, kernel->id);
-	p = isl_printer_print_str(p, "(");
-	p = print_kernel_arguments(p, gen, kernel, 1);
-	p = isl_printer_print_str(p, ")");
-
-	return p;
-}
-
-/* Print the header of the given kernel to both gen->cuda.kernel_h
- * and gen->cuda.kernel_c.
- */
-static void print_kernel_headers(struct gpu_gen *gen,
-	struct ppcg_kernel *kernel)
-{
-	isl_printer *p;
-
-	p = isl_printer_to_file(gen->ctx, gen->cuda.kernel_h);
-	p = isl_printer_set_output_format(p, ISL_FORMAT_C);
-	p = print_kernel_header(p, gen, kernel);
-	p = isl_printer_print_str(p, ";");
-	p = isl_printer_end_line(p);
-	isl_printer_free(p);
-
-	p = isl_printer_to_file(gen->ctx, gen->cuda.kernel_c);
-	p = isl_printer_set_output_format(p, ISL_FORMAT_C);
-	p = print_kernel_header(p, gen, kernel);
-	p = isl_printer_end_line(p);
-	isl_printer_free(p);
-}
-
-enum ppcg_kernel_stmt_type {
-	ppcg_kernel_copy,
-	ppcg_kernel_domain,
-	ppcg_kernel_sync
-};
-
-/* Instance specific information about an access inside a kernel statement.
- *
- * type indicates whether it is a global, shared or private access
- * array is the original array information and may be NULL in case
- *	of an affine expression
- * local_array is a pointer to the appropriate element in the "array"
- *	array of the ppcg_kernel to which this access belongs.  It is
- *	NULL whenever array is NULL.
- * local_name is the name of the array or its local copy
- * index is the sequence of local index expressions
- */
-struct ppcg_kernel_access {
-	enum ppcg_kernel_access_type type;
-	struct gpu_array_info *array;
-	struct gpu_local_array_info *local_array;
-	char *local_name;
-	isl_ast_expr_list *index;
-};
-
-/* Representation of special statements, in particular copy statements
- * and __syncthreads statements, inside a kernel.
- *
- * type represents the kind of statement
- *
- *
- * for ppcg_kernel_copy statements we have
- *
- * read is set if the statement should copy data from global memory
- * to shared memory or registers.
- *
- * domain is the (parametric) domain of index and local_index
- *
- * index expresses the array element that needs to be copied in terms
- * of parameters
- * local_index expresses the corresponding element in the tile
- *
- * array refers to the original array being copied
- * local_array is a pointer to the appropriate element in the "array"
- *	array of the ppcg_kernel to which this copy access belongs
- *
- *
- * for ppcg_kernel_domain statements we have
- *
- * stmt is the corresponding input statement
- *
- * n_access is the number of accesses in stmt
- * access is an array of local information about the accesses
- */
-struct ppcg_kernel_stmt {
-	enum ppcg_kernel_stmt_type type;
-
-	union {
-		struct {
-			int read;
-			isl_set *domain;
-			isl_pw_multi_aff *index;
-			isl_pw_multi_aff *local_index;
-			struct gpu_array_info *array;
-			struct gpu_local_array_info *local_array;
-		} c;
-		struct {
-			struct gpu_stmt *stmt;
-
-			int n_access;
-			struct ppcg_kernel_access *access;
-		} d;
-	} u;
-};
 
 void ppcg_kernel_stmt_free(void *user)
 {
@@ -3368,104 +2964,6 @@ void ppcg_kernel_stmt_free(void *user)
 	}
 
 	free(stmt);
-}
-
-/* Print an access based on the information in "access".
- * If this an access to global memory, then the index expression
- * is linearized.
- *
- * If access->array is NULL, then we are
- * accessing an iterator in the original program.
- */
-static __isl_give isl_printer *print_access(__isl_take isl_printer *p,
-	struct ppcg_kernel_access *access)
-{
-	int i;
-	unsigned n_index;
-	struct gpu_array_info *array;
-	isl_pw_aff_list *bound;
-
-	array = access->array;
-	bound = array ? access->local_array->bound : NULL;
-	if (!array)
-		p = isl_printer_print_str(p, "(");
-	else {
-		if (access->type == ppcg_access_global &&
-		    gpu_array_is_scalar(array) && !array->read_only)
-			p = isl_printer_print_str(p, "*");
-		p = isl_printer_print_str(p, access->local_name);
-		if (gpu_array_is_scalar(array))
-			return p;
-		p = isl_printer_print_str(p, "[");
-	}
-
-	n_index = isl_ast_expr_list_n_ast_expr(access->index);
-	if (access->type == ppcg_access_global)
-		for (i = 0; i + 1 < n_index; ++i)
-			p = isl_printer_print_str(p, "(");
-
-	for (i = 0; i < n_index; ++i) {
-		isl_ast_expr *index;
-
-		index = isl_ast_expr_list_get_ast_expr(access->index, i);
-		if (array && i) {
-			if (access->type == ppcg_access_global) {
-				isl_pw_aff *bound_i;
-				bound_i = isl_pw_aff_list_get_pw_aff(bound, i);
-				p = isl_printer_print_str(p, ") * (");
-				p = isl_printer_print_pw_aff(p, bound_i);
-				p = isl_printer_print_str(p, ") + ");
-				isl_pw_aff_free(bound_i);
-			} else
-				p = isl_printer_print_str(p, "][");
-		}
-		p = isl_printer_print_ast_expr(p, index);
-		isl_ast_expr_free(index);
-	}
-	if (!array)
-		p = isl_printer_print_str(p, ")");
-	else
-		p = isl_printer_print_str(p, "]");
-
-	return p;
-}
-
-struct cuda_access_print_info {
-	int i;
-	struct ppcg_kernel_stmt *stmt;
-};
-
-/* To print the cuda accesses we walk the list of cuda accesses simultaneously
- * with the pet printer. This means that whenever the pet printer prints a
- * pet access expression we have the corresponding cuda access available and can
- * print the modified access.
- */
-static __isl_give isl_printer *print_cuda_access(__isl_take isl_printer *p,
-	struct pet_expr *expr, void *usr)
-{
-	struct cuda_access_print_info *info =
-		(struct cuda_access_print_info *) usr;
-
-	p = print_access(p, &info->stmt->u.d.access[info->i]);
-	info->i++;
-
-	return p;
-}
-
-static __isl_give isl_printer *print_stmt_body(__isl_take isl_printer *p,
-	struct ppcg_kernel_stmt *stmt)
-{
-	struct cuda_access_print_info info;
-
-	info.i = 0;
-	info.stmt = stmt;
-
-	p = isl_printer_start_line(p);
-	p = print_pet_expr(p, stmt->u.d.stmt->body, &print_cuda_access, &info);
-	p = isl_printer_print_str(p, ";");
-	p = isl_printer_end_line(p);
-
-	return p;
 }
 
 /* Set the options of "context" to
@@ -3588,10 +3086,10 @@ static void compute_index_expression(struct gpu_gen *gen,
 
 		name = isl_map_get_tuple_name(stmt_access->access, isl_dim_out);
 
-		for (i = 0; i < gen->n_array; ++i) {
-			if (strcmp(name, gen->array[i].name))
+		for (i = 0; i < gen->prog->n_array; ++i) {
+			if (strcmp(name, gen->prog->array[i].name))
 				continue;
-			kernel_access->array = &gen->array[i];
+			kernel_access->array = &gen->prog->array[i];
 			kernel_access->local_array = &gen->kernel->array[i];
 		}
 		assert(kernel_access->array);
@@ -3683,7 +3181,7 @@ static __isl_give isl_ast_node *at_each_domain(__isl_take isl_ast_node *node,
 	sched2shared = compute_sched_to_shared(gen, isl_map_copy(stmt_it));
 
 	stmt->type = ppcg_kernel_domain;
-	stmt->u.d.stmt = find_stmt(gen, id);
+	stmt->u.d.stmt = find_stmt(gen->prog, id);
 	if (!stmt->u.d.stmt)
 		goto error;
 
@@ -3838,7 +3336,7 @@ static __isl_give isl_ast_node *create_copy_leaf(
 	stmt->u.c.index = isl_pw_multi_aff_from_set(isl_map_domain(access));
 	stmt->u.c.local_index = isl_pw_multi_aff_from_set(local_access);
 	stmt->u.c.array = gen->copy_group->array;
-	array_index = stmt->u.c.array - gen->array;
+	array_index = stmt->u.c.array - gen->prog->array;
 	stmt->u.c.local_array = &gen->kernel->array[array_index];
 	stmt->type = ppcg_kernel_copy;
 
@@ -4234,120 +3732,6 @@ static __isl_give isl_ast_build *set_atomic_and_unroll(
 	return build;
 }
 
-/* Print an access to the element in the private/shared memory copy
- * described by "stmt".  The index of the copy is recorded in
- * stmt->local_index.
- */
-static __isl_give isl_printer *stmt_print_local_index(__isl_take isl_printer *p,
-	struct ppcg_kernel_stmt *stmt)
-{
-	int i;
-	const char *name;
-	struct gpu_array_info *array = stmt->u.c.array;
-
-	name = isl_pw_multi_aff_get_tuple_name(stmt->u.c.local_index,
-						isl_dim_out);
-	p = isl_printer_print_str(p, name);
-	for (i = 0; i < array->n_index; ++i) {
-		isl_pw_aff *pa;
-		pa = isl_pw_multi_aff_get_pw_aff(stmt->u.c.local_index, i);
-
-		p = isl_printer_print_str(p, "[");
-		p = isl_printer_print_pw_aff(p, pa);
-		p = isl_printer_print_str(p, "]");
-
-		isl_pw_aff_free(pa);
-	}
-
-	return p;
-}
-
-/* Print an access to the element in the global memory copy
- * described by "stmt".  The index of the copy is recorded in
- * stmt->index.
- *
- * The copy in global memory has been linearized, so we need to take
- * the array size into account.
- */
-static __isl_give isl_printer *stmt_print_global_index(
-	__isl_take isl_printer *p, struct ppcg_kernel_stmt *stmt)
-{
-	int i;
-	struct gpu_array_info *array = stmt->u.c.array;
-	isl_pw_aff_list *bound = stmt->u.c.local_array->bound;
-
-	if (gpu_array_is_scalar(array)) {
-		if (!array->read_only)
-			p = isl_printer_print_str(p, "*");
-		p = isl_printer_print_str(p, array->name);
-		return p;
-	}
-
-	p = isl_printer_print_str(p, array->name);
-	p = isl_printer_print_str(p, "[");
-	for (i = 0; i + 1 < array->n_index; ++i)
-		p = isl_printer_print_str(p, "(");
-	for (i = 0; i < array->n_index; ++i) {
-		isl_pw_aff *pa = isl_pw_multi_aff_get_pw_aff(stmt->u.c.index, i);
-		pa = isl_pw_aff_coalesce(pa);
-		pa = isl_pw_aff_gist_params(pa, isl_set_copy(stmt->u.c.domain));
-		if (i) {
-			isl_pw_aff *bound_i;
-			bound_i = isl_pw_aff_list_get_pw_aff(bound, i);
-			p = isl_printer_print_str(p, ") * (");
-			p = isl_printer_print_pw_aff(p, bound_i);
-			p = isl_printer_print_str(p, ") + ");
-			isl_pw_aff_free(bound_i);
-		}
-		p = isl_printer_print_pw_aff(p, pa);
-		isl_pw_aff_free(pa);
-	}
-	p = isl_printer_print_str(p, "]");
-
-	return p;
-}
-
-/* Print a copy statement.
- *
- * A read copy statement is printed as
- *
- *	local = global;
- *
- * while a write copy statement is printed as
- *
- *	global = local;
- */
-static __isl_give isl_printer *print_copy(__isl_take isl_printer *p,
-	struct ppcg_kernel_stmt *stmt)
-{
-	p = isl_printer_start_line(p);
-	if (stmt->u.c.read) {
-		p = stmt_print_local_index(p, stmt);
-		p = isl_printer_print_str(p, " = ");
-		p = stmt_print_global_index(p, stmt);
-	} else {
-		p = stmt_print_global_index(p, stmt);
-		p = isl_printer_print_str(p, " = ");
-		p = stmt_print_local_index(p, stmt);
-	}
-	p = isl_printer_print_str(p, ";");
-	p = isl_printer_end_line(p);
-
-	return p;
-}
-
-/* Print a sync statement.
- */
-static __isl_give isl_printer *print_sync(__isl_take isl_printer *p,
-	struct ppcg_kernel_stmt *stmt)
-{
-	p = isl_printer_start_line(p);
-	p = isl_printer_print_str(p, "__syncthreads();");
-	p = isl_printer_end_line(p);
-
-	return p;
-}
-
 /* Return a map that maps a space of dimension gen->shared_len
  * to its last dimensions starting at gen->tile_first.
  * The range is of dimension
@@ -4612,12 +3996,12 @@ static __isl_give isl_union_map *body_schedule(struct gpu_gen *gen,
 	res = isl_union_map_range_product(isl_union_map_copy(schedule), sched);
 
 	s = 0;
-	for (i = 0; i < gen->n_array; ++i)
-		s += gen->array[i].n_group;
+	for (i = 0; i < gen->prog->n_array; ++i)
+		s += gen->prog->array[i].n_group;
 
 	k = 0;
-	for (i = 0; i < gen->n_array; ++i) {
-		struct gpu_array_info *array = &gen->array[i];
+	for (i = 0; i < gen->prog->n_array; ++i) {
+		struct gpu_array_info *array = &gen->prog->array[i];
 
 		for (j = 0; j < array->n_group; ++j) {
 			struct gpu_array_ref_group *group;
@@ -4642,57 +4026,7 @@ static __isl_give isl_union_map *body_schedule(struct gpu_gen *gen,
 	return res;
 }
 
-/* This function is called for each user statement in the AST,
- * i.e., for each kernel body statement, copy statement or sync statement.
- */
-static __isl_give isl_printer *print_kernel_stmt(__isl_take isl_printer *p,
-	__isl_keep isl_ast_node *node, void *user)
-{
-	isl_id *id;
-	struct ppcg_kernel_stmt *stmt;
-
-	id = isl_ast_node_get_annotation(node);
-	stmt = isl_id_get_user(id);
-	isl_id_free(id);
-
-	switch (stmt->type) {
-	case ppcg_kernel_copy:
-		return print_copy(p, stmt);
-	case ppcg_kernel_sync:
-		return print_sync(p, stmt);
-	case ppcg_kernel_domain:
-		return print_stmt_body(p, stmt);
-	}
-
-	return p;
-}
-
-static int print_macro(enum isl_ast_op_type type, void *user)
-{
-	isl_printer **p = user;
-
-	if (type == isl_ast_op_fdiv_q)
-		return 0;
-
-	*p = isl_ast_op_type_print_macro(type, *p);
-
-	return 0;
-}
-
-/* Print the required macros for "node", including one for floord.
- * We always print a macro for floord as it may also appear in the statements.
- */
-static __isl_give isl_printer *print_macros(
-	__isl_keep isl_ast_node *node, __isl_take isl_printer *p)
-{
-	p = isl_ast_op_type_print_macro(isl_ast_op_fdiv_q, p);
-	if (isl_ast_node_foreach_ast_op_type(node, &print_macro, &p) < 0)
-		return isl_printer_free(p);
-	return p;
-}
-
-/* Generate code for "kernel" in the given "context" and print
- * the result to gen->cuda.kernel_c.
+/* Generate code for "kernel" in the given "context".
  *
  * We first generate code for the shared tile loops (T1T, T1P and T2)
  * in a context that includes the block ids.
@@ -4700,16 +4034,14 @@ static __isl_give isl_printer *print_macros(
  * is performed (within create_kernel_leaf) for the rest of the schedule
  * in a context that includes the thread ids.
  */
-static void print_kernel(struct gpu_gen *gen, struct ppcg_kernel *kernel,
+static __isl_give isl_ast_node *generate_kernel(struct gpu_gen *gen,
 	__isl_keep isl_ast_build *build, __isl_keep isl_set *host_domain)
 {
 	isl_space *space;
 	isl_set *set;
-	isl_ast_node *tree;
-	isl_ast_print_options *print_options;
-	isl_printer *p;
 	isl_id_list *iterators;
 	isl_union_map *schedule;
+	isl_ast_node *tree;
 	int sched_len;
 
 	schedule = isl_ast_build_get_schedule(build);
@@ -4732,28 +4064,7 @@ static void print_kernel(struct gpu_gen *gen, struct ppcg_kernel *kernel,
 	tree = isl_ast_build_ast_from_schedule(build, schedule);
 	isl_ast_build_free(build);
 
-	print_kernel_headers(gen, kernel);
-	fprintf(gen->cuda.kernel_c, "{\n");
-	print_kernel_iterators(gen);
-	print_shared_arrays(gen, kernel);
-	fprintf(gen->cuda.kernel_c, "\n");
-
-	print_options = isl_ast_print_options_alloc(gen->ctx);
-	print_options = isl_ast_print_options_set_print_user(print_options,
-						    &print_kernel_stmt, gen);
-
-	p = isl_printer_to_file(gen->ctx, gen->cuda.kernel_c);
-	p = isl_printer_set_output_format(p, ISL_FORMAT_C);
-	p = isl_printer_indent(p, 4);
-	p = print_macros(tree, p);
-	p = isl_ast_node_print(tree, p, print_options);
-	isl_printer_free(p);
-
-	isl_ast_print_options_free(print_options);
-
-	isl_ast_node_free(tree);
-
-	fprintf(gen->cuda.kernel_c, "}\n");
+	return tree;
 }
 
 /* Attach "id" to the given node.
@@ -4846,8 +4157,8 @@ static __isl_give isl_ast_node *create_host_leaf(
 
 	local_sched = isl_union_map_copy(gen->sched);
 	local_sched = isl_union_map_intersect_domain(local_sched, domain);
-	access = isl_union_map_union(isl_union_map_copy(gen->read),
-				     isl_union_map_copy(gen->write));
+	access = isl_union_map_union(isl_union_map_copy(gen->prog->read),
+				     isl_union_map_copy(gen->prog->write));
 	access = isl_union_map_apply_domain(access,
 					    isl_union_map_copy(local_sched));
 
@@ -4863,6 +4174,9 @@ static __isl_give isl_ast_node *create_host_leaf(
 	kernel->n_block = gen->n_block;
 	for (i = 0; i < gen->n_block; ++i)
 		kernel->block_dim[i] = gen->block_dim[i];
+	kernel->n_grid = gen->n_grid;
+	for (i = 0; i < gen->n_grid; ++i)
+		kernel->grid_dim[i] = gen->grid_dim[i];
 	kernel->grid = extract_grid(gen);
 	kernel->context = isl_union_map_params(isl_union_map_copy(schedule));
 	kernel->arrays = isl_union_map_range(access);
@@ -4885,7 +4199,8 @@ static __isl_give isl_ast_node *create_host_leaf(
 
 	gen->local_sched = interchange_for_unroll(gen, gen->local_sched);
 
-	print_kernel(gen, kernel, build, host_domain);
+	kernel->tree = generate_kernel(gen, build, host_domain);
+	create_kernel_vars(gen, kernel);
 
 	free_local_array_info(gen);
 	isl_map_free(gen->privatization);
@@ -4905,142 +4220,15 @@ error:
 	return NULL;
 }
 
-/* Print the effective grid size as a list of the sizes in each
- * dimension, from innermost to outermost.
- *
- * The grid size specified by the user or set by default
- * in read_grid_sizes() and applied in tile_schedule(),
- * may be too large for the given code in the sense that
- * it may contain blocks that don't need to execute anything.
- * We therefore don't print this grid size, but instead the
- * smallest grid size that ensures that all blocks that actually
- * execute code are included in the grid.
- *
- * For each block dimension, we compute the maximal value of the block id
- * and add one.
- */
-static __isl_give isl_printer *print_grid_size(__isl_take isl_printer *p,
-	struct ppcg_kernel *kernel)
-{
-	int i;
-	int dim;
-
-	dim = isl_set_dim(kernel->grid, isl_dim_set);
-	if (dim == 0)
-		return p;
-
-	p = isl_printer_print_str(p, "(");
-	for (i = dim - 1; i >= 0; --i) {
-		isl_space *space;
-		isl_aff *one;
-		isl_pw_aff *bound ;
-
-		bound = isl_set_dim_max(isl_set_copy(kernel->grid), i);
-		bound = isl_pw_aff_coalesce(bound);
-		bound = isl_pw_aff_gist(bound, isl_set_copy(kernel->context));
-
-		space = isl_pw_aff_get_domain_space(bound);
-		one = isl_aff_zero_on_domain(isl_local_space_from_space(space));
-		one = isl_aff_add_constant_si(one, 1);
-		bound = isl_pw_aff_add(bound, isl_pw_aff_from_aff(one));
-		p = isl_printer_print_pw_aff(p, bound);
-		isl_pw_aff_free(bound);
-
-		if (i > 0)
-			p = isl_printer_print_str(p, ", ");
-	}
-
-	p = isl_printer_print_str(p, ")");
-
-	return p;
-}
-
-/* Print the grid definition.
- */
-static __isl_give isl_printer *print_grid(__isl_take isl_printer *p,
-	struct ppcg_kernel *kernel)
-{
-	p = isl_printer_start_line(p);
-	p = isl_printer_print_str(p, "dim3 k");
-	p = isl_printer_print_int(p, kernel->id);
-	p = isl_printer_print_str(p, "_dimGrid");
-	p = print_grid_size(p, kernel);
-	p = isl_printer_print_str(p, ";");
-	p = isl_printer_end_line(p);
-
-	return p;
-}
-
-/* Print the user statement of the host code to "p".
- *
- * In particular, print a block of statements that defines the grid
- * and the block and then launches the kernel.
- */
-static __isl_give isl_printer *print_host_user(__isl_take isl_printer *p,
-	__isl_keep isl_ast_node *node, void *user)
-{
-	struct gpu_gen *gen = (struct gpu_gen *) user;
-	isl_id *id;
-	struct ppcg_kernel *kernel;
-
-	id = isl_ast_node_get_annotation(node);
-	kernel = isl_id_get_user(id);
-	isl_id_free(id);
-
-	p = isl_printer_start_line(p);
-	p = isl_printer_print_str(p, "{");
-	p = isl_printer_end_line(p);
-	p = isl_printer_indent(p, 2);
-
-	p = isl_printer_start_line(p);
-	p = isl_printer_print_str(p, "dim3 k");
-	p = isl_printer_print_int(p, kernel->id);
-	p = isl_printer_print_str(p, "_dimBlock");
-	print_reverse_list(isl_printer_get_file(p),
-				kernel->n_block, kernel->block_dim);
-	p = isl_printer_print_str(p, ";");
-	p = isl_printer_end_line(p);
-
-	p = print_grid(p, kernel);
-
-	p = isl_printer_start_line(p);
-	p = isl_printer_print_str(p, "kernel");
-	p = isl_printer_print_int(p, kernel->id);
-	p = isl_printer_print_str(p, " <<<k");
-	p = isl_printer_print_int(p, kernel->id);
-	p = isl_printer_print_str(p, "_dimGrid, k");
-	p = isl_printer_print_int(p, kernel->id);
-	p = isl_printer_print_str(p, "_dimBlock>>> (");
-	p = print_kernel_arguments(p, gen, kernel, 0);
-	p = isl_printer_print_str(p, ");");
-	p = isl_printer_end_line(p);
-
-	p = isl_printer_start_line(p);
-	p = isl_printer_print_str(p, "cudaCheckKernel();");
-	p = isl_printer_end_line(p);
-
-	p = isl_printer_indent(p, -2);
-	p = isl_printer_start_line(p);
-	p = isl_printer_print_str(p, "}");
-	p = isl_printer_end_line(p);
-
-	p = isl_printer_start_line(p);
-	p = isl_printer_end_line(p);
-
-	return p;
-}
-
 /* Use isl to generate code for the outer gen->tile_first loops
  * of the global schedule in gen->sched, resulting in the host code.
  * Within each iteration of this partial schedule, i.e., for each kernel
  * launch, create_host_leaf takes care of generating the kernel code.
  */
-static void print_isl_host_code(struct gpu_gen *gen)
+static __isl_give isl_ast_node *generate_host_code(struct gpu_gen *gen)
 {
 	isl_ast_build *build;
 	isl_ast_node *tree;
-	isl_ast_print_options *print_options;
-	isl_printer *p;
 	isl_union_map *sched;
 	isl_map *proj;
 	isl_id_list *iterators;
@@ -5051,55 +4239,14 @@ static void print_isl_host_code(struct gpu_gen *gen)
 	sched = isl_union_map_apply_range(sched, isl_union_map_from_map(proj));
 
 	isl_options_set_ast_build_group_coscheduled(gen->ctx, 1);
-	build = isl_ast_build_from_context(isl_set_copy(gen->context));
+	build = isl_ast_build_from_context(isl_set_copy(gen->prog->context));
 	iterators = generate_names(gen->ctx, gen->tile_first, "h");
 	build = isl_ast_build_set_iterators(build, iterators);
 	build = isl_ast_build_set_create_leaf(build, &create_host_leaf, gen);
 	tree = isl_ast_build_ast_from_schedule(build, sched);
 	isl_ast_build_free(build);
 
-	print_options = isl_ast_print_options_alloc(gen->ctx);
-	print_options = isl_ast_print_options_set_print_user(print_options,
-						    &print_host_user, gen);
-
-	p = isl_printer_to_file(gen->ctx, gen->cuda.host_c);
-	p = isl_printer_set_output_format(p, ISL_FORMAT_C);
-	p = print_macros(tree, p);
-	p = isl_ast_node_print(tree, p, print_options);
-	isl_printer_free(p);
-
-	isl_ast_print_options_free(print_options);
-
-	isl_ast_node_free(tree);
-}
-
-void print_cuda_macros(struct gpu_gen *gen)
-{
-	const char *macros =
-		"#define cudaCheckReturn(ret) assert((ret) == cudaSuccess)\n"
-		"#define cudaCheckKernel()"
-		" assert(cudaGetLastError() == cudaSuccess)\n\n";
-	fputs(macros, gen->cuda.host_c);
-}
-
-void print_host_code(struct gpu_gen *gen)
-{
-	fprintf(gen->cuda.host_c, "{\n");
-
-	print_cuda_macros(gen);
-
-	declare_device_arrays(gen);
-
-	allocate_device_arrays(gen);
-	copy_arrays_to_device(gen);
-
-	gen->kernel_id = 0;
-	print_isl_host_code(gen);
-
-	copy_arrays_from_device(gen);
-	free_device_arrays(gen);
-
-	fprintf(gen->cuda.host_c, "}\n");
+	return tree;
 }
 
 __isl_give isl_set *add_context_from_str(__isl_take isl_set *set,
@@ -5126,18 +4273,18 @@ __isl_give isl_union_map *extract_sizes_from_str(isl_ctx *ctx, const char *str)
 	return isl_union_map_read_from_str(ctx, str);
 }
 
-/* Return the union of all iteration domains of the gen->stmts[i].
+/* Return the union of all iteration domains of the prog->stmts[i].
  */
-static __isl_give isl_union_set *extract_domain(struct gpu_gen *gen)
+static __isl_give isl_union_set *extract_domain(struct gpu_prog *prog)
 {
 	int i;
 	isl_union_set *domain;
 
-	domain = isl_union_set_empty(isl_set_get_space(gen->context));
-	for (i = 0; i < gen->n_stmts; ++i) {
+	domain = isl_union_set_empty(isl_set_get_space(prog->context));
+	for (i = 0; i < prog->n_stmts; ++i) {
 		isl_set *domain_i;
 
-		domain_i = isl_set_copy(gen->stmts[i].domain);
+		domain_i = isl_set_copy(prog->stmts[i].domain);
 		domain = isl_union_set_union(domain,
 					     isl_union_set_from_set(domain_i));
 	}
@@ -5176,7 +4323,7 @@ static int set_stmt_tile_len(__isl_take isl_map *map, void *user)
 	isl_id *id;
 
 	id = isl_map_get_tuple_id(map, isl_dim_in);
-	stmt = find_stmt(info->gen, id);
+	stmt = find_stmt(info->gen->prog, id);
 	isl_id_free(id);
 
 	stmt->tile_len = info->tile_len;
@@ -5421,24 +4568,24 @@ static void compute_schedule(struct gpu_gen *gen,
 
 	empty = isl_union_map_empty(isl_union_map_get_space(sched));
 
-        isl_union_map_compute_flow(isl_union_map_copy(gen->read),
-                            isl_union_map_copy(gen->write), empty,
+        isl_union_map_compute_flow(isl_union_map_copy(gen->prog->read),
+                            isl_union_map_copy(gen->prog->write), empty,
                             isl_union_map_copy(sched),
                             &dep_raw, NULL, &uninitialized, NULL);
-        isl_union_map_compute_flow(isl_union_map_copy(gen->write),
-                            isl_union_map_copy(gen->write),
-                            isl_union_map_copy(gen->read),
+        isl_union_map_compute_flow(isl_union_map_copy(gen->prog->write),
+                            isl_union_map_copy(gen->prog->write),
+                            isl_union_map_copy(gen->prog->read),
                             isl_union_map_copy(sched),
                             &dep2, &dep3, NULL, NULL);
 	isl_union_map_free(sched);
 
-	gen->copy_in = isl_union_map_range(uninitialized);
+	gen->prog->copy_in = isl_union_map_range(uninitialized);
 
 	dep = isl_union_map_union(dep2, dep3);
 	dep = isl_union_map_union(dep, dep_raw);
 	dep = isl_union_map_coalesce(dep);
 
-	domain = extract_domain(gen);
+	domain = extract_domain(gen->prog);
 	schedule = isl_union_set_compute_schedule(isl_union_set_copy(domain),
 				isl_union_map_copy(dep), dep);
 
@@ -5558,41 +4705,67 @@ static struct gpu_stmt *extract_stmts(isl_ctx *ctx, struct pet_scop *scop,
  * to h%d parameters and the T1P loops to the block dimensions.
  * Finally, we generate code for the remaining loops in a similar fashion.
  */
-int generate_cuda(isl_ctx *ctx, struct pet_scop *scop,
-	struct ppcg_options *options, const char *input)
+__isl_give isl_ast_node *generate_gpu(isl_ctx *ctx, struct gpu_prog *prog,
+	struct ppcg_options *options)
 {
 	isl_union_map *sched;
 	struct gpu_gen gen;
+	isl_ast_node *tree;
 
-	if (!scop)
-		return -1;
-
-	scop = pet_scop_align_params(scop);
+	if (!prog)
+		return NULL;
 
 	gen.ctx = ctx;
-	gen.context = isl_set_copy(scop->context);
-	gen.context = add_context_from_str(gen.context, options->ctx);
+	gen.prog = prog;
 	gen.sizes = extract_sizes_from_str(ctx, options->sizes);
-	gen.n_stmts = scop->n_stmt;
-	gen.stmts = extract_stmts(ctx, scop, gen.context);
-	gen.read = pet_scop_collect_reads(scop);
-	gen.write = pet_scop_collect_writes(scop);
 	gen.options = options;
-	gen.scop = scop;
 
-	cuda_open_files(&gen.cuda, input);
-
-	collect_array_info(&gen);
-
-	sched = pet_scop_collect_schedule(scop);
+	sched = pet_scop_collect_schedule(prog->scop);
 
 	compute_schedule(&gen, sched);
 
-	print_host_code(&gen);
+	gen.kernel_id = 0;
+	tree = generate_host_code(&gen);
 
 	clear_gpu_gen(&gen);
 
-	cuda_close_files(&gen.cuda);
+	return tree;
+}
 
-	return 0;
+struct gpu_prog *gpu_prog_alloc(isl_ctx *ctx, struct pet_scop *scop)
+{
+	struct gpu_prog *prog;
+
+	if (!scop)
+		return NULL;
+
+	scop = pet_scop_align_params(scop);
+
+	prog = isl_calloc_type(ctx, struct gpu_prog);
+	assert(prog);
+
+	prog->ctx = ctx;
+	prog->scop = scop;
+	prog->context = isl_set_copy(scop->context);
+	prog->n_stmts = scop->n_stmt;
+	prog->stmts = extract_stmts(ctx, scop, prog->context);
+	prog->read = pet_scop_collect_reads(scop);
+	prog->write = pet_scop_collect_writes(scop);
+
+	collect_array_info(prog);
+
+	return prog;
+}
+
+void gpu_prog_free(struct gpu_prog *prog)
+{
+	if (!prog)
+		return;
+	free_array_info(prog);
+	free_stmts(prog->stmts, prog->n_stmts);
+	isl_union_set_free(prog->copy_in);
+	isl_union_map_free(prog->read);
+	isl_union_map_free(prog->write);
+	isl_set_free(prog->context);
+	free(prog);
 }
