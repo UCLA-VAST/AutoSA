@@ -1,11 +1,11 @@
-#ifndef _CUDA_H
-#define _CUDA_H
+#ifndef _GPU_H
+#define _GPU_H
 
 #include <pet.h>
 #include "cuda_common.h"
 #include "ppcg_options.h"
 
-struct cuda_gen {
+struct gpu_gen {
 	struct cuda_info cuda;
 
 	isl_ctx *ctx;
@@ -30,10 +30,10 @@ struct cuda_gen {
 
 	/* Array of statements */
 	int n_stmts;
-	struct cuda_stmt *stmts;
+	struct gpu_stmt *stmts;
 
 	int n_array;
-	struct cuda_array_info *array;
+	struct gpu_array_info *array;
 
 	/* Identifier of current kernel. */
 	int kernel_id;
@@ -89,9 +89,9 @@ struct cuda_gen {
 	 */
 	isl_map *copy_sched;
 	/* The array reference group corresponding to copy_sched. */
-	struct cuda_array_ref_group *copy_group;
+	struct gpu_array_ref_group *copy_group;
 	/* copy_group->private_bound or copy_group->shared_bound */
-	struct cuda_array_bound *copy_bound;
+	struct gpu_array_bound *copy_bound;
 
 	/* First loop to unroll (or -1 if none) in the current part of the
 	 * schedule.
@@ -112,9 +112,9 @@ struct cuda_gen {
 
 __isl_give isl_set *add_context_from_str(__isl_take isl_set *set,
 	const char *str);
-void collect_array_info(struct cuda_gen *gen);
-void print_host_code(struct cuda_gen *gen);
-void clear_cuda_gen(struct cuda_gen *gen);
+void collect_array_info(struct gpu_gen *gen);
+void print_host_code(struct gpu_gen *gen);
+void clear_gpu_gen(struct gpu_gen *gen);
 
 int generate_cuda(isl_ctx *ctx, struct pet_scop *scop,
 	struct ppcg_options *options, const char *input);

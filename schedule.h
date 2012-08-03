@@ -5,7 +5,7 @@
  * Accesses to iterators have an access relation that maps to an unnamed space.
  * An access may be both read and write.
  */
-struct cuda_stmt_access {
+struct gpu_stmt_access {
 	/* Access reads elements */
 	int read;
 	/* Access writes elements */
@@ -17,10 +17,10 @@ struct cuda_stmt_access {
 	/* Access relation */
 	isl_map *access;
 
-	struct cuda_stmt_access *next;
+	struct gpu_stmt_access *next;
 };
 
-struct cuda_stmt {
+struct gpu_stmt {
 	isl_set *domain;
 	struct pet_expr *body;
 
@@ -30,7 +30,7 @@ struct cuda_stmt {
 	int n_parallel;
 
 	/* Linked list of accesses. */
-	struct cuda_stmt_access *accesses;
+	struct gpu_stmt_access *accesses;
 };
 
 __isl_give isl_map *wavefront(__isl_take isl_space *dim, int len,

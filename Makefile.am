@@ -28,10 +28,10 @@ bin_PROGRAMS = ppcg
 ppcg_SOURCES = \
 	cpu.c \
 	cpu.h \
-	cuda.c \
-	cuda.h \
 	cuda_common.h \
 	cuda_common.c \
+	gpu.c \
+	gpu.h \
 	rewrite.c \
 	rewrite.h \
 	schedule.c \

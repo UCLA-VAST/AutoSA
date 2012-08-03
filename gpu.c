@@ -23,7 +23,7 @@
 #include <isl/options.h>
 #include <isl/ast_build.h>
 
-#include "cuda.h"
+#include "gpu.h"
 #include "cuda_common.h"
 #include "schedule.h"
 #include "pet_printer.h"
@@ -51,7 +51,7 @@ static void print_indent(FILE *dst, int indent)
  *
  *	[D -> i] -> [D -> (i + shift(D))/stride]
  */
-struct cuda_array_bound {
+struct gpu_array_bound {
 	isl_int size;
 	isl_aff *lb;
 
@@ -60,16 +60,16 @@ struct cuda_array_bound {
 	isl_basic_map *shift_map;
 };
 
-struct cuda_array_info;
+struct gpu_array_info;
 
 /* A group of array references in a kernel that should be handled together.
  * If private_bound is not NULL, then it is mapped to registers.
  * Otherwise, if shared_bound is not NULL, it is mapped to shared memory.
  * Otherwise, it is accessed from global memory.
  */
-struct cuda_array_ref_group {
+struct gpu_array_ref_group {
 	/* The references in this group access this array. */
-	struct cuda_array_info *array;
+	struct gpu_array_info *array;
 	/* Position of this group in the list of reference groups of array. */
 	int nr;
 
@@ -83,20 +83,20 @@ struct cuda_array_ref_group {
 	int write;
 
 	/* For each index, size and offset of piece in shared memory. */
-	struct cuda_array_bound *shared_bound;
+	struct gpu_array_bound *shared_bound;
 
 	/* For each index, size and offset of piece in private memory. */
-	struct cuda_array_bound *private_bound;
+	struct gpu_array_bound *private_bound;
 
 	/* References in this group; point to elements of a linked list. */
 	int n_ref;
-	struct cuda_stmt_access **refs;
+	struct gpu_stmt_access **refs;
 
 	/* Last shared memory tile dimension that affects tile of this group. */
 	int last_shared;
 };
 
-struct cuda_array_info {
+struct gpu_array_info {
 	isl_space *dim;
 	/* Element type. */
 	char *type;
@@ -113,11 +113,11 @@ struct cuda_array_info {
 
 	/* All references to this array; point to elements of a linked list. */
 	int n_ref;
-	struct cuda_stmt_access **refs;
+	struct gpu_stmt_access **refs;
 
 	/* The reference groups associated to this array. */
 	int n_group;
-	struct cuda_array_ref_group **groups;
+	struct gpu_array_ref_group **groups;
 
 	/* For scalars, is this scalar read-only within the entire program? */
 	int read_only;
@@ -126,7 +126,7 @@ struct cuda_array_info {
 /* Print the name of the local copy of a given group of array references.
  */
 static __isl_give isl_printer *print_array_name(__isl_take isl_printer *p,
-	struct cuda_array_ref_group *group)
+	struct gpu_array_ref_group *group)
 {
 	int global = 0;
 
@@ -148,16 +148,16 @@ static __isl_give isl_printer *print_array_name(__isl_take isl_printer *p,
 /* Collect all references to the given array and store pointers to them
  * in array->refs.
  */
-static void collect_references(struct cuda_gen *gen,
-	struct cuda_array_info *array)
+static void collect_references(struct gpu_gen *gen,
+	struct gpu_array_info *array)
 {
 	int i;
 	int n;
 
 	n = 0;
 	for (i = 0; i < gen->n_stmts; ++i) {
-		struct cuda_stmt *stmt = &gen->stmts[i];
-		struct cuda_stmt_access *access;
+		struct gpu_stmt *stmt = &gen->stmts[i];
+		struct gpu_stmt_access *access;
 
 		for (access = stmt->accesses; access; access = access->next) {
 			const char *name;
@@ -169,13 +169,13 @@ static void collect_references(struct cuda_gen *gen,
 	}
 
 	array->n_ref = n;
-	array->refs = isl_alloc_array(gen->ctx, struct cuda_stmt_access *, n);
+	array->refs = isl_alloc_array(gen->ctx, struct gpu_stmt_access *, n);
 	assert(array->refs);
 
 	n = 0;
 	for (i = 0; i < gen->n_stmts; ++i) {
-		struct cuda_stmt *stmt = &gen->stmts[i];
-		struct cuda_stmt_access *access;
+		struct gpu_stmt *stmt = &gen->stmts[i];
+		struct gpu_stmt_access *access;
 
 		for (access = stmt->accesses; access; access = access->next) {
 			const char *name;
@@ -189,12 +189,12 @@ static void collect_references(struct cuda_gen *gen,
 	}
 }
 
-static struct cuda_array_bound *create_bound_list(isl_ctx *ctx, int n_index)
+static struct gpu_array_bound *create_bound_list(isl_ctx *ctx, int n_index)
 {
 	int i;
-	struct cuda_array_bound *bound;
+	struct gpu_array_bound *bound;
 
-	bound = isl_alloc_array(ctx, struct cuda_array_bound, n_index);
+	bound = isl_alloc_array(ctx, struct gpu_array_bound, n_index);
 	assert(bound);
 
 	for (i = 0; i < n_index; ++i) {
@@ -208,7 +208,7 @@ static struct cuda_array_bound *create_bound_list(isl_ctx *ctx, int n_index)
 	return bound;
 }
 
-static void free_bound_list(struct cuda_array_bound *bound, int n_index)
+static void free_bound_list(struct gpu_array_bound *bound, int n_index)
 {
 	int j;
 
@@ -255,7 +255,7 @@ static struct pet_array *find_array(struct pet_scop *scop,
 static int extract_array_info(__isl_take isl_set *array, void *user)
 {
 	int i;
-	struct cuda_gen *gen = (struct cuda_gen *)user;
+	struct gpu_gen *gen = (struct gpu_gen *)user;
 	const char *name;
 	int n_index;
 	isl_pw_aff **bounds;
@@ -324,7 +324,7 @@ static int extract_array_info(__isl_take isl_set *array, void *user)
 	return 0;
 }
 
-void collect_array_info(struct cuda_gen *gen)
+void collect_array_info(struct gpu_gen *gen)
 {
 	isl_union_set *arrays;
 
@@ -335,14 +335,14 @@ void collect_array_info(struct cuda_gen *gen)
 
 	gen->n_array = isl_union_set_n_set(arrays);
 	gen->array = isl_alloc_array(gen->ctx,
-				     struct cuda_array_info, gen->n_array);
+				     struct gpu_array_info, gen->n_array);
 	assert(gen->array);
 	gen->n_array = 0;
 	isl_union_set_foreach_set(arrays, &extract_array_info, gen);
 	isl_union_set_free(arrays);
 }
 
-static void free_array_info(struct cuda_gen *gen)
+static void free_array_info(struct gpu_gen *gen)
 {
 	int i, j;
 
@@ -362,28 +362,28 @@ static void free_array_info(struct cuda_gen *gen)
 	free(gen->array);
 }
 
-/* Check if a cuda array is a scalar.  A scalar is a value that is not stored
+/* Check if a gpu array is a scalar.  A scalar is a value that is not stored
  * as an array or through a pointer reference, but as single data element.  At
  * the moment, scalars are represented as zero dimensional arrays.
  */
-static int cuda_array_is_scalar(struct cuda_array_info *array)
+static int gpu_array_is_scalar(struct gpu_array_info *array)
 {
 	return (array->n_index == 0);
 }
 
 /* Is "array" a read-only scalar?
  */
-static int cuda_array_is_read_only_scalar(struct cuda_array_info *array)
+static int gpu_array_is_read_only_scalar(struct gpu_array_info *array)
 {
-	return cuda_array_is_scalar(array) && array->read_only;
+	return gpu_array_is_scalar(array) && array->read_only;
 }
 
-static void declare_device_arrays(struct cuda_gen *gen)
+static void declare_device_arrays(struct gpu_gen *gen)
 {
 	int i;
 
 	for (i = 0; i < gen->n_array; ++i) {
-		if (cuda_array_is_read_only_scalar(&gen->array[i]))
+		if (gpu_array_is_read_only_scalar(&gen->array[i]))
 			continue;
 		fprintf(gen->cuda.host_c, "%s *dev_%s;\n",
 			gen->array[i].type, gen->array[i].name);
@@ -391,8 +391,8 @@ static void declare_device_arrays(struct cuda_gen *gen)
 	fprintf(gen->cuda.host_c, "\n");
 }
 
-static void print_array_size(struct cuda_gen *gen, FILE *out,
-	struct cuda_array_info *array)
+static void print_array_size(struct gpu_gen *gen, FILE *out,
+	struct gpu_array_info *array)
 {
 	int i;
 	isl_printer *prn;
@@ -410,12 +410,12 @@ static void print_array_size(struct cuda_gen *gen, FILE *out,
 	isl_printer_free(prn);
 }
 
-static void allocate_device_arrays(struct cuda_gen *gen)
+static void allocate_device_arrays(struct gpu_gen *gen)
 {
 	int i;
 
 	for (i = 0; i < gen->n_array; ++i) {
-		if (cuda_array_is_read_only_scalar(&gen->array[i]))
+		if (gpu_array_is_read_only_scalar(&gen->array[i]))
 			continue;
 		fprintf(gen->cuda.host_c,
 			"cudaCheckReturn(cudaMalloc((void **) &dev_%s, ",
@@ -426,19 +426,19 @@ static void allocate_device_arrays(struct cuda_gen *gen)
 	fprintf(gen->cuda.host_c, "\n");
 }
 
-static void free_device_arrays(struct cuda_gen *gen)
+static void free_device_arrays(struct gpu_gen *gen)
 {
 	int i;
 
 	for (i = 0; i < gen->n_array; ++i) {
-		if (cuda_array_is_read_only_scalar(&gen->array[i]))
+		if (gpu_array_is_read_only_scalar(&gen->array[i]))
 			continue;
 		fprintf(gen->cuda.host_c, "cudaCheckReturn(cudaFree(dev_%s));\n",
 			gen->array[i].name);
 	}
 }
 
-static void copy_arrays_to_device(struct cuda_gen *gen)
+static void copy_arrays_to_device(struct gpu_gen *gen)
 {
 	int i;
 
@@ -447,7 +447,7 @@ static void copy_arrays_to_device(struct cuda_gen *gen)
 		isl_set *read_i;
 		int empty;
 
-		if (cuda_array_is_read_only_scalar(&gen->array[i]))
+		if (gpu_array_is_read_only_scalar(&gen->array[i]))
 			continue;
 
 		dim = isl_space_copy(gen->array[i].dim);
@@ -460,7 +460,7 @@ static void copy_arrays_to_device(struct cuda_gen *gen)
 		fprintf(gen->cuda.host_c, "cudaCheckReturn(cudaMemcpy(dev_%s,",
 			gen->array[i].name);
 
-		if (cuda_array_is_scalar(&(gen->array[i])))
+		if (gpu_array_is_scalar(&(gen->array[i])))
 			fprintf(gen->cuda.host_c, " &%s, ",
 				gen->array[i].name);
 		else
@@ -472,7 +472,7 @@ static void copy_arrays_to_device(struct cuda_gen *gen)
 	fprintf(gen->cuda.host_c, "\n");
 }
 
-static void copy_arrays_from_device(struct cuda_gen *gen)
+static void copy_arrays_from_device(struct gpu_gen *gen)
 {
 	int i;
 	isl_union_set *write;
@@ -491,7 +491,7 @@ static void copy_arrays_from_device(struct cuda_gen *gen)
 			continue;
 
 		fprintf(gen->cuda.host_c, "cudaCheckReturn(cudaMemcpy(");
-		if (cuda_array_is_scalar(&gen->array[i]))
+		if (gpu_array_is_scalar(&gen->array[i]))
 			fprintf(gen->cuda.host_c, "&%s, ", gen->array[i].name);
 		else
 			fprintf(gen->cuda.host_c, "%s, ", gen->array[i].name);
@@ -596,7 +596,7 @@ static void read_sizes_from_set(__isl_take isl_set *set, int *sizes, int *len)
 /* Extract user specified "tile" sizes from the "sizes" command line option,
  * defaulting to option->tile_size in each dimension.
  */
-static void read_tile_sizes(struct cuda_gen *gen)
+static void read_tile_sizes(struct gpu_gen *gen)
 {
 	int n;
 	isl_set *size;
@@ -616,7 +616,7 @@ static void read_tile_sizes(struct cuda_gen *gen)
 /* Extract user specified "block" sizes from the "sizes" command line option,
  * after filling in some potentially useful defaults.
  */
-static void read_block_sizes(struct cuda_gen *gen)
+static void read_block_sizes(struct gpu_gen *gen)
 {
 	int n;
 	isl_set *size;
@@ -645,7 +645,7 @@ static void read_block_sizes(struct cuda_gen *gen)
 /* Extract user specified "grid" sizes from the "sizes" command line option,
  * after filling in some potentially useful defaults.
  */
-static void read_grid_sizes(struct cuda_gen *gen)
+static void read_grid_sizes(struct gpu_gen *gen)
 {
 	int n = gen->n_parallel;
 	isl_set *size;
@@ -668,19 +668,19 @@ static void read_grid_sizes(struct cuda_gen *gen)
 /* Extract user specified sizes from the "sizes" command line option
  * after filling in some potentially useful defaults.
  */
-static void read_sizes(struct cuda_gen *gen)
+static void read_sizes(struct gpu_gen *gen)
 {
 	read_tile_sizes(gen);
 	read_block_sizes(gen);
 	read_grid_sizes(gen);
 }
 
-static void free_stmts(struct cuda_stmt *stmts, int n)
+static void free_stmts(struct gpu_stmt *stmts, int n)
 {
 	int i;
 
 	for (i = 0; i < n; ++i) {
-		struct cuda_stmt_access *access, *next;
+		struct gpu_stmt_access *access, *next;
 
 		for (access = stmts[i].accesses; access; access = next) {
 			next = access->next;
@@ -693,7 +693,7 @@ static void free_stmts(struct cuda_stmt *stmts, int n)
 	free(stmts);
 }
 
-void clear_cuda_gen(struct cuda_gen *gen)
+void clear_gpu_gen(struct gpu_gen *gen)
 {
 	free_stmts(gen->stmts, gen->n_stmts);
 	free_array_info(gen);
@@ -926,7 +926,7 @@ static __isl_give isl_set *parametrization(__isl_take isl_space *space,
 /* Tile the B loops over the tile sizes and then tile/wrap
  * the T1 loops over the blocks.
  */
-static __isl_give isl_union_map *tile_schedule(struct cuda_gen *gen,
+static __isl_give isl_union_map *tile_schedule(struct gpu_gen *gen,
 	__isl_take isl_union_map *sched)
 {
 	isl_space *dim;
@@ -959,7 +959,7 @@ static __isl_give isl_union_map *tile_schedule(struct cuda_gen *gen,
  * to the block dimensions.
  */
 static __isl_give isl_union_map *parametrize_tiled_schedule(
-	struct cuda_gen *gen, __isl_take isl_union_map *sched)
+	struct gpu_gen *gen, __isl_take isl_union_map *sched)
 {
 	isl_space *dim;
 	isl_set *par;
@@ -975,7 +975,7 @@ static __isl_give isl_union_map *parametrize_tiled_schedule(
 
 /* Tile/wrap the P1 loops over the threads.
  */
-static __isl_give isl_union_map *thread_tile_schedule(struct cuda_gen *gen,
+static __isl_give isl_union_map *thread_tile_schedule(struct gpu_gen *gen,
 	__isl_take isl_union_map *sched)
 {
 	isl_space *dim;
@@ -1011,7 +1011,7 @@ static __isl_give isl_union_map *thread_tile_schedule(struct cuda_gen *gen,
  * If we are not performing "wrapping", then additionally scale the T1P
  * loops by gen->grid_dim[i].
  */
-static __isl_give isl_union_map *scale_tile_loops(struct cuda_gen *gen,
+static __isl_give isl_union_map *scale_tile_loops(struct gpu_gen *gen,
 	__isl_take isl_union_map *sched)
 {
 	int i;
@@ -1058,7 +1058,7 @@ static __isl_give isl_union_map *scale_tile_loops(struct cuda_gen *gen,
 /* If we are not performing "wrapping" and if the user asked for it,
  * scale the thread tile loops (P1T) of "sched" by gen->block_dim[i].
  */
-static __isl_give isl_union_map *scale_thread_tile_loops(struct cuda_gen *gen,
+static __isl_give isl_union_map *scale_thread_tile_loops(struct gpu_gen *gen,
 	__isl_take isl_union_map *sched)
 {
 	int i;
@@ -1102,7 +1102,7 @@ static __isl_give isl_union_map *scale_thread_tile_loops(struct cuda_gen *gen,
 /* If we are not performing "wrapping" and if the user asked for it,
  * scale the "n_tile" loops starting at "first" of "sched" by gen->block_dim[i].
  */
-static __isl_give isl_union_map *scale_access_tile_loops(struct cuda_gen *gen,
+static __isl_give isl_union_map *scale_access_tile_loops(struct gpu_gen *gen,
 	__isl_take isl_union_map *sched, int len, int first, int n_tile)
 {
 	int i;
@@ -1228,7 +1228,7 @@ __isl_give isl_set *add_bounded_parameters(__isl_take isl_set *set,
  *	[D -> A] -> [D -> S(D,T(A))]
  */
 static __isl_give isl_map *pre_shift(__isl_take isl_map *sched,
-	int n_index, struct cuda_array_bound *bounds)
+	int n_index, struct gpu_array_bound *bounds)
 {
 	int i;
 	isl_ctx *ctx = isl_map_get_ctx(sched);
@@ -1324,7 +1324,7 @@ static __isl_give isl_map *pre_shift(__isl_take isl_map *sched,
  * by a call to pre_shift.
  */
 static __isl_give isl_map *shift_access(__isl_take isl_map *access,
-	struct cuda_array_ref_group *group)
+	struct gpu_array_ref_group *group)
 {
 	int i;
 	isl_space *space;
@@ -1332,7 +1332,7 @@ static __isl_give isl_map *shift_access(__isl_take isl_map *access,
 	isl_map *map;
 	isl_map *shift;
 	isl_map *sched;
-	struct cuda_array_bound *bounds;
+	struct gpu_array_bound *bounds;
 	int n_index = group->array->n_index;
 
 	bounds = group->private_bound;
@@ -1386,7 +1386,7 @@ static __isl_give isl_map *shift_access(__isl_take isl_map *access,
  * However, if those final iterators have only a single iteration,
  * we try to tile earlier iterators instead.
  */
-static __isl_give isl_map *tile_access_schedule(struct cuda_gen *gen,
+static __isl_give isl_map *tile_access_schedule(struct gpu_gen *gen,
 	__isl_take isl_map *sched)
 {
 	isl_space *dim;
@@ -1449,8 +1449,8 @@ static __isl_give isl_map *tile_access_schedule(struct cuda_gen *gen,
  * The mapping "sched2shared" maps the former domain to the latter domain.
  */
 static __isl_give isl_pw_aff *shift_index(__isl_take isl_pw_aff *pa,
-	struct cuda_array_info *array,
-	struct cuda_array_bound *bound, __isl_take isl_set *domain,
+	struct gpu_array_info *array,
+	struct gpu_array_bound *bound, __isl_take isl_set *domain,
 	__isl_take isl_map *sched2shared)
 {
 	isl_map *map;
@@ -1484,7 +1484,7 @@ static __isl_give isl_pw_aff *shift_index(__isl_take isl_pw_aff *pa,
  * access relations in the group.
  */
 static __isl_give isl_union_map *group_access_relation(
-	struct cuda_array_ref_group *group, int read, int write)
+	struct gpu_array_ref_group *group, int read, int write)
 {
 	int i;
 	isl_union_map *access;
@@ -1506,7 +1506,7 @@ static __isl_give isl_union_map *group_access_relation(
 
 /* Check that none of the shared memory tiles involve any strides.
  */
-static int no_strides(struct cuda_array_ref_group *group)
+static int no_strides(struct gpu_array_ref_group *group)
 {
 	int i;
 	int n_index = group->array->n_index;
@@ -1535,7 +1535,7 @@ static int no_strides(struct cuda_array_ref_group *group)
  *	0 <= a <= array_size - 1
  *
  */
-static __isl_give isl_map *group_tile_dim(struct cuda_array_ref_group *group,
+static __isl_give isl_map *group_tile_dim(struct gpu_array_ref_group *group,
 	int i)
 {
 	isl_aff *aff;
@@ -1568,7 +1568,7 @@ static __isl_give isl_map *group_tile_dim(struct cuda_array_ref_group *group,
  * schedule to the array tile in
  * global memory that corresponds to the shared memory copy.
  */
-static __isl_give isl_map *group_tile(struct cuda_array_ref_group *group)
+static __isl_give isl_map *group_tile(struct gpu_array_ref_group *group)
 {
 	int i;
 	int n_index = group->array->n_index;
@@ -1591,7 +1591,7 @@ static __isl_give isl_map *group_tile(struct cuda_array_ref_group *group)
  * return the corresponding mapping from the AST schedule to
  * to the first shared_len dimensions of the schedule computed by PPCG.
  */
-static __isl_give isl_map *compute_sched_to_shared(struct cuda_gen *gen,
+static __isl_give isl_map *compute_sched_to_shared(struct gpu_gen *gen,
 	__isl_take isl_map *sched)
 {
 	isl_union_map *umap;
@@ -1678,7 +1678,7 @@ static __isl_give isl_map *permutation(__isl_take isl_space *dim,
  * Loops up to gen->shared_len are generated before the mapping to
  * threads is applied.  They should therefore be ignored.
  */
-static __isl_give isl_union_map *interchange_for_unroll(struct cuda_gen *gen,
+static __isl_give isl_union_map *interchange_for_unroll(struct gpu_gen *gen,
 	__isl_take isl_union_map *sched)
 {
 	int i, j;
@@ -1693,7 +1693,7 @@ static __isl_give isl_union_map *interchange_for_unroll(struct cuda_gen *gen,
 	for (i = 0; i < gen->thread_tiled_len; ++i)
 		unroll[i] = 0;
 	for (i = 0; i < gen->n_array; ++i) {
-		struct cuda_array_info *array = &gen->array[i];
+		struct gpu_array_info *array = &gen->array[i];
 
 		for (j = 0; j < array->n_group; ++j) {
 			isl_union_map *access;
@@ -1743,7 +1743,7 @@ static __isl_give isl_union_map *interchange_for_unroll(struct cuda_gen *gen,
 	return sched;
 }
 
-static void print_kernel_iterators(struct cuda_gen *gen)
+static void print_kernel_iterators(struct gpu_gen *gen)
 {
 	int i;
 	const char *block_dims[] = { "blockIdx.x", "blockIdx.y" };
@@ -1775,11 +1775,11 @@ static void print_kernel_iterators(struct cuda_gen *gen)
 	}
 }
 
-static void print_group_shared_array(struct cuda_gen *gen,
-	struct cuda_array_ref_group *group)
+static void print_group_shared_array(struct gpu_gen *gen,
+	struct gpu_array_ref_group *group)
 {
 	int j;
-	struct cuda_array_bound *bounds;
+	struct gpu_array_bound *bounds;
 	isl_printer *p;
 
 	bounds = group->private_bound;
@@ -1802,12 +1802,12 @@ static void print_group_shared_array(struct cuda_gen *gen,
 	fprintf(gen->cuda.kernel_c, ";\n");
 }
 
-static void print_shared_arrays(struct cuda_gen *gen)
+static void print_shared_arrays(struct gpu_gen *gen)
 {
 	int i, j;
 
 	for (i = 0; i < gen->n_array; ++i) {
-		struct cuda_array_info *array = &gen->array[i];
+		struct gpu_array_info *array = &gen->array[i];
 
 		for (j = 0; j < array->n_group; ++j)
 			print_group_shared_array(gen, array->groups[j]);
@@ -1824,7 +1824,7 @@ static void print_shared_arrays(struct cuda_gen *gen)
  * and the input dimensions.
  */
 static void extract_stride(__isl_keep isl_constraint *c,
-	struct cuda_array_bound *bound, isl_int stride, int sign)
+	struct gpu_array_bound *bound, isl_int stride, int sign)
 {
 	int i;
 	isl_int v;
@@ -1888,7 +1888,7 @@ static int check_stride_constraint(__isl_take isl_constraint *c, void *user)
 	int i;
 	isl_int v, stride;
 	unsigned n_div;
-	struct cuda_array_bound *bound = user;
+	struct gpu_array_bound *bound = user;
 
 	isl_int_init(v);
 	isl_int_init(stride);
@@ -1954,7 +1954,7 @@ static int check_stride_constraint(__isl_take isl_constraint *c, void *user)
  *
  * Composition with [D -> i] -> [D -> i/g] gives the desired result.
  */
-static __isl_give isl_basic_map *check_stride(struct cuda_array_bound *bound,
+static __isl_give isl_basic_map *check_stride(struct gpu_array_bound *bound,
 	__isl_take isl_basic_map *bounds)
 {
 	isl_space *space;
@@ -2008,9 +2008,9 @@ static __isl_give isl_basic_map *check_stride(struct cuda_array_bound *bound,
  * i.e., the variable for which want to compute the size.  This variable
  * is also the last variable in the set.
  */
-struct cuda_size_info {
+struct gpu_size_info {
 	isl_basic_set *bset;
-	struct cuda_array_bound *bound;
+	struct gpu_array_bound *bound;
 	int pos;
 };
 
@@ -2023,7 +2023,7 @@ struct cuda_size_info {
  */
 static int compute_size_in_direction(__isl_take isl_constraint *c, void *user)
 {
-	struct cuda_size_info *size = user;
+	struct gpu_size_info *size = user;
 	unsigned nparam;
 	unsigned n_div;
 	isl_int v;
@@ -2084,10 +2084,10 @@ static int compute_size_in_direction(__isl_take isl_constraint *c, void *user)
  * In particular, we currently only consider lower bounds on the output
  * dimension as candidate expressions.
  */
-static int compute_array_dim_size(struct cuda_array_bound *bound,
+static int compute_array_dim_size(struct gpu_array_bound *bound,
 	__isl_take isl_basic_map *bounds)
 {
-	struct cuda_size_info size;
+	struct gpu_size_info size;
 
 	bounds = isl_basic_map_detect_equalities(bounds);
 	bounds = check_stride(bound, bounds);
@@ -2114,8 +2114,8 @@ static int compute_array_dim_size(struct cuda_array_bound *bound,
  * We project the accesses on each index in turn and look for a parametric
  * offset such that the size is constant.
  */
-static int can_tile_for_shared_memory(struct cuda_array_info *array,
-	__isl_keep isl_map *access, struct cuda_array_bound *bounds)
+static int can_tile_for_shared_memory(struct gpu_array_info *array,
+	__isl_keep isl_map *access, struct gpu_array_bound *bounds)
 {
 	int i;
 
@@ -2140,7 +2140,7 @@ static int can_tile_for_shared_memory(struct cuda_array_info *array,
  * will be wrapped around the threads that relates these later loops
  * to the thread indices and then projects them out.
  */
-static __isl_give isl_map *compute_privatization(struct cuda_gen *gen)
+static __isl_give isl_map *compute_privatization(struct gpu_gen *gen)
 {
 	isl_map *priv;
 	isl_map *tiling;
@@ -2216,7 +2216,7 @@ static __isl_give isl_map *next(__isl_take isl_space *domain_dim, int pos)
  *
  * This function is only called for access relations without reuse.
  */
-static int access_is_coalesced(struct cuda_gen *gen,
+static int access_is_coalesced(struct gpu_gen *gen,
 	__isl_keep isl_union_map *access)
 {
 	isl_space *dim;
@@ -2255,7 +2255,7 @@ static int access_is_coalesced(struct cuda_gen *gen,
  * fixed values of the first gen->shared_len dimensions.
  * We perform this check by equating these dimensions to parameters.
  */
-static int access_is_bijective(struct cuda_gen *gen, __isl_keep isl_map *access)
+static int access_is_bijective(struct gpu_gen *gen, __isl_keep isl_map *access)
 {
 	int res;
 	isl_set *par;
@@ -2303,8 +2303,8 @@ static int access_is_bijective(struct cuda_gen *gen, __isl_keep isl_map *access)
  * return.  If, moreover, the access is coalesced then we also remove
  * the shared memory tiling since we should just use global memory instead.
  */
-static void check_private_group_access(struct cuda_gen *gen,
-	struct cuda_array_ref_group *group)
+static void check_private_group_access(struct gpu_gen *gen,
+	struct gpu_array_ref_group *group)
 {
 	isl_map *acc;
 	isl_union_map *access;
@@ -2345,11 +2345,11 @@ static void check_private_group_access(struct cuda_gen *gen,
  * If there is no such loop, then array->last_shared is set to a value
  * before the first shared tile loop, in particular gen->tile_first - 1.
  */
-static void set_last_shared(struct cuda_gen *gen,
-	struct cuda_array_ref_group *group)
+static void set_last_shared(struct gpu_gen *gen,
+	struct gpu_array_ref_group *group)
 {
 	int i, j;
-	struct cuda_array_bound *bounds;
+	struct gpu_array_bound *bounds;
 	int n_index = group->array->n_index;
 
 	bounds = group->private_bound;
@@ -2392,7 +2392,7 @@ static void set_last_shared(struct cuda_gen *gen,
  * A privatized copy of all access relations from reference groups that
  * are mapped to private memory is stored in gen->privatization.
  */
-static void compute_private_size(struct cuda_gen *gen)
+static void compute_private_size(struct gpu_gen *gen)
 {
 	int i, j;
 	isl_union_map *private;
@@ -2403,9 +2403,9 @@ static void compute_private_size(struct cuda_gen *gen)
 	private = isl_union_map_empty(isl_union_map_get_space(gen->shared_sched));
 
 	for (i = 0; i < gen->n_array; ++i) {
-		struct cuda_array_info *array = &gen->array[i];
+		struct gpu_array_info *array = &gen->array[i];
 
-		if (cuda_array_is_read_only_scalar(array))
+		if (gpu_array_is_read_only_scalar(array))
 			continue;
 
 		for (j = 0; j < array->n_group; ++j) {
@@ -2438,9 +2438,9 @@ static void compute_private_size(struct cuda_gen *gen)
 }
 
 /* Compute the size of the tile specified by the list "bound" of n_index
- * cuda_array_bounds in number of elements and put the result in *size.
+ * gpu_array_bounds in number of elements and put the result in *size.
  */
-static void tile_size(unsigned n_index, struct cuda_array_bound *bound,
+static void tile_size(unsigned n_index, struct gpu_array_bound *bound,
 	isl_int *size)
 {
 	int i;
@@ -2460,7 +2460,7 @@ static void tile_size(unsigned n_index, struct cuda_array_bound *bound,
  * those groups that would result in a total memory size that
  * is larger than the maximum.
  */
-static void check_shared_memory_bound(struct cuda_gen *gen)
+static void check_shared_memory_bound(struct gpu_gen *gen)
 {
 	int i, j;
 	isl_int left, size;
@@ -2473,10 +2473,10 @@ static void check_shared_memory_bound(struct cuda_gen *gen)
 	isl_int_set_si(left, gen->options->max_shared_memory);
 
 	for (i = 0; i < gen->n_array; ++i) {
-		struct cuda_array_info *array = &gen->array[i];
+		struct gpu_array_info *array = &gen->array[i];
 
 		for (j = 0; j < array->n_group; ++j) {
-			struct cuda_array_ref_group *group;
+			struct gpu_array_ref_group *group;
 
 			group = array->groups[j];
 			if (!group->shared_bound)
@@ -2507,8 +2507,8 @@ static void check_shared_memory_bound(struct cuda_gen *gen)
  * Return the number of elements initialized, i.e., the number of
  * active references in the current kernel.
  */
-static int populate_array_references(struct cuda_array_info *array,
-	__isl_keep isl_union_map *sched, struct cuda_array_ref_group **groups)
+static int populate_array_references(struct gpu_array_info *array,
+	__isl_keep isl_union_map *sched, struct gpu_array_ref_group **groups)
 {
 	int i;
 	int n;
@@ -2518,8 +2518,8 @@ static int populate_array_references(struct cuda_array_info *array,
 	for (i = 0; i < array->n_ref; ++i) {
 		isl_union_map *umap;
 		isl_map *map;
-		struct cuda_array_ref_group *group;
-		struct cuda_stmt_access *access = array->refs[i];
+		struct gpu_array_ref_group *group;
+		struct gpu_stmt_access *access = array->refs[i];
 
 		map = isl_map_copy(access->access);
 		umap = isl_union_map_from_map(map);
@@ -2534,7 +2534,7 @@ static int populate_array_references(struct cuda_array_info *array,
 		map = isl_map_from_union_map(umap);
 		map = isl_map_detect_equalities(map);
 
-		group = isl_calloc_type(ctx, struct cuda_array_ref_group);
+		group = isl_calloc_type(ctx, struct gpu_array_ref_group);
 		assert(group);
 		group->array = array;
 		group->access = map;
@@ -2547,7 +2547,7 @@ static int populate_array_references(struct cuda_array_info *array,
 	return n;
 }
 
-static void free_array_ref_group(struct cuda_array_ref_group *group,
+static void free_array_ref_group(struct gpu_array_ref_group *group,
 	int n_index)
 {
 	if (!group)
@@ -2586,8 +2586,8 @@ static __isl_give isl_map *eliminate_fixed_inner_loops(
  * the dimensions up to that innermost loop while checking whether
  * two access relations overlap.
  */
-static int accesses_overlap(struct cuda_array_ref_group *group1,
-	struct cuda_array_ref_group *group2)
+static int accesses_overlap(struct gpu_array_ref_group *group1,
+	struct gpu_array_ref_group *group2)
 {
 	int empty;
 	isl_map *access1, *access2;
@@ -2614,7 +2614,7 @@ static int accesses_overlap(struct cuda_array_ref_group *group1,
  * Return the number of group leaders.
  */
 static int group_overlapping_writes(int n,
-	struct cuda_array_ref_group **groups, int *leader)
+	struct gpu_array_ref_group **groups, int *leader)
 {
 	int i, j;
 	int n_group = n;
@@ -2649,14 +2649,14 @@ static int group_overlapping_writes(int n,
  * array reference group, based on the accesses from the current kernel,
  * as well as the offset of the shared piece in the original array.
  */
-static void compute_group_shared_bound(struct cuda_gen *gen,
-	struct cuda_array_info *array, struct cuda_array_ref_group *group)
+static void compute_group_shared_bound(struct gpu_gen *gen,
+	struct gpu_array_info *array, struct gpu_array_ref_group *group)
 {
 	isl_ctx *ctx = isl_space_get_ctx(array->dim);
 
 	if (!gen->options->use_shared_memory)
 		return;
-	if (cuda_array_is_read_only_scalar(array))
+	if (gpu_array_is_read_only_scalar(array))
 		return;
 
 	group->shared_bound = create_bound_list(ctx, array->n_index);
@@ -2670,8 +2670,8 @@ static void compute_group_shared_bound(struct cuda_gen *gen,
 /* Is the size of the tile specified by "bound" smaller than the sum of
  * the sizes of the tiles specified by "bound1" and "bound2"?
  */
-static int smaller_tile(unsigned n_index, struct cuda_array_bound *bound,
-	struct cuda_array_bound *bound1, struct cuda_array_bound *bound2)
+static int smaller_tile(unsigned n_index, struct gpu_array_bound *bound,
+	struct gpu_array_bound *bound1, struct gpu_array_bound *bound2)
 {
 	int smaller;
 	isl_int size, size1, size2;
@@ -2703,8 +2703,8 @@ static int smaller_tile(unsigned n_index, struct cuda_array_bound *bound,
  *
  * Return the number of group leaders after merging.
  */
-static int group_common_shared_memory_tile(struct cuda_array_info *array, int n,
-	struct cuda_array_ref_group **groups, int *leader, int n_group)
+static int group_common_shared_memory_tile(struct gpu_array_info *array, int n,
+	struct gpu_array_ref_group **groups, int *leader, int n_group)
 {
 	int i, j;
 	isl_ctx *ctx = isl_space_get_ctx(array->dim);
@@ -2718,7 +2718,7 @@ static int group_common_shared_memory_tile(struct cuda_array_info *array, int n,
 		for (j = i - 1; j >= 0; --j) {
 			isl_map *map;
 			int empty;
-			struct cuda_array_bound *shared_bound;
+			struct gpu_array_bound *shared_bound;
 
 			if (leader[j] != j)
 				continue;
@@ -2765,8 +2765,8 @@ static int group_common_shared_memory_tile(struct cuda_array_info *array, int n,
  *
  * Store the results in array->n_group and array->groups.
  */
-static void extract_array_groups(isl_ctx *ctx, struct cuda_array_info *array,
-	int n, struct cuda_array_ref_group **groups, int *leader, int n_group)
+static void extract_array_groups(isl_ctx *ctx, struct gpu_array_info *array,
+	int n, struct gpu_array_ref_group **groups, int *leader, int n_group)
 {
 	int i, j;
 
@@ -2774,14 +2774,14 @@ static void extract_array_groups(isl_ctx *ctx, struct cuda_array_info *array,
 		leader[i] = leader[leader[i]];
 
 	array->n_group = n_group;
-	array->groups = isl_alloc_array(ctx, struct cuda_array_ref_group *,
+	array->groups = isl_alloc_array(ctx, struct gpu_array_ref_group *,
 					n_group);
 	assert(array->groups);
 
 	j = 0;
 	for (i = 0; i < n; ++i) {
 		int k, l;
-		struct cuda_stmt_access **refs;
+		struct gpu_stmt_access **refs;
 
 		if (leader[i] != i) {
 			groups[i]->refs = NULL;
@@ -2789,7 +2789,7 @@ static void extract_array_groups(isl_ctx *ctx, struct cuda_array_info *array,
 			continue;
 		}
 
-		refs = isl_alloc_array(ctx, struct cuda_stmt_access *,
+		refs = isl_alloc_array(ctx, struct gpu_stmt_access *,
 					groups[i]->n_ref);
 		assert(refs);
 		l = 0;
@@ -2820,16 +2820,16 @@ static void extract_array_groups(isl_ctx *ctx, struct cuda_array_info *array,
  * (directly or indirectly) point to this group, provided the group
  * is a leader.
  */
-static void group_array_references(struct cuda_gen *gen,
-	struct cuda_array_info *array, __isl_keep isl_union_map *sched)
+static void group_array_references(struct gpu_gen *gen,
+	struct gpu_array_info *array, __isl_keep isl_union_map *sched)
 {
 	int i;
 	int n, n_group;
 	isl_ctx *ctx = isl_union_map_get_ctx(sched);
-	struct cuda_array_ref_group **groups;
+	struct gpu_array_ref_group **groups;
 	int *leader;
 
-	groups = isl_calloc_array(ctx, struct cuda_array_ref_group *,
+	groups = isl_calloc_array(ctx, struct gpu_array_ref_group *,
 					array->n_ref);
 	assert(groups);
 
@@ -2859,7 +2859,7 @@ static void group_array_references(struct cuda_gen *gen,
  * Also compute a projection that projects out the loops that will be
  * wrapped over the threads and store this projection in gen->shared_proj.
  */
-static void compute_shared_sched(struct cuda_gen *gen)
+static void compute_shared_sched(struct gpu_gen *gen)
 {
 	isl_space *dim;
 	isl_map *proj;
@@ -2881,7 +2881,7 @@ static void compute_shared_sched(struct cuda_gen *gen)
 
 /* Group references of all arrays in the program.
  */
-static void group_references(struct cuda_gen *gen)
+static void group_references(struct gpu_gen *gen)
 {
 	int i;
 	isl_union_map *sched;
@@ -2897,12 +2897,12 @@ static void group_references(struct cuda_gen *gen)
 
 /* Free all array information that is local to the current kernel.
  */
-static void free_local_array_info(struct cuda_gen *gen)
+static void free_local_array_info(struct gpu_gen *gen)
 {
 	int i, j;
 
 	for (i = 0; i < gen->n_array; ++i) {
-		struct cuda_array_info *array = &gen->array[i];
+		struct gpu_array_info *array = &gen->array[i];
 
 		for (j = 0; j < array->n_group; ++j)
 			free_array_ref_group(array->groups[j], array->n_index);
@@ -2922,7 +2922,7 @@ static void free_local_array_info(struct cuda_gen *gen)
  * constraints on the parameters that are valid at "host_domain"
  * to simplify these expressions.
  */
-static void localize_bounds(struct cuda_gen *gen,
+static void localize_bounds(struct gpu_gen *gen,
 	__isl_keep isl_set *host_domain)
 {
 	int i, j;
@@ -2932,7 +2932,7 @@ static void localize_bounds(struct cuda_gen *gen,
 	context = isl_set_params(context);
 
 	for (i = 0; i < gen->n_array; ++i) {
-		struct cuda_array_info *array = &gen->array[i];
+		struct gpu_array_info *array = &gen->array[i];
 
 		if (array->n_group == 0)
 			continue;
@@ -2953,7 +2953,7 @@ static void localize_bounds(struct cuda_gen *gen,
  * The block ids are parameters in gen->tiled_sched.
  * We simply need to change them into set dimensions.
  */
-static __isl_give isl_set *extract_grid(struct cuda_gen *gen)
+static __isl_give isl_set *extract_grid(struct gpu_gen *gen)
 {
 	int i;
 	isl_set *grid;
@@ -3021,9 +3021,9 @@ void ppcg_kernel_free(void *user)
 }
 
 /* Find the element in gen->stmt that has the given "id".
- * Return NULL if no such cuda_stmt can be found.
+ * Return NULL if no such gpu_stmt can be found.
  */
-static struct cuda_stmt *find_stmt(struct cuda_gen *gen, __isl_keep isl_id *id)
+static struct gpu_stmt *find_stmt(struct gpu_gen *gen, __isl_keep isl_id *id)
 {
 	int i;
 
@@ -3047,9 +3047,9 @@ static struct cuda_stmt *find_stmt(struct cuda_gen *gen, __isl_keep isl_id *id)
  */
 static int extract_tile_len(__isl_take isl_map *map, void *user)
 {
-	struct cuda_gen *gen = (struct cuda_gen *) user;
+	struct gpu_gen *gen = (struct gpu_gen *) user;
 	isl_id *id;
-	struct cuda_stmt *stmt;
+	struct gpu_stmt *stmt;
 
 	id = isl_map_get_tuple_id(map, isl_dim_in);
 	stmt = find_stmt(gen, id);
@@ -3076,7 +3076,7 @@ static int extract_tile_len(__isl_take isl_map *map, void *user)
  * - the host loop iterators
  */
 static __isl_give isl_printer *print_kernel_arguments(__isl_take isl_printer *p,
-	struct cuda_gen *gen, struct ppcg_kernel *kernel, int types)
+	struct gpu_gen *gen, struct ppcg_kernel *kernel, int types)
 {
 	int i, n;
 	int first = 1;
@@ -3103,7 +3103,7 @@ static __isl_give isl_printer *print_kernel_arguments(__isl_take isl_printer *p,
 			p = isl_printer_print_str(p, " ");
 		}
 
-		if (cuda_array_is_read_only_scalar(&gen->array[i])) {
+		if (gpu_array_is_read_only_scalar(&gen->array[i])) {
 			p = isl_printer_print_str(p, gen->array[i].name);
 		} else {
 			if (types)
@@ -3157,7 +3157,7 @@ static __isl_give isl_printer *print_kernel_arguments(__isl_take isl_printer *p,
 /* Print the header of the given kernel.
  */
 static __isl_give isl_printer *print_kernel_header(__isl_take isl_printer *p,
-	struct cuda_gen *gen, struct ppcg_kernel *kernel)
+	struct gpu_gen *gen, struct ppcg_kernel *kernel)
 {
 	p = isl_printer_start_line(p);
 	p = isl_printer_print_str(p, "__global__ void kernel");
@@ -3172,7 +3172,7 @@ static __isl_give isl_printer *print_kernel_header(__isl_take isl_printer *p,
 /* Print the header of the given kernel to both gen->cuda.kernel_h
  * and gen->cuda.kernel_c.
  */
-static void print_kernel_headers(struct cuda_gen *gen,
+static void print_kernel_headers(struct gpu_gen *gen,
 	struct ppcg_kernel *kernel)
 {
 	isl_printer *p;
@@ -3213,7 +3213,7 @@ enum ppcg_kernel_access_type {
  */
 struct ppcg_kernel_access {
 	enum ppcg_kernel_access_type type;
-	struct cuda_array_info *array;
+	struct gpu_array_info *array;
 	char *local_name;
 	isl_ast_expr_list *index;
 };
@@ -3254,16 +3254,15 @@ struct ppcg_kernel_stmt {
 			isl_set *domain;
 			isl_pw_multi_aff *index;
 			isl_pw_multi_aff *local_index;
-			struct cuda_array_info *array;
+			struct gpu_array_info *array;
 		} c;
 		struct {
-			struct cuda_stmt *stmt;
+			struct gpu_stmt *stmt;
 
 			int n_access;
 			struct ppcg_kernel_access *access;
 		} d;
 	} u;
-
 };
 
 void ppcg_kernel_stmt_free(void *user)
@@ -3306,17 +3305,17 @@ static __isl_give isl_printer *print_access(__isl_take isl_printer *p,
 {
 	int i;
 	unsigned n_index;
-	struct cuda_array_info *array;
+	struct gpu_array_info *array;
 
 	array = access->array;
 	if (!array)
 		p = isl_printer_print_str(p, "(");
 	else {
 		if (access->type == ppcg_access_global &&
-		    cuda_array_is_scalar(array) && !array->read_only)
+		    gpu_array_is_scalar(array) && !array->read_only)
 			p = isl_printer_print_str(p, "*");
 		p = isl_printer_print_str(p, access->local_name);
-		if (cuda_array_is_scalar(array))
+		if (gpu_array_is_scalar(array))
 			return p;
 		p = isl_printer_print_str(p, "[");
 	}
@@ -3489,21 +3488,21 @@ static __isl_give isl_union_map *extend_schedule(
  * gen->shared_len dimensions of the computed schedule using the mapping
  * sched2shared which maps the loop iterators to these dimensions.
  */
-static void compute_index_expression(struct cuda_gen *gen,
+static void compute_index_expression(struct gpu_gen *gen,
 	struct ppcg_kernel_access *kernel_access,
-	struct cuda_stmt_access *stmt_access, __isl_keep isl_map *stmt_it,
+	struct gpu_stmt_access *stmt_access, __isl_keep isl_map *stmt_it,
 	__isl_keep isl_map *sched2shared, __isl_keep isl_ast_build *build)
 {
 	isl_map *access;
 	isl_pw_multi_aff *pma;
 	int i;
 	unsigned n_index;
-	struct cuda_array_bound *bounds = NULL;
+	struct gpu_array_bound *bounds = NULL;
 
 	if (isl_map_has_tuple_name(stmt_access->access, isl_dim_out)) {
 		int i;
 		const char *name;
-		struct cuda_array_ref_group *group;
+		struct gpu_array_ref_group *group;
 		isl_printer *p;
 
 		name = isl_map_get_tuple_name(stmt_access->access, isl_dim_out);
@@ -3580,14 +3579,14 @@ static void compute_index_expression(struct cuda_gen *gen,
 static __isl_give isl_ast_node *at_each_domain(__isl_take isl_ast_node *node,
 	__isl_keep isl_ast_build *build, void *user)
 {
-	struct cuda_gen *gen = (struct cuda_gen *) user;
+	struct gpu_gen *gen = (struct gpu_gen *) user;
 	struct ppcg_kernel_stmt *stmt;
 	isl_id *id;
 	isl_map *stmt_it, *sched2shared;
 	isl_ast_expr *expr, *arg;
 	isl_union_map *schedule;
 	int i, n;
-	struct cuda_stmt_access *access;
+	struct gpu_stmt_access *access;
 
 	stmt = isl_calloc_type(gen->ctx, struct ppcg_kernel_stmt);
 	if (!stmt)
@@ -3654,7 +3653,7 @@ static __isl_give isl_ast_node *create_domain_leaf(
 	__isl_take isl_union_map *schedule, __isl_take isl_ast_build *build,
 	void *user)
 {
-	struct cuda_gen *gen = (struct cuda_gen *) user;
+	struct gpu_gen *gen = (struct gpu_gen *) user;
 	isl_space *space;
 	isl_union_map *sched;
 	isl_ast_node *tree;
@@ -3730,7 +3729,7 @@ static __isl_give isl_map *parametrize_iterators(__isl_take isl_map *map,
 static __isl_give isl_ast_node *create_copy_leaf(
 	__isl_take isl_ast_build *build, void *user)
 {
-	struct cuda_gen *gen = (struct cuda_gen *) user;
+	struct gpu_gen *gen = (struct gpu_gen *) user;
 	struct ppcg_kernel_stmt *stmt;
 	isl_id *id;
 	isl_ast_expr *expr;
@@ -3809,9 +3808,9 @@ static __isl_give isl_ast_node *create_copy_leaf(
  *
  * Note that we can project out S because it is uniquely defined by L.
  */
-static __isl_give isl_ast_node *copy_access(struct cuda_gen *gen,
+static __isl_give isl_ast_node *copy_access(struct gpu_gen *gen,
 	__isl_take isl_map *sched,
-	const char *type, struct cuda_array_ref_group *group,
+	const char *type, struct gpu_array_ref_group *group,
 	__isl_take isl_ast_build *build, int private)
 {
 	const char *array_name;
@@ -3917,7 +3916,7 @@ static __isl_give isl_ast_node *copy_access(struct cuda_gen *gen,
  *	[S -> T] -> L
  */
 static __isl_give isl_ast_node *copy_group_shared_accesses(
-	struct cuda_gen *gen, struct cuda_array_ref_group *group,
+	struct gpu_gen *gen, struct gpu_array_ref_group *group,
 	__isl_take isl_map *sched, __isl_take isl_ast_build *build)
 {
 	const char *type;
@@ -3968,7 +3967,7 @@ static __isl_give isl_ast_node *copy_group_shared_accesses(
  *	[S(t) -> A] -> L
  */
 static __isl_give isl_ast_node *copy_group_private_accesses(
-	struct cuda_gen *gen, struct cuda_array_ref_group *group,
+	struct gpu_gen *gen, struct gpu_array_ref_group *group,
 	__isl_take isl_map *sched, __isl_take isl_ast_build *build)
 {
 	const char *type;
@@ -4005,10 +4004,10 @@ static __isl_give isl_ast_node *copy_group_private_accesses(
  * The array reference group is attached to "type".
  */
 static __isl_give isl_ast_node *create_access_leaf(
-	struct cuda_gen *gen, __isl_take isl_map *schedule,
+	struct gpu_gen *gen, __isl_take isl_map *schedule,
 	__isl_take isl_ast_build *build)
 {
-	struct cuda_array_ref_group *group;
+	struct gpu_array_ref_group *group;
 	isl_id *id;
 
 	id = isl_map_get_tuple_id(schedule, isl_dim_in);
@@ -4026,7 +4025,7 @@ static __isl_give isl_ast_node *create_access_leaf(
 /* Create a domain node representing a synchronization.
  */
 static __isl_give isl_ast_node *create_sync_leaf(
-	struct cuda_gen *gen, __isl_take isl_map *schedule,
+	struct gpu_gen *gen, __isl_take isl_map *schedule,
 	__isl_take isl_ast_build *build)
 {
 	struct ppcg_kernel_stmt *stmt;
@@ -4072,7 +4071,7 @@ static __isl_give isl_ast_node *create_sync_leaf(
 static __isl_give isl_ast_node *create_kernel_leaf(
 	__isl_take isl_ast_build *build, void *user)
 {
-	struct cuda_gen *gen = (struct cuda_gen *) user;
+	struct gpu_gen *gen = (struct gpu_gen *) user;
 	isl_map *map;
 	isl_union_map *schedule;
 	const char *name;
@@ -4159,7 +4158,7 @@ static __isl_give isl_printer *stmt_print_local_index(__isl_take isl_printer *p,
 {
 	int i;
 	const char *name;
-	struct cuda_array_info *array = stmt->u.c.array;
+	struct gpu_array_info *array = stmt->u.c.array;
 
 	name = isl_pw_multi_aff_get_tuple_name(stmt->u.c.local_index,
 						isl_dim_out);
@@ -4189,9 +4188,9 @@ static __isl_give isl_printer *stmt_print_global_index(
 	__isl_take isl_printer *p, struct ppcg_kernel_stmt *stmt)
 {
 	int i;
-	struct cuda_array_info *array = stmt->u.c.array;
+	struct gpu_array_info *array = stmt->u.c.array;
 
-	if (cuda_array_is_scalar(array)) {
+	if (gpu_array_is_scalar(array)) {
 		if (!array->read_only)
 			p = isl_printer_print_str(p, "*");
 		p = isl_printer_print_str(p, array->name);
@@ -4273,7 +4272,7 @@ static __isl_give isl_printer *print_sync(__isl_take isl_printer *p,
  * are mapped to the output.  The remaining input dimensions are projected
  * out and the corresponding output dimensions are fixed to 0.
  */
-static __isl_give isl_map *insert_even(struct cuda_gen *gen,
+static __isl_give isl_map *insert_even(struct gpu_gen *gen,
 	__isl_take isl_space *space, int pos, int val)
 {
 	int i, n;
@@ -4327,7 +4326,7 @@ static __isl_give isl_map *insert_even(struct cuda_gen *gen,
  *
  * and use the result as a schedule for "sync".
  */
-static __isl_give isl_union_map *add_sync_schedule(struct cuda_gen *gen,
+static __isl_give isl_union_map *add_sync_schedule(struct gpu_gen *gen,
 	__isl_take isl_union_map *res, __isl_keep isl_union_map *schedule,
 	__isl_keep isl_union_map *shared_sched, int pos, int val)
 {
@@ -4410,10 +4409,10 @@ static __isl_give isl_union_map *add_sync_schedule(struct cuda_gen *gen,
  * does not require a synchronization, because it is covered by
  * the synchronization after the kernel inserted by body_schedule.
  */
-static __isl_give isl_union_map *add_group_schedule(struct cuda_gen *gen,
+static __isl_give isl_union_map *add_group_schedule(struct gpu_gen *gen,
 	__isl_take isl_union_map *res, __isl_keep isl_union_map *schedule,
 	__isl_keep isl_union_map *shared_sched,
-	struct cuda_array_ref_group *group, int read, int k, int s)
+	struct gpu_array_ref_group *group, int read, int k, int s)
 {
 	int n;
 	int pos, val;
@@ -4501,7 +4500,7 @@ static __isl_give isl_union_map *add_group_schedule(struct cuda_gen *gen,
  * memory.  The copying from private memory is covered by the unconditional
  * synchronization at the innermost level.
  */
-static __isl_give isl_union_map *body_schedule(struct cuda_gen *gen,
+static __isl_give isl_union_map *body_schedule(struct gpu_gen *gen,
 	__isl_take isl_union_map *schedule)
 {
 	isl_space *space;
@@ -4529,10 +4528,10 @@ static __isl_give isl_union_map *body_schedule(struct cuda_gen *gen,
 
 	k = 0;
 	for (i = 0; i < gen->n_array; ++i) {
-		struct cuda_array_info *array = &gen->array[i];
+		struct gpu_array_info *array = &gen->array[i];
 
 		for (j = 0; j < array->n_group; ++j) {
-			struct cuda_array_ref_group *group;
+			struct gpu_array_ref_group *group;
 
 			group = array->groups[j];
 			if (!group->private_bound && !group->shared_bound)
@@ -4612,7 +4611,7 @@ static __isl_give isl_printer *print_macros(
  * is performed (within create_kernel_leaf) for the rest of the schedule
  * in a context that includes the thread ids.
  */
-static void print_kernel(struct cuda_gen *gen, struct ppcg_kernel *kernel,
+static void print_kernel(struct gpu_gen *gen, struct ppcg_kernel *kernel,
 	__isl_keep isl_ast_build *build, __isl_keep isl_set *host_domain)
 {
 	isl_space *space;
@@ -4738,7 +4737,7 @@ static __isl_give isl_ast_node *construct_launch(
 static __isl_give isl_ast_node *create_host_leaf(
 	__isl_take isl_ast_build *build, void *user)
 {
-	struct cuda_gen *gen = (struct cuda_gen *) user;
+	struct gpu_gen *gen = (struct gpu_gen *) user;
 	isl_id *id;
 	isl_ast_node *node;
 	struct ppcg_kernel *kernel;
@@ -4891,7 +4890,7 @@ static __isl_give isl_printer *print_grid(__isl_take isl_printer *p,
 static __isl_give isl_printer *print_host_user(__isl_take isl_printer *p,
 	__isl_keep isl_ast_node *node, void *user)
 {
-	struct cuda_gen *gen = (struct cuda_gen *) user;
+	struct gpu_gen *gen = (struct gpu_gen *) user;
 	isl_id *id;
 	struct ppcg_kernel *kernel;
 
@@ -4947,7 +4946,7 @@ static __isl_give isl_printer *print_host_user(__isl_take isl_printer *p,
  * Within each iteration of this partial schedule, i.e., for each kernel
  * launch, create_host_leaf takes care of generating the kernel code.
  */
-static void print_isl_host_code(struct cuda_gen *gen)
+static void print_isl_host_code(struct gpu_gen *gen)
 {
 	isl_ast_build *build;
 	isl_ast_node *tree;
@@ -4985,7 +4984,7 @@ static void print_isl_host_code(struct cuda_gen *gen)
 	isl_ast_node_free(tree);
 }
 
-void print_cuda_macros(struct cuda_gen *gen)
+void print_cuda_macros(struct gpu_gen *gen)
 {
 	const char *macros =
 		"#define cudaCheckReturn(ret) assert((ret) == cudaSuccess)\n"
@@ -4994,7 +4993,7 @@ void print_cuda_macros(struct cuda_gen *gen)
 	fputs(macros, gen->cuda.host_c);
 }
 
-void print_host_code(struct cuda_gen *gen)
+void print_host_code(struct gpu_gen *gen)
 {
 	fprintf(gen->cuda.host_c, "{\n");
 
@@ -5040,7 +5039,7 @@ __isl_give isl_union_map *extract_sizes_from_str(isl_ctx *ctx, const char *str)
 
 /* Return the union of all iteration domains of the gen->stmts[i].
  */
-static __isl_give isl_union_set *extract_domain(struct cuda_gen *gen)
+static __isl_give isl_union_set *extract_domain(struct gpu_gen *gen)
 {
 	int i;
 	isl_union_set *domain;
@@ -5070,7 +5069,7 @@ static __isl_give isl_union_set *extract_domain(struct cuda_gen *gen)
  * suffix is the schedule of the outermost tilable bands and their descendants.
  */
 struct band_info {
-	struct cuda_gen *gen;
+	struct gpu_gen *gen;
 	int tile_first;
 	int tile_len;
 	int n_parallel;
@@ -5084,7 +5083,7 @@ struct band_info {
 static int set_stmt_tile_len(__isl_take isl_map *map, void *user)
 {
 	struct band_info *info = user;
-	struct cuda_stmt *stmt;
+	struct gpu_stmt *stmt;
 	isl_id *id;
 
 	id = isl_map_get_tuple_id(map, isl_dim_in);
@@ -5099,14 +5098,14 @@ static int set_stmt_tile_len(__isl_take isl_map *map, void *user)
 	return 0;
 }
 
-static void list_select_outer_band(struct cuda_gen *gen,
+static void list_select_outer_band(struct gpu_gen *gen,
 	__isl_take isl_band_list *list, int pos, struct band_info *list_info);
 
 /* Check if this band has any parallel loops.  If so, take it as
  * the outermost tilable band.  If not, continue looking for the
  * outermost tilable band in the children of the current band.
  */
-static void band_select_outer_band(struct cuda_gen *gen,
+static void band_select_outer_band(struct gpu_gen *gen,
 	__isl_take isl_band *band, int pos, struct band_info *info)
 {
 	int n = isl_band_n_member(band);
@@ -5213,7 +5212,7 @@ static void separate_bands(struct band_info *info, int n)
  * prefix and suffix schedules into a single pair of prefix and
  * suffix schedules for the entire list.
  */
-static void list_select_outer_band(struct cuda_gen *gen,
+static void list_select_outer_band(struct gpu_gen *gen,
 	__isl_take isl_band_list *list, int pos, struct band_info *list_info)
 {
 	isl_band *band;
@@ -5277,12 +5276,12 @@ static void list_select_outer_band(struct cuda_gen *gen,
  * The starting position of the aligned band is stored in the pair
  * gen->tile_first.
  * The sizes and number of parallel loops may be different in different
- * parts of the band forest and are therefore stored in the cuda_stmts.
+ * parts of the band forest and are therefore stored in the gpu_stmts.
  *
  * Return the complete schedule, with the tilable bands aligned
  * at gen->tile_first and padded with zero, if needed.
  */
-static __isl_give isl_union_map *select_outer_tilable_band(struct cuda_gen *gen,
+static __isl_give isl_union_map *select_outer_tilable_band(struct gpu_gen *gen,
 	__isl_keep isl_schedule *schedule)
 {
 	isl_band_list *list;
@@ -5322,7 +5321,7 @@ static int set_untiled_len(__isl_take isl_map *map, void *user)
  * a schedule that has a parallel loop in each tilable band.
  * Finally, we select the outermost tilable band.
  */
-static void compute_schedule(struct cuda_gen *gen,
+static void compute_schedule(struct gpu_gen *gen,
 	__isl_take isl_union_map *sched)
 {
 	isl_union_set *domain;
@@ -5363,13 +5362,13 @@ static void compute_schedule(struct cuda_gen *gen,
 	isl_schedule_free(schedule);
 }
 
-static struct cuda_stmt_access **expr_extract_access(struct pet_expr *expr,
-	struct cuda_stmt_access **next_access)
+static struct gpu_stmt_access **expr_extract_access(struct pet_expr *expr,
+	struct gpu_stmt_access **next_access)
 {
-	struct cuda_stmt_access *access;
+	struct gpu_stmt_access *access;
 	isl_ctx *ctx = isl_map_get_ctx(expr->acc.access);
 
-	access = isl_alloc_type(ctx, struct cuda_stmt_access);
+	access = isl_alloc_type(ctx, struct gpu_stmt_access);
 	assert(access);
 	access->next = NULL;
 	access->read = expr->acc.read;
@@ -5381,8 +5380,8 @@ static struct cuda_stmt_access **expr_extract_access(struct pet_expr *expr,
 	return next_access;
 }
 
-static struct cuda_stmt_access **expr_extract_accesses(struct pet_expr *expr,
-	struct cuda_stmt_access **next_access)
+static struct gpu_stmt_access **expr_extract_accesses(struct pet_expr *expr,
+	struct gpu_stmt_access **next_access)
 {
 	int i;
 
@@ -5396,27 +5395,27 @@ static struct cuda_stmt_access **expr_extract_accesses(struct pet_expr *expr,
 	return next_access;
 }
 
-static void pet_stmt_extract_accesses(struct cuda_stmt *stmt)
+static void pet_stmt_extract_accesses(struct gpu_stmt *stmt)
 {
-	struct cuda_stmt_access **next_access = &stmt->accesses;
+	struct gpu_stmt_access **next_access = &stmt->accesses;
 
 	stmt->accesses = NULL;
 	expr_extract_accesses(stmt->body, next_access);
 }
 
-/* Return an array of cuda_stmt representing the statements in "scop".
+/* Return an array of gpu_stmt representing the statements in "scop".
  */
-static struct cuda_stmt *extract_stmts(isl_ctx *ctx, struct pet_scop *scop,
+static struct gpu_stmt *extract_stmts(isl_ctx *ctx, struct pet_scop *scop,
 	__isl_keep isl_set *context)
 {
 	int i;
-	struct cuda_stmt *stmts;
+	struct gpu_stmt *stmts;
 
-	stmts = isl_calloc_array(ctx, struct cuda_stmt, scop->n_stmt);
+	stmts = isl_calloc_array(ctx, struct gpu_stmt, scop->n_stmt);
 	assert(stmts);
 
 	for (i = 0; i < scop->n_stmt; ++i) {
-		struct cuda_stmt *s = &stmts[i];
+		struct gpu_stmt *s = &stmts[i];
 
 		s->domain = isl_set_copy(scop->stmts[i]->domain);
 		s->domain = isl_set_intersect_params(s->domain,
@@ -5474,7 +5473,7 @@ int generate_cuda(isl_ctx *ctx, struct pet_scop *scop,
 	struct ppcg_options *options, const char *input)
 {
 	isl_union_map *sched;
-	struct cuda_gen gen;
+	struct gpu_gen gen;
 
 	if (!scop)
 		return -1;
@@ -5502,7 +5501,7 @@ int generate_cuda(isl_ctx *ctx, struct pet_scop *scop,
 
 	print_host_code(&gen);
 
-	clear_cuda_gen(&gen);
+	clear_gpu_gen(&gen);
 
 	cuda_close_files(&gen.cuda);
 
