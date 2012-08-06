@@ -1765,45 +1765,6 @@ static void print_kernel_iterators(struct gpu_gen *gen)
 	}
 }
 
-static void print_group_shared_array(struct gpu_gen *gen,
-	struct gpu_array_ref_group *group)
-{
-	int j;
-	struct gpu_array_bound *bounds;
-	isl_printer *p;
-
-	bounds = group->private_bound;
-	if (!bounds)
-		bounds = group->shared_bound;
-	if (!bounds)
-		return;
-
-	print_indent(gen->cuda.kernel_c, 4);
-	fprintf(gen->cuda.kernel_c, "%s%s ",
-		group->private_bound ? "" : "__shared__ ", group->array->type);
-	p = isl_printer_to_file(gen->ctx, gen->cuda.kernel_c);
-	p = print_array_name(p, group);
-	isl_printer_free(p);
-	for (j = 0; j < group->array->n_index; ++j) {
-		fprintf(gen->cuda.kernel_c, "[");
-		isl_int_print(gen->cuda.kernel_c, bounds[j].size, 0);
-		fprintf(gen->cuda.kernel_c, "]");
-	}
-	fprintf(gen->cuda.kernel_c, ";\n");
-}
-
-static void print_shared_arrays(struct gpu_gen *gen)
-{
-	int i, j;
-
-	for (i = 0; i < gen->n_array; ++i) {
-		struct gpu_array_info *array = &gen->array[i];
-
-		for (j = 0; j < array->n_group; ++j)
-			print_group_shared_array(gen, array->groups[j]);
-	}
-}
-
 /* Given a constraint
  *
  *		a(p,i) + j = g f(e)
@@ -2927,6 +2888,21 @@ static __isl_give isl_set *extract_grid(struct gpu_gen *gen)
 	return grid;
 }
 
+enum ppcg_kernel_access_type {
+	ppcg_access_global,
+	ppcg_access_shared,
+	ppcg_access_private
+};
+
+/* Representation of a local variable in a kernel.
+ */
+struct ppcg_kernel_var {
+	struct gpu_array_info *array;
+	enum ppcg_kernel_access_type type;
+	char *name;
+	isl_vec *size;
+};
+
 /* Representation of a kernel.
  *
  * id is the sequence number of the kernel.
@@ -2964,6 +2940,9 @@ struct ppcg_kernel {
 
 	int n_array;
 	struct gpu_local_array_info *array;
+
+	int n_var;
+	struct ppcg_kernel_var *var;
 };
 
 void ppcg_kernel_free(void *user)
@@ -2983,7 +2962,97 @@ void ppcg_kernel_free(void *user)
 		isl_pw_aff_list_free(kernel->array[i].bound);
 	free(kernel->array);
 
+	for (i = 0; i < kernel->n_var; ++i) {
+		free(kernel->var[i].name);
+		isl_vec_free(kernel->var[i].size);
+	}
+	free(kernel->var);
+
 	free(kernel);
+}
+
+static void create_kernel_var(isl_ctx *ctx, struct gpu_array_ref_group *group,
+	struct ppcg_kernel_var *var)
+{
+	int j;
+	struct gpu_array_bound *bounds;
+	isl_printer *p;
+	char *name;
+
+	var->array = group->array;
+
+	bounds = group->private_bound;
+	var->type = ppcg_access_private;
+	if (!bounds) {
+		bounds = group->shared_bound;
+		var->type = ppcg_access_shared;
+	}
+
+	p = isl_printer_to_str(ctx);
+	p = print_array_name(p, group);
+	var->name = isl_printer_get_str(p);
+	isl_printer_free(p);
+
+	var->size = isl_vec_alloc(ctx, group->array->n_index);
+
+	for (j = 0; j < group->array->n_index; ++j)
+		var->size = isl_vec_set_element(var->size, j, bounds[j].size);
+}
+
+static void print_kernel_var(FILE *out, struct ppcg_kernel_var *var)
+{
+	int j;
+	isl_int v;
+
+	print_indent(out, 4);
+	if (var->type == ppcg_access_shared)
+		fprintf(out, "__shared__ ");
+	fprintf(out, "%s %s", var->array->type, var->name);
+	isl_int_init(v);
+	for (j = 0; j < var->array->n_index; ++j) {
+		fprintf(out, "[");
+		isl_vec_get_element(var->size, j, &v);
+		isl_int_print(out, v, 0);
+		fprintf(out, "]");
+	}
+	isl_int_clear(v);
+	fprintf(out, ";\n");
+}
+
+static void print_shared_arrays(struct gpu_gen *gen, struct ppcg_kernel *kernel)
+{
+	int i, j, n;
+
+	n = 0;
+	for (i = 0; i < gen->n_array; ++i) {
+		struct gpu_array_info *array = &gen->array[i];
+
+		for (j = 0; j < array->n_group; ++j) {
+			struct gpu_array_ref_group *group = array->groups[j];
+			if (group->private_bound || group->shared_bound)
+				++n;
+		}
+	}
+
+	kernel->n_var = n;
+	kernel->var = isl_calloc_array(gen->ctx, struct ppcg_kernel_var, n);
+	assert(kernel->var);
+
+	n = 0;
+	for (i = 0; i < gen->n_array; ++i) {
+		struct gpu_array_info *array = &gen->array[i];
+
+		for (j = 0; j < array->n_group; ++j) {
+			struct gpu_array_ref_group *group = array->groups[j];
+			if (!group->private_bound && !group->shared_bound)
+				continue;
+			create_kernel_var(gen->ctx, group, &kernel->var[n]);
+			++n;
+		}
+	}
+
+	for (i = 0; i < kernel->n_var; ++i)
+		print_kernel_var(gen->cuda.kernel_c, &kernel->var[i]);
 }
 
 /* The sizes of the arrays on the host that have been computed by
@@ -3202,12 +3271,6 @@ enum ppcg_kernel_stmt_type {
 	ppcg_kernel_copy,
 	ppcg_kernel_domain,
 	ppcg_kernel_sync
-};
-
-enum ppcg_kernel_access_type {
-	ppcg_access_global,
-	ppcg_access_shared,
-	ppcg_access_private
 };
 
 /* Instance specific information about an access inside a kernel statement.
@@ -4672,7 +4735,7 @@ static void print_kernel(struct gpu_gen *gen, struct ppcg_kernel *kernel,
 	print_kernel_headers(gen, kernel);
 	fprintf(gen->cuda.kernel_c, "{\n");
 	print_kernel_iterators(gen);
-	print_shared_arrays(gen);
+	print_shared_arrays(gen, kernel);
 	fprintf(gen->cuda.kernel_c, "\n");
 
 	print_options = isl_ast_print_options_alloc(gen->ctx);
