@@ -108,8 +108,6 @@ struct gpu_array_info {
 	unsigned n_index;
 	/* For each index, a bound on the array in that direction. */
 	isl_pw_aff **bound;
-	/* For each index, bound[i] specialized to the current kernel. */
-	isl_pw_aff **local_bound;
 
 	/* All references to this array; point to elements of a linked list. */
 	int n_ref;
@@ -259,7 +257,6 @@ static int extract_array_info(__isl_take isl_set *array, void *user)
 	const char *name;
 	int n_index;
 	isl_pw_aff **bounds;
-	isl_pw_aff **local_bounds;
 	struct pet_array *pa;
 
 	n_index = isl_set_dim(array, isl_dim_set);
@@ -267,14 +264,10 @@ static int extract_array_info(__isl_take isl_set *array, void *user)
 	bounds = isl_alloc_array(isl_set_get_ctx(array),
 				 isl_pw_aff *, n_index);
 	assert(bounds);
-	local_bounds = isl_calloc_array(isl_set_get_ctx(array),
-				 isl_pw_aff *, n_index);
-	assert(local_bounds);
 	gen->array[gen->n_array].dim = isl_set_get_space(array);
 	gen->array[gen->n_array].name = strdup(name);
 	gen->array[gen->n_array].n_index = n_index;
 	gen->array[gen->n_array].bound = bounds;
-	gen->array[gen->n_array].local_bound = local_bounds;
 
 	pa = find_array(gen->scop, array);
 	assert(pa);
@@ -350,13 +343,10 @@ static void free_array_info(struct gpu_gen *gen)
 		int n_index = gen->array[i].n_index;
 		free(gen->array[i].type);
 		free(gen->array[i].name);
-		for (j = 0; j < n_index; ++j) {
+		for (j = 0; j < n_index; ++j)
 			isl_pw_aff_free(gen->array[i].bound[j]);
-			isl_pw_aff_free(gen->array[i].local_bound[j]);
-		}
 		isl_space_free(gen->array[i].dim);
 		free(gen->array[i].bound);
-		free(gen->array[i].local_bound);
 		free(gen->array[i].refs);
 	}
 	free(gen->array);
@@ -2907,45 +2897,7 @@ static void free_local_array_info(struct gpu_gen *gen)
 		for (j = 0; j < array->n_group; ++j)
 			free_array_ref_group(array->groups[j], array->n_index);
 		free(array->groups);
-
-		if (array->n_group == 0)
-			continue;
-		for (j = 0; j < gen->array[i].n_index; ++j) {
-			isl_pw_aff_free(gen->array[i].local_bound[j]);
-			gen->array[i].local_bound[j] = NULL;
-		}
 	}
-}
-
-/* The sizes of the arrays on the host that have been computed by
- * extract_array_info may depend on the parameters.  Use the extra
- * constraints on the parameters that are valid at "host_domain"
- * to simplify these expressions.
- */
-static void localize_bounds(struct gpu_gen *gen,
-	__isl_keep isl_set *host_domain)
-{
-	int i, j;
-	isl_set *context;
-
-	context = isl_set_copy(host_domain);
-	context = isl_set_params(context);
-
-	for (i = 0; i < gen->n_array; ++i) {
-		struct gpu_array_info *array = &gen->array[i];
-
-		if (array->n_group == 0)
-			continue;
-
-		for (j = 0; j < array->n_index; ++j) {
-			isl_pw_aff *pwaff;
-
-			pwaff = isl_pw_aff_copy(array->bound[j]);
-			pwaff = isl_pw_aff_gist(pwaff, isl_set_copy(context));
-			array->local_bound[j] = pwaff;
-		}
-	}
-	isl_set_free(context);
 }
 
 /* Extract a description of the grid, i.e., the possible values
@@ -2990,6 +2942,12 @@ static __isl_give isl_set *extract_grid(struct gpu_gen *gen)
  *
  * space is the schedule space of the AST context.  That is, it represents
  * the loops of the generated host code containing the kernel launch.
+ *
+ * n_array is the total number of arrays in the input program and also
+ * the number of element in the array array.
+ * array contains information about each array that is local
+ * to the current kernel.  If an array is not ussed in a kernel,
+ * then the corresponding entry does not contain any information.
  */
 struct ppcg_kernel {
 	int id;
@@ -3003,11 +2961,15 @@ struct ppcg_kernel {
 	isl_union_set *arrays;
 
 	isl_space *space;
+
+	int n_array;
+	struct gpu_local_array_info *array;
 };
 
 void ppcg_kernel_free(void *user)
 {
 	struct ppcg_kernel *kernel = user;
+	int i;
 
 	if (!kernel)
 		return;
@@ -3017,7 +2979,52 @@ void ppcg_kernel_free(void *user)
 	isl_union_set_free(kernel->arrays);
 	isl_space_free(kernel->space);
 
+	for (i = 0; i < kernel->n_array; ++i)
+		isl_pw_aff_list_free(kernel->array[i].bound);
+	free(kernel->array);
+
 	free(kernel);
+}
+
+/* The sizes of the arrays on the host that have been computed by
+ * extract_array_info may depend on the parameters.  Use the extra
+ * constraints on the parameters that are valid at "host_domain"
+ * to simplify these expressions and store the results in kernel->array.
+ */
+static void localize_bounds(struct gpu_gen *gen, struct ppcg_kernel *kernel,
+	__isl_keep isl_set *host_domain)
+{
+	int i, j;
+	isl_set *context;
+
+	kernel->array = isl_calloc_array(gen->ctx,
+				    struct gpu_local_array_info, gen->n_array);
+	assert(kernel->array);
+	kernel->n_array = gen->n_array;
+
+	context = isl_set_copy(host_domain);
+	context = isl_set_params(context);
+
+	for (i = 0; i < gen->n_array; ++i) {
+		struct gpu_array_info *array = &gen->array[i];
+		isl_pw_aff_list *local;
+
+		if (array->n_group == 0)
+			continue;
+
+		local = isl_pw_aff_list_alloc(gen->ctx, array->n_index);
+
+		for (j = 0; j < array->n_index; ++j) {
+			isl_pw_aff *pwaff;
+
+			pwaff = isl_pw_aff_copy(array->bound[j]);
+			pwaff = isl_pw_aff_gist(pwaff, isl_set_copy(context));
+			local = isl_pw_aff_list_add(local, pwaff);
+		}
+
+		kernel->array[i].bound = local;
+	}
+	isl_set_free(context);
 }
 
 /* Find the element in gen->stmt that has the given "id".
@@ -3208,12 +3215,16 @@ enum ppcg_kernel_access_type {
  * type indicates whether it is a global, shared or private access
  * array is the original array information and may be NULL in case
  *	of an affine expression
+ * local_array is a pointer to the appropriate element in the "array"
+ *	array of the ppcg_kernel to which this access belongs.  It is
+ *	NULL whenever array is NULL.
  * local_name is the name of the array or its local copy
  * index is the sequence of local index expressions
  */
 struct ppcg_kernel_access {
 	enum ppcg_kernel_access_type type;
 	struct gpu_array_info *array;
+	struct gpu_local_array_info *local_array;
 	char *local_name;
 	isl_ast_expr_list *index;
 };
@@ -3236,6 +3247,8 @@ struct ppcg_kernel_access {
  * local_index expresses the corresponding element in the tile
  *
  * array refers to the original array being copied
+ * local_array is a pointer to the appropriate element in the "array"
+ *	array of the ppcg_kernel to which this copy access belongs
  *
  *
  * for ppcg_kernel_domain statements we have
@@ -3255,6 +3268,7 @@ struct ppcg_kernel_stmt {
 			isl_pw_multi_aff *index;
 			isl_pw_multi_aff *local_index;
 			struct gpu_array_info *array;
+			struct gpu_local_array_info *local_array;
 		} c;
 		struct {
 			struct gpu_stmt *stmt;
@@ -3306,8 +3320,10 @@ static __isl_give isl_printer *print_access(__isl_take isl_printer *p,
 	int i;
 	unsigned n_index;
 	struct gpu_array_info *array;
+	isl_pw_aff_list *bound;
 
 	array = access->array;
+	bound = array ? access->local_array->bound : NULL;
 	if (!array)
 		p = isl_printer_print_str(p, "(");
 	else {
@@ -3331,10 +3347,12 @@ static __isl_give isl_printer *print_access(__isl_take isl_printer *p,
 		index = isl_ast_expr_list_get_ast_expr(access->index, i);
 		if (array && i) {
 			if (access->type == ppcg_access_global) {
+				isl_pw_aff *bound_i;
+				bound_i = isl_pw_aff_list_get_pw_aff(bound, i);
 				p = isl_printer_print_str(p, ") * (");
-				p = isl_printer_print_pw_aff(p,
-							array->local_bound[i]);
+				p = isl_printer_print_pw_aff(p, bound_i);
 				p = isl_printer_print_str(p, ") + ");
+				isl_pw_aff_free(bound_i);
 			} else
 				p = isl_printer_print_str(p, "][");
 		}
@@ -3511,6 +3529,7 @@ static void compute_index_expression(struct gpu_gen *gen,
 			if (strcmp(name, gen->array[i].name))
 				continue;
 			kernel_access->array = &gen->array[i];
+			kernel_access->local_array = &gen->kernel->array[i];
 		}
 		assert(kernel_access->array);
 		group = kernel_access->array->groups[stmt_access->group];
@@ -3738,6 +3757,7 @@ static __isl_give isl_ast_node *create_copy_leaf(
 	isl_map *access;
 	isl_set *local_access;
 	const char *name;
+	int array_index;
 
 	stmt = isl_calloc_type(gen->ctx, struct ppcg_kernel_stmt);
 	if (!stmt)
@@ -3755,6 +3775,8 @@ static __isl_give isl_ast_node *create_copy_leaf(
 	stmt->u.c.index = isl_pw_multi_aff_from_set(isl_map_domain(access));
 	stmt->u.c.local_index = isl_pw_multi_aff_from_set(local_access);
 	stmt->u.c.array = gen->copy_group->array;
+	array_index = stmt->u.c.array - gen->array;
+	stmt->u.c.local_array = &gen->kernel->array[array_index];
 	stmt->type = ppcg_kernel_copy;
 
 	space = isl_ast_build_get_schedule_space(build);
@@ -4189,6 +4211,7 @@ static __isl_give isl_printer *stmt_print_global_index(
 {
 	int i;
 	struct gpu_array_info *array = stmt->u.c.array;
+	isl_pw_aff_list *bound = stmt->u.c.local_array->bound;
 
 	if (gpu_array_is_scalar(array)) {
 		if (!array->read_only)
@@ -4206,9 +4229,12 @@ static __isl_give isl_printer *stmt_print_global_index(
 		pa = isl_pw_aff_coalesce(pa);
 		pa = isl_pw_aff_gist_params(pa, isl_set_copy(stmt->u.c.domain));
 		if (i) {
+			isl_pw_aff *bound_i;
+			bound_i = isl_pw_aff_list_get_pw_aff(bound, i);
 			p = isl_printer_print_str(p, ") * (");
-			p = isl_printer_print_pw_aff(p, array->local_bound[i]);
+			p = isl_printer_print_pw_aff(p, bound_i);
 			p = isl_printer_print_str(p, ") + ");
+			isl_pw_aff_free(bound_i);
 		}
 		p = isl_printer_print_pw_aff(p, pa);
 		isl_pw_aff_free(pa);
@@ -4766,7 +4792,7 @@ static __isl_give isl_ast_node *create_host_leaf(
 	gen->tiled_sched = parametrize_tiled_schedule(gen, gen->tiled_sched);
 	gen->tiled_sched = scale_tile_loops(gen, gen->tiled_sched);
 
-	kernel = isl_calloc_type(gen->ctx, struct ppcg_kernel);
+	kernel = gen->kernel = isl_calloc_type(gen->ctx, struct ppcg_kernel);
 	if (!kernel)
 		goto error;
 
@@ -4792,7 +4818,7 @@ static __isl_give isl_ast_node *create_host_leaf(
 	check_shared_memory_bound(gen);
 	host_domain = isl_set_from_union_set(isl_union_map_range(
 						isl_union_map_copy(schedule)));
-	localize_bounds(gen, host_domain);
+	localize_bounds(gen, kernel, host_domain);
 
 	gen->local_sched = interchange_for_unroll(gen, gen->local_sched);
 

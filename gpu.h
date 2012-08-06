@@ -5,6 +5,11 @@
 #include "cuda_common.h"
 #include "ppcg_options.h"
 
+/* For each index i, array->bound[i] specialized to the current kernel. */
+struct gpu_local_array_info {
+	isl_pw_aff_list *bound;
+};
+
 struct gpu_gen {
 	struct cuda_info cuda;
 
@@ -37,6 +42,8 @@ struct gpu_gen {
 
 	/* Identifier of current kernel. */
 	int kernel_id;
+	/* Pointer to the current kernel. */
+	struct ppcg_kernel *kernel;
 
 	/* First tile dimension. */
 	int tile_first;
