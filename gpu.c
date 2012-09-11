@@ -1400,20 +1400,6 @@ static __isl_give isl_union_map *group_access_relation(
 	return access;
 }
 
-/* Check that none of the shared memory tiles involve any strides.
- */
-static int no_strides(struct gpu_array_ref_group *group)
-{
-	int i;
-	int n_index = group->array->n_index;
-
-	for (i = 0; i < n_index; ++i)
-		if (group->shared_bound[i].shift)
-			return 0;
-
-	return 1;
-}
-
 /* Return a map from the first shared_len dimensions of the computed
  * schedule to the values of the given index "i"
  * of the elements in the array tile in global memory that corresponds
@@ -1424,12 +1410,18 @@ static int no_strides(struct gpu_array_ref_group *group)
  *
  * is constrained as follows
  *
- *	tile_offset(D) <= a <= tile_offset(D) + tile_size - 1
+ *	tile_offset(D) <= a <= tile_offset(D) + tile_size - 1		(1)
  *
  * and
  *
- *	0 <= a <= array_size - 1
+ *	0 <= a <= array_size - 1					(2)
  *
+ *
+ * Note that if some stride has been detected (i.e., when
+ * group->shared_bound[i].shift is set), then offset and size (i.e.,
+ * constraints (1)) apply to the shifted and scaled down copy of the tile.
+ * These constraints therefore have to be mapped back to the original
+ * array space using the inverse of the shift_map.
  */
 static __isl_give isl_map *group_tile_dim(struct gpu_array_ref_group *group,
 	int i)
@@ -1450,6 +1442,14 @@ static __isl_give isl_map *group_tile_dim(struct gpu_array_ref_group *group,
 	gt = isl_map_lex_gt(space);
 	map = isl_map_apply_range(map, isl_map_copy(gt));
 	tile = isl_map_intersect(tile, map);
+
+	if (group->shared_bound[i].shift) {
+		isl_basic_map *shift;
+		shift = isl_basic_map_copy(group->shared_bound[i].shift_map);
+		shift = isl_basic_map_reverse(shift);
+		tile = isl_set_unwrap(isl_set_apply(isl_map_wrap(tile),
+					isl_map_from_basic_map(shift)));
+	}
 
 	tile = isl_map_lower_bound_si(tile, isl_dim_out, 0, 0);
 
@@ -3462,20 +3462,14 @@ static __isl_give isl_ast_node *copy_access(struct gpu_gen *gen,
 /* Return code for reading into or writing from shared memory
  * the given array reference group.
  *
- * If we are performing a read from global memory to shared memory,
- * if the array involved is not a scalar and if the definition of the
- * shared memory tiles does not involve any strides, then we copy
+ * If we are performing a read from global memory to shared memory and
+ * if the array involved is not a scalar, then we copy
  * the entire tile to shared memory.  This may result in some extra
  * elements getting copied, but it should lead to simpler code
  * (which means that fewer registers may be needed) and less divergence.
  *
  * Otherwise, we only copy the elements that will be read or have been written
  * in the kernel.
- *
- * Note that the absence of stride requirement can easily be lifted.
- * We would just need to add constraints of the form
- *
- *	shift + a = stride * alpha
  *
  *
  * The input "sched" is of the form.
@@ -3511,7 +3505,7 @@ static __isl_give isl_ast_node *copy_group_shared_accesses(
 
 	sched = isl_map_reset_tuple_id(sched, isl_dim_in);
 
-	if (read && group->array->n_index > 0 && no_strides(group)) {
+	if (read && group->array->n_index > 0) {
 		isl_space *space;
 		isl_map *map;
 
