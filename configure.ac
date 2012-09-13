@@ -67,6 +67,9 @@ system)
 	;;
 esac
 
+AX_DETECT_GIT_HEAD
+echo '#define GIT_HEAD_ID "'$GIT_HEAD_ID'"' > gitversion.h
+
 AC_CONFIG_FILES(Makefile)
 if test $with_isl = bundled; then
 	AC_CONFIG_SUBDIRS(isl)

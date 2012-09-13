@@ -49,4 +49,11 @@ ppcg_SOURCES = \
 	pet_printer.h \
 	ppcg_options.c \
 	ppcg_options.h \
-	ppcg.c
+	ppcg.c \
+	version.c
+
+dist-hook:
+	echo @GIT_HEAD_VERSION@ > $(distdir)/GIT_HEAD_ID
+
+gitversion.h: @GIT_HEAD@
+	$(AM_V_GEN)echo '#define GIT_HEAD_ID "'@GIT_HEAD_VERSION@'"' > $@
