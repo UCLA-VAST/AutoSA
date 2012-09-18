@@ -155,7 +155,7 @@ struct ppcg_kernel_var {
  *
  * the first n_block elements of block_dim represent the size of the block.
  *
- * grid contains the values of the block ids.
+ * grid_size reflects the effect grid size.
  *
  * context is a parametric set containing the values of the parameters
  * for which this kernel may be run.
@@ -180,7 +180,7 @@ struct ppcg_kernel {
 	int n_block;
 	int block_dim[3];
 
-	isl_set *grid;
+	isl_multi_pw_aff *grid_size;
 	isl_set *context;
 
 	isl_union_set *arrays;

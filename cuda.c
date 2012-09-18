@@ -124,17 +124,6 @@ static void print_reverse_list(FILE *out, int len, int *list)
 
 /* Print the effective grid size as a list of the sizes in each
  * dimension, from innermost to outermost.
- *
- * The grid size specified by the user or set by default
- * in read_grid_sizes() and applied in tile_schedule(),
- * may be too large for the given code in the sense that
- * it may contain blocks that don't need to execute anything.
- * We therefore don't print this grid size, but instead the
- * smallest grid size that ensures that all blocks that actually
- * execute code are included in the grid.
- *
- * For each block dimension, we compute the maximal value of the block id
- * and add one.
  */
 static __isl_give isl_printer *print_grid_size(__isl_take isl_printer *p,
 	struct ppcg_kernel *kernel)
@@ -142,24 +131,15 @@ static __isl_give isl_printer *print_grid_size(__isl_take isl_printer *p,
 	int i;
 	int dim;
 
-	dim = isl_set_dim(kernel->grid, isl_dim_set);
+	dim = isl_multi_pw_aff_dim(kernel->grid_size, isl_dim_set);
 	if (dim == 0)
 		return p;
 
 	p = isl_printer_print_str(p, "(");
 	for (i = dim - 1; i >= 0; --i) {
-		isl_space *space;
-		isl_aff *one;
-		isl_pw_aff *bound ;
+		isl_pw_aff *bound;
 
-		bound = isl_set_dim_max(isl_set_copy(kernel->grid), i);
-		bound = isl_pw_aff_coalesce(bound);
-		bound = isl_pw_aff_gist(bound, isl_set_copy(kernel->context));
-
-		space = isl_pw_aff_get_domain_space(bound);
-		one = isl_aff_zero_on_domain(isl_local_space_from_space(space));
-		one = isl_aff_add_constant_si(one, 1);
-		bound = isl_pw_aff_add(bound, isl_pw_aff_from_aff(one));
+		bound = isl_multi_pw_aff_get_pw_aff(kernel->grid_size, i);
 		p = isl_printer_print_pw_aff(p, bound);
 		isl_pw_aff_free(bound);
 

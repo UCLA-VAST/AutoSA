@@ -2735,15 +2735,30 @@ static void free_local_array_info(struct gpu_gen *gen)
 	}
 }
 
-/* Extract a description of the grid, i.e., the possible values
+/* Compute the effective grid size as a list of the sizes in each dimension.
+ *
+ * The grid size specified by the user or set by default
+ * in read_grid_sizes() and applied in tile_schedule(),
+ * may be too large for the given code in the sense that
+ * it may contain blocks that don't need to execute anything.
+ * We therefore don't return this grid size, but instead the
+ * smallest grid size that ensures that all blocks that actually
+ * execute code are included in the grid.
+ *
+ * We first extract a description of the grid, i.e., the possible values
  * of the block ids, from gen->tiled_sched.
  * The block ids are parameters in gen->tiled_sched.
  * We simply need to change them into set dimensions.
+ *
+ * Then, for each block dimension, we compute the maximal value of the block id
+ * and add one.
  */
-static __isl_give isl_set *extract_grid(struct gpu_gen *gen)
+static __isl_give isl_multi_pw_aff *extract_grid_size(struct gpu_gen *gen,
+	struct ppcg_kernel *kernel)
 {
 	int i;
 	isl_set *grid;
+	isl_multi_pw_aff *mpa;
 
 	grid = isl_union_map_params(isl_union_map_copy(gen->tiled_sched));
 	grid = isl_set_from_params(grid);
@@ -2759,7 +2774,25 @@ static __isl_give isl_set *extract_grid(struct gpu_gen *gen)
 		grid = isl_set_project_out(grid, isl_dim_param, pos, 1);
 	}
 
-	return grid;
+	mpa = isl_multi_pw_aff_zero(isl_set_get_space(grid));
+	for (i = 0; i < gen->n_grid; ++i) {
+		isl_space *space;
+		isl_aff *one;
+		isl_pw_aff *bound;
+
+		bound = isl_set_dim_max(isl_set_copy(grid), i);
+		bound = isl_pw_aff_coalesce(bound);
+		bound = isl_pw_aff_gist(bound, isl_set_copy(kernel->context));
+
+		space = isl_pw_aff_get_domain_space(bound);
+		one = isl_aff_zero_on_domain(isl_local_space_from_space(space));
+		one = isl_aff_add_constant_si(one, 1);
+		bound = isl_pw_aff_add(bound, isl_pw_aff_from_aff(one));
+		mpa = isl_multi_pw_aff_set_pw_aff(mpa, i, bound);
+	}
+	isl_set_free(grid);
+
+	return mpa;
 }
 
 void ppcg_kernel_free(void *user)
@@ -2770,7 +2803,7 @@ void ppcg_kernel_free(void *user)
 	if (!kernel)
 		return;
 
-	isl_set_free(kernel->grid);
+	isl_multi_pw_aff_free(kernel->grid_size);
 	isl_set_free(kernel->context);
 	isl_union_set_free(kernel->arrays);
 	isl_space_free(kernel->space);
@@ -4171,8 +4204,8 @@ static __isl_give isl_ast_node *create_host_leaf(
 	kernel->n_grid = gen->n_grid;
 	for (i = 0; i < gen->n_grid; ++i)
 		kernel->grid_dim[i] = gen->grid_dim[i];
-	kernel->grid = extract_grid(gen);
 	kernel->context = isl_union_map_params(isl_union_map_copy(schedule));
+	kernel->grid_size = extract_grid_size(gen, kernel);
 	kernel->arrays = isl_union_map_range(access);
 	kernel->space = isl_ast_build_get_schedule_space(build);
 
