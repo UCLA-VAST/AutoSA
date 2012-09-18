@@ -1088,6 +1088,51 @@ __isl_give isl_set *add_bounded_parameters(__isl_take isl_set *set,
 	return isl_set_intersect(set, isl_set_from_basic_set(bset));
 }
 
+/* Add "len" parameters p[i] called prefix%d,
+ * with bounds to 0 <= p[i] < size[i].
+ */
+static __isl_give isl_set *add_bounded_parameters_dynamic(
+	__isl_take isl_set *set, __isl_keep isl_multi_pw_aff *size,
+	const char *prefix)
+{
+	int i, len;
+	unsigned nparam;
+	isl_space *space;
+	isl_local_space *ls;
+	char name[20];
+
+	len = isl_multi_pw_aff_dim(size, isl_dim_out);
+	nparam = isl_set_dim(set, isl_dim_param);
+	set = isl_set_add_dims(set, isl_dim_param, len);
+
+	for (i = 0; i < len; ++i) {
+		snprintf(name, sizeof(name), "%s%d", prefix, i);
+		set = isl_set_set_dim_name(set, isl_dim_param,
+					    nparam + i, name);
+	}
+
+	space = isl_space_params(isl_set_get_space(set));
+	ls = isl_local_space_from_space(space);
+	for (i = 0; i < len; ++i) {
+		isl_pw_aff *param, *size_i, *zero;
+		isl_set *bound;
+
+		param = isl_pw_aff_var_on_domain(isl_local_space_copy(ls),
+						isl_dim_param, nparam + i);
+
+		size_i = isl_multi_pw_aff_get_pw_aff(size, i);
+		bound = isl_pw_aff_lt_set(isl_pw_aff_copy(param), size_i);
+		set = isl_set_intersect_params(set, bound);
+
+		zero = isl_pw_aff_zero_on_domain(isl_local_space_copy(ls));
+		bound = isl_pw_aff_ge_set(param, zero);
+		set = isl_set_intersect_params(set, bound);
+	}
+	isl_local_space_free(ls);
+
+	return set;
+}
+
 /* Given a mapping "sched" of the form
  *
  *	[D -> A] -> [D -> T(A)]
@@ -4062,7 +4107,8 @@ static __isl_give isl_union_map *body_schedule(struct gpu_gen *gen,
  * in a context that includes the thread ids.
  */
 static __isl_give isl_ast_node *generate_kernel(struct gpu_gen *gen,
-	__isl_keep isl_ast_build *build, __isl_keep isl_set *host_domain)
+	__isl_keep isl_ast_build *build, __isl_keep isl_set *host_domain,
+	__isl_keep isl_multi_pw_aff *grid_size)
 {
 	isl_space *space;
 	isl_set *set;
@@ -4077,7 +4123,7 @@ static __isl_give isl_ast_node *generate_kernel(struct gpu_gen *gen,
 	build = isl_ast_build_restrict(build, isl_set_copy(host_domain));
 	space = isl_ast_build_get_schedule_space(build);
 	set = isl_set_universe(isl_space_copy(space));
-	set = add_bounded_parameters(set, gen->n_grid, gen->grid_dim, "b");
+	set = add_bounded_parameters_dynamic(set, grid_size, "b");
 	build = isl_ast_build_restrict(build, set);
 
 	schedule = body_schedule(gen, schedule);
@@ -4226,7 +4272,8 @@ static __isl_give isl_ast_node *create_host_leaf(
 
 	gen->local_sched = interchange_for_unroll(gen, gen->local_sched);
 
-	kernel->tree = generate_kernel(gen, build, host_domain);
+	kernel->tree = generate_kernel(gen, build, host_domain,
+					kernel->grid_size);
 	create_kernel_vars(gen, kernel);
 
 	free_local_array_info(gen);
