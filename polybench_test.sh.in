@@ -1,0 +1,20 @@
+#!/bin/sh
+
+EXEEXT=@EXEEXT@
+DIR=@POLYBENCH_DIR@
+SIZE=-DMINI_DATASET
+CC="@CC@"
+
+for i in `cat $DIR/utilities/benchmark_list`; do
+	echo $i
+	name=`basename $i`
+	name=${name%.c}
+	dir=`dirname $i`
+	./ppcg$EXEEXT --target=c -I $DIR/utilities $DIR/$i
+	$CC $SIZE -DPOLYBENCH_DUMP_ARRAYS -I $DIR/utilities $DIR/$i $DIR/utilities/polybench.c -lm
+	./a.out 2> $name.out
+	$CC $SIZE -DPOLYBENCH_DUMP_ARRAYS -I $DIR/utilities -I $DIR/$dir $name.ppcg.c $DIR/utilities/polybench.c -lm
+	./a.out 2> $name.ppcg.out
+	cmp $name.out $name.ppcg.out || exit
+	rm $name.out $name.ppcg.out
+done

@@ -42,10 +42,22 @@ system)
 	;;
 esac
 
+AC_SUBST(POLYBENCH_DIR)
+AC_SUBST(extra_tests)
+AC_ARG_WITH([polybench],
+	[AS_HELP_STRING([--with-polybench=DIR], [PolyBench location])],
+	[
+	if test -f "$with_polybench/utilities/benchmark_list"; then
+		POLYBENCH_DIR=$with_polybench
+		extra_tests="$extra_tests polybench_test.sh"
+	fi
+	])
+
 AX_DETECT_GIT_HEAD
 echo '#define GIT_HEAD_ID "'$GIT_HEAD_ID'"' > gitversion.h
 
 AC_CONFIG_FILES(Makefile)
+AC_CONFIG_FILES([polybench_test.sh], [chmod +x polybench_test.sh])
 if test $with_isl = bundled; then
 	AC_CONFIG_SUBDIRS(isl)
 fi

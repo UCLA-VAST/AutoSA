@@ -48,6 +48,9 @@ ppcg_SOURCES = \
 	print.h \
 	version.c
 
+TESTS = @extra_tests@
+EXTRA_TESTS = polybench_test.sh
+
 dist-hook:
 	echo @GIT_HEAD_VERSION@ > $(distdir)/GIT_HEAD_ID
 
