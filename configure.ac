@@ -16,6 +16,7 @@ case "$with_isl" in
 bundled)
 	ISL_CFLAGS="-I\$(top_srcdir)/isl/include -I\$(top_builddir)/isl/include"
 	ppcg_configure_args="$ppcg_configure_args --with-isl-builddir=../isl"
+	ppcg_configure_args="$ppcg_configure_args --with-isl=build"
 	;;
 build)
 	ISL_BUILDDIR=`echo @abs_builddir@ | $with_isl_builddir/config.status --file=-`
