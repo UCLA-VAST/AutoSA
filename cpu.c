@@ -20,6 +20,7 @@
 #include "ppcg.h"
 #include "cpu.h"
 #include "pet_printer.h"
+#include "print.h"
 #include "rewrite.h"
 
 /* Representation of a statement inside a generated AST.
@@ -356,12 +357,30 @@ static __isl_give isl_printer *print_scop(isl_ctx *ctx, struct ppcg_scop *scop,
 	return p;
 }
 
+/* Does "scop" refer to any arrays that are declared, but not
+ * exposed to the code after the scop?
+ */
+static int any_hidden_declarations(struct ppcg_scop *scop)
+{
+	int i;
+
+	if (!scop)
+		return 0;
+
+	for (i = 0; i < scop->n_array; ++i)
+		if (scop->arrays[i]->declared && !scop->arrays[i]->exposed)
+			return 1;
+
+	return 0;
+}
+
 int generate_cpu(isl_ctx *ctx, struct ppcg_scop *ps,
 	struct ppcg_options *options, const char *input)
 {
 	FILE *input_file;
 	FILE *output_file;
 	isl_printer *p;
+	int hidden;
 
 	if (!ps)
 		return -1;
@@ -373,7 +392,15 @@ int generate_cpu(isl_ctx *ctx, struct ppcg_scop *ps,
 	fprintf(output_file, "/* ppcg generated CPU code */\n\n");
 	p = isl_printer_to_file(ctx, output_file);
 	p = isl_printer_set_output_format(p, ISL_FORMAT_C);
+	p = ppcg_print_exposed_declarations(p, ps);
+	hidden = any_hidden_declarations(ps);
+	if (hidden) {
+		p = ppcg_start_block(p);
+		p = ppcg_print_hidden_declarations(p, ps);
+	}
 	p = print_scop(ctx, ps, p);
+	if (hidden)
+		p = ppcg_end_block(p);
 	isl_printer_free(p);
 	copy_after_scop(input_file, output_file);
 

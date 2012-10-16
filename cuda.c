@@ -836,6 +836,7 @@ int generate_cuda(isl_ctx *ctx, struct ppcg_scop *scop,
 
 	p = isl_printer_to_file(ctx, cuda.host_c);
 	p = isl_printer_set_output_format(p, ISL_FORMAT_C);
+	p = ppcg_print_exposed_declarations(p, scop);
 	p = ppcg_start_block(p);
 
 	p = print_cuda_macros(p);
