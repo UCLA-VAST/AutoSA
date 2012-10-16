@@ -21,7 +21,7 @@ struct gpu_stmt_access {
 };
 
 struct gpu_stmt {
-	isl_set *domain;
+	isl_id *id;
 	struct pet_expr *body;
 
 	/* Number of tile dimensions. */

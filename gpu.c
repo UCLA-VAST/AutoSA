@@ -606,7 +606,7 @@ static void free_stmts(struct gpu_stmt *stmts, int n)
 			free(access);
 		}
 
-		isl_set_free(stmts[i].domain);
+		isl_id_free(stmts[i].id);
 	}
 	free(stmts);
 }
@@ -2977,11 +2977,7 @@ static struct gpu_stmt *find_stmt(struct gpu_prog *prog, __isl_keep isl_id *id)
 	int i;
 
 	for (i = 0; i < prog->n_stmts; ++i) {
-		isl_id *id_i;
-
-		id_i = isl_set_get_tuple_id(prog->stmts[i].domain);
-		isl_id_free(id_i);
-		if (id == id_i)
+		if (id == prog->stmts[i].id)
 			break;
 	}
 
@@ -4330,25 +4326,6 @@ __isl_give isl_union_map *extract_sizes_from_str(isl_ctx *ctx, const char *str)
 	return isl_union_map_read_from_str(ctx, str);
 }
 
-/* Return the union of all iteration domains of the prog->stmts[i].
- */
-static __isl_give isl_union_set *extract_domain(struct gpu_prog *prog)
-{
-	int i;
-	isl_union_set *domain;
-
-	domain = isl_union_set_empty(isl_set_get_space(prog->context));
-	for (i = 0; i < prog->n_stmts; ++i) {
-		isl_set *domain_i;
-
-		domain_i = isl_set_copy(prog->stmts[i].domain);
-		domain = isl_union_set_union(domain,
-					     isl_union_set_from_set(domain_i));
-	}
-
-	return domain;
-}
-
 /* Information about the outermost tilable bands in the forest of bands.
  *
  * tile_len and n_parallel are only sets on band_info structures
@@ -4642,7 +4619,9 @@ static void compute_schedule(struct gpu_gen *gen,
 	dep = isl_union_map_union(dep, dep_raw);
 	dep = isl_union_map_coalesce(dep);
 
-	domain = extract_domain(gen->prog);
+	domain = isl_union_set_copy(gen->prog->scop->domain);
+	domain = isl_union_set_intersect_params(domain,
+				isl_set_copy(gen->prog->scop->context));
 	schedule = isl_union_set_compute_schedule(isl_union_set_copy(domain),
 				isl_union_map_copy(dep), dep);
 
@@ -4710,9 +4689,7 @@ static struct gpu_stmt *extract_stmts(isl_ctx *ctx, struct ppcg_scop *scop,
 	for (i = 0; i < scop->n_stmt; ++i) {
 		struct gpu_stmt *s = &stmts[i];
 
-		s->domain = isl_set_copy(scop->stmts[i]->domain);
-		s->domain = isl_set_intersect_params(s->domain,
-							isl_set_copy(context));
+		s->id = isl_set_get_tuple_id(scop->stmts[i]->domain);
 		s->body = scop->stmts[i]->body;
 		pet_stmt_extract_accesses(s);
 	}
