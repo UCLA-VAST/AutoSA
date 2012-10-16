@@ -42,6 +42,57 @@ ISL_ARGS_END
 
 ISL_ARG_DEF(options, struct options, options_args)
 
+/* Is "stmt" a kill statement?
+ */
+static int is_kill(struct pet_stmt *stmt)
+{
+	if (stmt->body->type != pet_expr_unary)
+		return 0;
+	return stmt->body->op == pet_op_kill;
+}
+
+/* Is "stmt" not a kill statement?
+ */
+static int is_not_kill(struct pet_stmt *stmt)
+{
+	return !is_kill(stmt);
+}
+
+/* Collect the iteration domains of the statements in "scop" that
+ * satisfy "pred".
+ */
+static __isl_give isl_union_set *collect_domains(struct pet_scop *scop,
+	int (*pred)(struct pet_stmt *stmt))
+{
+	int i;
+	isl_set *domain_i;
+	isl_union_set *domain;
+
+	if (!scop)
+		return NULL;
+
+	domain = isl_union_set_empty(isl_set_get_space(scop->context));
+
+	for (i = 0; i < scop->n_stmt; ++i) {
+		struct pet_stmt *stmt = scop->stmts[i];
+
+		if (!pred(stmt))
+			continue;
+		domain_i = isl_set_copy(scop->stmts[i]->domain);
+		domain = isl_union_set_add_set(domain, domain_i);
+	}
+
+	return domain;
+}
+
+/* Collect the iteration domains of the statements in "scop",
+ * skipping kill statements.
+ */
+static __isl_give isl_union_set *collect_non_kill_domains(struct pet_scop *scop)
+{
+	return collect_domains(scop, &is_not_kill);
+}
+
 /* Extract a ppcg_scop from a pet_scop.
  *
  * The constructed ppcg_scop refers to elements from the pet_scop
@@ -62,7 +113,7 @@ static struct ppcg_scop *ppcg_scop_from_pet_scop(struct pet_scop *scop)
 		return NULL;
 
 	ps->context = isl_set_copy(scop->context);
-	ps->domain = pet_scop_collect_domains(scop);
+	ps->domain = collect_non_kill_domains(scop);
 	ps->reads = pet_scop_collect_reads(scop);
 	ps->writes = pet_scop_collect_writes(scop);
 	ps->schedule = pet_scop_collect_schedule(scop);
