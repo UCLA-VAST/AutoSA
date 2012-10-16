@@ -320,10 +320,10 @@ error:
 	return isl_ast_node_free(node);
 }
 
-/* Code generate the scop 'scop' and print the corresponding C code to
- * 'output'.
+/* Code generate the scop 'scop' and print the corresponding C code to 'p'.
  */
-static void print_scop(isl_ctx *ctx, struct ppcg_scop *scop, FILE *output)
+static __isl_give isl_printer *print_scop(isl_ctx *ctx, struct ppcg_scop *scop,
+	__isl_take isl_printer *p)
 {
 	isl_set *context;
 	isl_union_set *domain_set;
@@ -331,7 +331,6 @@ static void print_scop(isl_ctx *ctx, struct ppcg_scop *scop, FILE *output)
 	isl_ast_build *build;
 	isl_ast_print_options *print_options;
 	isl_ast_node *tree;
-	isl_printer *p;
 
 	context = isl_set_copy(scop->context);
 	domain_set = isl_union_set_copy(scop->domain);
@@ -347,17 +346,14 @@ static void print_scop(isl_ctx *ctx, struct ppcg_scop *scop, FILE *output)
 	print_options = isl_ast_print_options_set_print_user(print_options,
 							&print_user, NULL);
 
-	p = isl_printer_to_file(ctx, output);
-	p = isl_printer_set_output_format(p, ISL_FORMAT_C);
 	p = isl_ast_node_print_macros(tree, p);
 	p = isl_ast_node_print(tree, p, print_options);
-	isl_printer_free(p);
 
 	isl_ast_print_options_free(print_options);
 
 	isl_ast_node_free(tree);
 
-	fprintf(output, "\n");
+	return p;
 }
 
 int generate_cpu(isl_ctx *ctx, struct ppcg_scop *ps,
@@ -365,6 +361,7 @@ int generate_cpu(isl_ctx *ctx, struct ppcg_scop *ps,
 {
 	FILE *input_file;
 	FILE *output_file;
+	isl_printer *p;
 
 	if (!ps)
 		return -1;
@@ -374,7 +371,10 @@ int generate_cpu(isl_ctx *ctx, struct ppcg_scop *ps,
 
 	copy_before_scop(input_file, output_file);
 	fprintf(output_file, "/* ppcg generated CPU code */\n\n");
-	print_scop(ctx, ps, output_file);
+	p = isl_printer_to_file(ctx, output_file);
+	p = isl_printer_set_output_format(p, ISL_FORMAT_C);
+	p = print_scop(ctx, ps, p);
+	isl_printer_free(p);
 	copy_after_scop(input_file, output_file);
 
 	fclose(output_file);
