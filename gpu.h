@@ -1,7 +1,7 @@
 #ifndef _GPU_H
 #define _GPU_H
 
-#include <pet.h>
+#include "ppcg.h"
 #include "ppcg_options.h"
 
 struct gpu_array_info {
@@ -37,7 +37,7 @@ struct gpu_local_array_info {
 struct gpu_prog {
 	isl_ctx *ctx;
 
-	struct pet_scop *scop;
+	struct ppcg_scop *scop;
 
 	/* Set of parameter values */
 	isl_set *context;
@@ -196,7 +196,7 @@ struct ppcg_kernel {
 int gpu_array_is_scalar(struct gpu_array_info *array);
 int gpu_array_is_read_only_scalar(struct gpu_array_info *array);
 
-struct gpu_prog *gpu_prog_alloc(isl_ctx *ctx, struct pet_scop *scop);
+struct gpu_prog *gpu_prog_alloc(isl_ctx *ctx, struct ppcg_scop *scop);
 void gpu_prog_free(struct gpu_prog *prog);
 
 __isl_give isl_set *add_context_from_str(__isl_take isl_set *set,

@@ -277,7 +277,7 @@ static void free_bound_list(struct gpu_array_bound *bound, int n_index)
 	free(bound);
 }
 
-static struct pet_array *find_array(struct pet_scop *scop,
+static struct pet_array *find_array(struct ppcg_scop *scop,
 	__isl_keep isl_set *accessed)
 {
 	int i;
@@ -4698,7 +4698,7 @@ static void pet_stmt_extract_accesses(struct gpu_stmt *stmt)
 
 /* Return an array of gpu_stmt representing the statements in "scop".
  */
-static struct gpu_stmt *extract_stmts(isl_ctx *ctx, struct pet_scop *scop,
+static struct gpu_stmt *extract_stmts(isl_ctx *ctx, struct ppcg_scop *scop,
 	__isl_keep isl_set *context)
 {
 	int i;
@@ -4777,7 +4777,7 @@ __isl_give isl_ast_node *generate_gpu(isl_ctx *ctx, struct gpu_prog *prog,
 	gen.sizes = extract_sizes_from_str(ctx, options->sizes);
 	gen.options = options;
 
-	sched = pet_scop_collect_schedule(prog->scop);
+	sched = isl_union_map_copy(prog->scop->schedule);
 
 	compute_schedule(&gen, sched);
 
@@ -4789,14 +4789,12 @@ __isl_give isl_ast_node *generate_gpu(isl_ctx *ctx, struct gpu_prog *prog,
 	return tree;
 }
 
-struct gpu_prog *gpu_prog_alloc(isl_ctx *ctx, struct pet_scop *scop)
+struct gpu_prog *gpu_prog_alloc(isl_ctx *ctx, struct ppcg_scop *scop)
 {
 	struct gpu_prog *prog;
 
 	if (!scop)
 		return NULL;
-
-	scop = pet_scop_align_params(scop);
 
 	prog = isl_calloc_type(ctx, struct gpu_prog);
 	assert(prog);
@@ -4806,8 +4804,8 @@ struct gpu_prog *gpu_prog_alloc(isl_ctx *ctx, struct pet_scop *scop)
 	prog->context = isl_set_copy(scop->context);
 	prog->n_stmts = scop->n_stmt;
 	prog->stmts = extract_stmts(ctx, scop, prog->context);
-	prog->read = pet_scop_collect_reads(scop);
-	prog->write = pet_scop_collect_writes(scop);
+	prog->read = isl_union_map_copy(scop->reads);
+	prog->write = isl_union_map_copy(scop->writes);
 
 	collect_array_info(prog);
 

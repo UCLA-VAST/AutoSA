@@ -779,7 +779,7 @@ static void free_device_arrays(FILE *out, struct gpu_prog *prog)
 	}
 }
 
-int generate_cuda(isl_ctx *ctx, struct pet_scop *scop,
+int generate_cuda(isl_ctx *ctx, struct ppcg_scop *scop,
 	struct ppcg_options *options, const char *input)
 {
 	struct cuda_info cuda;

@@ -17,6 +17,7 @@
 #include <isl/ast_build.h>
 #include <pet.h>
 
+#include "ppcg.h"
 #include "cpu.h"
 #include "pet_printer.h"
 #include "rewrite.h"
@@ -48,56 +49,6 @@ static void ppcg_stmt_free(void *user)
 
 	free(stmt->access);
 	free(stmt);
-}
-
-struct ppcg_scop {
-	isl_set *context;
-	isl_union_set *domain;
-	isl_union_map *reads;
-	isl_union_map *writes;
-	isl_union_map *schedule;
-
-	int n_stmt;
-	struct pet_stmt **stmts;
-};
-
-static struct ppcg_scop *ppcg_scop_from_pet_scop(struct pet_scop *scop)
-{
-	isl_ctx *ctx;
-	struct ppcg_scop *ps;
-
-	if (!scop)
-		return NULL;
-
-	ctx = isl_set_get_ctx(scop->context);
-
-	ps = isl_calloc_type(ctx, struct ppcg_scop);
-	if (!ps)
-		return NULL;
-
-	ps->context = isl_set_copy(scop->context);
-	ps->domain = pet_scop_collect_domains(scop);
-	ps->reads = pet_scop_collect_reads(scop);
-	ps->writes = pet_scop_collect_writes(scop);
-	ps->schedule = pet_scop_collect_schedule(scop);
-	ps->n_stmt = scop->n_stmt;
-	ps->stmts = scop->stmts;
-
-	return ps;
-}
-
-static void ppcg_scop_free(struct ppcg_scop *ps)
-{
-	if (!ps)
-		return;
-
-	isl_set_free(ps->context);
-	isl_union_set_free(ps->domain);
-	isl_union_map_free(ps->reads);
-	isl_union_map_free(ps->writes);
-	isl_union_map_free(ps->schedule);
-
-	free(ps);
 }
 
 /* Derive the output file name from the input file name.
@@ -409,14 +360,12 @@ static void print_scop(isl_ctx *ctx, struct ppcg_scop *scop, FILE *output)
 	fprintf(output, "\n");
 }
 
-int generate_cpu(isl_ctx *ctx, struct pet_scop *scop,
+int generate_cpu(isl_ctx *ctx, struct ppcg_scop *ps,
 	struct ppcg_options *options, const char *input)
 {
 	FILE *input_file;
 	FILE *output_file;
-	struct ppcg_scop *ps;
 
-	ps = ppcg_scop_from_pet_scop(scop);
 	if (!ps)
 		return -1;
 
@@ -427,8 +376,6 @@ int generate_cpu(isl_ctx *ctx, struct pet_scop *scop,
 	fprintf(output_file, "/* ppcg generated CPU code */\n\n");
 	print_scop(ctx, ps, output_file);
 	copy_after_scop(input_file, output_file);
-
-	ppcg_scop_free(ps);
 
 	fclose(output_file);
 	fclose(input_file);

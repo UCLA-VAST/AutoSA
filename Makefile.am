@@ -43,6 +43,7 @@ ppcg_SOURCES = \
 	ppcg_options.c \
 	ppcg_options.h \
 	ppcg.c \
+	ppcg.h \
 	version.c
 
 dist-hook:

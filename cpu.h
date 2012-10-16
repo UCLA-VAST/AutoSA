@@ -3,10 +3,11 @@
 
 #include <isl/ctx.h>
 
-struct pet_scop;
+#include "ppcg.h"
+
 struct ppcg_options;
 
-int generate_cpu(isl_ctx *ctx, struct pet_scop *scop,
+int generate_cpu(isl_ctx *ctx, struct ppcg_scop *ps,
 	struct ppcg_options *options, const char *input);
 
 #endif
