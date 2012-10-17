@@ -1557,29 +1557,28 @@ static __isl_give isl_map *compute_sched_to_shared(struct gpu_gen *gen,
 }
 
 /* Set unroll[j] if the input dimension j is involved in
- * the index expression represented by bmap.
+ * the index expression represented by ma.
  */
-static int check_unroll(__isl_take isl_basic_map *bmap, void *user)
+static int check_unroll(__isl_take isl_set *set, __isl_take isl_multi_aff *ma,
+	void *user)
 {
 	int i, j;
-	int n_in = isl_basic_map_dim(bmap, isl_dim_in);
-	int n_out = isl_basic_map_dim(bmap, isl_dim_out);
+	int n_in = isl_multi_aff_dim(ma, isl_dim_in);
+	int n_out = isl_multi_aff_dim(ma, isl_dim_out);
 	int *unroll = user;
 
 	for (i = 0; i < n_out; ++i) {
-		isl_constraint *c;
-		int ok;
+		isl_aff *aff;
 
-		ok = isl_basic_map_has_defining_equality(bmap,
-							isl_dim_out, i, &c);
-		assert(ok);
+		aff = isl_multi_aff_get_aff(ma, i);
 		for (j = 0; j < n_in; ++j)
-			if (isl_constraint_involves_dims(c, isl_dim_in, j, 1))
+			if (isl_aff_involves_dims(aff, isl_dim_in, j, 1))
 				unroll[j] = 1;
-		isl_constraint_free(c);
+		isl_aff_free(aff);
 	}
 
-	isl_basic_map_free(bmap);
+	isl_set_free(set);
+	isl_multi_aff_free(ma);
 	return 0;
 }
 
@@ -1619,6 +1618,11 @@ static __isl_give isl_map *permutation(__isl_take isl_space *dim,
  *
  * Loops up to gen->shared_len are generated before the mapping to
  * threads is applied.  They should therefore be ignored.
+ *
+ * We compute the hidden equalities of the schedule first
+ * since we will need them in our calls to isl_pw_multi_aff_from_map
+ * and because we want to make sure that the same equalities
+ * are also available to the code generator.
  */
 static __isl_give isl_union_map *interchange_for_unroll(struct gpu_gen *gen,
 	__isl_take isl_union_map *sched)
@@ -1632,6 +1636,7 @@ static __isl_give isl_union_map *interchange_for_unroll(struct gpu_gen *gen,
 
 	gen->first_unroll = -1;
 
+	sched = isl_union_map_detect_equalities(sched);
 	for (i = 0; i < gen->thread_tiled_len; ++i)
 		unroll[i] = 0;
 	for (i = 0; i < gen->prog->n_array; ++i) {
@@ -1640,6 +1645,7 @@ static __isl_give isl_union_map *interchange_for_unroll(struct gpu_gen *gen,
 		for (j = 0; j < array->n_group; ++j) {
 			isl_union_map *access;
 			isl_map *acc;
+			isl_pw_multi_aff *pma;
 
 			if (!array->groups[j]->private_bound)
 				continue;
@@ -1649,9 +1655,11 @@ static __isl_give isl_union_map *interchange_for_unroll(struct gpu_gen *gen,
 						isl_union_map_copy(sched));
 
 			acc = isl_map_from_union_map(access);
-			isl_map_foreach_basic_map(acc, &check_unroll, unroll);
+			pma = isl_pw_multi_aff_from_map(acc);
+			isl_pw_multi_aff_foreach_piece(pma,
+							&check_unroll, unroll);
 
-			isl_map_free(acc);
+			isl_pw_multi_aff_free(pma);
 		}
 	}
 
