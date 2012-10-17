@@ -3026,9 +3026,8 @@ void ppcg_kernel_stmt_free(void *user)
 
 	switch (stmt->type) {
 	case ppcg_kernel_copy:
-		isl_set_free(stmt->u.c.domain);
-		isl_pw_multi_aff_free(stmt->u.c.index);
-		isl_pw_multi_aff_free(stmt->u.c.local_index);
+		isl_ast_expr_free(stmt->u.c.index);
+		isl_ast_expr_free(stmt->u.c.local_index);
 		break;
 	case ppcg_kernel_domain:
 		for (i = 0; i < stmt->u.d.n_access; ++i) {
@@ -3343,34 +3342,6 @@ static __isl_give isl_ast_node *create_domain_leaf(
 	return tree;
 }
 
-/* Add parameters corresponding to the dimensions in the schedule
- * space of "context" and equate them to the dimensions in the range
- * of "map".
- */
-static __isl_give isl_map *parametrize_iterators(__isl_take isl_map *map,
-	__isl_keep isl_ast_build *build)
-{
-	int i, n, n_param;
-	isl_space *space;
-
-	space = isl_ast_build_get_schedule_space(build);
-	n = isl_map_dim(map, isl_dim_out);
-	n_param = isl_map_dim(map, isl_dim_param);
-	map = isl_map_add_dims(map, isl_dim_param, n);
-	for (i = 0; i < n; ++i) {
-		isl_id *id;
-
-		id = isl_space_get_dim_id(space, isl_dim_set, i);
-		map = isl_map_set_dim_id(map, isl_dim_param, n_param + i, id);
-		map = isl_map_equate(map, isl_dim_param, n_param + i,
-					isl_dim_out, i);
-	}
-
-	isl_space_free(space);
-
-	return map;
-}
-
 /* This function is called for each leaf in the AST of the code
  * for copying to or from shared/private memory.
  * The statement name is {read,write}_{shared,private}_<array>.
@@ -3380,8 +3351,8 @@ static __isl_give isl_map *parametrize_iterators(__isl_take isl_map *map,
  *	[A -> T] -> L
  *
  * where A refers to a piece of an array and T to the corresponding
- * shifted tile.  We first turn the iterators in L into parameters
- * and then store A in stmt->index and T in stmt->local_index,
+ * shifted tile.  We split this schedule into mappings L -> A and L -> T
+ * and store the corresponding expressions in stmt->index and stmt->local_index,
  * where stmt represents the copy statement.
  */
 static __isl_give isl_ast_node *create_copy_leaf(
@@ -3393,8 +3364,8 @@ static __isl_give isl_ast_node *create_copy_leaf(
 	isl_ast_expr *expr;
 	isl_ast_node *node;
 	isl_space *space;
-	isl_map *access;
-	isl_set *local_access;
+	isl_map *access, *local_access, *map;
+	isl_pw_multi_aff *pma;
 	const char *name;
 	int array_index;
 
@@ -3405,14 +3376,26 @@ static __isl_give isl_ast_node *create_copy_leaf(
 	access = isl_map_from_union_map(isl_ast_build_get_schedule(build));
 	name = isl_map_get_tuple_name(access, isl_dim_in);
 	stmt->u.c.read = !strncmp(name, "read", 4);
-	access = parametrize_iterators(access, build);
-	access = isl_set_unwrap(isl_map_domain(access));
+	access = isl_map_reverse(access);
+	space = isl_space_unwrap(isl_space_range(isl_map_get_space(access)));
+	local_access = isl_map_copy(access);
 
-	local_access = isl_map_range(isl_map_copy(access));
+	map = isl_map_domain_map(isl_map_universe(isl_space_copy(space)));
+	id = isl_map_get_tuple_id(access, isl_dim_out);
+	map = isl_map_set_tuple_id(map, isl_dim_in, id);
+	access = isl_map_apply_range(access, map);
+	pma = isl_pw_multi_aff_from_map(access);
+	expr = isl_ast_build_call_from_pw_multi_aff(build, pma);
+	stmt->u.c.index = expr;
 
-	stmt->u.c.domain = isl_map_params(isl_map_copy(access));
-	stmt->u.c.index = isl_pw_multi_aff_from_set(isl_map_domain(access));
-	stmt->u.c.local_index = isl_pw_multi_aff_from_set(local_access);
+	map = isl_map_range_map(isl_map_universe(space));
+	id = isl_map_get_tuple_id(local_access, isl_dim_out);
+	map = isl_map_set_tuple_id(map, isl_dim_in, id);
+	local_access = isl_map_apply_range(local_access, map);
+	pma = isl_pw_multi_aff_from_map(local_access);
+	expr = isl_ast_build_call_from_pw_multi_aff(build, pma);
+	stmt->u.c.local_index = expr;
+
 	stmt->u.c.array = gen->copy_group->array;
 	array_index = stmt->u.c.array - gen->prog->array;
 	stmt->u.c.local_array = &gen->kernel->array[array_index];

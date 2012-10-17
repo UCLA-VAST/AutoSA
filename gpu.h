@@ -101,10 +101,8 @@ struct ppcg_kernel_access {
  * read is set if the statement should copy data from global memory
  * to shared memory or registers.
  *
- * domain is the (parametric) domain of index and local_index
- *
- * index expresses the array element that needs to be copied in terms
- * of parameters
+ * index expresses the array element that needs to be copied as a "call"
+ * to the array
  * local_index expresses the corresponding element in the tile
  *
  * array refers to the original array being copied
@@ -125,9 +123,8 @@ struct ppcg_kernel_stmt {
 	union {
 		struct {
 			int read;
-			isl_set *domain;
-			isl_pw_multi_aff *index;
-			isl_pw_multi_aff *local_index;
+			isl_ast_expr *index;
+			isl_ast_expr *local_index;
 			struct gpu_array_info *array;
 			struct gpu_local_array_info *local_array;
 		} c;

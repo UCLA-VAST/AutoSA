@@ -359,27 +359,27 @@ static void print_kernel_vars(FILE *out, struct ppcg_kernel *kernel)
 
 /* Print an access to the element in the private/shared memory copy
  * described by "stmt".  The index of the copy is recorded in
- * stmt->local_index.
+ * stmt->local_index as a "call" to the array.
  */
 static __isl_give isl_printer *stmt_print_local_index(__isl_take isl_printer *p,
 	struct ppcg_kernel_stmt *stmt)
 {
 	int i;
-	const char *name;
+	isl_ast_expr *expr;
 	struct gpu_array_info *array = stmt->u.c.array;
 
-	name = isl_pw_multi_aff_get_tuple_name(stmt->u.c.local_index,
-						isl_dim_out);
-	p = isl_printer_print_str(p, name);
+	expr = isl_ast_expr_get_op_arg(stmt->u.c.local_index, 0);
+	p = isl_printer_print_ast_expr(p, expr);
+	isl_ast_expr_free(expr);
+
 	for (i = 0; i < array->n_index; ++i) {
-		isl_pw_aff *pa;
-		pa = isl_pw_multi_aff_get_pw_aff(stmt->u.c.local_index, i);
+		expr = isl_ast_expr_get_op_arg(stmt->u.c.local_index, 1 + i);
 
 		p = isl_printer_print_str(p, "[");
-		p = isl_printer_print_pw_aff(p, pa);
+		p = isl_printer_print_ast_expr(p, expr);
 		p = isl_printer_print_str(p, "]");
 
-		isl_pw_aff_free(pa);
+		isl_ast_expr_free(expr);
 	}
 
 	return p;
@@ -387,7 +387,7 @@ static __isl_give isl_printer *stmt_print_local_index(__isl_take isl_printer *p,
 
 /* Print an access to the element in the global memory copy
  * described by "stmt".  The index of the copy is recorded in
- * stmt->index.
+ * stmt->index as a "call" to the array.
  *
  * The copy in global memory has been linearized, so we need to take
  * the array size into account.
@@ -411,9 +411,8 @@ static __isl_give isl_printer *stmt_print_global_index(
 	for (i = 0; i + 1 < array->n_index; ++i)
 		p = isl_printer_print_str(p, "(");
 	for (i = 0; i < array->n_index; ++i) {
-		isl_pw_aff *pa = isl_pw_multi_aff_get_pw_aff(stmt->u.c.index, i);
-		pa = isl_pw_aff_coalesce(pa);
-		pa = isl_pw_aff_gist_params(pa, isl_set_copy(stmt->u.c.domain));
+		isl_ast_expr *expr;
+		expr = isl_ast_expr_get_op_arg(stmt->u.c.index, 1 + i);
 		if (i) {
 			isl_pw_aff *bound_i;
 			bound_i = isl_pw_aff_list_get_pw_aff(bound, i);
@@ -422,8 +421,8 @@ static __isl_give isl_printer *stmt_print_global_index(
 			p = isl_printer_print_str(p, ") + ");
 			isl_pw_aff_free(bound_i);
 		}
-		p = isl_printer_print_pw_aff(p, pa);
-		isl_pw_aff_free(pa);
+		p = isl_printer_print_ast_expr(p, expr);
+		isl_ast_expr_free(expr);
 	}
 	p = isl_printer_print_str(p, "]");
 
