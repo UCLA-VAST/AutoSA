@@ -16,23 +16,21 @@
 #include "pet_printer.h"
 #include "schedule.h"
 
-void print_cuda_macros(FILE *file)
+static __isl_give isl_printer *print_cuda_macros(__isl_take isl_printer *p)
 {
 	const char *macros =
 		"#define cudaCheckReturn(ret) assert((ret) == cudaSuccess)\n"
 		"#define cudaCheckKernel()"
 		" assert(cudaGetLastError() == cudaSuccess)\n\n";
-	fputs(macros, file);
+	p = isl_printer_print_str(p, macros);
+	return p;
 }
 
-static void print_array_size(isl_ctx *ctx, FILE *out,
+static __isl_give isl_printer *print_array_size(__isl_take isl_printer *prn,
 	struct gpu_array_info *array)
 {
 	int i;
-	isl_printer *prn;
 
-	prn = isl_printer_to_file(ctx, out);
-	prn = isl_printer_set_output_format(prn, ISL_FORMAT_C);
 	for (i = 0; i < array->n_index; ++i) {
 		prn = isl_printer_print_str(prn, "(");
 		prn = isl_printer_print_pw_aff(prn, array->bound[i]);
@@ -41,39 +39,54 @@ static void print_array_size(isl_ctx *ctx, FILE *out,
 	prn = isl_printer_print_str(prn, "sizeof(");
 	prn = isl_printer_print_str(prn, array->type);
 	prn = isl_printer_print_str(prn, ")");
-	isl_printer_free(prn);
+
+	return prn;
 }
 
-static void declare_device_arrays(FILE *out, struct gpu_prog *prog)
+static __isl_give isl_printer *declare_device_arrays(__isl_take isl_printer *p,
+	struct gpu_prog *prog)
 {
 	int i;
 
 	for (i = 0; i < prog->n_array; ++i) {
 		if (gpu_array_is_read_only_scalar(&prog->array[i]))
 			continue;
-		fprintf(out, "%s *dev_%s;\n",
-			prog->array[i].type, prog->array[i].name);
+		p = isl_printer_start_line(p);
+		p = isl_printer_print_str(p, prog->array[i].type);
+		p = isl_printer_print_str(p, " *dev_");
+		p = isl_printer_print_str(p, prog->array[i].name);
+		p = isl_printer_print_str(p, ";");
+		p = isl_printer_end_line(p);
 	}
-	fprintf(out, "\n");
+	p = isl_printer_start_line(p);
+	p = isl_printer_end_line(p);
+	return p;
 }
 
-static void allocate_device_arrays(FILE *out, struct gpu_prog *prog)
+static __isl_give isl_printer *allocate_device_arrays(
+	__isl_take isl_printer *p, struct gpu_prog *prog)
 {
 	int i;
 
 	for (i = 0; i < prog->n_array; ++i) {
 		if (gpu_array_is_read_only_scalar(&prog->array[i]))
 			continue;
-		fprintf(out,
-			"cudaCheckReturn(cudaMalloc((void **) &dev_%s, ",
-			prog->array[i].name);
-		print_array_size(prog->ctx, out, &prog->array[i]);
-		fprintf(out, "));\n");
+		p = isl_printer_start_line(p);
+		p = isl_printer_print_str(p,
+			"cudaCheckReturn(cudaMalloc((void **) &dev_");
+		p = isl_printer_print_str(p, prog->array[i].name);
+		p = isl_printer_print_str(p, ", ");
+		p = print_array_size(p, &prog->array[i]);
+		p = isl_printer_print_str(p, "));");
+		p = isl_printer_end_line(p);
 	}
-	fprintf(out, "\n");
+	p = isl_printer_start_line(p);
+	p = isl_printer_end_line(p);
+	return p;
 }
 
-static void copy_arrays_to_device(FILE *out, struct gpu_prog *prog)
+static __isl_give isl_printer *copy_arrays_to_device(__isl_take isl_printer *p,
+	struct gpu_prog *prog)
 {
 	int i;
 
@@ -92,18 +105,22 @@ static void copy_arrays_to_device(FILE *out, struct gpu_prog *prog)
 		if (empty)
 			continue;
 
-		fprintf(out, "cudaCheckReturn(cudaMemcpy(dev_%s,",
-			prog->array[i].name);
+		p = isl_printer_print_str(p, "cudaCheckReturn(cudaMemcpy(dev_");
+		p = isl_printer_print_str(p, prog->array[i].name);
+		p = isl_printer_print_str(p, ", ");
 
 		if (gpu_array_is_scalar(&prog->array[i]))
-			fprintf(out, " &%s, ", prog->array[i].name);
-		else
-			fprintf(out, " %s, ", prog->array[i].name);
+			p = isl_printer_print_str(p, "&");
+		p = isl_printer_print_str(p, prog->array[i].name);
+		p = isl_printer_print_str(p, ", ");
 
-		print_array_size(prog->ctx, out, &prog->array[i]);
-		fprintf(out, ", cudaMemcpyHostToDevice));\n");
+		p = print_array_size(p, &prog->array[i]);
+		p = isl_printer_print_str(p, ", cudaMemcpyHostToDevice));");
+		p = isl_printer_end_line(p);
 	}
-	fprintf(out, "\n");
+	p = isl_printer_start_line(p);
+	p = isl_printer_end_line(p);
+	return p;
 }
 
 static void print_reverse_list(FILE *out, int len, int *list)
@@ -714,11 +731,11 @@ static __isl_give isl_printer *print_host_user(__isl_take isl_printer *p,
 	return p;
 }
 
-static void print_host_code(FILE *out, struct gpu_prog *prog,
-	__isl_keep isl_ast_node *tree, struct cuda_info *cuda)
+static __isl_give isl_printer *print_host_code(__isl_take isl_printer *p,
+	struct gpu_prog *prog, __isl_keep isl_ast_node *tree,
+	struct cuda_info *cuda)
 {
 	isl_ast_print_options *print_options;
-	isl_printer *p;
 	isl_ctx *ctx = isl_ast_node_get_ctx(tree);
 	struct print_host_user_data data = { cuda, prog };
 
@@ -726,16 +743,16 @@ static void print_host_code(FILE *out, struct gpu_prog *prog,
 	print_options = isl_ast_print_options_set_print_user(print_options,
 						&print_host_user, &data);
 
-	p = isl_printer_to_file(ctx, out);
-	p = isl_printer_set_output_format(p, ISL_FORMAT_C);
 	p = print_macros(tree, p);
 	p = isl_ast_node_print(tree, p, print_options);
-	isl_printer_free(p);
 
 	isl_ast_print_options_free(print_options);
+
+	return p;
 }
 
-static void copy_arrays_from_device(FILE *out, struct gpu_prog *prog)
+static __isl_give isl_printer *copy_arrays_from_device(
+	__isl_take isl_printer *p, struct gpu_prog *prog)
 {
 	int i;
 	isl_union_set *write;
@@ -753,30 +770,39 @@ static void copy_arrays_from_device(FILE *out, struct gpu_prog *prog)
 		if (empty)
 			continue;
 
-		fprintf(out, "cudaCheckReturn(cudaMemcpy(");
+		p = isl_printer_print_str(p, "cudaCheckReturn(cudaMemcpy(");
 		if (gpu_array_is_scalar(&prog->array[i]))
-			fprintf(out, "&%s, ", prog->array[i].name);
-		else
-			fprintf(out, "%s, ", prog->array[i].name);
-		fprintf(out, "dev_%s, ",  prog->array[i].name);
-		print_array_size(prog->ctx, out, &prog->array[i]);
-		fprintf(out, ", cudaMemcpyDeviceToHost));\n");
+			p = isl_printer_print_str(p, "&");
+		p = isl_printer_print_str(p, prog->array[i].name);
+		p = isl_printer_print_str(p, ", dev_");
+		p = isl_printer_print_str(p, prog->array[i].name);
+		p = isl_printer_print_str(p, ", ");
+		p = print_array_size(p, &prog->array[i]);
+		p = isl_printer_print_str(p, ", cudaMemcpyDeviceToHost));");
+		p = isl_printer_end_line(p);
 	}
 
 	isl_union_set_free(write);
-	fprintf(out, "\n");
+	p = isl_printer_start_line(p);
+	p = isl_printer_end_line(p);
+	return p;
 }
 
-static void free_device_arrays(FILE *out, struct gpu_prog *prog)
+static __isl_give isl_printer *free_device_arrays(__isl_take isl_printer *p,
+	struct gpu_prog *prog)
 {
 	int i;
 
 	for (i = 0; i < prog->n_array; ++i) {
 		if (gpu_array_is_read_only_scalar(&prog->array[i]))
 			continue;
-		fprintf(out, "cudaCheckReturn(cudaFree(dev_%s));\n",
-			prog->array[i].name);
+		p = isl_printer_print_str(p, "cudaCheckReturn(cudaFree(dev_");
+		p = isl_printer_print_str(p, prog->array[i].name);
+		p = isl_printer_print_str(p, "));");
+		p = isl_printer_end_line(p);
 	}
+
+	return p;
 }
 
 int generate_cuda(isl_ctx *ctx, struct ppcg_scop *scop,
@@ -785,6 +811,7 @@ int generate_cuda(isl_ctx *ctx, struct ppcg_scop *scop,
 	struct cuda_info cuda;
 	struct gpu_prog *prog;
 	isl_ast_node *tree;
+	isl_printer *p;
 
 	if (!scop)
 		return -1;
@@ -797,21 +824,28 @@ int generate_cuda(isl_ctx *ctx, struct ppcg_scop *scop,
 
 	cuda_open_files(&cuda, input);
 
-	fprintf(cuda.host_c, "{\n");
+	p = isl_printer_to_file(ctx, cuda.host_c);
+	p = isl_printer_set_output_format(p, ISL_FORMAT_C);
+	p = isl_printer_start_line(p);
+	p = isl_printer_print_str(p, "{");
+	p = isl_printer_end_line(p);
 
-	print_cuda_macros(cuda.host_c);
+	p = print_cuda_macros(p);
 
-	declare_device_arrays(cuda.host_c, prog);
-	allocate_device_arrays(cuda.host_c, prog);
-	copy_arrays_to_device(cuda.host_c, prog);
+	p = declare_device_arrays(p, prog);
+	p = allocate_device_arrays(p, prog);
+	p = copy_arrays_to_device(p, prog);
 
-	print_host_code(cuda.host_c, prog, tree, &cuda);
+	p = print_host_code(p, prog, tree, &cuda);
 	isl_ast_node_free(tree);
 
-	copy_arrays_from_device(cuda.host_c, prog);
-	free_device_arrays(cuda.host_c, prog);
+	p = copy_arrays_from_device(p, prog);
+	p = free_device_arrays(p, prog);
 
-	fprintf(cuda.host_c, "}\n");
+	p = isl_printer_start_line(p);
+	p = isl_printer_print_str(p, "}");
+	p = isl_printer_end_line(p);
+	isl_printer_free(p);
 
 	cuda_close_files(&cuda);
 
