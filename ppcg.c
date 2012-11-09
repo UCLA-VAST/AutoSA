@@ -94,6 +94,31 @@ static __isl_give isl_union_set *collect_non_kill_domains(struct pet_scop *scop)
 	return collect_domains(scop, &is_not_kill);
 }
 
+/* Collect all kill accesses in "scop".
+ */
+static __isl_give isl_union_map *collect_kills(struct pet_scop *scop)
+{
+	int i;
+	isl_union_map *kills;
+
+	if (!scop)
+		return NULL;
+
+	kills = isl_union_map_empty(isl_set_get_space(scop->context));
+
+	for (i = 0; i < scop->n_stmt; ++i) {
+		struct pet_stmt *stmt = scop->stmts[i];
+		isl_map *kill_i;
+
+		if (!is_kill(stmt))
+			continue;
+		kill_i = isl_map_copy(stmt->body->args[0]->acc.access);
+		kills = isl_union_map_add_map(kills, kill_i);
+	}
+
+	return kills;
+}
+
 /* Compute (flow) dependences and store the resulting flow dependences
  * in scop->dep_flow and the reads with no corresponding writes in
  * scop->live_in.
@@ -135,6 +160,7 @@ static struct ppcg_scop *ppcg_scop_from_pet_scop(struct pet_scop *scop)
 	ps->domain = collect_non_kill_domains(scop);
 	ps->reads = pet_scop_collect_reads(scop);
 	ps->writes = pet_scop_collect_writes(scop);
+	ps->kills = collect_kills(scop);
 	ps->schedule = pet_scop_collect_schedule(scop);
 	ps->n_array = scop->n_array;
 	ps->arrays = scop->arrays;
@@ -156,6 +182,7 @@ static void ppcg_scop_free(struct ppcg_scop *ps)
 	isl_union_map_free(ps->reads);
 	isl_union_map_free(ps->live_in);
 	isl_union_map_free(ps->writes);
+	isl_union_map_free(ps->kills);
 	isl_union_map_free(ps->dep_flow);
 	isl_union_map_free(ps->schedule);
 

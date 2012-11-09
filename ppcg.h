@@ -14,6 +14,7 @@
  * "live_in" contains read accesses that have no corresponding
  *	writes in the scop.
  * "writes" contains all write accesses.
+ * "kills" contains all kill accesses.
  * "dep_flow" represents the flow dependences.
  * "schedule" represents the (original) schedule.
  *
@@ -26,6 +27,7 @@ struct ppcg_scop {
 	isl_union_map *reads;
 	isl_union_map *live_in;
 	isl_union_map *writes;
+	isl_union_map *kills;
 	isl_union_map *dep_flow;
 	isl_union_map *schedule;
 
