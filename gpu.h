@@ -27,6 +27,9 @@ struct gpu_array_info {
 
 	/* For scalars, is this scalar read-only within the entire program? */
 	int read_only;
+
+	/* Is the array local to the scop? */
+	int local;
 };
 
 /* For each index i, array->bound[i] specialized to the current kernel. */

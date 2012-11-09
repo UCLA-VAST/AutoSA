@@ -752,6 +752,12 @@ static __isl_give isl_printer *print_host_code(__isl_take isl_printer *p,
 	return p;
 }
 
+/* For each array that is written anywhere in the gpu_prog,
+ * copy the contents back from the GPU to the host.
+ *
+ * Arrays that are not visible outside the corresponding scop
+ * do not need to be copied back.
+ */
 static __isl_give isl_printer *copy_arrays_from_device(
 	__isl_take isl_printer *p, struct gpu_prog *prog)
 {
@@ -763,6 +769,9 @@ static __isl_give isl_printer *copy_arrays_from_device(
 		isl_space *dim;
 		isl_set *write_i;
 		int empty;
+
+		if (prog->array[i].local)
+			continue;
 
 		dim = isl_space_copy(prog->array[i].dim);
 		write_i = isl_union_set_extract_set(write, dim);

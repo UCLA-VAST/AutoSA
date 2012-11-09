@@ -328,6 +328,7 @@ static int extract_array_info(__isl_take isl_set *array, void *user)
 
 	prog->array[prog->n_array].type = strdup(pa->element_type);
 	prog->array[prog->n_array].size = pa->element_size;
+	prog->array[prog->n_array].local = pa->declared && !pa->exposed;
 
 	if (n_index == 0) {
 		isl_set *space;
