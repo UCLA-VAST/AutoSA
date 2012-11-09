@@ -11,6 +11,7 @@
 #include <assert.h>
 #include <stdio.h>
 #include <isl/ctx.h>
+#include <isl/flow.h>
 #include <isl/options.h>
 #include <isl/schedule.h>
 #include <pet.h>
@@ -93,6 +94,24 @@ static __isl_give isl_union_set *collect_non_kill_domains(struct pet_scop *scop)
 	return collect_domains(scop, &is_not_kill);
 }
 
+/* Compute (flow) dependences and store the resulting flow dependences
+ * in scop->dep_flow and the reads with no corresponding writes in
+ * scop->live_in.
+ */
+static void compute_dependences(struct ppcg_scop *scop)
+{
+	isl_union_map *empty;
+
+	if (!scop)
+		return;
+
+	empty = isl_union_map_empty(isl_union_set_get_space(scop->domain));
+	isl_union_map_compute_flow(isl_union_map_copy(scop->reads),
+				isl_union_map_copy(scop->writes), empty,
+				isl_union_map_copy(scop->schedule),
+				&scop->dep_flow, NULL, &scop->live_in, NULL);
+}
+
 /* Extract a ppcg_scop from a pet_scop.
  *
  * The constructed ppcg_scop refers to elements from the pet_scop
@@ -122,6 +141,8 @@ static struct ppcg_scop *ppcg_scop_from_pet_scop(struct pet_scop *scop)
 	ps->n_stmt = scop->n_stmt;
 	ps->stmts = scop->stmts;
 
+	compute_dependences(ps);
+
 	return ps;
 }
 
@@ -133,7 +154,9 @@ static void ppcg_scop_free(struct ppcg_scop *ps)
 	isl_set_free(ps->context);
 	isl_union_set_free(ps->domain);
 	isl_union_map_free(ps->reads);
+	isl_union_map_free(ps->live_in);
 	isl_union_map_free(ps->writes);
+	isl_union_map_free(ps->dep_flow);
 	isl_union_map_free(ps->schedule);
 
 	free(ps);

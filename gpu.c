@@ -4596,17 +4596,12 @@ static void compute_schedule(struct gpu_gen *gen,
 	__isl_take isl_union_map *sched)
 {
 	isl_union_set *domain;
-	isl_union_map *empty;
 	isl_union_map *dep_raw, *dep2, *dep3, *dep;
 	isl_union_map *uninitialized;
 	isl_schedule *schedule;
 
-	empty = isl_union_map_empty(isl_union_map_get_space(sched));
-
-        isl_union_map_compute_flow(isl_union_map_copy(gen->prog->read),
-                            isl_union_map_copy(gen->prog->write), empty,
-                            isl_union_map_copy(sched),
-                            &dep_raw, NULL, &uninitialized, NULL);
+	dep_raw = isl_union_map_copy(gen->prog->scop->dep_flow);
+	uninitialized = isl_union_map_copy(gen->prog->scop->live_in);
         isl_union_map_compute_flow(isl_union_map_copy(gen->prog->write),
                             isl_union_map_copy(gen->prog->write),
                             isl_union_map_copy(gen->prog->read),

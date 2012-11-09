@@ -11,7 +11,10 @@
  * "context" represents constraints on the parameters.
  * "domain" is the union of all iteration domains.
  * "reads" contains all read accesses.
+ * "live_in" contains read accesses that have no corresponding
+ *	writes in the scop.
  * "writes" contains all write accesses.
+ * "dep_flow" represents the flow dependences.
  * "schedule" represents the (original) schedule.
  *
  * "arrays" and "stmts" are copies of the corresponding elements
@@ -21,7 +24,9 @@ struct ppcg_scop {
 	isl_set *context;
 	isl_union_set *domain;
 	isl_union_map *reads;
+	isl_union_map *live_in;
 	isl_union_map *writes;
+	isl_union_map *dep_flow;
 	isl_union_map *schedule;
 
 	int n_array;
