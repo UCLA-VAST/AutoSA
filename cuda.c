@@ -13,9 +13,8 @@
 #include "cuda_common.h"
 #include "cuda.h"
 #include "gpu.h"
-#include "pet_printer.h"
+#include "gpu_print.h"
 #include "print.h"
-#include "schedule.h"
 
 static __isl_give isl_printer *print_cuda_macros(__isl_take isl_printer *p)
 {
@@ -37,23 +36,6 @@ static __isl_give isl_printer *print_cuda_macros(__isl_take isl_printer *p)
 
 	p = isl_printer_print_str(p, macros);
 	return p;
-}
-
-static __isl_give isl_printer *print_array_size(__isl_take isl_printer *prn,
-	struct gpu_array_info *array)
-{
-	int i;
-
-	for (i = 0; i < array->n_index; ++i) {
-		prn = isl_printer_print_str(prn, "(");
-		prn = isl_printer_print_pw_aff(prn, array->bound[i]);
-		prn = isl_printer_print_str(prn, ") * ");
-	}
-	prn = isl_printer_print_str(prn, "sizeof(");
-	prn = isl_printer_print_str(prn, array->type);
-	prn = isl_printer_print_str(prn, ")");
-
-	return prn;
 }
 
 static __isl_give isl_printer *declare_device_arrays(__isl_take isl_printer *p,
@@ -89,7 +71,7 @@ static __isl_give isl_printer *allocate_device_arrays(
 			"cudaCheckReturn(cudaMalloc((void **) &dev_");
 		p = isl_printer_print_str(p, prog->array[i].name);
 		p = isl_printer_print_str(p, ", ");
-		p = print_array_size(p, &prog->array[i]);
+		p = gpu_array_info_print_size(p, &prog->array[i]);
 		p = isl_printer_print_str(p, "));");
 		p = isl_printer_end_line(p);
 	}
@@ -127,7 +109,7 @@ static __isl_give isl_printer *copy_arrays_to_device(__isl_take isl_printer *p,
 		p = isl_printer_print_str(p, prog->array[i].name);
 		p = isl_printer_print_str(p, ", ");
 
-		p = print_array_size(p, &prog->array[i]);
+		p = gpu_array_info_print_size(p, &prog->array[i]);
 		p = isl_printer_print_str(p, ", cudaMemcpyHostToDevice));");
 		p = isl_printer_end_line(p);
 	}
@@ -400,109 +382,6 @@ static __isl_give isl_printer *print_kernel_vars(__isl_take isl_printer *p,
 	return p;
 }
 
-/* Print an access to the element in the private/shared memory copy
- * described by "stmt".  The index of the copy is recorded in
- * stmt->local_index as a "call" to the array.
- */
-static __isl_give isl_printer *stmt_print_local_index(__isl_take isl_printer *p,
-	struct ppcg_kernel_stmt *stmt)
-{
-	int i;
-	isl_ast_expr *expr;
-	struct gpu_array_info *array = stmt->u.c.array;
-
-	expr = isl_ast_expr_get_op_arg(stmt->u.c.local_index, 0);
-	p = isl_printer_print_ast_expr(p, expr);
-	isl_ast_expr_free(expr);
-
-	for (i = 0; i < array->n_index; ++i) {
-		expr = isl_ast_expr_get_op_arg(stmt->u.c.local_index, 1 + i);
-
-		p = isl_printer_print_str(p, "[");
-		p = isl_printer_print_ast_expr(p, expr);
-		p = isl_printer_print_str(p, "]");
-
-		isl_ast_expr_free(expr);
-	}
-
-	return p;
-}
-
-/* Print an access to the element in the global memory copy
- * described by "stmt".  The index of the copy is recorded in
- * stmt->index as a "call" to the array.
- *
- * The copy in global memory has been linearized, so we need to take
- * the array size into account.
- */
-static __isl_give isl_printer *stmt_print_global_index(
-	__isl_take isl_printer *p, struct ppcg_kernel_stmt *stmt)
-{
-	int i;
-	struct gpu_array_info *array = stmt->u.c.array;
-	isl_pw_aff_list *bound = stmt->u.c.local_array->bound;
-
-	if (gpu_array_is_scalar(array)) {
-		if (!array->read_only)
-			p = isl_printer_print_str(p, "*");
-		p = isl_printer_print_str(p, array->name);
-		return p;
-	}
-
-	p = isl_printer_print_str(p, array->name);
-	p = isl_printer_print_str(p, "[");
-	for (i = 0; i + 1 < array->n_index; ++i)
-		p = isl_printer_print_str(p, "(");
-	for (i = 0; i < array->n_index; ++i) {
-		isl_ast_expr *expr;
-		expr = isl_ast_expr_get_op_arg(stmt->u.c.index, 1 + i);
-		if (i) {
-			isl_pw_aff *bound_i;
-			bound_i = isl_pw_aff_list_get_pw_aff(bound, i);
-			p = isl_printer_print_str(p, ") * (");
-			p = isl_printer_print_pw_aff(p, bound_i);
-			p = isl_printer_print_str(p, ") + (");
-			isl_pw_aff_free(bound_i);
-		}
-		p = isl_printer_print_ast_expr(p, expr);
-		if (i)
-			p = isl_printer_print_str(p, ")");
-		isl_ast_expr_free(expr);
-	}
-	p = isl_printer_print_str(p, "]");
-
-	return p;
-}
-
-/* Print a copy statement.
- *
- * A read copy statement is printed as
- *
- *	local = global;
- *
- * while a write copy statement is printed as
- *
- *	global = local;
- */
-static __isl_give isl_printer *print_copy(__isl_take isl_printer *p,
-	struct ppcg_kernel_stmt *stmt)
-{
-	p = isl_printer_start_line(p);
-	if (stmt->u.c.read) {
-		p = stmt_print_local_index(p, stmt);
-		p = isl_printer_print_str(p, " = ");
-		p = stmt_print_global_index(p, stmt);
-	} else {
-		p = stmt_print_global_index(p, stmt);
-		p = isl_printer_print_str(p, " = ");
-		p = stmt_print_local_index(p, stmt);
-	}
-	p = isl_printer_print_str(p, ";");
-	p = isl_printer_end_line(p);
-
-	return p;
-}
-
 /* Print a sync statement.
  */
 static __isl_give isl_printer *print_sync(__isl_take isl_printer *p,
@@ -510,104 +389,6 @@ static __isl_give isl_printer *print_sync(__isl_take isl_printer *p,
 {
 	p = isl_printer_start_line(p);
 	p = isl_printer_print_str(p, "__syncthreads();");
-	p = isl_printer_end_line(p);
-
-	return p;
-}
-
-/* Print an access based on the information in "access".
- * If this an access to global memory, then the index expression
- * is linearized.
- *
- * If access->array is NULL, then we are
- * accessing an iterator in the original program.
- */
-static __isl_give isl_printer *print_access(__isl_take isl_printer *p,
-	struct ppcg_kernel_access *access)
-{
-	int i;
-	unsigned n_index;
-	struct gpu_array_info *array;
-	isl_pw_aff_list *bound;
-
-	array = access->array;
-	bound = array ? access->local_array->bound : NULL;
-	if (!array)
-		p = isl_printer_print_str(p, "(");
-	else {
-		if (access->type == ppcg_access_global &&
-		    gpu_array_is_scalar(array) && !array->read_only)
-			p = isl_printer_print_str(p, "*");
-		p = isl_printer_print_str(p, access->local_name);
-		if (gpu_array_is_scalar(array))
-			return p;
-		p = isl_printer_print_str(p, "[");
-	}
-
-	n_index = isl_ast_expr_list_n_ast_expr(access->index);
-	if (access->type == ppcg_access_global)
-		for (i = 0; i + 1 < n_index; ++i)
-			p = isl_printer_print_str(p, "(");
-
-	for (i = 0; i < n_index; ++i) {
-		isl_ast_expr *index;
-
-		index = isl_ast_expr_list_get_ast_expr(access->index, i);
-		if (array && i) {
-			if (access->type == ppcg_access_global) {
-				isl_pw_aff *bound_i;
-				bound_i = isl_pw_aff_list_get_pw_aff(bound, i);
-				p = isl_printer_print_str(p, ") * (");
-				p = isl_printer_print_pw_aff(p, bound_i);
-				p = isl_printer_print_str(p, ") + ");
-				isl_pw_aff_free(bound_i);
-			} else
-				p = isl_printer_print_str(p, "][");
-		}
-		p = isl_printer_print_ast_expr(p, index);
-		isl_ast_expr_free(index);
-	}
-	if (!array)
-		p = isl_printer_print_str(p, ")");
-	else
-		p = isl_printer_print_str(p, "]");
-
-	return p;
-}
-
-struct cuda_access_print_info {
-	int i;
-	struct ppcg_kernel_stmt *stmt;
-};
-
-/* To print the cuda accesses we walk the list of cuda accesses simultaneously
- * with the pet printer. This means that whenever the pet printer prints a
- * pet access expression we have the corresponding cuda access available and can
- * print the modified access.
- */
-static __isl_give isl_printer *print_cuda_access(__isl_take isl_printer *p,
-	struct pet_expr *expr, void *usr)
-{
-	struct cuda_access_print_info *info =
-		(struct cuda_access_print_info *) usr;
-
-	p = print_access(p, &info->stmt->u.d.access[info->i]);
-	info->i++;
-
-	return p;
-}
-
-static __isl_give isl_printer *print_stmt_body(__isl_take isl_printer *p,
-	struct ppcg_kernel_stmt *stmt)
-{
-	struct cuda_access_print_info info;
-
-	info.i = 0;
-	info.stmt = stmt;
-
-	p = isl_printer_start_line(p);
-	p = print_pet_expr(p, stmt->u.d.stmt->body, &print_cuda_access, &info);
-	p = isl_printer_print_str(p, ";");
 	p = isl_printer_end_line(p);
 
 	return p;
@@ -631,37 +412,13 @@ static __isl_give isl_printer *print_kernel_stmt(__isl_take isl_printer *p,
 
 	switch (stmt->type) {
 	case ppcg_kernel_copy:
-		return print_copy(p, stmt);
+		return ppcg_kernel_print_copy(p, stmt);
 	case ppcg_kernel_sync:
 		return print_sync(p, stmt);
 	case ppcg_kernel_domain:
-		return print_stmt_body(p, stmt);
+		return ppcg_kernel_print_domain(p, stmt);
 	}
 
-	return p;
-}
-
-static int print_macro(enum isl_ast_op_type type, void *user)
-{
-	isl_printer **p = user;
-
-	if (type == isl_ast_op_fdiv_q)
-		return 0;
-
-	*p = isl_ast_op_type_print_macro(type, *p);
-
-	return 0;
-}
-
-/* Print the required macros for "node", including one for floord.
- * We always print a macro for floord as it may also appear in the statements.
- */
-static __isl_give isl_printer *print_macros(
-	__isl_keep isl_ast_node *node, __isl_take isl_printer *p)
-{
-	p = isl_ast_op_type_print_macro(isl_ast_op_fdiv_q, p);
-	if (isl_ast_node_foreach_ast_op_type(node, &print_macro, &p) < 0)
-		return isl_printer_free(p);
 	return p;
 }
 
@@ -682,7 +439,7 @@ static void print_kernel(struct gpu_prog *prog, struct ppcg_kernel *kernel,
 
 	p = print_kernel_vars(p, kernel);
 	p = isl_printer_end_line(p);
-	p = print_macros(kernel->tree, p);
+	p = gpu_print_macros(p, kernel->tree);
 
 	print_options = isl_ast_print_options_alloc(ctx);
 	print_options = isl_ast_print_options_set_print_user(print_options,
@@ -776,7 +533,7 @@ static __isl_give isl_printer *print_host_code(__isl_take isl_printer *p,
 	print_options = isl_ast_print_options_set_print_user(print_options,
 						&print_host_user, &data);
 
-	p = print_macros(tree, p);
+	p = gpu_print_macros(p, tree);
 	p = isl_ast_node_print(tree, p, print_options);
 
 	return p;
@@ -787,7 +544,8 @@ static __isl_give isl_printer *print_host_code(__isl_take isl_printer *p,
  *
  * If any element of a given array appears in prog->copy_out, then its
  * entire extent is in prog->copy_out.  The bounds on this extent have
- * been precomputed in extract_array_info and are used in print_array_size.
+ * been precomputed in extract_array_info and are used in
+ * gpu_array_info_print_size.
  */
 static __isl_give isl_printer *copy_arrays_from_device(
 	__isl_take isl_printer *p, struct gpu_prog *prog)
@@ -815,7 +573,7 @@ static __isl_give isl_printer *copy_arrays_from_device(
 		p = isl_printer_print_str(p, ", dev_");
 		p = isl_printer_print_str(p, prog->array[i].name);
 		p = isl_printer_print_str(p, ", ");
-		p = print_array_size(p, &prog->array[i]);
+		p = gpu_array_info_print_size(p, &prog->array[i]);
 		p = isl_printer_print_str(p, ", cudaMemcpyDeviceToHost));");
 		p = isl_printer_end_line(p);
 	}
