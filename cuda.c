@@ -14,6 +14,7 @@
 #include "cuda.h"
 #include "gpu.h"
 #include "pet_printer.h"
+#include "print.h"
 #include "schedule.h"
 
 static __isl_give isl_printer *print_cuda_macros(__isl_take isl_printer *p)
@@ -826,9 +827,7 @@ int generate_cuda(isl_ctx *ctx, struct ppcg_scop *scop,
 
 	p = isl_printer_to_file(ctx, cuda.host_c);
 	p = isl_printer_set_output_format(p, ISL_FORMAT_C);
-	p = isl_printer_start_line(p);
-	p = isl_printer_print_str(p, "{");
-	p = isl_printer_end_line(p);
+	p = ppcg_start_block(p);
 
 	p = print_cuda_macros(p);
 
@@ -842,9 +841,7 @@ int generate_cuda(isl_ctx *ctx, struct ppcg_scop *scop,
 	p = copy_arrays_from_device(p, prog);
 	p = free_device_arrays(p, prog);
 
-	p = isl_printer_start_line(p);
-	p = isl_printer_print_str(p, "}");
-	p = isl_printer_end_line(p);
+	p = ppcg_end_block(p);
 	isl_printer_free(p);
 
 	cuda_close_files(&cuda);
