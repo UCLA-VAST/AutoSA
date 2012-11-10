@@ -10,6 +10,7 @@
  *
  * "context" represents constraints on the parameters.
  * "domain" is the union of all iteration domains.
+ * "call" contains the iteration domains of statements with a call expression.
  * "reads" contains all read accesses.
  * "live_in" contains read accesses that have no corresponding
  *	writes in the scop.
@@ -24,6 +25,7 @@
 struct ppcg_scop {
 	isl_set *context;
 	isl_union_set *domain;
+	isl_union_set *call;
 	isl_union_map *reads;
 	isl_union_map *live_in;
 	isl_union_map *writes;

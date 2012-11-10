@@ -94,6 +94,37 @@ static __isl_give isl_union_set *collect_non_kill_domains(struct pet_scop *scop)
 	return collect_domains(scop, &is_not_kill);
 }
 
+/* Does "expr" contain any call expressions?
+ */
+static int expr_has_call(struct pet_expr *expr)
+{
+	int i;
+
+	if (expr->type == pet_expr_call)
+		return 1;
+
+	for (i = 0; i < expr->n_arg; ++i)
+		if (expr_has_call(expr->args[i]))
+			return 1;
+
+	return 0;
+}
+
+/* Does "stmt" contain any call expressions?
+ */
+static int has_call(struct pet_stmt *stmt)
+{
+	return expr_has_call(stmt->body);
+}
+
+/* Collect the iteration domains of the statements in "scop"
+ * that contain a call expression.
+ */
+static __isl_give isl_union_set *collect_call_domains(struct pet_scop *scop)
+{
+	return collect_domains(scop, &has_call);
+}
+
 /* Collect all kill accesses in "scop".
  */
 static __isl_give isl_union_map *collect_kills(struct pet_scop *scop)
@@ -158,6 +189,7 @@ static struct ppcg_scop *ppcg_scop_from_pet_scop(struct pet_scop *scop)
 
 	ps->context = isl_set_copy(scop->context);
 	ps->domain = collect_non_kill_domains(scop);
+	ps->call = collect_call_domains(scop);
 	ps->reads = pet_scop_collect_reads(scop);
 	ps->writes = pet_scop_collect_writes(scop);
 	ps->kills = collect_kills(scop);
@@ -179,6 +211,7 @@ static void ppcg_scop_free(struct ppcg_scop *ps)
 
 	isl_set_free(ps->context);
 	isl_union_set_free(ps->domain);
+	isl_union_set_free(ps->call);
 	isl_union_map_free(ps->reads);
 	isl_union_map_free(ps->live_in);
 	isl_union_map_free(ps->writes);
