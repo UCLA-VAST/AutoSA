@@ -194,6 +194,9 @@ struct gpu_gen {
 	/* The array reference group corresponding to copy_sched. */
 	struct gpu_array_ref_group *copy_group;
 
+	/* Is any array in the current kernel marked force_private? */
+	int any_force_private;
+
 	/* First loop to unroll (or -1 if none) in the current part of the
 	 * schedule.
 	 */
@@ -535,11 +538,67 @@ static __isl_give isl_union_map *compute_to_inner(struct ppcg_scop *scop)
 	return to_inner;
 }
 
+/* For each array in "prog", store the (untagged) order dependences
+ * derived from the array in array->dep_order.
+ * In particular, consider all references that access the given array
+ * and take the order dependences that have one of these references
+ * as source.  (Since an order dependence relates two references to
+ * the same array, the target of these order dependences will also
+ * be one of these references.)
+ * Additionally, store the union of these array->dep_order relations
+ * for all non-scalar arrays in prog->array_order.
+ */
+void collect_order_dependences(struct gpu_prog *prog)
+{
+	int i;
+	isl_space *space;
+	isl_union_map *accesses;
+
+	space = isl_union_map_get_space(prog->read);
+	prog->array_order = isl_union_map_empty(space);
+
+	accesses = isl_union_map_copy(prog->scop->tagged_reads);
+	accesses = isl_union_map_union(accesses,
+			    isl_union_map_copy(prog->scop->tagged_may_writes));
+	accesses = isl_union_map_universe(accesses);
+	accesses = isl_union_map_apply_range(accesses,
+					    isl_union_map_copy(prog->to_outer));
+
+	for (i = 0; i < prog->n_array; ++i) {
+		struct gpu_array_info *array = &prog->array[i];
+		isl_set *set;
+		isl_union_set *uset;
+		isl_union_map *order;
+
+		set = isl_set_universe(isl_space_copy(array->space));
+		uset = isl_union_set_from_set(set);
+		uset = isl_union_map_domain(
+		    isl_union_map_intersect_range(isl_union_map_copy(accesses),
+						    uset));
+		order = isl_union_map_copy(prog->scop->tagged_dep_order);
+		order = isl_union_map_intersect_domain(order, uset);
+		order = isl_union_map_zip(order);
+		order = isl_union_set_unwrap(isl_union_map_domain(order));
+		array->dep_order = order;
+
+		if (gpu_array_is_scalar(array))
+			continue;
+
+		prog->array_order = isl_union_map_union(prog->array_order,
+					isl_union_map_copy(array->dep_order));
+	}
+
+	isl_union_map_free(accesses);
+}
+
 /* Construct a gpu_array_info for each array possibly accessed by "prog" and
  * collect them in prog->array.
  *
  * If there are any member accesses involved, then they are first mapped
  * to the outer arrays of structs.
+ *
+ * If we are allowing live range reordering, then also set
+ * the dep_order field.  Otherwise leave it NULL.
  */
 static int collect_array_info(struct gpu_prog *prog)
 {
@@ -563,6 +622,9 @@ static int collect_array_info(struct gpu_prog *prog)
 	r = isl_union_set_foreach_set(arrays, &extract_array_info, prog);
 	isl_union_set_free(arrays);
 
+	if (prog->scop->options->live_range_reordering)
+		collect_order_dependences(prog);
+
 	return r;
 }
 
@@ -580,6 +642,7 @@ static void free_array_info(struct gpu_prog *prog)
 		isl_set_free(prog->array[i].extent);
 		free(prog->array[i].bound);
 		free(prog->array[i].refs);
+		isl_union_map_free(prog->array[i].dep_order);
 	}
 	free(prog->array);
 }
@@ -1591,12 +1654,41 @@ static __isl_give isl_map *permutation(__isl_take isl_space *dim,
 	return isl_map_from_basic_map(bmap);
 }
 
+/* Remove the private tiles from all array reference groups,
+ * except for the groups of arrays that are marked force_private.
+ */
+static void remove_private_tiles(struct gpu_gen *gen)
+{
+	int i, j;
+
+	for (i = 0; i < gen->prog->n_array; ++i) {
+		struct gpu_array_info *array = &gen->prog->array[i];
+
+		if (array->force_private)
+			continue;
+
+		for (j = 0; j < array->n_group; ++j) {
+			struct gpu_array_ref_group *group = array->groups[j];
+
+			group->private_tile = free_tile(group->private_tile);
+		}
+	}
+}
+
 /* Find all loops involved in any of the index expressions for any of
  * the private accesses, move them innermost and then mark them as
  * requiring unrolling by setting gen->first_unroll.
  * The loops involved should all be parallel because of the checks
  * we performed in check_private_group_access.  Moving them innermost
  * is therefore a valid transformation.
+ *
+ * If any of the arrays are marked force_private, however, then
+ * those loops may not be parallel with respect to the marked arrays.
+ * If any of the loops would have to be moved innermost for the
+ * (non forced) private accesses and if there are any force_private
+ * arrays, then we revert the decision to map the selected arrays
+ * to private memory.  An alternative solution would be to expand
+ * the force_private arrays.
  *
  * Loops up to gen->shared_len are generated before the mapping to
  * threads is applied.  They should therefore be ignored.
@@ -1655,6 +1747,11 @@ static __isl_give isl_union_map *interchange_for_unroll(struct gpu_gen *gen,
 	for (i = len; i < gen->thread_tiled_len; ++i)
 		if (unroll[i])
 			return sched;
+
+	if (gen->any_force_private) {
+		remove_private_tiles(gen);
+		return sched;
+	}
 
 	j = 0;
 	for (i = 0; i < gen->shared_len; ++i)
@@ -2247,6 +2344,10 @@ static __isl_give isl_val *tile_size(isl_ctx *ctx, struct gpu_array_tile *tile)
  * We apply a greedy approach and discard (keep in global memory)
  * those groups that would result in a total memory size that
  * is larger than the maximum.
+ *
+ * This function should be called after any function that may
+ * affect the decision on whether to place a reference group
+ * in private, shared or global memory.
  */
 static void check_shared_memory_bound(struct gpu_gen *gen)
 {
@@ -2633,8 +2734,11 @@ static struct gpu_array_ref_group *join_groups_and_free(
  * Combining the injectivity of the first test with the single-valuedness
  * of the second test, we simply test for bijectivity.
  *
- * If it turns out we can use registers, we compute the private memory
- * tile size using can_tile, after introducing a dependence
+ * If the array is marked force_private, then we bypass all checks
+ * and assume we can (and should) use registers.
+ *
+ * If it turns out we can (or have to) use registers, we compute
+ * the private memory tile size using can_tile, after introducing a dependence
  * on the thread indices.
  */
 static int compute_group_bounds_core(struct gpu_gen *gen,
@@ -2645,14 +2749,15 @@ static int compute_group_bounds_core(struct gpu_gen *gen,
 	int n_index = group->array->n_index;
 	int no_reuse;
 	isl_map *acc;
+	int force_private = group->array->force_private;
 	int use_shared = gen->options->use_shared_memory;
-	int use_private = gen->options->use_private_memory;
+	int use_private = force_private || gen->options->use_private_memory;
 
 	if (!use_shared && !use_private)
 		return 0;
 	if (gpu_array_is_read_only_scalar(group->array))
 		return 0;
-	if (!group->exact_write)
+	if (!force_private && !group->exact_write)
 		return 0;
 
 	access = group_access_relation(group, 1, 1);
@@ -2664,7 +2769,7 @@ static int compute_group_bounds_core(struct gpu_gen *gen,
 			group->shared_tile = free_tile(group->shared_tile);
 	}
 
-	if (!use_private || no_reuse) {
+	if (!force_private && (!use_private || no_reuse)) {
 		isl_union_map_free(access);
 		return 0;
 	}
@@ -2674,7 +2779,7 @@ static int compute_group_bounds_core(struct gpu_gen *gen,
 
 	acc = isl_map_from_union_map(access);
 
-	if (!access_is_bijective(gen, acc)) {
+	if (!force_private && !access_is_bijective(gen, acc)) {
 		isl_map_free(acc);
 		return 0;
 	}
@@ -2685,6 +2790,11 @@ static int compute_group_bounds_core(struct gpu_gen *gen,
 		group->private_tile = free_tile(group->private_tile);
 
 	isl_map_free(acc);
+
+	if (force_private && !group->private_tile)
+		isl_die(ctx, isl_error_internal,
+			"unable to map array reference group to registers",
+			return -1);
 
 	return 0;
 }
@@ -2987,6 +3097,61 @@ static void compute_shared_sched(struct gpu_gen *gen)
 
 	gen->shared_sched = sched;
 	gen->shared_proj = isl_union_map_from_map(proj);
+}
+
+/* For each scalar in the input program, check if there are any
+ * order dependences active inside the current kernel, within
+ * the same iteration of the host schedule.
+ * If so, mark the scalar as force_private so that it will be
+ * mapped to a register.
+ */
+static void check_scalar_live_ranges(struct gpu_gen *gen)
+{
+	int i;
+	isl_map *proj;
+	isl_union_map *sched;
+	isl_union_set *domain;
+	isl_union_map *same_host_iteration;
+
+	gen->any_force_private = 0;
+
+	if (!gen->options->live_range_reordering)
+		return;
+
+	sched = gen->shared_sched;
+	sched = isl_union_map_universe(isl_union_map_copy(sched));
+	domain = isl_union_map_domain(sched);
+
+	sched = isl_union_map_copy(gen->sched);
+	proj = projection(isl_union_map_get_space(sched),
+			    gen->untiled_len, gen->tile_first);
+	sched = isl_union_map_apply_range(sched, isl_union_map_from_map(proj));
+	same_host_iteration = isl_union_map_apply_range(sched,
+			    isl_union_map_reverse(isl_union_map_copy(sched)));
+
+	for (i = 0; i < gen->prog->n_array; ++i) {
+		struct gpu_array_info *array = &gen->prog->array[i];
+		isl_union_map *order;
+
+		array->force_private = 0;
+		if (array->n_index != 0)
+			continue;
+		order = isl_union_map_copy(array->dep_order);
+		order = isl_union_map_intersect_domain(order,
+						    isl_union_set_copy(domain));
+		order = isl_union_map_intersect_range(order,
+						    isl_union_set_copy(domain));
+		order = isl_union_map_intersect(order,
+				    isl_union_map_copy(same_host_iteration));
+		if (!isl_union_map_is_empty(order)) {
+			array->force_private = 1;
+			gen->any_force_private = 1;
+		}
+		isl_union_map_free(order);
+	}
+
+	isl_union_map_free(same_host_iteration);
+	isl_union_set_free(domain);
 }
 
 /* Group references of all arrays in the program.
@@ -4903,16 +5068,17 @@ static __isl_give isl_ast_node *create_host_leaf(
 	gen->private_access = NULL;
 	compute_shared_sched(gen);
 	gen->privatization = compute_privatization(gen);
+	check_scalar_live_ranges(gen);
 	if (group_references(gen) < 0)
 		schedule = isl_union_map_free(schedule);
 	compute_private_access(gen);
-	check_shared_memory_bound(gen);
-	compute_group_tilings(gen);
 	host_domain = isl_set_from_union_set(isl_union_map_range(
 						isl_union_map_copy(schedule)));
 	localize_bounds(gen, kernel, host_domain);
 
 	gen->local_sched = interchange_for_unroll(gen, gen->local_sched);
+	check_shared_memory_bound(gen);
+	compute_group_tilings(gen);
 
 	kernel->tree = generate_kernel(gen, build, host_domain,
 					kernel->grid_size);
@@ -5242,29 +5408,63 @@ static int set_untiled_len(__isl_take isl_map *map, void *user)
  * We use the dependences in gen->prog->scop to compute
  * a schedule that has a parallel loop in each tilable band.
  * Finally, we select the outermost tilable band.
+ *
+ * If live range reordering is allowed, then we need to make sure
+ * that live ranges on arrays are not run in parallel since doing
+ * so would require array expansion.  We therefore add the array
+ * order dependences to the coincidence dependences.  Non-zero array
+ * order dependences will then prevent a schedule dimension from being
+ * considered parallel.
+ * Live ranges derived from scalars are allowed to be run in parallel
+ * since we force the scalars to be mapped to private memory in
+ * check_scalar_live_ranges.
+ * If live range reordering is allowed, then the false dependences
+ * are not added to the validity constraints as that would prevent
+ * reordering.  Instead, the external false dependences that enforce that reads
+ * from potentially live-in data precede any later write and
+ * that writes of potentially live-out data follow any other earlier write
+ * are added to the validity constraints.
+ * The false dependences are still added to the proximity constraints
+ * for consistency with the case where live range reordering is not allowed.
  */
 static void compute_schedule(struct gpu_gen *gen)
 {
 	isl_union_set *domain;
 	isl_union_map *dep_raw, *dep;
+	isl_union_map *validity, *proximity, *coincidence;
 	isl_union_map *sched;
 	isl_schedule_constraints *sc;
 	isl_schedule *schedule;
-
-	dep_raw = isl_union_map_copy(gen->prog->scop->dep_flow);
-
-	dep = isl_union_map_copy(gen->prog->scop->dep_false);
-	dep = isl_union_map_union(dep, dep_raw);
-	dep = isl_union_map_coalesce(dep);
 
 	domain = isl_union_set_copy(gen->prog->scop->domain);
 	domain = isl_union_set_intersect_params(domain,
 				isl_set_copy(gen->prog->scop->context));
 	sc = isl_schedule_constraints_on_domain(isl_union_set_copy(domain));
-	sc = isl_schedule_constraints_set_validity(sc, isl_union_map_copy(dep));
-	sc = isl_schedule_constraints_set_coincidence(sc,
-						    isl_union_map_copy(dep));
-	sc = isl_schedule_constraints_set_proximity(sc, dep);
+	if (gen->options->live_range_reordering) {
+		sc = isl_schedule_constraints_set_conditional_validity(sc,
+			isl_union_map_copy(gen->prog->scop->tagged_dep_flow),
+			isl_union_map_copy(gen->prog->scop->tagged_dep_order));
+		proximity = isl_union_map_copy(gen->prog->scop->dep_flow);
+		validity = isl_union_map_copy(proximity);
+		validity = isl_union_map_union(validity,
+			    isl_union_map_copy(gen->prog->scop->dep_external));
+		proximity = isl_union_map_union(proximity,
+			    isl_union_map_copy(gen->prog->scop->dep_false));
+		coincidence = isl_union_map_copy(validity);
+		coincidence = isl_union_map_union(coincidence,
+				isl_union_map_copy(gen->prog->array_order));
+	} else {
+		dep_raw = isl_union_map_copy(gen->prog->scop->dep_flow);
+		dep = isl_union_map_copy(gen->prog->scop->dep_false);
+		dep = isl_union_map_union(dep, dep_raw);
+		dep = isl_union_map_coalesce(dep);
+		proximity = isl_union_map_copy(dep);
+		coincidence = isl_union_map_copy(dep);
+		validity = dep;
+	}
+	sc = isl_schedule_constraints_set_validity(sc, validity);
+	sc = isl_schedule_constraints_set_coincidence(sc, coincidence);
+	sc = isl_schedule_constraints_set_proximity(sc, proximity);
 
 	if (gen->options->debug->dump_schedule_constraints)
 		isl_schedule_constraints_dump(sc);
@@ -5651,6 +5851,7 @@ void *gpu_prog_free(struct gpu_prog *prog)
 	isl_union_map_free(prog->read);
 	isl_union_map_free(prog->may_write);
 	isl_union_map_free(prog->must_write);
+	isl_union_map_free(prog->array_order);
 	isl_set_free(prog->context);
 	free(prog);
 	return NULL;

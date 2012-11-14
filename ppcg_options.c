@@ -47,4 +47,8 @@ ISL_ARG_CHOICE(struct ppcg_options, target, 0, "target", target,
 ISL_ARG_BOOL(struct ppcg_options, linearize_device_arrays, 0,
 	"linearize-device-arrays", 1,
 	"linearize all device arrays, even those of fixed size")
+ISL_ARG_BOOL(struct ppcg_options, live_range_reordering, 0,
+	"live-range-reordering", 1,
+	"allow successive live ranges on the same memory element "
+	"to be reordered")
 ISL_ARGS_END

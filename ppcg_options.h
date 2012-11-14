@@ -36,6 +36,9 @@ struct ppcg_options {
 
 	/* Linearize all device arrays. */
 	int linearize_device_arrays;
+
+	/* Allow live range to be reordered. */
+	int live_range_reordering;
 };
 
 ISL_ARG_DECL(ppcg_debug_options, struct ppcg_debug_options,

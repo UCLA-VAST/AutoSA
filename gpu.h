@@ -46,6 +46,14 @@ struct gpu_array_info {
 
 	/* Should the array be linearized? */
 	int linearize;
+
+	/* Order dependences on this array.
+	 * Only used if live_range_reordering option is set.
+	 * It is set to NULL otherwise.
+	 */
+	isl_union_map *dep_order;
+	/* Should the array (scalar) be forcibly mapped to a register? */
+	int force_private;
 };
 
 /* For each index i, array->bound[i] specialized to the current kernel. */
@@ -94,6 +102,9 @@ struct gpu_prog {
 	isl_union_map *to_outer;
 	/* A mapping from the outer arrays to all corresponding inner arrays. */
 	isl_union_map *to_inner;
+
+	/* Order dependences on non-scalars. */
+	isl_union_map *array_order;
 
 	/* Array of statements */
 	int n_stmts;

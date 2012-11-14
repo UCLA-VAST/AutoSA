@@ -73,6 +73,7 @@ run_tests () {
 }
 
 run_tests ppcg
+run_tests ppcg_live --no-live-range-reordering
 
 # Test OpenMP code, if compiler supports openmp
 echo  | $CC -x c - -fsyntax-only -fopenmp -Werror 1> /dev/null 2> /dev/null

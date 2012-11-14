@@ -96,6 +96,9 @@ struct ast_build_userinfo {
  *
  * We check for parallelism by verifying that the loop does not carry any
  * dependences.
+ * If the live_range_reordering option is set, then this currently
+ * includes the order dependences.  In principle, non-zero order dependences
+ * could be allowed, but this would require privatization and/or expansion.
  *
  * Parallelism test: if the distance is zero in all outer dimensions, then it
  * has to be zero in the current dimension as well.
@@ -120,6 +123,10 @@ static int ast_schedule_dim_is_parallel(__isl_keep isl_ast_build *build,
 
 	deps = isl_union_map_copy(scop->dep_flow);
 	deps = isl_union_map_union(deps, isl_union_map_copy(scop->dep_false));
+	if (scop->options->live_range_reordering) {
+		isl_union_map *order = isl_union_map_copy(scop->dep_order);
+		deps = isl_union_map_union(deps, order);
+	}
 	deps = isl_union_map_apply_range(deps, isl_union_map_copy(schedule));
 	deps = isl_union_map_apply_domain(deps, schedule);
 

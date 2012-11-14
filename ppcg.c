@@ -283,6 +283,130 @@ static void compute_tagged_flow_dep(struct ppcg_scop *ps)
 	ps->live_in = project_out_tags(live_in);
 }
 
+/* Compute the order dependences that prevent the potential live ranges
+ * from overlapping.
+ * "before" contains all pairs of statement iterations where
+ * the first is executed before the second according to the original schedule.
+ *
+ * In particular, construct a union of relations
+ *
+ *	[R[...] -> R_1[]] -> [W[...] -> R_2[]]
+ *
+ * where [R[...] -> R_1[]] is the range of one or more live ranges
+ * (i.e., a read) and [W[...] -> R_2[]] is the domain of one or more
+ * live ranges (i.e., a write).  Moreover, the read and the write
+ * access the same memory element and the read occurs before the write
+ * in the original schedule.
+ * The scheduler allows some of these dependences to be violated, provided
+ * the adjacent live ranges are all local (i.e., their domain and range
+ * are mapped to the same point by the current schedule band).
+ *
+ * Note that if a live range is not local, then we need to make
+ * sure it does not overlap with _any_ other live range, and not
+ * just with the "previous" and/or the "next" live range.
+ * We therefore add order dependences between reads and
+ * _any_ later potential write.
+ *
+ * We also need to be careful about writes without a corresponding read.
+ * They are already prevented from moving past non-local preceding
+ * intervals, but we also need to prevent them from moving past non-local
+ * following intervals.  We therefore also add order dependences from
+ * potential writes that do not appear in any intervals
+ * to all later potential writes.
+ * Note that dead code elimination should have removed most of these
+ * dead writes, but the dead code elimination may not remove all dead writes,
+ * so we need to consider them to be safe.
+ */
+static void compute_order_dependences(struct ppcg_scop *ps,
+	__isl_take isl_union_map *before)
+{
+	isl_union_map *reads;
+	isl_union_map *shared_access;
+	isl_union_set *matched;
+	isl_union_map *unmatched;
+	isl_union_set *domain;
+
+	reads = isl_union_map_copy(ps->tagged_reads);
+	matched = isl_union_map_domain(isl_union_map_copy(ps->tagged_dep_flow));
+	unmatched = isl_union_map_copy(ps->tagged_may_writes);
+	unmatched = isl_union_map_subtract_domain(unmatched, matched);
+	reads = isl_union_map_union(reads, unmatched);
+	shared_access = isl_union_map_copy(ps->tagged_may_writes);
+	shared_access = isl_union_map_reverse(shared_access);
+	shared_access = isl_union_map_apply_range(reads, shared_access);
+	shared_access = isl_union_map_zip(shared_access);
+	shared_access = isl_union_map_intersect_domain(shared_access,
+						isl_union_map_wrap(before));
+	domain = isl_union_map_domain(isl_union_map_copy(shared_access));
+	shared_access = isl_union_map_zip(shared_access);
+	ps->dep_order = isl_union_set_unwrap(domain);
+	ps->tagged_dep_order = shared_access;
+}
+
+/* Compute the external false dependences of the program represented by "scop"
+ * in case live range reordering is allowed.
+ * "before" contains all pairs of statement iterations where
+ * the first is executed before the second according to the original schedule.
+ *
+ * The anti-dependences are already taken care of by the order dependences.
+ * The external false dependences are only used to ensure that live-in and
+ * live-out data is not overwritten by any writes inside the scop.
+ *
+ * In particular, the reads from live-in data need to precede any
+ * later write to the same memory element.
+ * As to live-out data, the last writes need to remain the last writes.
+ * That is, any earlier write in the original schedule needs to precede
+ * the last write to the same memory element in the computed schedule.
+ * The possible last writes have been computed by compute_live_out.
+ * They may include kills, but if the last access is a kill,
+ * then the corresponding dependences will effectively be ignored
+ * since we do not schedule any kill statements.
+ *
+ * Note that the set of live-in and live-out accesses may be
+ * an overapproximation.  There may therefore be potential writes
+ * before a live-in access and after a live-out access.
+ */
+static void compute_external_false_dependences(struct ppcg_scop *ps,
+	__isl_take isl_union_map *before)
+{
+	isl_union_map *shared_access;
+	isl_union_map *exposed;
+	isl_union_map *live_in;
+
+	exposed = isl_union_map_copy(ps->live_out);
+
+	exposed = isl_union_map_reverse(exposed);
+	shared_access = isl_union_map_copy(ps->may_writes);
+	shared_access = isl_union_map_apply_range(shared_access, exposed);
+
+	ps->dep_external = shared_access;
+
+	live_in = isl_union_map_apply_range(isl_union_map_copy(ps->live_in),
+		    isl_union_map_reverse(isl_union_map_copy(ps->may_writes)));
+
+	ps->dep_external = isl_union_map_union(ps->dep_external, live_in);
+	ps->dep_external = isl_union_map_intersect(ps->dep_external, before);
+}
+
+/* Compute the dependences of the program represented by "scop"
+ * in case live range reordering is allowed.
+ *
+ * We compute the actual live ranges and the corresponding order
+ * false dependences.
+ */
+static void compute_live_range_reordering_dependences(struct ppcg_scop *ps)
+{
+	isl_union_map *before;
+
+	before = isl_union_map_lex_lt_union_map(
+			isl_union_map_copy(ps->schedule),
+			isl_union_map_copy(ps->schedule));
+
+	compute_tagged_flow_dep(ps);
+	compute_order_dependences(ps, isl_union_map_copy(before));
+	compute_external_false_dependences(ps, before);
+}
+
 /* Compute the potential flow dependences and the potential live in
  * accesses.
  */
@@ -308,6 +432,10 @@ static void compute_flow_dep(struct ppcg_scop *ps)
  * scop->live_in.
  * Store the potential live out accesses in scop->live_out.
  * Store the potential false (anti and output) dependences in scop->dep_false.
+ *
+ * If live range reordering is allowed, then we compute a separate
+ * set of order dependences and a set of external false dependences
+ * in compute_live_range_reordering_dependences.
  */
 static void compute_dependences(struct ppcg_scop *scop)
 {
@@ -319,7 +447,9 @@ static void compute_dependences(struct ppcg_scop *scop)
 
 	compute_live_out(scop);
 
-	if (scop->options->target != PPCG_TARGET_C)
+	if (scop->options->live_range_reordering)
+		compute_live_range_reordering_dependences(scop);
+	else if (scop->options->target != PPCG_TARGET_C)
 		compute_tagged_flow_dep(scop);
 	else
 		compute_flow_dep(scop);
@@ -464,6 +594,9 @@ static void *ppcg_scop_free(struct ppcg_scop *ps)
 	isl_union_map_free(ps->tagged_dep_flow);
 	isl_union_map_free(ps->dep_flow);
 	isl_union_map_free(ps->dep_false);
+	isl_union_map_free(ps->dep_external);
+	isl_union_map_free(ps->tagged_dep_order);
+	isl_union_map_free(ps->dep_order);
 	isl_union_map_free(ps->schedule);
 	isl_union_map_free(ps->tagger);
 
