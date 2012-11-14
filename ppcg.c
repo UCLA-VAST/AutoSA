@@ -155,13 +155,16 @@ static __isl_give isl_union_map *collect_kills(struct pet_scop *scop)
 	return kills;
 }
 
-/* Compute (flow) dependences and store the resulting flow dependences
+/* Compute the dependences of the program represented by "scop".
+ * Store the computed flow dependences
  * in scop->dep_flow and the reads with no corresponding writes in
  * scop->live_in.
+ * Store the false (anti and output) dependences in scop->dep_false.
  */
 static void compute_dependences(struct ppcg_scop *scop)
 {
 	isl_union_map *empty;
+	isl_union_map *dep1, *dep2;
 
 	if (!scop)
 		return;
@@ -171,6 +174,15 @@ static void compute_dependences(struct ppcg_scop *scop)
 				isl_union_map_copy(scop->writes), empty,
 				isl_union_map_copy(scop->schedule),
 				&scop->dep_flow, NULL, &scop->live_in, NULL);
+
+	isl_union_map_compute_flow(isl_union_map_copy(scop->writes),
+				isl_union_map_copy(scop->writes),
+				isl_union_map_copy(scop->reads),
+				isl_union_map_copy(scop->schedule),
+				&dep1, &dep2, NULL, NULL);
+
+	scop->dep_false = isl_union_map_union(dep1, dep2);
+	scop->dep_false = isl_union_map_coalesce(scop->dep_false);
 }
 
 /* Eliminate dead code from ps->domain.
@@ -282,6 +294,7 @@ static void ppcg_scop_free(struct ppcg_scop *ps)
 	isl_union_map_free(ps->writes);
 	isl_union_map_free(ps->kills);
 	isl_union_map_free(ps->dep_flow);
+	isl_union_map_free(ps->dep_false);
 	isl_union_map_free(ps->schedule);
 
 	free(ps);

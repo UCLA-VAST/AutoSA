@@ -4596,30 +4596,24 @@ static int set_untiled_len(__isl_take isl_map *map, void *user)
 /* Compute an appropriate schedule based on the accesses in
  * gen->read and gen->write.
  *
- * We first compute dependences and then use those to compute
+ * We use the dependences in gen->prog->scop to compute
  * a schedule that has a parallel loop in each tilable band.
  * Finally, we select the outermost tilable band.
  */
-static void compute_schedule(struct gpu_gen *gen,
-	__isl_take isl_union_map *sched)
+static void compute_schedule(struct gpu_gen *gen)
 {
 	isl_union_set *domain;
-	isl_union_map *dep_raw, *dep2, *dep3, *dep;
+	isl_union_map *dep_raw, *dep;
 	isl_union_map *uninitialized;
+	isl_union_map *sched;
 	isl_schedule *schedule;
 
 	dep_raw = isl_union_map_copy(gen->prog->scop->dep_flow);
 	uninitialized = isl_union_map_copy(gen->prog->scop->live_in);
-        isl_union_map_compute_flow(isl_union_map_copy(gen->prog->write),
-                            isl_union_map_copy(gen->prog->write),
-                            isl_union_map_copy(gen->prog->read),
-                            isl_union_map_copy(sched),
-                            &dep2, &dep3, NULL, NULL);
-	isl_union_map_free(sched);
 
 	gen->prog->copy_in = isl_union_map_range(uninitialized);
 
-	dep = isl_union_map_union(dep2, dep3);
+	dep = isl_union_map_copy(gen->prog->scop->dep_false);
 	dep = isl_union_map_union(dep, dep_raw);
 	dep = isl_union_map_coalesce(dep);
 
@@ -4758,9 +4752,7 @@ __isl_give isl_ast_node *generate_gpu(isl_ctx *ctx, struct gpu_prog *prog,
 	gen.sizes = extract_sizes_from_str(ctx, options->sizes);
 	gen.options = options;
 
-	sched = isl_union_map_copy(prog->scop->schedule);
-
-	compute_schedule(&gen, sched);
+	compute_schedule(&gen);
 
 	gen.kernel_id = 0;
 	tree = generate_host_code(&gen);
