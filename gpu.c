@@ -4403,23 +4403,6 @@ static __isl_give isl_ast_node *generate_host_code(struct gpu_gen *gen)
 	return tree;
 }
 
-__isl_give isl_set *add_context_from_str(__isl_take isl_set *set,
-	const char *str)
-{
-	isl_ctx *ctx;
-	isl_set *context;
-
-	if (!str)
-		return set;
-
-	ctx = isl_set_get_ctx(set);
-	context = isl_set_read_from_str(ctx, str);
-	context = isl_set_align_params(context, isl_set_get_space(set));
-	set = isl_set_intersect(set, context);
-
-	return set;
-}
-
 __isl_give isl_union_map *extract_sizes_from_str(isl_ctx *ctx, const char *str)
 {
 	if (!str)

@@ -841,8 +841,6 @@ int generate_cuda(isl_ctx *ctx, struct ppcg_scop *scop,
 	if (!scop)
 		return -1;
 
-	scop->context = add_context_from_str(scop->context, options->ctx);
-
 	prog = gpu_prog_alloc(ctx, scop);
 
 	tree = generate_gpu(ctx, prog, options);

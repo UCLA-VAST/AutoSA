@@ -245,12 +245,32 @@ static void eliminate_dead_code(struct ppcg_scop *ps)
 	ps->domain = isl_union_set_intersect(ps->domain, live);
 }
 
+/* Intersect "set" with the set described by "str", taking the NULL
+ * string to represent the universal set.
+ */
+static __isl_give isl_set *set_intersect_str(__isl_take isl_set *set,
+	const char *str)
+{
+	isl_ctx *ctx;
+	isl_set *set2;
+
+	if (!str)
+		return set;
+
+	ctx = isl_set_get_ctx(set);
+	set2 = isl_set_read_from_str(ctx, str);
+	set = isl_set_intersect(set, set2);
+
+	return set;
+}
+
 /* Extract a ppcg_scop from a pet_scop.
  *
  * The constructed ppcg_scop refers to elements from the pet_scop
  * so the pet_scop should not be freed before the ppcg_scop.
  */
-static struct ppcg_scop *ppcg_scop_from_pet_scop(struct pet_scop *scop)
+static struct ppcg_scop *ppcg_scop_from_pet_scop(struct pet_scop *scop,
+	struct ppcg_options *options)
 {
 	isl_ctx *ctx;
 	struct ppcg_scop *ps;
@@ -265,6 +285,7 @@ static struct ppcg_scop *ppcg_scop_from_pet_scop(struct pet_scop *scop)
 		return NULL;
 
 	ps->context = isl_set_copy(scop->context);
+	ps->context = set_intersect_str(ps->context, options->ctx);
 	ps->domain = collect_non_kill_domains(scop);
 	ps->call = collect_call_domains(scop);
 	ps->reads = pet_scop_collect_reads(scop);
@@ -322,7 +343,7 @@ int main(int argc, char **argv)
 
 	scop = pet_scop_extract_from_C_source(ctx, options->input, NULL);
 	scop = pet_scop_align_params(scop);
-	ps = ppcg_scop_from_pet_scop(scop);
+	ps = ppcg_scop_from_pet_scop(scop, options->ppcg);
 
 	if (options->ppcg->target == PPCG_TARGET_CUDA)
 		r = generate_cuda(ctx, ps, options->ppcg, options->input);
