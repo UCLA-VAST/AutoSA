@@ -59,7 +59,7 @@ static void ppcg_stmt_free(void *user)
  * We will basically replace everything after the last point
  * with '.ppcg.c'. This means file.c becomes file.ppcg.c
  */
-FILE *get_output_file(const char *input)
+static FILE *get_output_file(const char *input, const char *output)
 {
 	char name[PATH_MAX];
 	const char *base;
@@ -79,7 +79,10 @@ FILE *get_output_file(const char *input)
 	strcpy(name + len, ppcg_marker);
 	strcpy(name + len + sizeof(ppcg_marker) - 1, ext);
 
-	return fopen(name, "w");
+	if (!output)
+		output = name;
+
+	return fopen(output, "w");
 }
 
 /* Print a memory access 'access' to the printer 'p'.
@@ -375,7 +378,7 @@ static int any_hidden_declarations(struct ppcg_scop *scop)
 }
 
 int generate_cpu(isl_ctx *ctx, struct ppcg_scop *ps,
-	struct ppcg_options *options, const char *input)
+	struct ppcg_options *options, const char *input, const char *output)
 {
 	FILE *input_file;
 	FILE *output_file;
@@ -386,7 +389,7 @@ int generate_cpu(isl_ctx *ctx, struct ppcg_scop *ps,
 		return -1;
 
 	input_file = fopen(input, "r");
-	output_file = get_output_file(input);
+	output_file = get_output_file(input, output);
 
 	copy_before_scop(input_file, output_file);
 	fprintf(output_file, "/* ppcg generated CPU code */\n\n");

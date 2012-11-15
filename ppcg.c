@@ -25,6 +25,7 @@ struct options {
 	struct pet_options *pet;
 	struct ppcg_options *ppcg;
 	char *input;
+	char *output;
 };
 
 const char *ppcg_version(void);
@@ -37,6 +38,8 @@ ISL_ARGS_START(struct options, options_args)
 ISL_ARG_CHILD(struct options, isl, "isl", &isl_options_args, "isl options")
 ISL_ARG_CHILD(struct options, pet, "pet", &pet_options_args, "pet options")
 ISL_ARG_CHILD(struct options, ppcg, NULL, &ppcg_options_args, "ppcg options")
+ISL_ARG_STR(struct options, output, 'o', NULL,
+	"filename", NULL, "output filename (c target)")
 ISL_ARG_ARG(struct options, input, "input", NULL)
 ISL_ARG_VERSION(print_version)
 ISL_ARGS_END
@@ -306,7 +309,8 @@ int main(int argc, char **argv)
 	if (options->ppcg->target == PPCG_TARGET_CUDA)
 		r = generate_cuda(ctx, ps, options->ppcg, options->input);
 	else
-		r = generate_cpu(ctx, ps, options->ppcg, options->input);
+		r = generate_cpu(ctx, ps, options->ppcg, options->input,
+				options->output);
 
 	ppcg_scop_free(ps);
 	pet_scop_free(scop);
