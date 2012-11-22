@@ -171,6 +171,7 @@ static __isl_give isl_printer *print_access_expr(__isl_take isl_printer *p,
  * The ppcg_stmt has been attached to the node in at_each_domain.
  */
 static __isl_give isl_printer *print_user(__isl_take isl_printer *p,
+	__isl_take isl_ast_print_options *print_options,
 	__isl_keep isl_ast_node *node, void *user)
 {
 	struct ppcg_stmt *stmt;
@@ -187,6 +188,8 @@ static __isl_give isl_printer *print_user(__isl_take isl_printer *p,
 	p = print_pet_expr(p, stmt->stmt->body, &print_access_expr, &access);
 	p = isl_printer_print_str(p, ";");
 	p = isl_printer_end_line(p);
+
+	isl_ast_print_options_free(print_options);
 
 	return p;
 }
@@ -352,8 +355,6 @@ static __isl_give isl_printer *print_scop(isl_ctx *ctx, struct ppcg_scop *scop,
 
 	p = isl_ast_node_print_macros(tree, p);
 	p = isl_ast_node_print(tree, p, print_options);
-
-	isl_ast_print_options_free(print_options);
 
 	isl_ast_node_free(tree);
 

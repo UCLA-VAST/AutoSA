@@ -590,6 +590,7 @@ static __isl_give isl_printer *print_stmt_body(__isl_take isl_printer *p,
  * i.e., for each kernel body statement, copy statement or sync statement.
  */
 static __isl_give isl_printer *print_kernel_stmt(__isl_take isl_printer *p,
+	__isl_take isl_ast_print_options *print_options,
 	__isl_keep isl_ast_node *node, void *user)
 {
 	isl_id *id;
@@ -598,6 +599,8 @@ static __isl_give isl_printer *print_kernel_stmt(__isl_take isl_printer *p,
 	id = isl_ast_node_get_annotation(node);
 	stmt = isl_id_get_user(id);
 	isl_id_free(id);
+
+	isl_ast_print_options_free(print_options);
 
 	switch (stmt->type) {
 	case ppcg_kernel_copy:
@@ -659,8 +662,6 @@ static void print_kernel(struct gpu_prog *prog, struct ppcg_kernel *kernel,
 	p = isl_ast_node_print(kernel->tree, p, print_options);
 	isl_printer_free(p);
 
-	isl_ast_print_options_free(print_options);
-
 	fprintf(cuda->kernel_c, "}\n");
 }
 
@@ -675,6 +676,7 @@ struct print_host_user_data {
  * and the block and then launches the kernel.
  */
 static __isl_give isl_printer *print_host_user(__isl_take isl_printer *p,
+	__isl_take isl_ast_print_options *print_options,
 	__isl_keep isl_ast_node *node, void *user)
 {
 	isl_id *id;
@@ -729,6 +731,8 @@ static __isl_give isl_printer *print_host_user(__isl_take isl_printer *p,
 
 	print_kernel(data->prog, kernel, data->cuda);
 
+	isl_ast_print_options_free(print_options);
+
 	return p;
 }
 
@@ -746,8 +750,6 @@ static __isl_give isl_printer *print_host_code(__isl_take isl_printer *p,
 
 	p = print_macros(tree, p);
 	p = isl_ast_node_print(tree, p, print_options);
-
-	isl_ast_print_options_free(print_options);
 
 	return p;
 }
