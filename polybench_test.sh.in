@@ -12,6 +12,23 @@ echo "Running tests in folder ${TMPDIR}"
 
 run_tests () {
 	ext=$1
+
+	ppcg_options=$2
+	cc_options=$3
+
+	if [ "x$ppcg_options" = "x" ]; then
+		ppcg_option_str="none"
+	else
+		ppcg_option_str=$ppcg_options
+	fi
+
+	if [ "x$cc_options" = "x" ]; then
+		cc_option_str="none"
+	else
+		cc_option_str=$cc_options
+	fi
+
+	echo Test: $ext, ppcg options: $ppcg_option_str, CC options: $cc_option_str
 	for i in `cat $DIR/utilities/benchmark_list`; do
 		echo $i
 		name=`basename $i`
@@ -23,12 +40,12 @@ run_tests () {
 		output_opt=${TMPDIR}/$name.$ext.out
 		dir=`dirname $i`
 		./ppcg$EXEEXT --target=c -I $DIR/$dir $DIR/$i $CPPFLAGS \
-			-o $source_opt || exit
+			-o $source_opt $ppcg_options || exit
 		$CC -I $DIR/$dir $CPPFLAGS $DIR/$i -o $prog_orig \
 			$DIR/utilities/polybench.c $CFLAGS
 		$prog_orig 2> $output_orig
 		$CC -I $DIR/$dir $CPPFLAGS $source_opt -o $prog_opt \
-			$DIR/utilities/polybench.c $CFLAGS || exit
+			$DIR/utilities/polybench.c $CFLAGS $cc_options || exit
 
 		$prog_opt 2> $output_opt
 		cmp $output_orig $output_opt || exit
@@ -36,5 +53,15 @@ run_tests () {
 }
 
 run_tests ppcg
+
+# Test OpenMP code, if compiler supports openmp
+echo  | $CC -x c - -fsyntax-only -fopenmp -Werror 1> /dev/null 2> /dev/null
+OUT=$?
+if [ $OUT -eq 0 ]; then
+	run_tests ppcg_omp --openmp -fopenmp
+	echo Introduced `grep -R 'omp parallel' "${TMPDIR}" | wc -l` '"pragma omp parallel for"'
+else
+	echo Compiler does not support OpenMP. Skipping OpenMP tests.
+fi
 
 rm -r "${TMPDIR}"
