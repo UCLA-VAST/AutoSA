@@ -14,6 +14,7 @@
 #include <isl/flow.h>
 #include <isl/options.h>
 #include <isl/schedule.h>
+#include <isl/ast_build.h>
 #include <pet.h>
 #include "ppcg.h"
 #include "ppcg_options.h"
@@ -314,6 +315,10 @@ int main(int argc, char **argv)
 	ctx = isl_ctx_alloc_with_options(&options_args, options);
 	isl_options_set_schedule_outer_zero_distance(ctx, 1);
 	argc = options_parse(options, argc, argv, ISL_ARG_ALL);
+
+	if (options->ppcg->openmp)
+		assert(isl_options_get_ast_build_atomic_upper_bound(ctx)
+			&& "OpenMP requires atomic bounds");
 
 	scop = pet_scop_extract_from_C_source(ctx, options->input, NULL);
 	scop = pet_scop_align_params(scop);

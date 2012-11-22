@@ -18,6 +18,7 @@
 #include <pet.h>
 
 #include "ppcg.h"
+#include "ppcg_options.h"
 #include "cpu.h"
 #include "pet_printer.h"
 #include "print.h"
@@ -83,6 +84,164 @@ static FILE *get_output_file(const char *input, const char *output)
 		output = name;
 
 	return fopen(output, "w");
+}
+
+/* Data used to annotate for nodes in the ast.
+ */
+struct ast_node_userinfo {
+	/* The for node is an openmp parallel for node. */
+	int is_openmp;
+};
+
+/* Information used while building the ast.
+ */
+struct ast_build_userinfo {
+	/* The current ppcg scop. */
+	struct ppcg_scop *scop;
+
+	/* Are we currently in a parallel for loop? */
+	int in_parallel_for;
+};
+
+/* Check if the current scheduling dimension is parallel.
+ *
+ * We check for parallelism by verifying that the loop does not carry any
+ * dependences.
+ *
+ * Parallelism test: if the distance is zero in all outer dimensions, then it
+ * has to be zero in the current dimension as well.
+ * Implementation: first, translate dependences into time space, then force
+ * outer dimensions to be equal.  If the distance is zero in the current
+ * dimension, then the loop is parallel.
+ * The distance is zero in the current dimension if it is a subset of a map
+ * with equal values for the current dimension.
+ */
+static int ast_schedule_dim_is_parallel(__isl_keep isl_ast_build *build,
+	struct ppcg_scop *scop)
+{
+	isl_union_map *schedule_node, *schedule, *deps;
+	isl_map *schedule_deps, *test;
+	isl_space *schedule_space;
+	unsigned i, dimension, is_parallel;
+
+	schedule = isl_ast_build_get_schedule(build);
+	schedule_space = isl_ast_build_get_schedule_space(build);
+
+	dimension = isl_space_dim(schedule_space, isl_dim_out) - 1;
+
+	deps = isl_union_map_copy(scop->dep_flow);
+	deps = isl_union_map_union(deps, isl_union_map_copy(scop->dep_false));
+	deps = isl_union_map_apply_range(deps, isl_union_map_copy(schedule));
+	deps = isl_union_map_apply_domain(deps, schedule);
+
+	if (isl_union_map_is_empty(deps)) {
+		isl_union_map_free(deps);
+		isl_space_free(schedule_space);
+		return 1;
+	}
+
+	schedule_deps = isl_map_from_union_map(deps);
+
+	for (i = 0; i < dimension; i++)
+		schedule_deps = isl_map_equate(schedule_deps, isl_dim_out, i,
+					       isl_dim_in, i);
+
+	test = isl_map_universe(isl_map_get_space(schedule_deps));
+	test = isl_map_equate(test, isl_dim_out, dimension, isl_dim_in,
+			      dimension);
+	is_parallel = isl_map_is_subset(schedule_deps, test);
+
+	isl_space_free(schedule_space);
+	isl_map_free(test);
+	isl_map_free(schedule_deps);
+
+	return is_parallel;
+}
+
+/* Mark a for node openmp parallel, if it is the outermost parallel for node.
+ */
+static void mark_openmp_parallel(__isl_keep isl_ast_build *build,
+	struct ast_build_userinfo *build_info,
+	struct ast_node_userinfo *node_info)
+{
+	if (build_info->in_parallel_for)
+		return;
+
+	if (ast_schedule_dim_is_parallel(build, build_info->scop)) {
+		build_info->in_parallel_for = 1;
+		node_info->is_openmp = 1;
+	}
+}
+
+/* Allocate an ast_node_info structure and initialize it with default values.
+ */
+static struct ast_node_userinfo *allocate_ast_node_userinfo()
+{
+	struct ast_node_userinfo *node_info;
+	node_info = (struct ast_node_userinfo *)
+		malloc(sizeof(struct ast_node_userinfo));
+	node_info->is_openmp = 0;
+	return node_info;
+}
+
+/* Free an ast_node_info structure.
+ */
+static void free_ast_node_userinfo(void *ptr)
+{
+	struct ast_node_userinfo *info;
+	info = (struct ast_node_userinfo *) ptr;
+	free(info);
+}
+
+/* This method is executed before the construction of a for node. It creates
+ * an isl_id that is used to annotate the subsequently generated ast for nodes.
+ *
+ * In this function we also run the following analyses:
+ *
+ * 	- Detection of openmp parallel loops
+ */
+static __isl_give isl_id *ast_build_before_for(
+	__isl_keep isl_ast_build *build, void *user)
+{
+	isl_id *id;
+	struct ast_build_userinfo *build_info;
+	struct ast_node_userinfo *node_info;
+
+	build_info = (struct ast_build_userinfo *) user;
+	node_info = allocate_ast_node_userinfo();
+	id = isl_id_alloc(isl_ast_build_get_ctx(build), "", node_info);
+	id = isl_id_set_free_user(id, free_ast_node_userinfo);
+
+	mark_openmp_parallel(build, build_info, node_info);
+
+	return id;
+}
+
+/* This method is executed after the construction of a for node.
+ *
+ * It performs the following actions:
+ *
+ * 	- Reset the 'in_parallel_for' flag, as soon as we leave a for node,
+ * 	  that is marked as openmp parallel.
+ *
+ */
+static __isl_give isl_ast_node *ast_build_after_for(__isl_take isl_ast_node *node,
+        __isl_keep isl_ast_build *build, void *user) {
+	isl_id *id;
+	struct ast_build_userinfo *build_info;
+	struct ast_node_userinfo *info;
+
+	id = isl_ast_node_get_annotation(node);
+	info = isl_id_get_user(id);
+
+	if (info && info->is_openmp) {
+		build_info = (struct ast_build_userinfo *) user;
+		build_info->in_parallel_for = 0;
+	}
+
+	isl_id_free(id);
+
+	return node;
 }
 
 /* Print a memory access 'access' to the printer 'p'.
@@ -190,6 +349,69 @@ static __isl_give isl_printer *print_user(__isl_take isl_printer *p,
 	p = isl_printer_end_line(p);
 
 	isl_ast_print_options_free(print_options);
+
+	return p;
+}
+
+
+/* Print a for loop node as an openmp parallel loop.
+ *
+ * To print an openmp parallel loop we print a normal for loop, but add
+ * "#pragma openmp parallel for" in front.
+ *
+ * Variables that are declared within the body of this for loop are
+ * automatically openmp 'private'. Iterators declared outside of the
+ * for loop are automatically openmp 'shared'. As ppcg declares all iterators
+ * at the position where they are assigned, there is no need to explicitly mark
+ * variables. Their automatically assigned type is already correct.
+ *
+ * This function only generates valid OpenMP code, if the ast was generated
+ * with the 'atomic-bounds' option enabled.
+ *
+ */
+static __isl_give isl_printer *print_for_with_openmp(
+	__isl_keep isl_ast_node *node, __isl_take isl_printer *p,
+	__isl_take isl_ast_print_options *print_options)
+{
+	p = isl_printer_start_line(p);
+	p = isl_printer_print_str(p, "#pragma omp parallel for");
+	p = isl_printer_end_line(p);
+
+	p = isl_ast_node_for_print(node, p, print_options);
+
+	return p;
+}
+
+/* Print a for node.
+ *
+ * Depending on how the node is annotated, we either print a normal
+ * for node or an openmp parallel for node.
+ */
+static __isl_give isl_printer *print_for(__isl_take isl_printer *p,
+	__isl_take isl_ast_print_options *print_options,
+	__isl_keep isl_ast_node *node, void *user)
+{
+	struct ppcg_print_info *print_info;
+	isl_id *id;
+	int openmp;
+
+	openmp = 0;
+	id = isl_ast_node_get_annotation(node);
+
+	if (id) {
+		struct ast_node_userinfo *info;
+
+		info = (struct ast_node_userinfo *) isl_id_get_user(id);
+		if (info && info->is_openmp)
+			openmp = 1;
+	}
+
+	if (openmp)
+		p = print_for_with_openmp(node, p, print_options);
+	else
+		p = isl_ast_node_for_print(node, p, print_options);
+
+	isl_id_free(id);
 
 	return p;
 }
@@ -330,7 +552,7 @@ error:
 /* Code generate the scop 'scop' and print the corresponding C code to 'p'.
  */
 static __isl_give isl_printer *print_scop(isl_ctx *ctx, struct ppcg_scop *scop,
-	__isl_take isl_printer *p)
+	__isl_take isl_printer *p, struct ppcg_options *options)
 {
 	isl_set *context;
 	isl_union_set *domain_set;
@@ -338,6 +560,7 @@ static __isl_give isl_printer *print_scop(isl_ctx *ctx, struct ppcg_scop *scop,
 	isl_ast_build *build;
 	isl_ast_print_options *print_options;
 	isl_ast_node *tree;
+	struct ast_build_userinfo build_info;
 
 	context = isl_set_copy(scop->context);
 	domain_set = isl_union_set_copy(scop->domain);
@@ -346,12 +569,28 @@ static __isl_give isl_printer *print_scop(isl_ctx *ctx, struct ppcg_scop *scop,
 
 	build = isl_ast_build_from_context(context);
 	build = isl_ast_build_set_at_each_domain(build, &at_each_domain, scop);
+
+	if (options->openmp) {
+		build_info.scop = scop;
+		build_info.in_parallel_for = 0;
+
+		build = isl_ast_build_set_before_each_for(build,
+							&ast_build_before_for,
+							&build_info);
+		build = isl_ast_build_set_after_each_for(build,
+							&ast_build_after_for,
+							&build_info);
+	}
+
 	tree = isl_ast_build_ast_from_schedule(build, schedule_map);
 	isl_ast_build_free(build);
 
 	print_options = isl_ast_print_options_alloc(ctx);
 	print_options = isl_ast_print_options_set_print_user(print_options,
 							&print_user, NULL);
+
+	print_options = isl_ast_print_options_set_print_for(print_options,
+							&print_for, NULL);
 
 	p = isl_ast_node_print_macros(tree, p);
 	p = isl_ast_node_print(tree, p, print_options);
@@ -402,7 +641,7 @@ int generate_cpu(isl_ctx *ctx, struct ppcg_scop *ps,
 		p = ppcg_start_block(p);
 		p = ppcg_print_hidden_declarations(p, ps);
 	}
-	p = print_scop(ctx, ps, p);
+	p = print_scop(ctx, ps, p, options);
 	if (hidden)
 		p = ppcg_end_block(p);
 	isl_printer_free(p);

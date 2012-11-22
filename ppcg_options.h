@@ -23,6 +23,9 @@ struct ppcg_options {
 
 	/* The target we generate code for. */
 	int target;
+
+	/* Generate OpenMP macros (C target only). */
+	int openmp;
 };
 
 ISL_ARG_DECL(ppcg_options, struct ppcg_options, ppcg_options_args)

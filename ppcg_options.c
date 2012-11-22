@@ -31,6 +31,8 @@ ISL_ARG_STR(struct ppcg_options, sizes, 0, "sizes", "sizes", NULL,
 	"Per kernel tile, grid and block sizes")
 ISL_ARG_INT(struct ppcg_options, max_shared_memory, 0,
 	"max-shared-memory", "size", 8192, "maximal amount of shared memory")
+ISL_ARG_BOOL(struct ppcg_options, openmp, 0, "openmp", 0,
+	"Generate OpenMP macros (only for C target)")
 ISL_ARG_CHOICE(struct ppcg_options, target, 0, "target", target,
 	PPCG_TARGET_CUDA, "the target to generate code for")
 ISL_ARGS_END
