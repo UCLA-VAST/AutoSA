@@ -4,17 +4,37 @@ EXEEXT=@EXEEXT@
 DIR=@POLYBENCH_DIR@
 SIZE=-DMINI_DATASET
 CC="@CC@"
+TMPDIR=`mktemp -d --suffix=.ppcg`
+CPPFLAGS="-DPOLYBENCH_DUMP_ARRAYS $SIZE -I $DIR/utilities"
+CFLAGS="-lm --std=gnu99"
 
-for i in `cat $DIR/utilities/benchmark_list`; do
-	echo $i
-	name=`basename $i`
-	name=${name%.c}
-	dir=`dirname $i`
-	./ppcg$EXEEXT --target=c -I $DIR/utilities $DIR/$i
-	$CC $SIZE -DPOLYBENCH_DUMP_ARRAYS -I $DIR/utilities $DIR/$i $DIR/utilities/polybench.c -lm
-	./a.out 2> $name.out
-	$CC $SIZE -DPOLYBENCH_DUMP_ARRAYS -I $DIR/utilities -I $DIR/$dir $name.ppcg.c $DIR/utilities/polybench.c -lm
-	./a.out 2> $name.ppcg.out
-	cmp $name.out $name.ppcg.out || exit
-	rm $name.out $name.ppcg.out
-done
+echo "Running tests in folder ${TMPDIR}"
+
+run_tests () {
+	ext=$1
+	for i in `cat $DIR/utilities/benchmark_list`; do
+		echo $i
+		name=`basename $i`
+		name=${name%.c}
+		source_opt="${TMPDIR}/$name.$ext.c"
+		prog_orig=${TMPDIR}/$name.orig${EXEEXT}
+		prog_opt=${TMPDIR}/$name.$ext${EXEEXT}
+		output_orig=${TMPDIR}/$name.orig.out
+		output_opt=${TMPDIR}/$name.$ext.out
+		dir=`dirname $i`
+		./ppcg$EXEEXT --target=c -I $DIR/$dir $DIR/$i $CPPFLAGS \
+			-o $source_opt || exit
+		$CC -I $DIR/$dir $CPPFLAGS $DIR/$i -o $prog_orig \
+			$DIR/utilities/polybench.c $CFLAGS
+		$prog_orig 2> $output_orig
+		$CC -I $DIR/$dir $CPPFLAGS $source_opt -o $prog_opt \
+			$DIR/utilities/polybench.c $CFLAGS || exit
+
+		$prog_opt 2> $output_opt
+		cmp $output_orig $output_opt || exit
+	done
+}
+
+run_tests ppcg
+
+rm -r "${TMPDIR}"
