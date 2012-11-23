@@ -1,13 +1,29 @@
 #!/bin/sh
 
+keep=no
+
+for option; do
+	case "$option" in
+		--keep)
+			keep=yes
+			;;
+	esac
+done
+
 EXEEXT=@EXEEXT@
 DIR=@POLYBENCH_DIR@
+VERSION=@GIT_HEAD_VERSION@
 SIZE=-DMINI_DATASET
 CC="@CC@"
-if test "x$TMPDIR" = "x"; then
-	TMPDIR=/tmp
+if [ $keep = "yes" ]; then
+	OUTDIR="out.$VERSION"
+	mkdir "$OUTDIR" || exit 1
+else
+	if test "x$TMPDIR" = "x"; then
+		TMPDIR=/tmp
+	fi
+	OUTDIR=`mktemp -d $TMPDIR/ppcg.XXXXXXXXXX` || exit 1
 fi
-OUTDIR=`mktemp -d $TMPDIR/ppcg.XXXXXXXXXX` || exit 1
 CPPFLAGS="-DPOLYBENCH_USE_C99_PROTO -DPOLYBENCH_DUMP_ARRAYS"
 CPPFLAGS="$CPPFLAGS $SIZE -I $DIR/utilities"
 CFLAGS="-lm --std=gnu99"
@@ -68,4 +84,6 @@ else
 	echo Compiler does not support OpenMP. Skipping OpenMP tests.
 fi
 
-rm -r "${OUTDIR}"
+if [ $keep = "no" ]; then
+	rm -r "${OUTDIR}"
+fi
