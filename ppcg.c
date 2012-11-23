@@ -144,6 +144,8 @@ static __isl_give isl_union_map *collect_kills(struct pet_scop *scop)
 		if (!is_kill(stmt))
 			continue;
 		kill_i = isl_map_copy(stmt->body->args[0]->acc.access);
+		kill_i = isl_map_intersect_domain(kill_i,
+						    isl_set_copy(stmt->domain));
 		kills = isl_union_map_add_map(kills, kill_i);
 	}
 
