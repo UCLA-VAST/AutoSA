@@ -47,3 +47,15 @@ Since PPCG performs some scheduling, it can be difficult to predict
 what exactly will end up in a kernel.  If you want to specify
 tile, grid or block sizes, you may want to run PPCG first with the defaults,
 examine the kernels and then run PPCG again with the desired sizes.
+
+
+Compiling the generated code with nvcc
+
+To get optimal performance from nvcc, it is important to choose --arch
+according to your target GPU.  Specifically, use the flag "--arch sm_20"
+for fermi, "--arch sm_30" for GK10x Kepler and "--arch sm_35" for
+GK110 Kepler.  We discourage the use of older cards as we have seen
+correctness issues with compilation for older architectures.
+Note that in the absence of any --arch flag, nvcc defaults to
+"--arch sm_13". This will not only be slower, but can also cause
+correctness issues.
