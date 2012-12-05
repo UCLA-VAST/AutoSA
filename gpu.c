@@ -2264,10 +2264,6 @@ static void set_last_shared(struct gpu_gen *gen,
  * we use the shared memory tile sizes computed in
  * compute_group_shared_bound instead.
  *
- * If we have been able to find a private or shared tile,
- * we also look for the last shared tile loop that affects the offset
- * (and therefore the group tile) and store the result in group->last_shared.
- *
  * A privatized copy of all access relations from reference groups that
  * are mapped to private memory is stored in gen->privatization.
  */
@@ -2296,11 +2292,6 @@ static void compute_private_size(struct gpu_gen *gen)
 			private = isl_union_map_union(private,
 				group_access_relation(array->groups[j], 1, 1));
 		}
-
-		for (j = 0; j < array->n_group; ++j) {
-			array->groups[j]->last_shared = gen->shared_len - 1;
-			set_last_shared(gen, array->groups[j]);
-		}
 	}
 
 	if (isl_union_map_is_empty(private))
@@ -2313,6 +2304,23 @@ static void compute_private_size(struct gpu_gen *gen)
 		priv = isl_union_map_from_map(isl_map_copy(gen->privatization));
 		private = isl_union_map_apply_domain(private, priv);
 		gen->private_access = private;
+	}
+}
+
+/* For each array, look for the last shared tile loop that affects the offset
+ * (and therefore the group tile) and store the result in group->last_shared.
+ */
+static void compute_last_shared(struct gpu_gen *gen)
+{
+	int i, j;
+
+	for (i = 0; i < gen->prog->n_array; ++i) {
+		struct gpu_array_info *array = &gen->prog->array[i];
+
+		for (j = 0; j < array->n_group; ++j) {
+			array->groups[j]->last_shared = gen->shared_len - 1;
+			set_last_shared(gen, array->groups[j]);
+		}
 	}
 }
 
@@ -3975,6 +3983,7 @@ static __isl_give isl_union_map *add_group_schedule(struct gpu_gen *gen,
 
 	space = isl_union_map_get_space(schedule);
 	pos = group->last_shared + 1 - gen->tile_first;
+	assert(pos >= 0);
 	if (read)
 		val = -2 - k;
 	else if (group->private_bound)
@@ -4254,6 +4263,7 @@ static __isl_give isl_ast_node *create_host_leaf(
 	group_references(gen);
 	compute_private_size(gen);
 	check_shared_memory_bound(gen);
+	compute_last_shared(gen);
 	host_domain = isl_set_from_union_set(isl_union_map_range(
 						isl_union_map_copy(schedule)));
 	localize_bounds(gen, kernel, host_domain);
