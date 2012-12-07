@@ -2481,34 +2481,6 @@ static struct gpu_array_ref_group *join_groups_and_free(
 	return group;
 }
 
-/* If two groups have overlapping access relations (within the innermost
- * loop) and if one of them involves a write, then merge the two groups
- * into one.
- *
- * Return the updated number of groups.
- */
-static int group_overlapping_writes(int n, struct gpu_array_ref_group **groups)
-{
-	int i, j;
-
-	for (i = 0; i < n; ++i) {
-		for (j = n - 1; j > i; --j) {
-			if (!groups[i]->write && !groups[j]->write)
-				continue;
-
-			if (!accesses_overlap(groups[i], groups[j]))
-				continue;
-
-			groups[i] = join_groups_and_free(groups[i], groups[j]);
-			if (j != n - 1)
-				groups[j] = groups[n - 1];
-			n--;
-		}
-	}
-
-	return n;
-}
-
 /* Compute the private and/or shared memory tiles for the array
  * reference group "group" of array "array".
  *
@@ -2602,6 +2574,93 @@ static void compute_group_bounds(struct gpu_gen *gen,
 	set_last_shared(gen, group);
 }
 
+/* If two groups have overlapping access relations (as determined by
+ * the "overlap" function) and if one of them involves a write,
+ * then merge the two groups into one.
+ * If "compute_bounds" is set, then call compute_group_bounds
+ * on the merged groups.
+ *
+ * Return the updated number of groups.
+ */
+static int group_writes(struct gpu_gen *gen,
+	int n, struct gpu_array_ref_group **groups,
+	int (*overlap)(struct gpu_array_ref_group *group1,
+		struct gpu_array_ref_group *group2), int compute_bounds)
+{
+	int i, j;
+
+	for (i = 0; i < n; ++i) {
+		for (j = n - 1; j > i; --j) {
+			if (!groups[i]->write && !groups[j]->write)
+				continue;
+
+			if (!overlap(groups[i], groups[j]))
+				continue;
+
+			groups[i] = join_groups_and_free(groups[i], groups[j]);
+			if (compute_bounds)
+				compute_group_bounds(gen, groups[i]);
+			if (j != n - 1)
+				groups[j] = groups[n - 1];
+			n--;
+		}
+	}
+
+	return n;
+}
+
+/* If two groups have overlapping access relations (within the innermost
+ * loop) and if one of them involves a write, then merge the two groups
+ * into one.
+ *
+ * Return the updated number of groups.
+ */
+static int group_overlapping_writes(struct gpu_gen *gen,
+	int n, struct gpu_array_ref_group **groups)
+{
+	return group_writes(gen, n, groups, &accesses_overlap, 0);
+}
+
+/* Check if the access relations of group1 and group2 overlap within
+ * the outermost min(group1->last_shared, group2->last_shared) loops.
+ */
+static int last_shared_accesses_overlap(struct gpu_array_ref_group *group1,
+	struct gpu_array_ref_group *group2)
+{
+	int last_shared;
+	int dim;
+	int empty;
+	isl_map *map_i, *map_j, *map;
+
+	last_shared = group1->last_shared;
+	if (group2->last_shared < last_shared)
+		last_shared = group2->last_shared;
+	map_i = isl_map_copy(group1->access);
+	dim = isl_map_dim(map_i, isl_dim_in);
+	map_i = isl_map_eliminate(map_i, isl_dim_in,
+				last_shared + 1, dim - (last_shared + 1));
+	map_j = isl_map_copy(group2->access);
+	map_j = isl_map_eliminate(map_j, isl_dim_in,
+				last_shared + 1, dim - (last_shared + 1));
+	map = isl_map_intersect(map_i, map_j);
+	empty = isl_map_is_empty(map);
+	isl_map_free(map);
+
+	return !empty;
+}
+
+/* If two groups have overlapping access relations (within the outer
+ * last_shared loops) and if one of them involves a write,
+ * then merge the two groups into one.
+ *
+ * Return the updated number of groups.
+ */
+static int group_last_shared_overlapping_writes(struct gpu_gen *gen, int n,
+	struct gpu_array_ref_group **groups)
+{
+	return group_writes(gen, n, groups, &last_shared_accesses_overlap, 1);
+}
+
 /* Is the size of the tile specified by "tile" smaller than the sum of
  * the sizes of the tiles specified by "tile1" and "tile2"?
  */
@@ -2636,6 +2695,10 @@ static int smaller_tile(struct gpu_array_tile *tile,
  * a shared memory tile and the size of the tile for the merge group
  * is smaller than the sum of the tile sizes of the individual groups.
  *
+ * If merging two groups decreases the "last_shared" dimension of
+ * one or both of the two groups, then we need to check for overlapping
+ * writes again.
+ *
  * Return the number of groups after merging.
  */
 static int group_common_shared_memory_tile(struct gpu_gen *gen,
@@ -2643,6 +2706,7 @@ static int group_common_shared_memory_tile(struct gpu_gen *gen,
 	struct gpu_array_ref_group **groups)
 {
 	int i, j;
+	int recompute_overlap = 0;
 	isl_ctx *ctx = isl_space_get_ctx(array->dim);
 
 	for (i = 0; i < n; ++i) {
@@ -2674,6 +2738,9 @@ static int group_common_shared_memory_tile(struct gpu_gen *gen,
 				continue;
 			}
 
+			if (group->last_shared < groups[i]->last_shared ||
+			    group->last_shared < groups[j]->last_shared)
+				recompute_overlap = 1;
 			free_array_ref_group(groups[i]);
 			free_array_ref_group(groups[j]);
 			groups[i] = group;
@@ -2683,6 +2750,8 @@ static int group_common_shared_memory_tile(struct gpu_gen *gen,
 		}
 	}
 
+	if (recompute_overlap)
+		n = group_last_shared_overlapping_writes(gen, n, groups);
 	return n;
 }
 
@@ -2712,6 +2781,11 @@ static void set_array_groups(struct gpu_array_info *array,
  *
  * In particular, if two array references overlap and if one of them
  * is a write, then the two references are grouped together.
+ * We first perform an initial grouping based only on the access relation.
+ * After computing shared and private memory tiles, we check for
+ * overlapping writes again, but this time taking into account
+ * the "last_shared" property.
+ *
  * Furthermore, if two groups admit a shared memory tile and if the
  * combination of the two also admits a shared memory tile, we merge
  * the two groups.
@@ -2730,10 +2804,12 @@ static void group_array_references(struct gpu_gen *gen,
 
 	n = populate_array_references(array, sched, groups);
 
-	n = group_overlapping_writes(n, groups);
+	n = group_overlapping_writes(gen, n, groups);
 
 	for (i = 0; i < n; ++i)
 		compute_group_bounds(gen, groups[i]);
+
+	n = group_last_shared_overlapping_writes(gen, n, groups);
 
 	n = group_common_shared_memory_tile(gen, array, n, groups);
 
