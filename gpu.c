@@ -53,11 +53,22 @@ struct gpu_array_bound {
 	isl_basic_map *shift_map;
 };
 
+/* A tile of an array.
+ *
+ * n is the dimension of the array.
+ * bound is an array of size "n" representing the lower bound
+ *	and size for each index.
+ */
+struct gpu_array_tile {
+	int n;
+	struct gpu_array_bound *bound;
+};
+
 struct gpu_array_info;
 
 /* A group of array references in a kernel that should be handled together.
- * If private_bound is not NULL, then it is mapped to registers.
- * Otherwise, if shared_bound is not NULL, it is mapped to shared memory.
+ * If private_tile is not NULL, then it is mapped to registers.
+ * Otherwise, if shared_tile is not NULL, it is mapped to shared memory.
  * Otherwise, it is accessed from global memory.
  */
 struct gpu_array_ref_group {
@@ -75,11 +86,11 @@ struct gpu_array_ref_group {
 	isl_map *access;
 	int write;
 
-	/* For each index, size and offset of piece in shared memory. */
-	struct gpu_array_bound *shared_bound;
+	/* The shared memory tile, NULL if none. */
+	struct gpu_array_tile *shared_tile;
 
-	/* For each index, size and offset of piece in private memory. */
-	struct gpu_array_bound *private_bound;
+	/* The private memory tile, NULL if none. */
+	struct gpu_array_tile *private_tile;
 
 	/* References in this group; point to elements of a linked list. */
 	int n_ref;
@@ -180,9 +191,9 @@ static __isl_give isl_printer *print_array_name(__isl_take isl_printer *p,
 {
 	int global = 0;
 
-	if (group->private_bound)
+	if (group->private_tile)
 		p = isl_printer_print_str(p, "private_");
-	else if (group->shared_bound)
+	else if (group->shared_tile)
 		p = isl_printer_print_str(p, "shared_");
 	else
 		global = 1;
@@ -239,40 +250,50 @@ static void collect_references(struct gpu_prog *prog,
 	}
 }
 
-static struct gpu_array_bound *create_bound_list(isl_ctx *ctx, int n_index)
+/* Create a gpu_array_tile for an array of dimension "n_index".
+ */
+static struct gpu_array_tile *create_tile(isl_ctx *ctx, int n_index)
 {
 	int i;
-	struct gpu_array_bound *bound;
+	struct gpu_array_tile *tile;
 
-	bound = isl_alloc_array(ctx, struct gpu_array_bound, n_index);
-	assert(bound);
+	tile = isl_calloc_type(ctx, struct gpu_array_tile);
+	assert(tile);
+
+	tile->n = n_index;
+
+	tile->bound = isl_alloc_array(ctx, struct gpu_array_bound, n_index);
+	assert(tile->bound);
 
 	for (i = 0; i < n_index; ++i) {
-		isl_int_init(bound[i].size);
-		bound[i].lb = NULL;
-		isl_int_init(bound[i].stride);
-		bound[i].shift = NULL;
-		bound[i].shift_map = NULL;
+		isl_int_init(tile->bound[i].size);
+		tile->bound[i].lb = NULL;
+		isl_int_init(tile->bound[i].stride);
+		tile->bound[i].shift = NULL;
+		tile->bound[i].shift_map = NULL;
 	}
 
-	return bound;
+	return tile;
 }
 
-static void free_bound_list(struct gpu_array_bound *bound, int n_index)
+static void *free_tile(struct gpu_array_tile *tile)
 {
 	int j;
 
-	if (!bound)
-		return;
+	if (!tile)
+		return NULL;
 
-	for (j = 0; j < n_index; ++j) {
-		isl_int_clear(bound[j].size);
-		isl_int_clear(bound[j].stride);
-		isl_aff_free(bound[j].lb);
-		isl_aff_free(bound[j].shift);
-		isl_basic_map_free(bound[j].shift_map);
+	for (j = 0; j < tile->n; ++j) {
+		isl_int_clear(tile->bound[j].size);
+		isl_int_clear(tile->bound[j].stride);
+		isl_aff_free(tile->bound[j].lb);
+		isl_aff_free(tile->bound[j].shift);
+		isl_basic_map_free(tile->bound[j].shift_map);
 	}
-	free(bound);
+	free(tile->bound);
+	free(tile);
+
+	return NULL;
 }
 
 static struct pet_array *find_array(struct ppcg_scop *scop,
@@ -1136,8 +1157,9 @@ static __isl_give isl_set *add_bounded_parameters_dynamic(
  *
  *	[D -> A] -> [D -> T(A)]
  *
- * apply the mapping encoded in bounds[i].shift_map to the range of "sched".
- * The mappings in bounds[i].shift_map are of the form
+ * apply the mapping encoded in tile->bound[i].shift_map
+ * to the range of "sched".
+ * The mappings in tile->bound[i].shift_map are of the form
  *
  *	[D -> a] -> [D -> s(D,a)]
  *
@@ -1145,7 +1167,7 @@ static __isl_give isl_set *add_bounded_parameters_dynamic(
  *
  *	[D -> v] -> v
  *
- * (If bounds[i].shift_map is not set, then it is assumed to be
+ * (If tile->bound[i].shift_map is not set, then it is assumed to be
  * an identity mapping and then we use this second mapping instead.)
  * This results in
  *
@@ -1168,7 +1190,7 @@ static __isl_give isl_set *add_bounded_parameters_dynamic(
  *	[D -> A] -> [D -> S(D,T(A))]
  */
 static __isl_give isl_map *pre_shift(__isl_take isl_map *sched,
-	int n_index, struct gpu_array_bound *bounds)
+	struct gpu_array_tile *tile)
 {
 	int i;
 	isl_ctx *ctx = isl_map_get_ctx(sched);
@@ -1185,21 +1207,21 @@ static __isl_give isl_map *pre_shift(__isl_take isl_map *sched,
 	space = isl_space_add_dims(space, isl_dim_out, 1);
 	def = isl_basic_map_range_map(isl_basic_map_universe(space));
 
-	for (i = 0; i < n_index; ++i) {
+	for (i = 0; i < tile->n; ++i) {
 		isl_basic_map *bmap, *drop;
 		isl_map *proj;
 
-		space = isl_space_alloc(ctx, 0, n_index, n_index);
+		space = isl_space_alloc(ctx, 0, tile->n, tile->n);
 		proj = isl_map_identity(space);
 		proj = isl_map_project_out(proj, isl_dim_out,
-						i + 1, n_index - (i + 1));
+						i + 1, tile->n - (i + 1));
 		proj = isl_map_project_out(proj, isl_dim_out, 0, i);
 		proj = isl_map_product(isl_map_copy(id), proj);
 
-		if (!bounds[i].shift_map)
+		if (!tile->bound[i].shift_map)
 			bmap = isl_basic_map_copy(def);
 		else {
-			bmap = isl_basic_map_copy(bounds[i].shift_map);
+			bmap = isl_basic_map_copy(tile->bound[i].shift_map);
 			bmap = isl_basic_map_apply_range(bmap,
 						isl_basic_map_copy(def));
 		}
@@ -1224,9 +1246,9 @@ static __isl_give isl_map *pre_shift(__isl_take isl_map *sched,
 /* Given an access relation to a tile of an array, construct a map that
  * maps each element in the space of the access relation
  * to a copy of the tile shifted to the origin
- * (based on the lower bounds in group->private_bound or group->shared_bound).
- * If any of the indices is strided, then {private,shared}_bound[i].shift_map
- * is applied to the index first.
+ * (based on the lower bounds in group->private_tile or group->shared_tile).
+ * If any of the indices is strided, then
+ * {private,shared}_tile->bound[i].shift_map is applied to the index first.
  * The domain space of the resulting map is that of access "access",
  * while the range space is anonymous.
  * The resulting map only encodes the mapping to the shift tile and
@@ -1241,7 +1263,7 @@ static __isl_give isl_map *pre_shift(__isl_take isl_map *sched,
  *
  *	[D -> A] -> [D -> T(A)]					(1)
  *
- * The bounds in bounds[i].lb are of the form
+ * The bounds in tile->bound[i].lb are of the form
  *
  *	D -> b(D)
  *
@@ -1272,12 +1294,12 @@ static __isl_give isl_map *shift_access(__isl_take isl_map *access,
 	isl_map *map;
 	isl_map *shift;
 	isl_map *sched;
-	struct gpu_array_bound *bounds;
+	struct gpu_array_tile *tile;
 	int n_index = group->array->n_index;
 
-	bounds = group->private_bound;
-	if (!bounds)
-		bounds = group->shared_bound;
+	tile = group->private_tile;
+	if (!tile)
+		tile = group->shared_tile;
 
 	space = isl_space_domain(isl_map_get_space(access));
 	space = isl_space_map_from_set(space);
@@ -1292,7 +1314,7 @@ static __isl_give isl_map *shift_access(__isl_take isl_map *access,
 	space = isl_space_from_domain(isl_space_domain(space));
 	shift = isl_map_universe(space);
 	for (i = 0; i < n_index; ++i) {
-		map = isl_map_from_aff(isl_aff_copy(bounds[i].lb));
+		map = isl_map_from_aff(isl_aff_copy(tile->bound[i].lb));
 		shift = isl_map_flat_range_product(shift, map);
 	}
 
@@ -1305,11 +1327,11 @@ static __isl_give isl_map *shift_access(__isl_take isl_map *access,
 	shift = isl_map_sum(id1, shift);
 
 	for (i = 0; i < n_index; ++i)
-		if (bounds[i].shift_map)
+		if (tile->bound[i].shift_map)
 			break;
 
 	if (i < n_index)
-		sched = pre_shift(sched, n_index, bounds);
+		sched = pre_shift(sched, tile);
 
 	sched = isl_map_apply_range(sched, shift);
 
@@ -1462,7 +1484,7 @@ static __isl_give isl_union_map *group_access_relation(
  *
  *
  * Note that if some stride has been detected (i.e., when
- * group->shared_bound[i].shift is set), then offset and size (i.e.,
+ * group->shared_tile->bound[i].shift is set), then offset and size (i.e.,
  * constraints (1)) apply to the shifted and scaled down copy of the tile.
  * These constraints therefore have to be mapped back to the original
  * array space using the inverse of the shift_map.
@@ -1475,21 +1497,21 @@ static __isl_give isl_map *group_tile_dim(struct gpu_array_ref_group *group,
 	isl_map *map, *tile, *gt;
 	isl_set *bound;
 
-	map = isl_map_from_aff(isl_aff_copy(group->shared_bound[i].lb));
+	map = isl_map_from_aff(isl_aff_copy(group->shared_tile->bound[i].lb));
 	space = isl_space_range(isl_map_get_space(map));
 	map = isl_map_apply_range(map, isl_map_lex_le(isl_space_copy(space)));
 	tile = map;
 
-	aff = isl_aff_copy(group->shared_bound[i].lb);
-	aff = isl_aff_add_constant(aff, group->shared_bound[i].size);
+	aff = isl_aff_copy(group->shared_tile->bound[i].lb);
+	aff = isl_aff_add_constant(aff, group->shared_tile->bound[i].size);
 	map = isl_map_from_aff(aff);
 	gt = isl_map_lex_gt(space);
 	map = isl_map_apply_range(map, isl_map_copy(gt));
 	tile = isl_map_intersect(tile, map);
 
-	if (group->shared_bound[i].shift) {
+	if (group->shared_tile->bound[i].shift) {
 		isl_basic_map *shift;
-		shift = isl_basic_map_copy(group->shared_bound[i].shift_map);
+		shift = isl_basic_map_copy(group->shared_tile->bound[i].shift_map);
 		shift = isl_basic_map_reverse(shift);
 		tile = isl_set_unwrap(isl_set_apply(isl_map_wrap(tile),
 					isl_map_from_basic_map(shift)));
@@ -1645,7 +1667,7 @@ static __isl_give isl_union_map *interchange_for_unroll(struct gpu_gen *gen,
 			isl_map *acc;
 			isl_pw_multi_aff *pma;
 
-			if (!array->groups[j]->private_bound)
+			if (!array->groups[j]->private_tile)
 				continue;
 
 			access = group_access_relation(array->groups[j], 1, 1);
@@ -1984,29 +2006,27 @@ static int compute_array_dim_size(struct gpu_array_bound *bound,
 	return isl_int_is_nonneg(bound->size) ? 0 : -1;
 }
 
-/* Check if we can find a shared memory tile for the given array
- * based on the given accesses, and if so, put the results
- * in array->shared_bound.
+/* Check if we can find a memory tile for the given array
+ * based on the given accesses, and if so, put the results in "tile".
  *
  * We project the accesses on each index in turn and look for a parametric
  * offset such that the size is constant.
  */
-static int can_tile_for_shared_memory(struct gpu_array_info *array,
-	__isl_keep isl_map *access, struct gpu_array_bound *bounds)
+static int can_tile(__isl_keep isl_map *access, struct gpu_array_tile *tile)
 {
 	int i;
 
-	for (i = 0; i < array->n_index; ++i) {
+	for (i = 0; i < tile->n; ++i) {
 		isl_map *access_i;
 		isl_basic_map *hull;
 
 		access_i = isl_map_copy(access);
 		access_i = isl_map_project_out(access_i, isl_dim_out, 0, i);
 		access_i = isl_map_project_out(access_i, isl_dim_out,
-					    1, array->n_index - (i + 1));
+					    1, tile->n - (i + 1));
 		access_i = isl_map_compute_divs(access_i);
 		hull = isl_map_simple_hull(access_i);
-		if (compute_array_dim_size(&bounds[i], hull) < 0)
+		if (compute_array_dim_size(&tile->bound[i], hull) < 0)
 			return 0;
 	}
 
@@ -2172,7 +2192,7 @@ static int access_is_bijective(struct gpu_gen *gen, __isl_keep isl_map *access)
  * of the second test, we simply test for bijectivity.
  *
  * If it turns out we can use registers, we compute the private memory
- * tile size using can_tile_for_shared_memory, after introducing a dependence
+ * tile size using can_tile, after introducing a dependence
  * on the thread indices.
  *
  * Before performing any of the above computations, we first check
@@ -2189,10 +2209,8 @@ static void check_private_group_access(struct gpu_gen *gen,
 
 	access = group_access_relation(group, 1, 1);
 	if (isl_union_map_is_injective(access)) {
-		if (group->shared_bound && access_is_coalesced(gen, access)) {
-			free_bound_list(group->shared_bound, n_index);
-			group->shared_bound = NULL;
-		}
+		if (group->shared_tile && access_is_coalesced(gen, access))
+			group->shared_tile = free_tile(group->shared_tile);
 		isl_union_map_free(access);
 		return;
 	}
@@ -2206,15 +2224,44 @@ static void check_private_group_access(struct gpu_gen *gen,
 		return;
 	}
 
-	group->private_bound = create_bound_list(gen->ctx, n_index);
+	group->private_tile = create_tile(gen->ctx, n_index);
 	acc = isl_map_apply_domain(acc, isl_map_copy(gen->privatization));
-	if (!can_tile_for_shared_memory(group->array, acc,
-					group->private_bound)) {
-		free_bound_list(group->private_bound, n_index);
-		group->private_bound = NULL;
-	}
+	if (!can_tile(acc, group->private_tile))
+		group->private_tile = free_tile(group->private_tile);
 
 	isl_map_free(acc);
+}
+
+/* Look for the last shared tile loop that affects the offset of "tile"
+ * and return the result.
+ * If there is no such loop, then return the index of the loop
+ * before the first shared tile loop, in particular gen->tile_first - 1.
+ */
+static int compute_tile_last_shared(struct gpu_gen *gen,
+	struct gpu_array_tile *tile)
+{
+	int i, j;
+
+	for (j = gen->shared_len - 1; j >= gen->tile_first; --j) {
+		for (i = 0; i < tile->n; ++i) {
+			isl_aff *lb;
+			isl_aff *shift;
+
+			lb = tile->bound[i].lb;
+			if (isl_aff_involves_dims(lb, isl_dim_in, j, 1))
+				break;
+
+			shift = tile->bound[i].shift;
+			if (!shift)
+				continue;
+			if (isl_aff_involves_dims(shift, isl_dim_in, j, 1))
+				break;
+		}
+		if (i < tile->n)
+			break;
+	}
+
+	return j;
 }
 
 /* Look for the last shared tile loop that affects the offset of the
@@ -2227,37 +2274,17 @@ static void check_private_group_access(struct gpu_gen *gen,
 static void set_last_shared(struct gpu_gen *gen,
 	struct gpu_array_ref_group *group)
 {
-	int i, j;
-	struct gpu_array_bound *bounds;
-	int n_index = group->array->n_index;
+	struct gpu_array_tile *tile;
 
 	group->last_shared = gen->shared_len - 1;
 
-	bounds = group->private_bound;
-	if (!bounds)
-		bounds = group->shared_bound;
-	if (!bounds)
+	tile = group->private_tile;
+	if (!tile)
+		tile = group->shared_tile;
+	if (!tile)
 		return;
 
-	for (j = gen->shared_len - 1; j >= gen->tile_first; --j) {
-		for (i = 0; i < n_index; ++i) {
-			isl_aff *lb;
-			isl_aff *shift;
-
-			lb = bounds[i].lb;
-			if (isl_aff_involves_dims(lb, isl_dim_in, j, 1))
-				break;
-
-			shift = bounds[i].shift;
-			if (!shift)
-				continue;
-			if (isl_aff_involves_dims(shift, isl_dim_in, j, 1))
-				break;
-		}
-		if (i < n_index)
-			break;
-	}
-	group->last_shared = j;
+	group->last_shared = compute_tile_last_shared(gen, tile);
 }
 
 /* Compute the sizes of all private arrays for the current kernel,
@@ -2288,7 +2315,7 @@ static void compute_private_size(struct gpu_gen *gen)
 		for (j = 0; j < array->n_group; ++j) {
 			check_private_group_access(gen, array->groups[j]);
 
-			if (!array->groups[j]->private_bound)
+			if (!array->groups[j]->private_tile)
 				continue;
 
 			private = isl_union_map_union(private,
@@ -2324,18 +2351,17 @@ static void compute_last_shared(struct gpu_gen *gen)
 	}
 }
 
-/* Compute the size of the tile specified by the list "bound" of n_index
- * gpu_array_bounds in number of elements and put the result in *size.
+/* Compute the size of the tile specified by "tile"
+ * in number of elements and put the result in *size.
  */
-static void tile_size(unsigned n_index, struct gpu_array_bound *bound,
-	isl_int *size)
+static void tile_size(struct gpu_array_tile *tile, isl_int *size)
 {
 	int i;
 
 	isl_int_set_si(*size, 1);
 
-	for (i = 0; i < n_index; ++i)
-		isl_int_mul(*size, *size, bound[i].size);
+	for (i = 0; i < tile->n; ++i)
+		isl_int_mul(*size, *size, tile->bound[i].size);
 }
 
 /* If max_shared_memory is not set to infinity (-1), then make
@@ -2366,10 +2392,10 @@ static void check_shared_memory_bound(struct gpu_gen *gen)
 			struct gpu_array_ref_group *group;
 
 			group = array->groups[j];
-			if (!group->shared_bound)
+			if (!group->shared_tile)
 				continue;
 
-			tile_size(array->n_index, group->shared_bound, &size);
+			tile_size(group->shared_tile, &size);
 			isl_int_mul_ui(size, size, array->size);
 
 			if (isl_int_le(size, left)) {
@@ -2377,8 +2403,7 @@ static void check_shared_memory_bound(struct gpu_gen *gen)
 				continue;
 			}
 
-			free_bound_list(group->shared_bound, array->n_index);
-			group->shared_bound = NULL;
+			group->shared_tile = free_tile(group->shared_tile);
 		}
 	}
 
@@ -2434,13 +2459,12 @@ static int populate_array_references(struct gpu_array_info *array,
 	return n;
 }
 
-static void free_array_ref_group(struct gpu_array_ref_group *group,
-	int n_index)
+static void free_array_ref_group(struct gpu_array_ref_group *group)
 {
 	if (!group)
 		return;
-	free_bound_list(group->shared_bound, n_index);
-	free_bound_list(group->private_bound, n_index);
+	free_tile(group->shared_tile);
+	free_tile(group->private_tile);
 	isl_map_free(group->access);
 	free(group->refs);
 	free(group);
@@ -2546,19 +2570,16 @@ static void compute_group_shared_bound(struct gpu_gen *gen,
 	if (gpu_array_is_read_only_scalar(array))
 		return;
 
-	group->shared_bound = create_bound_list(ctx, array->n_index);
-	if (!can_tile_for_shared_memory(array, group->access,
-					group->shared_bound)) {
-		free_bound_list(group->shared_bound, array->n_index);
-		group->shared_bound = NULL;
-	}
+	group->shared_tile = create_tile(ctx, array->n_index);
+	if (!can_tile(group->access, group->shared_tile))
+		group->shared_tile = free_tile(group->shared_tile);
 }
 
-/* Is the size of the tile specified by "bound" smaller than the sum of
- * the sizes of the tiles specified by "bound1" and "bound2"?
+/* Is the size of the tile specified by "tile" smaller than the sum of
+ * the sizes of the tiles specified by "tile1" and "tile2"?
  */
-static int smaller_tile(unsigned n_index, struct gpu_array_bound *bound,
-	struct gpu_array_bound *bound1, struct gpu_array_bound *bound2)
+static int smaller_tile(struct gpu_array_tile *tile,
+	struct gpu_array_tile *tile1, struct gpu_array_tile *tile2)
 {
 	int smaller;
 	isl_int size, size1, size2;
@@ -2567,9 +2588,9 @@ static int smaller_tile(unsigned n_index, struct gpu_array_bound *bound,
 	isl_int_init(size1);
 	isl_int_init(size2);
 
-	tile_size(n_index, bound, &size);
-	tile_size(n_index, bound1, &size1);
-	tile_size(n_index, bound2, &size2);
+	tile_size(tile, &size);
+	tile_size(tile1, &size1);
+	tile_size(tile2, &size2);
 
 	isl_int_sub(size, size, size1);
 	isl_int_sub(size, size, size2);
@@ -2600,16 +2621,16 @@ static int group_common_shared_memory_tile(struct gpu_array_info *array, int n,
 		int l = i;
 		if (leader[i] != i)
 			continue;
-		if (!groups[i]->shared_bound)
+		if (!groups[i]->shared_tile)
 			continue;
 		for (j = i - 1; j >= 0; --j) {
 			isl_map *map;
 			int empty;
-			struct gpu_array_bound *shared_bound;
+			struct gpu_array_tile *shared_tile;
 
 			if (leader[j] != j)
 				continue;
-			if (!groups[j]->shared_bound)
+			if (!groups[j]->shared_tile)
 				continue;
 
 			map = isl_map_intersect(isl_map_copy(groups[l]->access),
@@ -2622,20 +2643,17 @@ static int group_common_shared_memory_tile(struct gpu_array_info *array, int n,
 
 			map = isl_map_union(isl_map_copy(groups[l]->access),
 					    isl_map_copy(groups[j]->access));
-			shared_bound = create_bound_list(ctx, array->n_index);
-			if (!can_tile_for_shared_memory(array, map,
-							shared_bound) ||
-			    !smaller_tile(array->n_index, shared_bound,
-					groups[l]->shared_bound,
-					groups[j]->shared_bound)) {
+			shared_tile = create_tile(ctx, array->n_index);
+			if (!can_tile(map, shared_tile) ||
+			    !smaller_tile(shared_tile, groups[l]->shared_tile,
+					groups[j]->shared_tile)) {
 				isl_map_free(map);
-				free_bound_list(shared_bound, array->n_index);
+				free_tile(shared_tile);
 				continue;
 			}
 
-			free_bound_list(groups[j]->shared_bound,
-					array->n_index);
-			groups[j]->shared_bound = shared_bound;
+			free_tile(groups[j]->shared_tile);
+			groups[j]->shared_tile = shared_tile;
 			isl_map_free(groups[j]->access);
 			groups[j]->access = map;
 			groups[j]->n_ref += groups[l]->n_ref;
@@ -2672,7 +2690,7 @@ static void extract_array_groups(isl_ctx *ctx, struct gpu_array_info *array,
 
 		if (leader[i] != i) {
 			groups[i]->refs = NULL;
-			free_array_ref_group(groups[i], array->n_index);
+			free_array_ref_group(groups[i]);
 			continue;
 		}
 
@@ -2792,7 +2810,7 @@ static void free_local_array_info(struct gpu_gen *gen)
 		struct gpu_array_info *array = &gen->prog->array[i];
 
 		for (j = 0; j < array->n_group; ++j)
-			free_array_ref_group(array->groups[j], array->n_index);
+			free_array_ref_group(array->groups[j]);
 		free(array->groups);
 	}
 }
@@ -2888,16 +2906,16 @@ static void create_kernel_var(isl_ctx *ctx, struct gpu_array_ref_group *group,
 	struct ppcg_kernel_var *var)
 {
 	int j;
-	struct gpu_array_bound *bounds;
+	struct gpu_array_tile *tile;
 	isl_printer *p;
 	char *name;
 
 	var->array = group->array;
 
-	bounds = group->private_bound;
+	tile = group->private_tile;
 	var->type = ppcg_access_private;
-	if (!bounds) {
-		bounds = group->shared_bound;
+	if (!tile) {
+		tile = group->shared_tile;
 		var->type = ppcg_access_shared;
 	}
 
@@ -2909,7 +2927,8 @@ static void create_kernel_var(isl_ctx *ctx, struct gpu_array_ref_group *group,
 	var->size = isl_vec_alloc(ctx, group->array->n_index);
 
 	for (j = 0; j < group->array->n_index; ++j)
-		var->size = isl_vec_set_element(var->size, j, bounds[j].size);
+		var->size = isl_vec_set_element(var->size, j,
+						tile->bound[j].size);
 }
 
 static void create_kernel_vars(struct gpu_gen *gen, struct ppcg_kernel *kernel)
@@ -2922,7 +2941,7 @@ static void create_kernel_vars(struct gpu_gen *gen, struct ppcg_kernel *kernel)
 
 		for (j = 0; j < array->n_group; ++j) {
 			struct gpu_array_ref_group *group = array->groups[j];
-			if (group->private_bound || group->shared_bound)
+			if (group->private_tile || group->shared_tile)
 				++n;
 		}
 	}
@@ -2937,7 +2956,7 @@ static void create_kernel_vars(struct gpu_gen *gen, struct ppcg_kernel *kernel)
 
 		for (j = 0; j < array->n_group; ++j) {
 			struct gpu_array_ref_group *group = array->groups[j];
-			if (!group->private_bound && !group->shared_bound)
+			if (!group->private_tile && !group->shared_tile)
 				continue;
 			create_kernel_var(gen->ctx, group, &kernel->var[n]);
 			++n;
@@ -3135,10 +3154,9 @@ static __isl_give isl_union_map *extend_schedule(
  *
  * Since the array in shared or private memory is just
  * a shifted copy of part of the original array, we simply need
- * to subtract the lower bound, which was computed
- * in can_tile_for_shared_memory.
+ * to subtract the lower bound, which was computed in can_tile.
  * If any of the indices is strided, then we first add
- * shared_bound[i].shift and divide by shared_bound[i].stride.
+ * shared_tile->bound[i].shift and divide by shared_tile->bound[i].stride.
  *
  * If the given array is accessed directly from global memory,
  * we don't need to perform any shifting and simply simplify
@@ -3153,7 +3171,7 @@ static __isl_give isl_union_map *extend_schedule(
  * this access relation in terms of the loop iterators of the generated
  * code through precomposition with gen->stmt_it.
  *
- * The expressions in "bounds" are formulated in terms of the first
+ * The expressions in "tile" are formulated in terms of the first
  * gen->shared_len dimensions of the computed schedule using the mapping
  * sched2shared which maps the loop iterators to these dimensions.
  */
@@ -3166,7 +3184,7 @@ static void compute_index_expression(struct gpu_gen *gen,
 	isl_pw_multi_aff *pma;
 	int i;
 	unsigned n_index;
-	struct gpu_array_bound *bounds = NULL;
+	struct gpu_array_tile *tile = NULL;
 
 	if (isl_map_has_tuple_name(stmt_access->access, isl_dim_out)) {
 		int i;
@@ -3188,14 +3206,14 @@ static void compute_index_expression(struct gpu_gen *gen,
 		p = print_array_name(p, group);
 		kernel_access->local_name = isl_printer_get_str(p);
 		isl_printer_free(p);
-		bounds = group->private_bound;
+		tile = group->private_tile;
 		kernel_access->type = ppcg_access_private;
-		if (!bounds) {
-			bounds = group->shared_bound;
+		if (!tile) {
+			tile = group->shared_tile;
 			kernel_access->type = ppcg_access_shared;
 		}
 	}
-	if (!bounds)
+	if (!tile)
 		kernel_access->type = ppcg_access_global;
 
 	n_index = isl_map_dim(stmt_access->access, isl_dim_out);
@@ -3217,14 +3235,15 @@ static void compute_index_expression(struct gpu_gen *gen,
 		index = isl_pw_multi_aff_get_pw_aff(pma, i);
 
 		if (!kernel_access->array) {
-		} else if (!bounds) {
+		} else if (!tile) {
 			domain = isl_map_domain(isl_map_copy(stmt_it));
 			index = isl_pw_aff_coalesce(index);
 			index = isl_pw_aff_gist(index, domain);
 		} else {
 			domain = isl_map_domain(isl_map_copy(stmt_it));
 			index = shift_index(index, kernel_access->array,
-				&bounds[i], domain, isl_map_copy(sched2shared));
+				&tile->bound[i], domain,
+				isl_map_copy(sched2shared));
 		}
 
 		expr = isl_ast_build_expr_from_pw_aff(build, index);
@@ -3664,7 +3683,7 @@ static __isl_give isl_ast_node *create_access_leaf(
 	group = isl_id_get_user(id);
 	isl_id_free(id);
 
-	if (group->private_bound)
+	if (group->private_tile)
 		return copy_group_private_accesses(gen, group, schedule,
 							build);
 	else
@@ -3985,7 +4004,7 @@ static __isl_give isl_union_map *add_group_schedule(struct gpu_gen *gen,
 	assert(pos >= 0);
 	if (read)
 		val = -2 - k;
-	else if (group->private_bound)
+	else if (group->private_tile)
 		val = 1 + k;
 	else
 		val = 1 + s + 1 + k;
@@ -4001,13 +4020,13 @@ static __isl_give isl_union_map *add_group_schedule(struct gpu_gen *gen,
 
 	n = gen->shared_len - gen->tile_first;
 	if (read) {
-		if (!group->private_bound)
+		if (!group->private_tile)
 			res = add_sync_schedule(gen, res, schedule,
 						shared_sched, n, -1);
 	} else {
 		if (pos == 0)
 			return res;
-		if (pos == n && group->private_bound)
+		if (pos == n && group->private_tile)
 			return res;
 		res = add_sync_schedule(gen, res, schedule, shared_sched,
 					pos, 2 * s + 2);
@@ -4075,7 +4094,7 @@ static __isl_give isl_union_map *body_schedule(struct gpu_gen *gen,
 			struct gpu_array_ref_group *group;
 
 			group = array->groups[j];
-			if (!group->private_bound && !group->shared_bound)
+			if (!group->private_tile && !group->shared_tile)
 				continue;
 			res = add_group_schedule(gen, res, schedule,
 						shared_sched, group, 0, k, s);
