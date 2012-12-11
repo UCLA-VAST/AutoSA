@@ -2218,9 +2218,11 @@ static void check_private_group_access(struct gpu_gen *gen,
 }
 
 /* Look for the last shared tile loop that affects the offset of the
- * shared or private tile and store the result in array->last_shared.
- * If there is no such loop, then array->last_shared is set to a value
+ * shared or private tile and store the result in group->last_shared.
+ * If there is no such loop, then group->last_shared is set to a value
  * before the first shared tile loop, in particular gen->tile_first - 1.
+ * If there is no tile defined on the array reference group,
+ * then set group->last_shared to gen->shared_len - 1.
  */
 static void set_last_shared(struct gpu_gen *gen,
 	struct gpu_array_ref_group *group)
@@ -2228,6 +2230,8 @@ static void set_last_shared(struct gpu_gen *gen,
 	int i, j;
 	struct gpu_array_bound *bounds;
 	int n_index = group->array->n_index;
+
+	group->last_shared = gen->shared_len - 1;
 
 	bounds = group->private_bound;
 	if (!bounds)
@@ -2315,10 +2319,8 @@ static void compute_last_shared(struct gpu_gen *gen)
 	for (i = 0; i < gen->prog->n_array; ++i) {
 		struct gpu_array_info *array = &gen->prog->array[i];
 
-		for (j = 0; j < array->n_group; ++j) {
-			array->groups[j]->last_shared = gen->shared_len - 1;
+		for (j = 0; j < array->n_group; ++j)
 			set_last_shared(gen, array->groups[j]);
-		}
 	}
 }
 
