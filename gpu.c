@@ -155,8 +155,6 @@ struct gpu_gen {
 	isl_map *copy_sched;
 	/* The array reference group corresponding to copy_sched. */
 	struct gpu_array_ref_group *copy_group;
-	/* copy_group->private_bound or copy_group->shared_bound */
-	struct gpu_array_bound *copy_bound;
 
 	/* First loop to unroll (or -1 if none) in the current part of the
 	 * schedule.
@@ -3516,7 +3514,6 @@ static __isl_give isl_ast_node *copy_access(struct gpu_gen *gen,
 	build = isl_ast_build_restrict(build, set);
 
 	gen->copy_group = group;
-	gen->copy_bound = group->shared_bound;
 
 	if (private) {
 		space = isl_space_range(isl_map_get_space(schedule));
