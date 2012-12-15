@@ -2169,69 +2169,6 @@ static int access_is_bijective(struct gpu_gen *gen, __isl_keep isl_map *access)
 	return res;
 }
 
-/* For the given array reference group, check whether the access is private
- * to the thread.  That is, check that any given array element
- * is only accessed by a single thread.
- * We compute an access relation that maps the shared tile loop iterators
- * and the shared point loop iterators that will be wrapped over the
- * threads to the array elements.
- * We actually check that those iterators that will be wrapped
- * partition the array space.  This check is stricter than necessary
- * since several iterations may be mapped onto the same thread
- * and then they could be allowed to access the same memory elements,
- * but our check does not allow this situation.
- *
- * We also check that the index expression only depends on parallel
- * loops.  That way, we can move those loops innermost and unroll them.
- * Again, we use a test that is stricter than necessary.
- * We actually check whether the index expression only depends
- * on the iterators that are wrapped over the threads.
- * These are necessarily parallel, but there may be more parallel loops.
- *
- * Combining the injectivity of the first test with the single-valuedness
- * of the second test, we simply test for bijectivity.
- *
- * If it turns out we can use registers, we compute the private memory
- * tile size using can_tile, after introducing a dependence
- * on the thread indices.
- *
- * Before performing any of the above computations, we first check
- * if there is any reuse on the reference group.  If not, we simply
- * return.  If, moreover, the access is coalesced then we also remove
- * the shared memory tiling since we should just use global memory instead.
- */
-static void check_private_group_access(struct gpu_gen *gen,
-	struct gpu_array_ref_group *group)
-{
-	isl_map *acc;
-	isl_union_map *access;
-	int n_index = group->array->n_index;
-
-	access = group_access_relation(group, 1, 1);
-	if (isl_union_map_is_injective(access)) {
-		if (group->shared_tile && access_is_coalesced(gen, access))
-			group->shared_tile = free_tile(group->shared_tile);
-		isl_union_map_free(access);
-		return;
-	}
-	access = isl_union_map_apply_domain(access,
-					isl_union_map_copy(gen->shared_sched));
-
-	acc = isl_map_from_union_map(access);
-
-	if (!access_is_bijective(gen, acc)) {
-		isl_map_free(acc);
-		return;
-	}
-
-	group->private_tile = create_tile(gen->ctx, n_index);
-	acc = isl_map_apply_domain(acc, isl_map_copy(gen->privatization));
-	if (!can_tile(acc, group->private_tile))
-		group->private_tile = free_tile(group->private_tile);
-
-	isl_map_free(acc);
-}
-
 /* Look for the last shared tile loop that affects the offset of "tile"
  * and return the result.
  * If there is no such loop, then return the index of the loop
@@ -2287,16 +2224,10 @@ static void set_last_shared(struct gpu_gen *gen,
 	group->last_shared = compute_tile_last_shared(gen, tile);
 }
 
-/* Compute the sizes of all private arrays for the current kernel,
- * as well as the offsets of the private pieces in the original arrays.
- * If we cannot or don't want to privatize a given array group,
- * we use the shared memory tile sizes computed in
- * compute_group_shared_bound instead.
- *
- * A privatized copy of all access relations from reference groups that
- * are mapped to private memory is stored in gen->privatization.
+/* Compute a privatized copy of all access relations from reference groups that
+ * are mapped to private memory and store the result in gen->privatization.
  */
-static void compute_private_size(struct gpu_gen *gen)
+static void compute_private_access(struct gpu_gen *gen)
 {
 	int i, j;
 	isl_union_map *private;
@@ -2313,8 +2244,6 @@ static void compute_private_size(struct gpu_gen *gen)
 			continue;
 
 		for (j = 0; j < array->n_group; ++j) {
-			check_private_group_access(gen, array->groups[j]);
-
 			if (!array->groups[j]->private_tile)
 				continue;
 
@@ -2595,23 +2524,87 @@ static int group_overlapping_writes(int n, struct gpu_array_ref_group **groups)
 	return n;
 }
 
-/* Compute the size of the shared array corresponding to the given
- * array reference group, based on the accesses from the current kernel,
- * as well as the offset of the shared piece in the original array.
+/* Compute the private and/or shared memory tiles for the array
+ * reference group "group" of array "array".
+ *
+ * If the array is a read-only scalar or if the user requested
+ * not to use shared or private memory, then we do not need to do anything.
+ *
+ * We only try to compute a shared memory tile if there is any reuse
+ * or if the access is not coalesced.
+ *
+ * For computing a private memory tile, we also require that there is
+ * some reuse.  Moreover, we require that the access is private
+ * to the thread.  That is, we check that any given array element
+ * is only accessed by a single thread.
+ * We compute an access relation that maps the shared tile loop iterators
+ * and the shared point loop iterators that will be wrapped over the
+ * threads to the array elements.
+ * We actually check that those iterators that will be wrapped
+ * partition the array space.  This check is stricter than necessary
+ * since several iterations may be mapped onto the same thread
+ * and then they could be allowed to access the same memory elements,
+ * but our check does not allow this situation.
+ *
+ * We also check that the index expression only depends on parallel
+ * loops.  That way, we can move those loops innermost and unroll them.
+ * Again, we use a test that is stricter than necessary.
+ * We actually check whether the index expression only depends
+ * on the iterators that are wrapped over the threads.
+ * These are necessarily parallel, but there may be more parallel loops.
+ *
+ * Combining the injectivity of the first test with the single-valuedness
+ * of the second test, we simply test for bijectivity.
+ *
+ * If it turns out we can use registers, we compute the private memory
+ * tile size using can_tile, after introducing a dependence
+ * on the thread indices.
  */
-static void compute_group_shared_bound(struct gpu_gen *gen,
-	struct gpu_array_info *array, struct gpu_array_ref_group *group)
+static void compute_group_bounds(struct gpu_gen *gen,
+	struct gpu_array_ref_group *group)
 {
-	isl_ctx *ctx = isl_space_get_ctx(array->dim);
+	isl_ctx *ctx = isl_space_get_ctx(group->array->dim);
+	isl_union_map *access;
+	int n_index = group->array->n_index;
+	int no_reuse;
+	isl_map *acc;
 
-	if (!gen->options->use_shared_memory)
+	if (!gen->options->use_shared_memory &&
+	    !gen->options->use_private_memory)
 		return;
-	if (gpu_array_is_read_only_scalar(array))
+	if (gpu_array_is_read_only_scalar(group->array))
 		return;
 
-	group->shared_tile = create_tile(ctx, array->n_index);
-	if (!can_tile(group->access, group->shared_tile))
-		group->shared_tile = free_tile(group->shared_tile);
+	access = group_access_relation(group, 1, 1);
+	no_reuse = isl_union_map_is_injective(access);
+
+	if (!no_reuse || !access_is_coalesced(gen, access)) {
+		group->shared_tile = create_tile(ctx, group->array->n_index);
+		if (!can_tile(group->access, group->shared_tile))
+			group->shared_tile = free_tile(group->shared_tile);
+	}
+
+	if (no_reuse) {
+		isl_union_map_free(access);
+		return;
+	}
+
+	access = isl_union_map_apply_domain(access,
+					isl_union_map_copy(gen->shared_sched));
+
+	acc = isl_map_from_union_map(access);
+
+	if (!access_is_bijective(gen, acc)) {
+		isl_map_free(acc);
+		return;
+	}
+
+	group->private_tile = create_tile(gen->ctx, n_index);
+	acc = isl_map_apply_domain(acc, isl_map_copy(gen->privatization));
+	if (!can_tile(acc, group->private_tile))
+		group->private_tile = free_tile(group->private_tile);
+
+	isl_map_free(acc);
 }
 
 /* Is the size of the tile specified by "tile" smaller than the sum of
@@ -2677,7 +2670,7 @@ static int group_common_shared_memory_tile(struct gpu_gen *gen,
 				continue;
 
 			group = join_groups(groups[i], groups[j]);
-			compute_group_shared_bound(gen, array, group);
+			compute_group_bounds(gen, group);
 			if (!group->shared_tile ||
 			    !smaller_tile(group->shared_tile,
 					groups[i]->shared_tile,
@@ -2745,7 +2738,7 @@ static void group_array_references(struct gpu_gen *gen,
 	n = group_overlapping_writes(n, groups);
 
 	for (i = 0; i < n; ++i)
-		compute_group_shared_bound(gen, array, groups[i]);
+		compute_group_bounds(gen, groups[i]);
 
 	n = group_common_shared_memory_tile(gen, array, n, groups);
 
@@ -4273,7 +4266,7 @@ static __isl_give isl_ast_node *create_host_leaf(
 	compute_shared_sched(gen);
 	gen->privatization = compute_privatization(gen);
 	group_references(gen);
-	compute_private_size(gen);
+	compute_private_access(gen);
 	check_shared_memory_bound(gen);
 	compute_last_shared(gen);
 	host_domain = isl_set_from_union_set(isl_union_map_range(
