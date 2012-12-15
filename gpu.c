@@ -2265,21 +2265,6 @@ static void compute_private_access(struct gpu_gen *gen)
 	}
 }
 
-/* For each array, look for the last shared tile loop that affects the offset
- * (and therefore the group tile) and store the result in group->last_shared.
- */
-static void compute_last_shared(struct gpu_gen *gen)
-{
-	int i, j;
-
-	for (i = 0; i < gen->prog->n_array; ++i) {
-		struct gpu_array_info *array = &gen->prog->array[i];
-
-		for (j = 0; j < array->n_group; ++j)
-			set_last_shared(gen, array->groups[j]);
-	}
-}
-
 /* Compute the size of the tile specified by "tile"
  * in number of elements and put the result in *size.
  */
@@ -2560,7 +2545,7 @@ static int group_overlapping_writes(int n, struct gpu_array_ref_group **groups)
  * tile size using can_tile, after introducing a dependence
  * on the thread indices.
  */
-static void compute_group_bounds(struct gpu_gen *gen,
+static void compute_group_bounds_core(struct gpu_gen *gen,
 	struct gpu_array_ref_group *group)
 {
 	isl_ctx *ctx = isl_space_get_ctx(group->array->dim);
@@ -2605,6 +2590,16 @@ static void compute_group_bounds(struct gpu_gen *gen,
 		group->private_tile = free_tile(group->private_tile);
 
 	isl_map_free(acc);
+}
+
+/* Compute the private and/or shared memory tiles for the array
+ * reference group "group" of array "array" and set last_shared.
+ */
+static void compute_group_bounds(struct gpu_gen *gen,
+	struct gpu_array_ref_group *group)
+{
+	compute_group_bounds_core(gen, group);
+	set_last_shared(gen, group);
 }
 
 /* Is the size of the tile specified by "tile" smaller than the sum of
@@ -4268,7 +4263,6 @@ static __isl_give isl_ast_node *create_host_leaf(
 	group_references(gen);
 	compute_private_access(gen);
 	check_shared_memory_bound(gen);
-	compute_last_shared(gen);
 	host_domain = isl_set_from_union_set(isl_union_map_range(
 						isl_union_map_copy(schedule)));
 	localize_bounds(gen, kernel, host_domain);
