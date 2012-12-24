@@ -20,7 +20,7 @@ static __isl_take isl_printer *print_pet_expr_help(__isl_take isl_printer *p,
 
 	switch (expr->type) {
 	case pet_expr_double:
-		p = isl_printer_print_double(p, expr->d);
+		p = isl_printer_print_str(p, expr->d.s);
 		break;
 	case pet_expr_access:
 		p = print_access_fn(p, expr, usr);
