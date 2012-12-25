@@ -2412,7 +2412,7 @@ static void check_shared_memory_bound(struct gpu_gen *gen)
 }
 
 /* Fill up the groups array with singleton groups, i.e., one group
- * per reference, initializing the array, access, write and refs fields.
+ * per reference, initializing the array, access, write, n_ref and refs fields.
  * In particular the access field is initialized to the scheduled
  * access relation of the array reference.
  *
@@ -2452,6 +2452,7 @@ static int populate_array_references(struct gpu_array_info *array,
 		group->access = map;
 		group->write = access->write;
 		group->refs = &array->refs[i];
+		group->n_ref = 1;
 
 		groups[n++] = group;
 	}
@@ -2459,6 +2460,12 @@ static int populate_array_references(struct gpu_array_info *array,
 	return n;
 }
 
+/* If group->n_ref == 1, then group->refs was set by
+ * populate_array_references to point directly into
+ * group->array->refs and should not be freed.
+ * If group->n_ref > 1, then group->refs was set by join_groups
+ * to point to a newly allocated array.
+ */
 static void free_array_ref_group(struct gpu_array_ref_group *group)
 {
 	if (!group)
@@ -2466,7 +2473,8 @@ static void free_array_ref_group(struct gpu_array_ref_group *group)
 	free_tile(group->shared_tile);
 	free_tile(group->private_tile);
 	isl_map_free(group->access);
-	free(group->refs);
+	if (group->n_ref > 1)
+		free(group->refs);
 	free(group);
 }
 
@@ -2514,46 +2522,77 @@ static int accesses_overlap(struct gpu_array_ref_group *group1,
 	return !empty;
 }
 
+/* Combine the given two groups into a single group, containing
+ * the references of both groups.
+ */
+static struct gpu_array_ref_group *join_groups(
+	struct gpu_array_ref_group *group1,
+	struct gpu_array_ref_group *group2)
+{
+	int i;
+	isl_ctx *ctx;
+	struct gpu_array_ref_group *group;
+
+	ctx = isl_map_get_ctx(group1->access);
+	group = isl_calloc_type(ctx, struct gpu_array_ref_group);
+	assert(group);
+	group->array = group1->array;
+	group->access = isl_map_union(isl_map_copy(group1->access),
+					isl_map_copy(group2->access));
+	group->write = group1->write || group2->write;
+	group->n_ref = group1->n_ref + group2->n_ref;
+	group->refs = isl_alloc_array(ctx, struct gpu_stmt_access *,
+					group->n_ref);
+	assert(group->refs);
+	for (i = 0; i < group1->n_ref; ++i)
+		group->refs[i] = group1->refs[i];
+	for (i = 0; i < group2->n_ref; ++i)
+		group->refs[group1->n_ref + i] = group2->refs[i];
+
+	return group;
+}
+
+/* Combine the given two groups into a single group and free
+ * the original two groups.
+ */
+static struct gpu_array_ref_group *join_groups_and_free(
+	struct gpu_array_ref_group *group1,
+	struct gpu_array_ref_group *group2)
+{
+	struct gpu_array_ref_group *group;
+
+	group = join_groups(group1, group2);
+	free_array_ref_group(group1);
+	free_array_ref_group(group2);
+	return group;
+}
+
 /* If two groups have overlapping access relations (within the innermost
  * loop) and if one of them involves a write, then merge the two groups
  * into one.
  *
- * We keep track of the grouping in "leader".  leader[j] points to
- * an earlier group array element that belongs to the same group,
- * or the array element j itself if this element is the first in the group.
- *
- * Return the number of group leaders.
+ * Return the updated number of groups.
  */
-static int group_overlapping_writes(int n,
-	struct gpu_array_ref_group **groups, int *leader)
+static int group_overlapping_writes(int n, struct gpu_array_ref_group **groups)
 {
 	int i, j;
-	int n_group = n;
 
 	for (i = 0; i < n; ++i) {
-		int l = i;
-		groups[l]->n_ref = 1;
-		for (j = i - 1; j >= 0; --j) {
-			if (leader[j] != j)
-				continue;
-			if (!groups[l]->write && !groups[j]->write)
+		for (j = n - 1; j > i; --j) {
+			if (!groups[i]->write && !groups[j]->write)
 				continue;
 
-			if (!accesses_overlap(groups[l], groups[j]))
+			if (!accesses_overlap(groups[i], groups[j]))
 				continue;
 
-			groups[j]->access = isl_map_union(groups[j]->access,
-							groups[l]->access);
-			groups[j]->write = 1;
-			groups[l]->access = NULL;
-			groups[j]->n_ref += groups[l]->n_ref;
-			l = leader[l] = j;
-			n_group--;
+			groups[i] = join_groups_and_free(groups[i], groups[j]);
+			if (j != n - 1)
+				groups[j] = groups[n - 1];
+			n--;
 		}
-		leader[i] = l;
 	}
 
-	return n_group;
+	return n;
 }
 
 /* Compute the size of the shared array corresponding to the given
@@ -2609,31 +2648,27 @@ static int smaller_tile(struct gpu_array_tile *tile,
  * a shared memory tile and the size of the tile for the merge group
  * is smaller than the sum of the tile sizes of the individual groups.
  *
- * Return the number of group leaders after merging.
+ * Return the number of groups after merging.
  */
-static int group_common_shared_memory_tile(struct gpu_array_info *array, int n,
-	struct gpu_array_ref_group **groups, int *leader, int n_group)
+static int group_common_shared_memory_tile(struct gpu_gen *gen,
+	struct gpu_array_info *array, int n,
+	struct gpu_array_ref_group **groups)
 {
 	int i, j;
 	isl_ctx *ctx = isl_space_get_ctx(array->dim);
 
-	for (i = 0; n_group > 1 && i < n; ++i) {
-		int l = i;
-		if (leader[i] != i)
-			continue;
+	for (i = 0; i < n; ++i) {
 		if (!groups[i]->shared_tile)
 			continue;
-		for (j = i - 1; j >= 0; --j) {
+		for (j = n - 1; j > i; --j) {
 			isl_map *map;
 			int empty;
-			struct gpu_array_tile *shared_tile;
+			struct gpu_array_ref_group *group;
 
-			if (leader[j] != j)
-				continue;
 			if (!groups[j]->shared_tile)
 				continue;
 
-			map = isl_map_intersect(isl_map_copy(groups[l]->access),
+			map = isl_map_intersect(isl_map_copy(groups[i]->access),
 					    isl_map_copy(groups[j]->access));
 			empty = isl_map_is_empty(map);
 			isl_map_free(map);
@@ -2641,72 +2676,46 @@ static int group_common_shared_memory_tile(struct gpu_array_info *array, int n,
 			if (empty)
 				continue;
 
-			map = isl_map_union(isl_map_copy(groups[l]->access),
-					    isl_map_copy(groups[j]->access));
-			shared_tile = create_tile(ctx, array->n_index);
-			if (!can_tile(map, shared_tile) ||
-			    !smaller_tile(shared_tile, groups[l]->shared_tile,
+			group = join_groups(groups[i], groups[j]);
+			compute_group_shared_bound(gen, array, group);
+			if (!group->shared_tile ||
+			    !smaller_tile(group->shared_tile,
+					groups[i]->shared_tile,
 					groups[j]->shared_tile)) {
-				isl_map_free(map);
-				free_tile(shared_tile);
+				free_array_ref_group(group);
 				continue;
 			}
 
-			free_tile(groups[j]->shared_tile);
-			groups[j]->shared_tile = shared_tile;
-			isl_map_free(groups[j]->access);
-			groups[j]->access = map;
-			groups[j]->n_ref += groups[l]->n_ref;
-			l = leader[l] = j;
-			n_group--;
+			free_array_ref_group(groups[i]);
+			free_array_ref_group(groups[j]);
+			groups[i] = group;
+			if (j != n - 1)
+				groups[j] = groups[n - 1];
+			n--;
 		}
 	}
 
-	return n_group;
+	return n;
 }
 
-/* Extract an array of array reference groups from the array of references
- * and the grouping information in "leader".
+/* Set array->n_group and array->groups to n and groups.
  *
- * Store the results in array->n_group and array->groups.
+ * Additionally, set the "nr" field of each group
+ * and the "group" field of each reference in each group.
  */
-static void extract_array_groups(isl_ctx *ctx, struct gpu_array_info *array,
-	int n, struct gpu_array_ref_group **groups, int *leader, int n_group)
+static void set_array_groups(struct gpu_array_info *array,
+	int n, struct gpu_array_ref_group **groups)
 {
 	int i, j;
 
-	for (i = 2; i < n; ++i)
-		leader[i] = leader[leader[i]];
+	array->n_group = n;
+	array->groups = groups;
 
-	array->n_group = n_group;
-	array->groups = isl_alloc_array(ctx, struct gpu_array_ref_group *,
-					n_group);
-	assert(array->groups);
-
-	j = 0;
 	for (i = 0; i < n; ++i) {
-		int k, l;
-		struct gpu_stmt_access **refs;
+		groups[i]->nr = i;
 
-		if (leader[i] != i) {
-			groups[i]->refs = NULL;
-			free_array_ref_group(groups[i]);
-			continue;
-		}
-
-		refs = isl_alloc_array(ctx, struct gpu_stmt_access *,
-					groups[i]->n_ref);
-		assert(refs);
-		l = 0;
-		for (k = i; k < n; ++k)
-			if (leader[k] == i) {
-				refs[l++] = *groups[k]->refs;
-				(*groups[k]->refs)->group = j;
-			}
-
-		groups[i]->refs = refs;
-		groups[i]->nr = j;
-		array->groups[j++] = groups[i];
+		for (j = 0; j < groups[i]->n_ref; ++j)
+			groups[i]->refs[j]->group = i;
 	}
 }
 
@@ -2718,21 +2727,14 @@ static void extract_array_groups(isl_ctx *ctx, struct gpu_array_info *array,
  * Furthermore, if two groups admit a shared memory tile and if the
  * combination of the two also admits a shared memory tile, we merge
  * the two groups.
- *
- * During the construction the group->refs field points to a single
- * array reference inside the array of array references, while
- * group->n_ref contains the number of element in leader that
- * (directly or indirectly) point to this group, provided the group
- * is a leader.
  */
 static void group_array_references(struct gpu_gen *gen,
 	struct gpu_array_info *array, __isl_keep isl_union_map *sched)
 {
 	int i;
-	int n, n_group;
+	int n;
 	isl_ctx *ctx = isl_union_map_get_ctx(sched);
 	struct gpu_array_ref_group **groups;
-	int *leader;
 
 	groups = isl_calloc_array(ctx, struct gpu_array_ref_group *,
 					array->n_ref);
@@ -2740,22 +2742,14 @@ static void group_array_references(struct gpu_gen *gen,
 
 	n = populate_array_references(array, sched, groups);
 
-	leader = isl_alloc_array(ctx, int, n);
-	assert(leader);
-
-	n_group = group_overlapping_writes(n, groups, leader);
+	n = group_overlapping_writes(n, groups);
 
 	for (i = 0; i < n; ++i)
-		if (leader[i] == i)
-			compute_group_shared_bound(gen, array, groups[i]);
+		compute_group_shared_bound(gen, array, groups[i]);
 
-	n_group = group_common_shared_memory_tile(array, n, groups,
-						  leader, n_group);
+	n = group_common_shared_memory_tile(gen, array, n, groups);
 
-	extract_array_groups(ctx, array, n, groups, leader, n_group);
-
-	free(leader);
-	free(groups);
+	set_array_groups(array, n, groups);
 }
 
 /* Take tiled_sched, project it onto the shared tile loops and
