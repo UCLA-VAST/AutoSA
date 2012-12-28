@@ -5025,6 +5025,7 @@ static void compute_schedule(struct gpu_gen *gen)
 	isl_union_set *domain;
 	isl_union_map *dep_raw, *dep;
 	isl_union_map *sched;
+	isl_schedule_constraints *sc;
 	isl_schedule *schedule;
 
 	dep_raw = isl_union_map_copy(gen->prog->scop->dep_flow);
@@ -5036,8 +5037,11 @@ static void compute_schedule(struct gpu_gen *gen)
 	domain = isl_union_set_copy(gen->prog->scop->domain);
 	domain = isl_union_set_intersect_params(domain,
 				isl_set_copy(gen->prog->scop->context));
-	schedule = isl_union_set_compute_schedule(isl_union_set_copy(domain),
-				isl_union_map_copy(dep), dep);
+	sc = isl_schedule_constraints_on_domain(isl_union_set_copy(domain));
+	sc = isl_schedule_constraints_set_validity(sc, isl_union_map_copy(dep));
+	sc = isl_schedule_constraints_set_proximity(sc, dep);
+
+	schedule = isl_schedule_constraints_compute_schedule(sc);
 	if (gen->options->debug->dump_schedule)
 		isl_schedule_dump(schedule);
 
