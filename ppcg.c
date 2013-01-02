@@ -10,6 +10,7 @@
 
 #include <assert.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <isl/ctx.h>
 #include <isl/flow.h>
 #include <isl/options.h>
@@ -327,24 +328,20 @@ static void ppcg_scop_free(struct ppcg_scop *ps)
 	free(ps);
 }
 
-int main(int argc, char **argv)
+/* Extract a model from the input file, transform the model and
+ * write out the result to the output file(s).
+ */
+static int transform(isl_ctx *ctx)
 {
 	int r;
-	isl_ctx *ctx;
-	struct options *options;
 	struct pet_scop *scop;
 	struct ppcg_scop *ps;
+	struct options *options;
 
-	options = options_new_with_defaults();
-	assert(options);
-
-	ctx = isl_ctx_alloc_with_options(&options_args, options);
-	isl_options_set_schedule_outer_zero_distance(ctx, 1);
-	argc = options_parse(options, argc, argv, ISL_ARG_ALL);
-
-	if (options->ppcg->openmp)
-		assert(isl_options_get_ast_build_atomic_upper_bound(ctx)
-			&& "OpenMP requires atomic bounds");
+	options = isl_ctx_peek_options(ctx, &options_args);
+	if (!options)
+		isl_die(ctx, isl_error_internal,
+			"unable to find options", return EXIT_FAILURE);
 
 	scop = pet_scop_extract_from_C_source(ctx, options->input, NULL);
 	scop = pet_scop_align_params(scop);
@@ -358,6 +355,28 @@ int main(int argc, char **argv)
 
 	ppcg_scop_free(ps);
 	pet_scop_free(scop);
+
+	return r;
+}
+
+int main(int argc, char **argv)
+{
+	int r;
+	isl_ctx *ctx;
+	struct options *options;
+
+	options = options_new_with_defaults();
+	assert(options);
+
+	ctx = isl_ctx_alloc_with_options(&options_args, options);
+	isl_options_set_schedule_outer_zero_distance(ctx, 1);
+	argc = options_parse(options, argc, argv, ISL_ARG_ALL);
+
+	if (options->ppcg->openmp)
+		assert(isl_options_get_ast_build_atomic_upper_bound(ctx)
+			&& "OpenMP requires atomic bounds");
+
+	r = transform(ctx);
 
 	isl_ctx_free(ctx);
 
