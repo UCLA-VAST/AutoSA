@@ -328,6 +328,27 @@ static void ppcg_scop_free(struct ppcg_scop *ps)
 	free(ps);
 }
 
+/* Check consistency of options.
+ *
+ * Return -1 on error.
+ */
+static int check_options(isl_ctx *ctx)
+{
+	struct options *options;
+
+	options = isl_ctx_peek_options(ctx, &options_args);
+	if (!options)
+		isl_die(ctx, isl_error_internal,
+			"unable to find options", return -1);
+
+	if (options->ppcg->openmp &&
+	    !isl_options_get_ast_build_atomic_upper_bound(ctx))
+		isl_die(ctx, isl_error_invalid,
+			"OpenMP requires atomic bounds", return -1);
+
+	return 0;
+}
+
 /* Extract a model from the input file, transform the model and
  * write out the result to the output file(s).
  */
@@ -372,11 +393,10 @@ int main(int argc, char **argv)
 	isl_options_set_schedule_outer_zero_distance(ctx, 1);
 	argc = options_parse(options, argc, argv, ISL_ARG_ALL);
 
-	if (options->ppcg->openmp)
-		assert(isl_options_get_ast_build_atomic_upper_bound(ctx)
-			&& "OpenMP requires atomic bounds");
-
-	r = transform(ctx);
+	if (check_options(ctx) < 0)
+		r = EXIT_FAILURE;
+	else
+		r = transform(ctx);
 
 	isl_ctx_free(ctx);
 
