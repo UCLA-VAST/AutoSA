@@ -17,7 +17,7 @@
  * "writes" contains all write accesses.
  * "kills" contains all kill accesses.
  * "dep_flow" represents the flow dependences.
- * "def_false" represents the false (anti and output) dependences.
+ * "dep_false" represents the false (anti and output) dependences.
  * "schedule" represents the (original) schedule.
  *
  * "arrays" and "stmts" are copies of the corresponding elements
