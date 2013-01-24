@@ -16,6 +16,23 @@ Compilation:
 	make
 	make check
 
+Using PPCG to generate CUDA code
+
+To convert a fragment of a C program to CUDA, insert a line containing
+
+	#pragma scop
+
+before the fragment and add a line containing
+
+	#pragma endscop
+
+after the fragment.  Then run
+	
+	ppcg --target=cuda file.c
+
+where file.c is the file containing the fragment.  The generated
+code is stored in file_host.cu and file_kernel.cu.
+
 Specifying tile, grid and block sizes
 
 The iterations space tile size, grid size and block size can
