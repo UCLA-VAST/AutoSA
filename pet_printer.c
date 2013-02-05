@@ -73,6 +73,18 @@ static __isl_take isl_printer *print_pet_expr_help(__isl_take isl_printer *p,
 				       print_access_fn, usr);
 		}
 		p = isl_printer_print_str(p, ")");
+		break;
+	case pet_expr_cast:
+		if (!outer)
+			p = isl_printer_print_str(p, "(");
+		p = isl_printer_print_str(p, "(");
+		p = isl_printer_print_str(p, expr->type_name);
+		p = isl_printer_print_str(p, ") ");
+		p = print_pet_expr_help(p, expr->args[0], 0,
+			       print_access_fn, usr);
+		if (!outer)
+			p = isl_printer_print_str(p, ")");
+		break;
 	}
 
 	return p;
