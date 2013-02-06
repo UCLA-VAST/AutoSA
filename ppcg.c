@@ -219,7 +219,10 @@ static void eliminate_dead_code(struct ppcg_scop *ps)
 		    isl_union_map_reverse(isl_union_map_copy(ps->schedule)));
 
 	live = isl_union_map_range(exposed);
-	live = isl_union_set_union(live, isl_union_set_copy(ps->call));
+	if (!isl_union_set_is_empty(ps->call)) {
+		live = isl_union_set_union(live, isl_union_set_copy(ps->call));
+		live = isl_union_set_coalesce(live);
+	}
 
 	dep = isl_union_map_copy(ps->dep_flow);
 	dep = isl_union_map_reverse(dep);
