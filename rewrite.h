@@ -3,7 +3,6 @@
 
 #include <stdio.h>
 
-void copy_before_scop(FILE *input, FILE *output);
-void copy_after_scop(FILE *input, FILE *output);
+void copy(FILE *input, FILE *output, long start, long end);
 
 #endif

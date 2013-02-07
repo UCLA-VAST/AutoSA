@@ -845,6 +845,8 @@ int generate_cuda(isl_ctx *ctx, struct ppcg_scop *scop,
 
 	tree = generate_gpu(ctx, prog, options);
 
+	cuda.start = scop->start;
+	cuda.end = scop->end;
 	cuda_open_files(&cuda, input);
 
 	p = isl_printer_to_file(ctx, cuda.host_c);

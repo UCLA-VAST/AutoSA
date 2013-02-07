@@ -50,7 +50,7 @@ void cuda_open_files(struct cuda_info *info, const char *input)
     fprintf(info->kernel_h, "#include \"cuda.h\"\n\n");
 
     info->input = fopen(input, "r");
-    copy_before_scop(info->input, info->host_c);
+    copy(info->input, info->host_c, 0, info->start);
 }
 
 /* Copy all code starting at the endscop pragma from the input
@@ -58,7 +58,7 @@ void cuda_open_files(struct cuda_info *info, const char *input)
  */
 void cuda_close_files(struct cuda_info *info)
 {
-    copy_after_scop(info->input, info->host_c);
+    copy(info->input, info->host_c, info->end, -1);
     fclose(info->input);
     fclose(info->kernel_c);
     fclose(info->kernel_h);

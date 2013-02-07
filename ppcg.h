@@ -8,6 +8,7 @@
 
 /* Representation of the scop for use inside PPCG.
  *
+ * "start" and "end" are file offsets of the corresponding program text.
  * "context" represents constraints on the parameters.
  * "domain" is the union of all iteration domains.
  * "call" contains the iteration domains of statements with a call expression.
@@ -24,6 +25,9 @@
  * of the original pet_scop.
  */
 struct ppcg_scop {
+	unsigned start;
+	unsigned end;
+
 	isl_set *context;
 	isl_union_set *domain;
 	isl_union_set *call;

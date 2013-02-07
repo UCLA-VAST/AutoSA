@@ -287,6 +287,8 @@ static struct ppcg_scop *ppcg_scop_from_pet_scop(struct pet_scop *scop,
 	if (!ps)
 		return NULL;
 
+	ps->start = scop->start;
+	ps->end = scop->end;
 	ps->context = isl_set_copy(scop->context);
 	ps->context = set_intersect_str(ps->context, options->ctx);
 	ps->domain = collect_non_kill_domains(scop);

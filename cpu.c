@@ -631,7 +631,7 @@ int generate_cpu(isl_ctx *ctx, struct ppcg_scop *ps,
 	input_file = fopen(input, "r");
 	output_file = get_output_file(input, output);
 
-	copy_before_scop(input_file, output_file);
+	copy(input_file, output_file, 0, ps->start);
 	fprintf(output_file, "/* ppcg generated CPU code */\n\n");
 	p = isl_printer_to_file(ctx, output_file);
 	p = isl_printer_set_output_format(p, ISL_FORMAT_C);
@@ -645,7 +645,7 @@ int generate_cpu(isl_ctx *ctx, struct ppcg_scop *ps,
 	if (hidden)
 		p = ppcg_end_block(p);
 	isl_printer_free(p);
-	copy_after_scop(input_file, output_file);
+	copy(input_file, output_file, ps->end, -1);
 
 	fclose(output_file);
 	fclose(input_file);
