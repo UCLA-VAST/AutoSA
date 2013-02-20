@@ -46,6 +46,7 @@ ISL_ARG_BOOL(struct ppcg_options, opencl_embed_kernel_code, 0,
 ISL_ARGS_END
 
 ISL_ARGS_START(struct ppcg_options, ppcg_options_args)
+ISL_ARG_CHILD(struct ppcg_options, isl, "isl", &isl_options_args, "isl options")
 ISL_ARG_CHILD(struct ppcg_options, debug, NULL, &ppcg_debug_options_args,
 	"debugging options")
 ISL_ARG_BOOL(struct ppcg_options, reschedule, 0, "reschedule", 1,

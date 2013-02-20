@@ -2,6 +2,7 @@
 #define PPCG_OPTIONS_H
 
 #include <isl/arg.h>
+#include <isl/options.h>
 
 struct ppcg_debug_options {
 	int dump_schedule_constraints;
@@ -12,6 +13,7 @@ struct ppcg_debug_options {
 };
 
 struct ppcg_options {
+	struct isl_options *isl;
 	struct ppcg_debug_options *debug;
 
 	/* Use isl to compute a schedule replacing the original schedule. */
