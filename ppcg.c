@@ -164,6 +164,28 @@ static __isl_give isl_union_set *collect_call_domains(struct pet_scop *scop)
 	return collect_domains(scop, &has_call);
 }
 
+/* Compute the live out accesses, i.e., the writes that are not killed
+ * by any kills or any other writes, and store them in ps->live_out.
+ *
+ * We currently assume that all write access relations are exact.
+ */
+static void compute_live_out(struct ppcg_scop *ps)
+{
+	isl_union_map *exposed;
+
+	exposed = isl_union_map_union(isl_union_map_copy(ps->writes),
+					isl_union_map_copy(ps->kills));
+	exposed = isl_union_map_reverse(exposed);
+	exposed = isl_union_map_apply_range(exposed,
+				isl_union_map_copy(ps->schedule));
+	exposed = isl_union_map_lexmax(exposed);
+	exposed = isl_union_map_coalesce(exposed);
+	exposed = isl_union_map_reverse(exposed);
+	exposed = isl_union_map_apply_range(isl_union_map_copy(ps->schedule),
+					    exposed);
+	ps->live_out = exposed;
+}
+
 /* Compute the flow dependences and the live in accesses.
  */
 static void compute_flow_dep(struct ppcg_scop *ps)
@@ -181,6 +203,7 @@ static void compute_flow_dep(struct ppcg_scop *ps)
  * Store the computed flow dependences
  * in scop->dep_flow and the reads with no corresponding writes in
  * scop->live_in.
+ * Store the live out accesses in scop->live_out.
  * Store the false (anti and output) dependences in scop->dep_false.
  */
 static void compute_dependences(struct ppcg_scop *scop)
@@ -189,6 +212,8 @@ static void compute_dependences(struct ppcg_scop *scop)
 
 	if (!scop)
 		return;
+
+	compute_live_out(scop);
 
 	compute_flow_dep(scop);
 
@@ -221,20 +246,10 @@ static void compute_dependences(struct ppcg_scop *scop)
  */
 static void eliminate_dead_code(struct ppcg_scop *ps)
 {
-	isl_union_map *exposed;
 	isl_union_set *live;
 	isl_union_map *dep;
 
-	exposed = isl_union_map_union(isl_union_map_copy(ps->writes),
-					    isl_union_map_copy(ps->kills));
-	exposed = isl_union_map_reverse(exposed);
-	exposed = isl_union_map_apply_range(exposed,
-					    isl_union_map_copy(ps->schedule));
-	exposed = isl_union_map_lexmax(exposed);
-	exposed = isl_union_map_apply_range(exposed,
-		    isl_union_map_reverse(isl_union_map_copy(ps->schedule)));
-
-	live = isl_union_map_range(exposed);
+	live = isl_union_map_domain(isl_union_map_copy(ps->live_out));
 	if (!isl_union_set_is_empty(ps->call)) {
 		live = isl_union_set_union(live, isl_union_set_copy(ps->call));
 		live = isl_union_set_coalesce(live);
@@ -332,6 +347,7 @@ static void *ppcg_scop_free(struct ppcg_scop *ps)
 	isl_union_map_free(ps->reads);
 	isl_union_map_free(ps->live_in);
 	isl_union_map_free(ps->writes);
+	isl_union_map_free(ps->live_out);
 	isl_union_map_free(ps->kills);
 	isl_union_map_free(ps->dep_flow);
 	isl_union_map_free(ps->dep_false);

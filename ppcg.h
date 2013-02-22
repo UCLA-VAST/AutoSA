@@ -23,6 +23,8 @@ int ppcg_extract_base_name(char *name, const char *input);
  * "live_in" contains read accesses that have no corresponding
  *	writes in the scop.
  * "writes" contains all write accesses.
+ * "live_out" contains the write accesses that are not killed by any kills
+ *	or any other writes.
  * "kills" contains all kill accesses.
  * "dep_flow" represents the flow dependences.
  * "dep_false" represents the false (anti and output) dependences.
@@ -43,6 +45,7 @@ struct ppcg_scop {
 	isl_union_map *reads;
 	isl_union_map *live_in;
 	isl_union_map *writes;
+	isl_union_map *live_out;
 	isl_union_map *kills;
 	isl_union_map *dep_flow;
 	isl_union_map *dep_false;
