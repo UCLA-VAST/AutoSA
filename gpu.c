@@ -783,6 +783,7 @@ static void *free_stmts(struct gpu_stmt *stmts, int n)
 			next = access->next;
 			isl_id_free(access->ref_id);
 			isl_map_free(access->access);
+			isl_map_free(access->tagged_access);
 			free(access);
 		}
 
@@ -1388,6 +1389,26 @@ static __isl_give isl_union_map *group_access_relation(
 		     (write && group->refs[i]->write)))
 			continue;
 		map_i = isl_map_copy(group->refs[i]->access);
+		access = isl_union_map_union(access,
+					    isl_union_map_from_map(map_i));
+	}
+
+	return access;
+}
+
+/* Return the union of all tagged access relations in the group.
+ */
+static __isl_give isl_union_map *group_tagged_access_relation(
+	struct gpu_array_ref_group *group)
+{
+	int i;
+	isl_union_map *access;
+
+	access = isl_union_map_empty(isl_map_get_space(group->access));
+	for (i = 0; i < group->n_ref; ++i) {
+		isl_map *map_i;
+
+		map_i = isl_map_copy(group->refs[i]->tagged_access);
 		access = isl_union_map_union(access,
 					    isl_union_map_from_map(map_i));
 	}
@@ -4329,6 +4350,160 @@ static __isl_give isl_union_map *add_sync_schedule(struct gpu_gen *gen,
 	return res;
 }
 
+/* Given a set of wrapped references "ref", return the corresponding
+ * access relations based on the tagged access relations "tagged".
+ *
+ * The elements of "ref" are of the form
+ *
+ *	[D -> R]
+ *
+ * with D an iteration domains and R a reference.
+ * The elements of "tagged" are of the form
+ *
+ *	[D -> R] -> A
+ *
+ * with A an array.
+ *
+ * Extend "tagged" to include the iteration domain in the range, i.e.,
+ *
+ *	[D -> R] -> [D -> A]
+ *
+ * apply the result to "ref" and then unwrap the resulting set
+ * to obtain relations of the form
+ *
+ *	D -> A
+ */
+static __isl_give isl_union_map *wrapped_reference_to_access(
+	__isl_take isl_union_set *ref, __isl_take isl_union_map *tagged)
+{
+	isl_union_map *tag2access;
+
+	tag2access = isl_union_map_copy(tagged);
+	tag2access = isl_union_map_universe(tag2access);
+	tag2access = isl_union_set_unwrap(isl_union_map_domain(tag2access));
+	tag2access = isl_union_map_domain_map(tag2access);
+	tag2access = isl_union_map_range_product(tag2access, tagged);
+
+	ref = isl_union_set_coalesce(ref);
+	ref = isl_union_set_apply(ref, tag2access);
+
+	return isl_union_set_unwrap(ref);
+}
+
+/* Given an access relation "access" from "group", remove those reads
+ * if ("read" is 1) or writes (if "read" is 0) that are only needed to
+ * communicate data within the same iteration of the last_shared dimension
+ * of the group.
+ *
+ * If the access is a read then it is necessarily an element of
+ *
+ *	live_in union (range flow)
+ *
+ * where live_in and flow may be overapproximations.
+ * If the access is a write then it is necessarily an element of
+ *
+ *	live_out union (domain flow)
+ *
+ * In both cases, the access relation is also a subset of
+ * the group access relation.
+ *
+ * Essentially, we compute the intersection of "access" with either
+ *
+ *	live_in union (range non-local-flow)
+ *
+ * or
+ *
+ *	live_out union (domain non-local-flow)
+ *
+ * We first construct a relation "local"
+ *
+ *	[[D -> R] -> [D' -> R']]
+ *
+ * of pairs of domain iterations accessing the reference group
+ * and references in the group that are scheduled to the same iteration
+ * of the last_shared dimension.
+ *
+ * If this relation does not intersect the dataflow dependences,
+ * then there is nothing we can possibly remove and we simply
+ * return the input.
+ *
+ * Otherwise, we remove the "local" dataflow dependences from
+ * the set of all dataflow dependences.
+ * Note that if the potential dataflow dependences are an overapproximation
+ * of the actual dataflow dependences, then the result remains an
+ * overapproximation of the non-local dataflow dependences.
+ * Copying to/from global memory is only needed for the references
+ * in the domain/range of the result or for accesses that are live out/in
+ * for the entire scop.
+ *
+ * We therefore map the domain/range of the "external" relation
+ * to the corresponding access relation and take the union with
+ * the live out/in relation.
+ */
+static __isl_give isl_union_map *remove_local_accesses(struct gpu_gen *gen,
+	struct gpu_array_ref_group *group, __isl_take isl_union_map *access,
+	int read)
+{
+	int empty;
+	isl_union_map *tagger;
+	isl_union_set *domain;
+	isl_space *space;
+	isl_union_map *sched, *local, *tagged, *external;
+	isl_union_set *tag_set;
+	isl_map *proj;
+
+	if (isl_union_map_is_empty(access))
+		return access;
+
+	tagged = group_tagged_access_relation(group);
+
+	sched = isl_union_map_copy(gen->sched);
+
+	space = isl_union_map_get_space(sched);
+	proj = projection(space, gen->untiled_len, group->last_shared + 1);
+	sched = isl_union_map_apply_range(sched, isl_union_map_from_map(proj));
+
+	tagger = isl_union_map_copy(gen->prog->scop->tagger);
+	domain = isl_union_map_domain(isl_union_map_copy(tagged));
+	tagger = isl_union_map_intersect_range(tagger, domain);
+	sched = isl_union_map_apply_domain(sched, tagger);
+
+	local = isl_union_map_apply_range(sched,
+			    isl_union_map_reverse(isl_union_map_copy(sched)));
+	local = isl_union_map_intersect(local,
+			isl_union_map_copy(gen->prog->scop->tagged_dep_flow));
+
+	empty = isl_union_map_is_empty(local);
+	if (empty < 0 || empty) {
+		isl_union_map_free(tagged);
+		isl_union_map_free(local);
+		if (empty < 0)
+			return isl_union_map_free(access);
+		return access;
+	}
+
+	external = isl_union_map_copy(gen->prog->scop->tagged_dep_flow);
+	external = isl_union_map_intersect_params(external,
+				isl_set_copy(gen->prog->scop->context));
+	external = isl_union_map_subtract(external, local);
+
+	if (read) {
+		tag_set = isl_union_map_range(external);
+		external = wrapped_reference_to_access(tag_set, tagged);
+		external = isl_union_map_union(external,
+				isl_union_map_copy(gen->prog->scop->live_in));
+	} else {
+		tag_set = isl_union_map_domain(external);
+		external = wrapped_reference_to_access(tag_set, tagged);
+		external = isl_union_map_union(external,
+				isl_union_map_copy(gen->prog->scop->live_out));
+	}
+
+	access = isl_union_map_intersect(access, external);
+
+	return access;
+}
+
 /* Given the AST context schedule "schedule" and the mapping from
  * domains to the shared tile loops "shared_sched", add a schedule
  * for copying an array reference group to/from shared/private memory.
@@ -4353,7 +4528,10 @@ static __isl_give isl_union_map *add_sync_schedule(struct gpu_gen *gen,
  *
  *	D -> A
  *
- * and combine it with shared_sched into
+ * and remove from this access relation those reads or writes
+ * that only needed to communicate data within the same iteration
+ * of the last_shared dimension of the group.
+ * We then combine what is left with shared_sched into
  *
  *	D -> [S -> A]
  *
@@ -4401,6 +4579,7 @@ static __isl_give isl_union_map *add_group_schedule(struct gpu_gen *gen,
 	isl_id *id;
 
 	access = group_access_relation(group, read, !read);
+	access = remove_local_accesses(gen, group, access, read);
 	access = isl_union_map_range_product(isl_union_map_copy(shared_sched),
 						access);
 
@@ -5177,6 +5356,9 @@ static void compute_copy_in_and_out(struct gpu_gen *gen)
 	gen->prog->copy_in = copy_in;
 }
 
+/* Extract a gpu_stmt_access from "expr", append it to the list
+ * that ends in *next_access and return the updated end of the list.
+ */
 static struct gpu_stmt_access **expr_extract_access(struct pet_expr *expr,
 	struct gpu_stmt_access **next_access)
 {
@@ -5189,6 +5371,7 @@ static struct gpu_stmt_access **expr_extract_access(struct pet_expr *expr,
 	access->read = expr->acc.read;
 	access->write = expr->acc.write;
 	access->access = pet_expr_access_get_may_access(expr);
+	access->tagged_access = pet_expr_access_get_tagged_may_access(expr);
 	access->exact_write = !expr->acc.write ||
 		isl_map_is_equal(expr->acc.access, access->access);
 	access->ref_id = isl_id_copy(expr->acc.ref_id);

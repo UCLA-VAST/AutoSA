@@ -41,6 +41,9 @@ int ppcg_extract_base_name(char *name, const char *input);
  *	iteration domain.
  *
  * "dep_flow" represents the potential flow dependences.
+ * "tagged_dep_flow" is the same as "dep_flow", except that both domain and
+ *	range are wrapped relations mapping an iteration domain to
+ *	a reference identifier.  May be NULL if not computed.
  * "dep_false" represents the potential false (anti and output) dependences.
  * "schedule" represents the (original) schedule.
  *
@@ -69,6 +72,7 @@ struct ppcg_scop {
 	isl_union_map *tagger;
 
 	isl_union_map *dep_flow;
+	isl_union_map *tagged_dep_flow;
 	isl_union_map *dep_false;
 	isl_union_map *schedule;
 

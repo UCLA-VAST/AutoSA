@@ -20,6 +20,10 @@ struct gpu_stmt_access {
 
 	/* May access relation */
 	isl_map *access;
+	/* May access relation with as domain a mapping from iteration domain
+	 * to a reference identifier.
+	 */
+	isl_map *tagged_access;
 	/* The reference id of the corresponding pet_expr. */
 	isl_id *ref_id;
 

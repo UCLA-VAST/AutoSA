@@ -166,6 +166,29 @@ static __isl_give isl_union_set *collect_call_domains(struct pet_scop *scop)
 	return collect_domains(scop, &has_call);
 }
 
+/* Given a union of "tagged" access relations of the form
+ *
+ *	[S_i[...] -> R_j[]] -> A_k[...]
+ *
+ * project out the "tags" (R_j[]).
+ * That is, return a union of relations of the form
+ *
+ *	S_i[...] -> A_k[...]
+ */
+static __isl_give isl_union_map *project_out_tags(
+	__isl_take isl_union_map *umap)
+{
+	isl_union_map *proj;
+
+	proj = isl_union_map_universe(isl_union_map_copy(umap));
+	proj = isl_union_set_unwrap(isl_union_map_domain(proj));
+	proj = isl_union_map_domain_map(proj);
+
+	umap = isl_union_map_apply_domain(umap, proj);
+
+	return umap;
+}
+
 /* Construct a relation from the iteration domains to tagged iteration
  * domains with as range the reference tags that appear
  * in any of the reads, writes or kills.
@@ -228,6 +251,38 @@ static void compute_live_out(struct ppcg_scop *ps)
 	ps->live_out = exposed;
 }
 
+/* Compute the flow dependences and the live_in accesses and store
+ * the results in ps->dep_flow and ps->live_in.
+ * A copy of the flow dependences, tagged with the reference tags
+ * is stored in ps->tagged_dep_flow.
+ *
+ * We first compute ps->tagged_dep_flow, i.e., the tagged flow dependences
+ * and then project out the tags.
+ */
+static void compute_tagged_flow_dep(struct ppcg_scop *ps)
+{
+	isl_union_map *tagger;
+	isl_union_map *schedule;
+	isl_union_map *may_flow;
+	isl_union_map *live_in, *may_live_in;
+
+	tagger = isl_union_map_copy(ps->tagger);
+	schedule = isl_union_map_copy(ps->schedule);
+	schedule = isl_union_map_apply_domain(schedule, tagger);
+	isl_union_map_compute_flow(isl_union_map_copy(ps->tagged_reads),
+				isl_union_map_copy(ps->tagged_must_writes),
+				isl_union_map_copy(ps->tagged_may_writes),
+				schedule, &ps->tagged_dep_flow, &may_flow,
+				&live_in, &may_live_in);
+	ps->tagged_dep_flow = isl_union_map_union(ps->tagged_dep_flow,
+							may_flow);
+	ps->dep_flow = isl_union_map_copy(ps->tagged_dep_flow);
+	ps->dep_flow = isl_union_map_zip(ps->dep_flow);
+	ps->dep_flow = isl_union_set_unwrap(isl_union_map_domain(ps->dep_flow));
+	live_in = isl_union_map_union(live_in, may_live_in);
+	ps->live_in = project_out_tags(live_in);
+}
+
 /* Compute the potential flow dependences and the potential live in
  * accesses.
  */
@@ -264,7 +319,10 @@ static void compute_dependences(struct ppcg_scop *scop)
 
 	compute_live_out(scop);
 
-	compute_flow_dep(scop);
+	if (scop->options->target != PPCG_TARGET_C)
+		compute_tagged_flow_dep(scop);
+	else
+		compute_flow_dep(scop);
 
 	may_source = isl_union_map_union(isl_union_map_copy(scop->may_writes),
 					isl_union_map_copy(scop->reads));
@@ -403,6 +461,7 @@ static void *ppcg_scop_free(struct ppcg_scop *ps)
 	isl_union_map_free(ps->must_writes);
 	isl_union_map_free(ps->live_out);
 	isl_union_map_free(ps->tagged_must_kills);
+	isl_union_map_free(ps->tagged_dep_flow);
 	isl_union_map_free(ps->dep_flow);
 	isl_union_map_free(ps->dep_false);
 	isl_union_map_free(ps->schedule);
