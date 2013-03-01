@@ -331,13 +331,17 @@ static void print_indent(FILE *dst, int indent)
 static void print_kernel_iterators(FILE *out, struct ppcg_kernel *kernel)
 {
 	int i;
+	isl_ctx *ctx = isl_ast_node_get_ctx(kernel->tree);
+	const char *type;
 	const char *block_dims[] = { "blockIdx.x", "blockIdx.y" };
 	const char *thread_dims[] = { "threadIdx.x", "threadIdx.y",
 					"threadIdx.z" };
 
+	type = isl_options_get_ast_iterator_type(ctx);
+
 	if (kernel->n_grid > 0) {
 		print_indent(out, 4);
-		fprintf(out, "int ");
+		fprintf(out, "%s ", type);
 		for (i = 0; i < kernel->n_grid; ++i) {
 			if (i)
 				fprintf(out, ", ");
@@ -349,7 +353,7 @@ static void print_kernel_iterators(FILE *out, struct ppcg_kernel *kernel)
 
 	if (kernel->n_block > 0) {
 		print_indent(out, 4);
-		fprintf(out, "int ");
+		fprintf(out, "%s ", type);
 		for (i = 0; i < kernel->n_block; ++i) {
 			if (i)
 				fprintf(out, ", ");
