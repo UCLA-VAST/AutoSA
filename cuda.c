@@ -22,18 +22,17 @@ static __isl_give isl_printer *print_cuda_macros(__isl_take isl_printer *p)
 	const char *macros =
 		"#define cudaCheckReturn(ret) \\\n"
 		"  do { \\\n"
-		"    cudaError_t e = (ret); \\\n"
-		"    if (e != cudaSuccess) { \\\n"
+		"    cudaError_t cudaCheckReturn_e = (ret); \\\n"
+		"    if (cudaCheckReturn_e != cudaSuccess) { \\\n"
 		"      fprintf(stderr, \"CUDA error: %s\\n\", "
-		"cudaGetErrorString(e)); \\\n"
+		"cudaGetErrorString(cudaCheckReturn_e)); \\\n"
 		"      fflush(stderr); \\\n"
 		"    } \\\n"
-		"    assert(e == cudaSuccess); \\\n"
+		"    assert(cudaCheckReturn_e == cudaSuccess); \\\n"
 		"  } while(0)\n"
 		"#define cudaCheckKernel() \\\n"
 		"  do { \\\n"
-		"    cudaError_t e = cudaGetLastError(); \\\n"
-		"    cudaCheckReturn(e); \\\n"
+		"    cudaCheckReturn(cudaGetLastError()); \\\n"
 		"  } while(0)\n\n";
 
 	p = isl_printer_print_str(p, macros);
