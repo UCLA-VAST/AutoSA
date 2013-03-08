@@ -452,10 +452,12 @@ static __isl_give isl_printer *stmt_print_global_index(
 			bound_i = isl_pw_aff_list_get_pw_aff(bound, i);
 			p = isl_printer_print_str(p, ") * (");
 			p = isl_printer_print_pw_aff(p, bound_i);
-			p = isl_printer_print_str(p, ") + ");
+			p = isl_printer_print_str(p, ") + (");
 			isl_pw_aff_free(bound_i);
 		}
 		p = isl_printer_print_ast_expr(p, expr);
+		if (i)
+			p = isl_printer_print_str(p, ")");
 		isl_ast_expr_free(expr);
 	}
 	p = isl_printer_print_str(p, "]");
