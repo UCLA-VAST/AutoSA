@@ -3439,8 +3439,10 @@ static __isl_give isl_ast_node *create_domain_leaf(
 	return tree;
 }
 
-/* This function is called for each leaf in the AST of the code
+/* This function is called for each statement node in the AST of the code
  * for copying to or from shared/private memory.
+ * Attach a pointer to a ppcg_kernel_stmt representing the copy
+ * statement to the node.
  * The statement name is {read,write}_{shared,private}_<array>.
  *
  * The schedule is of the form
@@ -3450,16 +3452,15 @@ static __isl_give isl_ast_node *create_domain_leaf(
  * where A refers to a piece of an array and T to the corresponding
  * shifted tile.  We split this schedule into mappings L -> A and L -> T
  * and store the corresponding expressions in stmt->index and stmt->local_index,
- * where stmt represents the copy statement.
+ * where stmt points to the ppcg_kernel_stmt that is attached to the node.
  */
-static __isl_give isl_ast_node *create_copy_leaf(
-	__isl_take isl_ast_build *build, void *user)
+static __isl_give isl_ast_node *attach_copy_stmt(__isl_take isl_ast_node *node,
+	__isl_keep isl_ast_build *build, void *user)
 {
 	struct gpu_gen *gen = (struct gpu_gen *) user;
 	struct ppcg_kernel_stmt *stmt;
 	isl_id *id;
 	isl_ast_expr *expr;
-	isl_ast_node *node;
 	isl_space *space;
 	isl_map *access, *local_access, *map;
 	isl_pw_multi_aff *pma;
@@ -3468,7 +3469,7 @@ static __isl_give isl_ast_node *create_copy_leaf(
 
 	stmt = isl_calloc_type(gen->ctx, struct ppcg_kernel_stmt);
 	if (!stmt)
-		return isl_ast_build_free(build);
+		return isl_ast_node_free(node);
 
 	access = isl_map_from_union_map(isl_ast_build_get_schedule(build));
 	name = isl_map_get_tuple_name(access, isl_dim_in);
@@ -3497,14 +3498,6 @@ static __isl_give isl_ast_node *create_copy_leaf(
 	array_index = stmt->u.c.array - gen->prog->array;
 	stmt->u.c.local_array = &gen->kernel->array[array_index];
 	stmt->type = ppcg_kernel_copy;
-
-	space = isl_ast_build_get_schedule_space(build);
-	space = isl_space_from_domain(space);
-	space = isl_space_set_tuple_name(space, isl_dim_out, name);
-	expr = isl_ast_build_call_from_pw_multi_aff(build,
-		    isl_pw_multi_aff_from_multi_aff(isl_multi_aff_zero(space)));
-	node = isl_ast_node_alloc_user(expr);
-	isl_ast_build_free(build);
 
 	id = isl_id_alloc(gen->ctx, NULL, stmt);
 	id = isl_id_set_free_user(id, &ppcg_kernel_stmt_free);
@@ -3608,7 +3601,7 @@ static __isl_give isl_ast_node *copy_access(struct gpu_gen *gen,
 	}
 	iterators = generate_names(gen->ctx, n, "c");
 	build = isl_ast_build_set_iterators(build, iterators);
-	build = isl_ast_build_set_create_leaf(build, &create_copy_leaf, gen);
+	build = isl_ast_build_set_at_each_domain(build, &attach_copy_stmt, gen);
 	tree = isl_ast_build_ast_from_schedule(build,
 					    isl_union_map_from_map(schedule));
 	isl_ast_build_free(build);
