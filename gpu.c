@@ -2532,9 +2532,10 @@ static void compute_group_bounds_core(struct gpu_gen *gen,
 	int n_index = group->array->n_index;
 	int no_reuse;
 	isl_map *acc;
+	int use_shared = gen->options->use_shared_memory;
+	int use_private = gen->options->use_private_memory;
 
-	if (!gen->options->use_shared_memory &&
-	    !gen->options->use_private_memory)
+	if (!use_shared && !use_private)
 		return;
 	if (gpu_array_is_read_only_scalar(group->array))
 		return;
@@ -2542,13 +2543,13 @@ static void compute_group_bounds_core(struct gpu_gen *gen,
 	access = group_access_relation(group, 1, 1);
 	no_reuse = isl_union_map_is_injective(access);
 
-	if (!no_reuse || !access_is_coalesced(gen, access)) {
+	if (use_shared && (!no_reuse || !access_is_coalesced(gen, access))) {
 		group->shared_tile = create_tile(ctx, group->array->n_index);
 		if (!can_tile(group->access, group->shared_tile))
 			group->shared_tile = free_tile(group->shared_tile);
 	}
 
-	if (no_reuse) {
+	if (!use_private || no_reuse) {
 		isl_union_map_free(access);
 		return;
 	}
