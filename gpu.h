@@ -159,7 +159,8 @@ struct ppcg_kernel_var {
  *
  * id is the sequence number of the kernel.
  *
- * the first n_block elements of block_dim represent the size of the block.
+ * the first n_block elements of block_dim represent the effective size
+ * of the block.
  *
  * grid_size reflects the effective grid size.
  *

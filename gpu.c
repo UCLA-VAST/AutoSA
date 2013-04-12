@@ -1047,7 +1047,7 @@ static __isl_give isl_union_map *scale_access_tile_loops(struct gpu_gen *gen,
 		int f = 1;
 
 		if (i >= first && i < first + n_tile)
-			f = gen->block_dim[i - first];
+			f = gen->kernel->block_dim[i - first];
 
 		c = isl_equality_alloc(isl_local_space_copy(ls));
 		c = isl_constraint_set_coefficient_si(c, isl_dim_in, i, f);
@@ -1359,7 +1359,7 @@ static __isl_give isl_map *tile_access_schedule(struct gpu_gen *gen,
 	int n_tile;
 	int first;
 
-	n_tile = gen->n_block;
+	n_tile = gen->kernel->n_block;
 	if (n_tile > nvar) {
 		int i;
 		sched = isl_map_insert_dims(sched,
@@ -1380,10 +1380,10 @@ static __isl_give isl_map *tile_access_schedule(struct gpu_gen *gen,
 	dim = isl_space_params(dim);
 	if (gen->options->wrap)
 		tiling = wrap(isl_space_copy(dim), nvar, first,
-				n_tile, gen->block_dim);
+				n_tile, gen->kernel->block_dim);
 	else
 		tiling = tile(isl_space_copy(dim), nvar, first,
-				n_tile, gen->block_dim);
+				n_tile, gen->kernel->block_dim);
 	sched = isl_map_apply_range(sched, tiling);
 
 	par = parametrization(dim, nvar + n_tile, first + n_tile, n_tile, "t");
@@ -2937,6 +2937,78 @@ static __isl_give isl_multi_pw_aff *extract_grid_size(struct gpu_gen *gen,
 	return extract_size(grid, kernel->context);
 }
 
+/* Compute the size of a fixed bounding box around the origin and "set",
+ * where "set" is assumed to contain only non-negative elements,
+ * and store the results in "size".
+ * In particular, compute the maximal value of "set" in each direction
+ * and add one.
+ */
+static void extract_fixed_size(__isl_take isl_set *set, int *size)
+{
+	int i, n;
+	isl_local_space *ls;
+	isl_aff *obj;
+
+	n = isl_set_dim(set, isl_dim_set);
+	ls = isl_local_space_from_space(isl_set_get_space(set));
+	obj = isl_aff_zero_on_domain(ls);
+	for (i = 0; i < n; ++i) {
+		isl_val *max;
+
+		obj = isl_aff_set_coefficient_si(obj, isl_dim_in, i, 1);
+		max = isl_set_max_val(set, obj);
+		size[i] = isl_val_get_num_si(max) + 1;
+		isl_val_free(max);
+		obj = isl_aff_set_coefficient_si(obj, isl_dim_in, i, 0);
+	}
+	isl_aff_free(obj);
+	isl_set_free(set);
+}
+
+/* Compute the effective block size as a list of the sizes in each dimension
+ * and store the sizes in kernel->block_dim.
+ *
+ * The block size specified by the user or set by default
+ * in read_block_sizes() and applied in thread_tile_schedule(),
+ * may be too large for the given code in the sense that
+ * it may contain threads that don't need to execute anything.
+ * We therefore don't store this block size in kernel->block_dim,
+ * but instead the smallest block size that ensures that all threads
+ * that actually execute code are included in the block.
+ *
+ * The current implementation eliminates all parameters, ensuring
+ * that the size is a fixed constant in each dimension.
+ * In principle we could also compute parametric sizes.
+ * We would have to make sure to project out all b%d and t%d parameters,
+ * however.
+ */
+static void extract_block_size(struct gpu_gen *gen, struct ppcg_kernel *kernel)
+{
+	int i;
+	int nparam;
+	isl_set *block;
+	isl_multi_pw_aff *mpa;
+
+	block = isl_union_map_params(isl_union_map_copy(gen->local_sched));
+	block = isl_set_from_params(block);
+	block = isl_set_add_dims(block, isl_dim_set, gen->n_block);
+	kernel->n_block = gen->n_block;
+	for (i = 0; i < gen->n_block; ++i) {
+		int pos;
+		char name[20];
+
+		snprintf(name, sizeof(name), "t%d", i);
+		pos = isl_set_find_dim_by_name(block, isl_dim_param, name);
+		assert(pos >= 0);
+		block = isl_set_equate(block, isl_dim_param, pos,
+					isl_dim_set, i);
+	}
+	nparam = isl_set_dim(block, isl_dim_param);
+	block = isl_set_project_out(block, isl_dim_param, 0, nparam);
+
+	extract_fixed_size(block, kernel->block_dim);
+}
+
 void ppcg_kernel_free(void *user)
 {
 	struct ppcg_kernel *kernel = user;
@@ -3418,7 +3490,8 @@ static __isl_give isl_ast_node *create_domain_leaf(
 
 	space = isl_ast_build_get_schedule_space(build);
 	set = isl_set_universe(space);
-	set = add_bounded_parameters(set, gen->n_block, gen->block_dim, "t");
+	set = add_bounded_parameters(set, gen->kernel->n_block,
+					gen->kernel->block_dim, "t");
 	build = isl_ast_build_restrict(build, set);
 
 	n = gen->thread_tiled_len - gen->shared_len;
@@ -3564,7 +3637,8 @@ static __isl_give isl_ast_node *copy_access(struct gpu_gen *gen,
 
 	n = isl_map_dim(schedule, isl_dim_out);
 	set = isl_set_universe(isl_ast_build_get_schedule_space(build));
-	set = add_bounded_parameters(set, gen->n_block, gen->block_dim, "t");
+	set = add_bounded_parameters(set, gen->kernel->n_block,
+					gen->kernel->block_dim, "t");
 
 	schedule = isl_map_range_product(sched, schedule);
 
@@ -4309,23 +4383,20 @@ static __isl_give isl_ast_node *create_host_leaf(
 	gen->tiled_sched = parametrize_tiled_schedule(gen, gen->tiled_sched);
 	gen->tiled_sched = scale_tile_loops(gen, gen->tiled_sched);
 
+	gen->local_sched = isl_union_map_copy(gen->tiled_sched);
+	gen->local_sched = thread_tile_schedule(gen, gen->local_sched);
+	gen->local_sched = scale_thread_tile_loops(gen, gen->local_sched);
+
 	kernel = gen->kernel = isl_calloc_type(gen->ctx, struct ppcg_kernel);
 	if (!kernel)
 		goto error;
 
 	kernel->id = gen->kernel_id++;
-	kernel->n_block = gen->n_block;
-	for (i = 0; i < gen->n_block; ++i)
-		kernel->block_dim[i] = gen->block_dim[i];
 	kernel->context = isl_union_map_params(isl_union_map_copy(schedule));
 	kernel->grid_size = extract_grid_size(gen, kernel);
+	extract_block_size(gen, kernel);
 	kernel->arrays = isl_union_map_range(access);
 	kernel->space = isl_ast_build_get_schedule_space(build);
-
-	gen->local_sched = isl_union_map_copy(gen->tiled_sched);
-
-	gen->local_sched = thread_tile_schedule(gen, gen->local_sched);
-	gen->local_sched = scale_thread_tile_loops(gen, gen->local_sched);
 
 	gen->private_access = NULL;
 	compute_shared_sched(gen);
