@@ -27,32 +27,18 @@ __isl_give isl_map *project_out(__isl_take isl_space *dim,
     int len, int first, int n)
 {
     int i, j;
-    isl_constraint *c;
     isl_basic_map *bmap;
-    isl_int v;
-    isl_local_space *ls;
-
-    isl_int_init(v);
 
     dim = isl_space_add_dims(dim, isl_dim_in, len);
     dim = isl_space_add_dims(dim, isl_dim_out, len - n);
-    bmap = isl_basic_map_universe(isl_space_copy(dim));
-    ls = isl_local_space_from_space(dim);
+    bmap = isl_basic_map_universe(dim);
 
     for (i = 0, j = 0; i < len; ++i) {
         if (i >= first && i < first + n)
             continue;
-        c = isl_equality_alloc(isl_local_space_copy(ls));
-        isl_int_set_si(v, -1);
-        isl_constraint_set_coefficient(c, isl_dim_in, i, v);
-        isl_int_set_si(v, 1);
-        isl_constraint_set_coefficient(c, isl_dim_out, j, v);
-        bmap = isl_basic_map_add_constraint(bmap, c);
+	bmap = isl_basic_map_equate(bmap, isl_dim_in, i, isl_dim_out, j);
         ++j;
     }
-    isl_local_space_free(ls);
-
-    isl_int_clear(v);
 
     return isl_map_from_basic_map(bmap);
 }
