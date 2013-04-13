@@ -18,56 +18,6 @@
 
 #include "schedule.h"
 
-/* Construct a map that maps a domain of dimensionality "len"
- * to another domain of the same dimensionality such that
- * coordinate "first" of the range is equal to the sum of the "wave_len"
- * coordinates starting at "first" in the domain.
- * The remaining coordinates in the range are equal to the corresponding ones
- * in the domain.
- * "dim" prescribes the parameters.
- */
-__isl_give isl_map *wavefront(__isl_take isl_space *dim, int len,
-        int first, int wave_len)
-{
-    int i;
-    isl_int v;
-    isl_basic_map *bmap;
-    isl_constraint *c;
-    isl_local_space *ls;
-
-    isl_int_init(v);
-
-    dim = isl_space_add_dims(dim, isl_dim_in, len);
-    dim = isl_space_add_dims(dim, isl_dim_out, len);
-    bmap = isl_basic_map_universe(isl_space_copy(dim));
-    ls = isl_local_space_from_space(dim);
-
-    for (i = 0; i < len; ++i) {
-        if (i == first)
-            continue;
-
-        c = isl_equality_alloc(isl_local_space_copy(ls));
-        isl_int_set_si(v, -1);
-        isl_constraint_set_coefficient(c, isl_dim_in, i, v);
-        isl_int_set_si(v, 1);
-        isl_constraint_set_coefficient(c, isl_dim_out, i, v);
-        bmap = isl_basic_map_add_constraint(bmap, c);
-    }
-
-    c = isl_equality_alloc(isl_local_space_copy(ls));
-    isl_int_set_si(v, -1);
-    for (i = 0; i < wave_len; ++i)
-        isl_constraint_set_coefficient(c, isl_dim_in, first + i, v);
-    isl_int_set_si(v, 1);
-    isl_constraint_set_coefficient(c, isl_dim_out, first, v);
-    bmap = isl_basic_map_add_constraint(bmap, c);
-
-    isl_local_space_free(ls);
-    isl_int_clear(v);
-
-    return isl_map_from_basic_map(bmap);
-}
-
 /* Construct a map from a len-dimensional domain to
  * a (len-n)-dimensional domain that projects out the n coordinates
  * starting at first.

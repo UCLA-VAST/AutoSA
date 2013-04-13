@@ -33,8 +33,6 @@ struct gpu_stmt {
 	struct gpu_stmt_access *accesses;
 };
 
-__isl_give isl_map *wavefront(__isl_take isl_space *dim, int len,
-        int first, int wave_len);
 __isl_give isl_map *project_out(__isl_take isl_space *dim,
 	int len, int first, int n);
 __isl_give isl_map *projection(__isl_take isl_space *dim,
