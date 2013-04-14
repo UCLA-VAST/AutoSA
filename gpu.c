@@ -685,12 +685,9 @@ static __isl_give isl_map *tile(__isl_take isl_space *dim, int len,
         int first, int tile_len, int *tile_size)
 {
 	int i;
-	isl_int v;
 	isl_basic_map *bmap;
 	isl_constraint *c;
 	isl_local_space *ls;
-
-	isl_int_init(v);
 
 	dim = isl_space_add_dims(dim, isl_dim_in, len);
 	dim = isl_space_add_dims(dim, isl_dim_out, len + tile_len);
@@ -702,42 +699,34 @@ static __isl_give isl_map *tile(__isl_take isl_space *dim, int len,
 		int k = i < first ? i : i + 2 * tile_len;
 
 		c = isl_equality_alloc(isl_local_space_copy(ls));
-		isl_int_set_si(v, -1);
-		c = isl_constraint_set_coefficient(c, isl_dim_in, j, v);
-		isl_int_set_si(v, 1);
-		c = isl_constraint_set_coefficient(c, isl_dim_out, k, v);
+		c = isl_constraint_set_coefficient_si(c, isl_dim_in, j, -1);
+		c = isl_constraint_set_coefficient_si(c, isl_dim_out, k, 1);
 		bmap = isl_basic_map_add_constraint(bmap, c);
 	}
 
 	for (i = 0; i < tile_len; ++i) {
 		c = isl_equality_alloc(isl_local_space_copy(ls));
-		isl_int_set_si(v, -1);
-		c = isl_constraint_set_coefficient(c, isl_dim_in, first + i, v);
-		isl_int_set_si(v, tile_size[i]);
-		c = isl_constraint_set_coefficient(c, isl_dim_out,
-						   first + i, v);
-		isl_int_set_si(v, 1);
-		c = isl_constraint_set_coefficient(c, isl_dim_out,
-						first + i + tile_len, v);
+		c = isl_constraint_set_coefficient_si(c, isl_dim_in,
+						first + i, -1);
+		c = isl_constraint_set_coefficient_si(c, isl_dim_out,
+						first + i, tile_size[i]);
+		c = isl_constraint_set_coefficient_si(c, isl_dim_out,
+						first + i + tile_len, 1);
 		bmap = isl_basic_map_add_constraint(bmap, c);
 
 		c = isl_inequality_alloc(isl_local_space_copy(ls));
-		isl_int_set_si(v, 1);
-		c = isl_constraint_set_coefficient(c, isl_dim_out,
-						   first + i + tile_len, v);
+		c = isl_constraint_set_coefficient_si(c, isl_dim_out,
+						   first + i + tile_len, 1);
 		bmap = isl_basic_map_add_constraint(bmap, c);
 
 		c = isl_inequality_alloc(isl_local_space_copy(ls));
-		isl_int_set_si(v, -1);
-		c = isl_constraint_set_coefficient(c, isl_dim_out,
-						   first + i + tile_len, v);
-		isl_int_set_si(v, tile_size[i] - 1);
-		c = isl_constraint_set_constant(c, v);
+		c = isl_constraint_set_coefficient_si(c, isl_dim_out,
+						   first + i + tile_len, -1);
+		c = isl_constraint_set_constant_si(c, tile_size[i] - 1);
 		bmap = isl_basic_map_add_constraint(bmap, c);
 	}
 
 	isl_local_space_free(ls);
-	isl_int_clear(v);
 
 	return isl_map_from_basic_map(bmap);
 }
