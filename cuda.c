@@ -363,32 +363,41 @@ static void print_kernel_iterators(FILE *out, struct ppcg_kernel *kernel)
 	}
 }
 
-static void print_kernel_var(FILE *out, struct ppcg_kernel_var *var)
+static __isl_give isl_printer *print_kernel_var(__isl_take isl_printer *p,
+	struct ppcg_kernel_var *var)
 {
 	int j;
 	isl_int v;
 
-	print_indent(out, 4);
+	p = isl_printer_start_line(p);
 	if (var->type == ppcg_access_shared)
-		fprintf(out, "__shared__ ");
-	fprintf(out, "%s %s", var->array->type, var->name);
+		p = isl_printer_print_str(p, "__shared__ ");
+	p = isl_printer_print_str(p, var->array->type);
+	p = isl_printer_print_str(p, " ");
+	p = isl_printer_print_str(p,  var->name);
 	isl_int_init(v);
 	for (j = 0; j < var->array->n_index; ++j) {
-		fprintf(out, "[");
+		p = isl_printer_print_str(p, "[");
 		isl_vec_get_element(var->size, j, &v);
-		isl_int_print(out, v, 0);
-		fprintf(out, "]");
+		p = isl_printer_print_isl_int(p, v);
+		p = isl_printer_print_str(p, "]");
 	}
 	isl_int_clear(v);
-	fprintf(out, ";\n");
+	p = isl_printer_print_str(p, ";");
+	p = isl_printer_end_line(p);
+
+	return p;
 }
 
-static void print_kernel_vars(FILE *out, struct ppcg_kernel *kernel)
+static __isl_give isl_printer *print_kernel_vars(__isl_take isl_printer *p,
+	struct ppcg_kernel *kernel)
 {
 	int i;
 
 	for (i = 0; i < kernel->n_var; ++i)
-		print_kernel_var(out, &kernel->var[i]);
+		p = print_kernel_var(p, &kernel->var[i]);
+
+	return p;
 }
 
 /* Print an access to the element in the private/shared memory copy
@@ -666,17 +675,18 @@ static void print_kernel(struct gpu_prog *prog, struct ppcg_kernel *kernel,
 	print_kernel_headers(prog, kernel, cuda);
 	fprintf(cuda->kernel_c, "{\n");
 	print_kernel_iterators(cuda->kernel_c, kernel);
-	print_kernel_vars(cuda->kernel_c, kernel);
-	fprintf(cuda->kernel_c, "\n");
-
-	print_options = isl_ast_print_options_alloc(ctx);
-	print_options = isl_ast_print_options_set_print_user(print_options,
-						    &print_kernel_stmt, NULL);
 
 	p = isl_printer_to_file(ctx, cuda->kernel_c);
 	p = isl_printer_set_output_format(p, ISL_FORMAT_C);
 	p = isl_printer_indent(p, 4);
+
+	p = print_kernel_vars(p, kernel);
+	p = isl_printer_end_line(p);
 	p = print_macros(kernel->tree, p);
+
+	print_options = isl_ast_print_options_alloc(ctx);
+	print_options = isl_ast_print_options_set_print_user(print_options,
+						    &print_kernel_stmt, NULL);
 	p = isl_ast_node_print(kernel->tree, p, print_options);
 	isl_printer_free(p);
 
