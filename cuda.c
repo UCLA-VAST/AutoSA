@@ -349,7 +349,6 @@ static __isl_give isl_printer *print_kernel_var(__isl_take isl_printer *p,
 	struct ppcg_kernel_var *var)
 {
 	int j;
-	isl_int v;
 
 	p = isl_printer_start_line(p);
 	if (var->type == ppcg_access_shared)
@@ -357,14 +356,15 @@ static __isl_give isl_printer *print_kernel_var(__isl_take isl_printer *p,
 	p = isl_printer_print_str(p, var->array->type);
 	p = isl_printer_print_str(p, " ");
 	p = isl_printer_print_str(p,  var->name);
-	isl_int_init(v);
 	for (j = 0; j < var->array->n_index; ++j) {
+		isl_val *v;
+
 		p = isl_printer_print_str(p, "[");
-		isl_vec_get_element(var->size, j, &v);
-		p = isl_printer_print_isl_int(p, v);
+		v = isl_vec_get_element_val(var->size, j);
+		p = isl_printer_print_val(p, v);
+		isl_val_free(v);
 		p = isl_printer_print_str(p, "]");
 	}
-	isl_int_clear(v);
 	p = isl_printer_print_str(p, ";");
 	p = isl_printer_end_line(p);
 
