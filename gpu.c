@@ -831,37 +831,16 @@ static __isl_give isl_set *parametrize(__isl_take isl_set *set,
 {
 	int i;
 	unsigned nparam;
-	isl_int v;
-	isl_space *dim;
-	isl_basic_set *bset;
-	isl_constraint *c;
-	isl_local_space *ls;
 
 	nparam = isl_set_dim(set, isl_dim_param);
 
 	set = add_params(set, n, prefix);
 
-	dim = isl_set_get_space(set);
-	bset = isl_basic_set_universe(isl_space_copy(dim));
-	ls = isl_local_space_from_space(dim);
+	for (i = 0; i < n; ++i)
+		set = isl_set_equate(set, isl_dim_param, nparam + i,
+					isl_dim_set, first + i);
 
-	isl_int_init(v);
-
-	for (i = 0; i < n; ++i) {
-		c = isl_equality_alloc(isl_local_space_copy(ls));
-		isl_int_set_si(v, -1);
-		c = isl_constraint_set_coefficient(c, isl_dim_param,
-						   nparam + i, v);
-		isl_int_set_si(v, 1);
-		c = isl_constraint_set_coefficient(c, isl_dim_set, first + i,
-						   v);
-		bset = isl_basic_set_add_constraint(bset, c);
-	}
-
-	isl_int_clear(v);
-	isl_local_space_free(ls);
-
-	return isl_set_intersect(set, isl_set_from_basic_set(bset));
+	return set;
 }
 
 /* Given a parameter space "space", create a set of dimension "len"
