@@ -48,7 +48,7 @@ struct gpu_array_bound {
 	isl_val *size;
 	isl_aff *lb;
 
-	isl_int stride;
+	isl_val *stride;
 	isl_aff *shift;
 	isl_basic_map *shift_map;
 };
@@ -268,7 +268,7 @@ static struct gpu_array_tile *create_tile(isl_ctx *ctx, int n_index)
 	for (i = 0; i < n_index; ++i) {
 		tile->bound[i].size = NULL;
 		tile->bound[i].lb = NULL;
-		isl_int_init(tile->bound[i].stride);
+		tile->bound[i].stride = NULL;
 		tile->bound[i].shift = NULL;
 		tile->bound[i].shift_map = NULL;
 	}
@@ -285,7 +285,7 @@ static void *free_tile(struct gpu_array_tile *tile)
 
 	for (j = 0; j < tile->n; ++j) {
 		isl_val_free(tile->bound[j].size);
-		isl_int_clear(tile->bound[j].stride);
+		isl_val_free(tile->bound[j].stride);
 		isl_aff_free(tile->bound[j].lb);
 		isl_aff_free(tile->bound[j].shift);
 		isl_basic_map_free(tile->bound[j].shift_map);
@@ -1430,7 +1430,7 @@ static __isl_give isl_pw_aff *shift_index(__isl_take isl_pw_aff *pa,
 		tmp = isl_pw_multi_aff_get_pw_aff(pma, 0);
 		isl_pw_multi_aff_free(pma);
 		pa = isl_pw_aff_add(pa, tmp);
-		pa = isl_pw_aff_scale_down(pa, bound->stride);
+		pa = isl_pw_aff_scale_down_val(pa, isl_val_copy(bound->stride));
 	}
 
 
@@ -1730,7 +1730,7 @@ static __isl_give isl_union_map *interchange_for_unroll(struct gpu_gen *gen,
  * and the input dimensions.
  */
 static void extract_stride(__isl_keep isl_constraint *c,
-	struct gpu_array_bound *bound, isl_int stride, int sign)
+	struct gpu_array_bound *bound, __isl_keep isl_val *stride, int sign)
 {
 	int i;
 	isl_int v;
@@ -1739,7 +1739,8 @@ static void extract_stride(__isl_keep isl_constraint *c,
 	unsigned nvar;
 	isl_aff *aff;
 
-	isl_int_set(bound->stride, stride);
+	isl_val_free(bound->stride);
+	bound->stride = isl_val_copy(stride);
 
 	space = isl_constraint_get_space(c);
 	space = isl_space_domain(space);
@@ -1792,30 +1793,32 @@ static void extract_stride(__isl_keep isl_constraint *c,
 static int check_stride_constraint(__isl_take isl_constraint *c, void *user)
 {
 	int i;
-	isl_int v, stride;
+	isl_ctx *ctx;
+	isl_val *v;
 	unsigned n_div;
 	struct gpu_array_bound *bound = user;
 
-	isl_int_init(v);
-	isl_int_init(stride);
-
+	ctx = isl_constraint_get_ctx(c);
 	n_div = isl_constraint_dim(c, isl_dim_div);
-	isl_constraint_get_coefficient(c, isl_dim_out, 0, &v);
+	v = isl_constraint_get_coefficient_val(c, isl_dim_out, 0);
 
-	if (n_div && (isl_int_is_one(v) || isl_int_is_negone(v))) {
-		int s = isl_int_sgn(v);
-		isl_int_set_si(stride, 0);
+	if (n_div && (isl_val_is_one(v) || isl_val_is_negone(v))) {
+		int s = isl_val_sgn(v);
+		isl_val *stride = isl_val_zero(ctx);
+
+		isl_val_free(v);
 		for (i = 0; i < n_div; ++i) {
-			isl_constraint_get_coefficient(c, isl_dim_div, i, &v);
-			isl_int_gcd(stride, stride, v);
+			v = isl_constraint_get_coefficient_val(c,
+								isl_dim_div, i);
+			stride = isl_val_gcd(stride, v);
 		}
-		if (!isl_int_is_zero(stride) &&
-		    isl_int_gt(stride, bound->stride))
+		if (!isl_val_is_zero(stride) &&
+		    isl_val_gt(stride, bound->stride))
 			extract_stride(c, bound, stride, s);
-	}
 
-	isl_int_clear(stride);
-	isl_int_clear(v);
+		isl_val_free(stride);
+	} else
+		isl_val_free(v);
 
 	isl_constraint_free(c);
 	return 0;
@@ -1869,7 +1872,7 @@ static __isl_give isl_basic_map *check_stride(struct gpu_array_bound *bound,
 	isl_basic_set *bset;
 	isl_aff *aff;
 
-	isl_int_set_si(bound->stride, -1);
+	bound->stride = NULL;
 
 	hull = isl_basic_map_affine_hull(isl_basic_map_copy(bounds));
 
@@ -1877,7 +1880,7 @@ static __isl_give isl_basic_map *check_stride(struct gpu_array_bound *bound,
 
 	isl_basic_map_free(hull);
 
-	if (isl_int_is_neg(bound->stride))
+	if (!bound->stride)
 		return bounds;
 
 	shift = isl_basic_map_from_aff(isl_aff_copy(bound->shift));
@@ -1896,7 +1899,7 @@ static __isl_give isl_basic_map *check_stride(struct gpu_array_bound *bound,
 	space = isl_space_range(isl_basic_map_get_space(bounds));
 	aff = isl_aff_zero_on_domain(isl_local_space_from_space(space));
 	aff = isl_aff_add_coefficient_si(aff, isl_dim_in, 0, 1);
-	aff = isl_aff_scale_down(aff, bound->stride);
+	aff = isl_aff_scale_down_val(aff, isl_val_copy(bound->stride));
 	scale = isl_basic_map_from_aff(aff);
 	scale = isl_basic_map_product(id, scale);
 
