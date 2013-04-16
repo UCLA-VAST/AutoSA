@@ -1729,7 +1729,7 @@ static void extract_stride(__isl_keep isl_constraint *c,
 	struct gpu_array_bound *bound, __isl_keep isl_val *stride, int sign)
 {
 	int i;
-	isl_int v;
+	isl_val *v;
 	isl_space *space;
 	unsigned nparam;
 	unsigned nvar;
@@ -1744,33 +1744,29 @@ static void extract_stride(__isl_keep isl_constraint *c,
 	nparam = isl_space_dim(space, isl_dim_param);
 	nvar = isl_space_dim(space, isl_dim_set);
 
-	isl_int_init(v);
-
-	isl_constraint_get_constant(c, &v);
+	v = isl_constraint_get_constant_val(c);
 	if (sign < 0)
-		isl_int_neg(v, v);
+		v = isl_val_neg(v);
 	aff = isl_aff_zero_on_domain(isl_local_space_from_space(space));
-	aff = isl_aff_set_constant(aff, v);
+	aff = isl_aff_set_constant_val(aff, v);
 
 	for (i = 0; i < nparam; ++i) {
-		isl_constraint_get_coefficient(c, isl_dim_param, i, &v);
-		if (isl_int_is_zero(v))
+		if (!isl_constraint_involves_dims(c, isl_dim_param, i, 1))
 			continue;
+		v = isl_constraint_get_coefficient_val(c, isl_dim_param, i);
 		if (sign < 0)
-			isl_int_neg(v, v);
-		aff = isl_aff_add_coefficient(aff, isl_dim_param, i, v);
+			v = isl_val_neg(v);
+		aff = isl_aff_add_coefficient_val(aff, isl_dim_param, i, v);
 	}
 
 	for (i = 0; i < nvar; ++i) {
-		isl_constraint_get_coefficient(c, isl_dim_in, i, &v);
-		if (isl_int_is_zero(v))
+		if (!isl_constraint_involves_dims(c, isl_dim_in, i, 1))
 			continue;
+		v = isl_constraint_get_coefficient_val(c, isl_dim_in, i);
 		if (sign < 0)
-			isl_int_neg(v, v);
-		aff = isl_aff_add_coefficient(aff, isl_dim_in, i, v);
+			v = isl_val_neg(v);
+		aff = isl_aff_add_coefficient_val(aff, isl_dim_in, i, v);
 	}
-
-	isl_int_clear(v);
 
 	bound->shift = aff;
 }
