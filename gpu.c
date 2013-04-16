@@ -544,7 +544,6 @@ static void read_sizes_from_set(__isl_take isl_set *set, int *sizes, int *len)
 {
 	int i;
 	int dim;
-	isl_int v;
 
 	if (!set)
 		return;
@@ -553,18 +552,15 @@ static void read_sizes_from_set(__isl_take isl_set *set, int *sizes, int *len)
 	if (dim < *len)
 		*len = dim;
 
-	isl_int_init(v);
-
 	for (i = 0; i < *len; ++i) {
-		int ok;
+		isl_val *v;
 
-		ok = isl_set_plain_is_fixed(set, isl_dim_set, i, &v);
-		assert(ok);
+		v = isl_set_plain_get_val_if_fixed(set, isl_dim_set, i);
+		assert(v);
 
-		sizes[i] = isl_int_get_si(v);
+		sizes[i] = isl_val_get_num_si(v);
+		isl_val_free(v);
 	}
-
-	isl_int_clear(v);
 
 	isl_set_free(set);
 }
