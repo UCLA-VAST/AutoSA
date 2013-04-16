@@ -45,7 +45,7 @@
  *	[D -> i] -> [D -> (i + shift(D))/stride]
  */
 struct gpu_array_bound {
-	isl_int size;
+	isl_val *size;
 	isl_aff *lb;
 
 	isl_int stride;
@@ -266,7 +266,7 @@ static struct gpu_array_tile *create_tile(isl_ctx *ctx, int n_index)
 	assert(tile->bound);
 
 	for (i = 0; i < n_index; ++i) {
-		isl_int_init(tile->bound[i].size);
+		tile->bound[i].size = NULL;
 		tile->bound[i].lb = NULL;
 		isl_int_init(tile->bound[i].stride);
 		tile->bound[i].shift = NULL;
@@ -284,7 +284,7 @@ static void *free_tile(struct gpu_array_tile *tile)
 		return NULL;
 
 	for (j = 0; j < tile->n; ++j) {
-		isl_int_clear(tile->bound[j].size);
+		isl_val_free(tile->bound[j].size);
 		isl_int_clear(tile->bound[j].stride);
 		isl_aff_free(tile->bound[j].lb);
 		isl_aff_free(tile->bound[j].shift);
@@ -1507,7 +1507,8 @@ static __isl_give isl_map *group_tile_dim(struct gpu_array_ref_group *group,
 	tile = map;
 
 	aff = isl_aff_copy(group->shared_tile->bound[i].lb);
-	aff = isl_aff_add_constant(aff, group->shared_tile->bound[i].size);
+	aff = isl_aff_add_constant_val(aff,
+			    isl_val_copy(group->shared_tile->bound[i].size));
 	map = isl_map_from_aff(aff);
 	gt = isl_map_lex_gt(space);
 	map = isl_map_apply_range(map, isl_map_copy(gt));
@@ -1931,10 +1932,9 @@ static int compute_size_in_direction(__isl_take isl_constraint *c, void *user)
 	struct gpu_size_info *size = user;
 	unsigned nparam;
 	unsigned n_div;
-	isl_int v;
+	isl_val *v;
 	isl_aff *aff;
 	isl_aff *lb;
-	enum isl_lp_result res;
 
 	nparam = isl_basic_set_dim(size->bset, isl_dim_param);
 	n_div = isl_constraint_dim(c, isl_dim_div);
@@ -1945,10 +1945,6 @@ static int compute_size_in_direction(__isl_take isl_constraint *c, void *user)
 		return 0;
 	}
 
-	isl_int_init(v);
-
-	isl_constraint_get_coefficient(c, isl_dim_set, size->pos, &v);
-
 	aff = isl_constraint_get_bound(c, isl_dim_set, size->pos);
 	aff = isl_aff_ceil(aff);
 
@@ -1957,22 +1953,22 @@ static int compute_size_in_direction(__isl_take isl_constraint *c, void *user)
 	aff = isl_aff_neg(aff);
 	aff = isl_aff_add_coefficient_si(aff, isl_dim_in, size->pos, 1);
 
-	res = isl_basic_set_max(size->bset, aff, &v);
+	v = isl_basic_set_max_val(size->bset, aff);
 	isl_aff_free(aff);
 
-	if (res == isl_lp_ok) {
-		isl_int_add_ui(v, v, 1);
-		if (isl_int_is_neg(size->bound->size) ||
-		    isl_int_lt(v, size->bound->size)) {
-			isl_int_set(size->bound->size, v);
+	if (isl_val_is_int(v)) {
+		v = isl_val_add_ui(v, 1);
+		if (!size->bound->size || isl_val_lt(v, size->bound->size)) {
+			isl_val_free(size->bound->size);
+			size->bound->size = isl_val_copy(v);
 			lb = isl_aff_drop_dims(lb, isl_dim_in, size->pos, 1);
 			isl_aff_free(size->bound->lb);
 			size->bound->lb = isl_aff_copy(lb);
 		}
 	}
+	isl_val_free(v);
 	isl_aff_free(lb);
 
-	isl_int_clear(v);
 	isl_constraint_free(c);
 
 	return 0;
@@ -1994,7 +1990,7 @@ static int compute_array_dim_size(struct gpu_array_bound *bound,
 	bounds = isl_basic_map_detect_equalities(bounds);
 	bounds = check_stride(bound, bounds);
 
-	isl_int_set_si(bound->size, -1);
+	bound->size = NULL;
 	bound->lb = NULL;
 
 	size.bound = bound;
@@ -2006,7 +2002,7 @@ static int compute_array_dim_size(struct gpu_array_bound *bound,
 					&size);
 	isl_basic_set_free(size.bset);
 
-	return isl_int_is_nonneg(bound->size) ? 0 : -1;
+	return bound->size ? 0 : -1;
 }
 
 /* Check if we can find a memory tile for the given array
@@ -2269,16 +2265,19 @@ static void compute_private_access(struct gpu_gen *gen)
 }
 
 /* Compute the size of the tile specified by "tile"
- * in number of elements and put the result in *size.
+ * in number of elements and return the result.
  */
-static void tile_size(struct gpu_array_tile *tile, isl_int *size)
+static __isl_give isl_val *tile_size(isl_ctx *ctx, struct gpu_array_tile *tile)
 {
 	int i;
+	isl_val *size;
 
-	isl_int_set_si(*size, 1);
+	size = isl_val_one(ctx);
 
 	for (i = 0; i < tile->n; ++i)
-		isl_int_mul(*size, *size, tile->bound[i].size);
+		size = isl_val_mul(size, isl_val_copy(tile->bound[i].size));
+
+	return size;
 }
 
 /* If max_shared_memory is not set to infinity (-1), then make
@@ -2293,14 +2292,12 @@ static void tile_size(struct gpu_array_tile *tile, isl_int *size)
 static void check_shared_memory_bound(struct gpu_gen *gen)
 {
 	int i, j;
-	isl_int left, size;
+	isl_val *left, *size;
 
 	if (gen->options->max_shared_memory < 0)
 		return;
 
-	isl_int_init(left);
-	isl_int_init(size);
-	isl_int_set_si(left, gen->options->max_shared_memory);
+	left = isl_val_int_from_si(gen->ctx, gen->options->max_shared_memory);
 
 	for (i = 0; i < gen->prog->n_array; ++i) {
 		struct gpu_array_info *array = &gen->prog->array[i];
@@ -2312,20 +2309,20 @@ static void check_shared_memory_bound(struct gpu_gen *gen)
 			if (!group->shared_tile)
 				continue;
 
-			tile_size(group->shared_tile, &size);
-			isl_int_mul_ui(size, size, array->size);
+			size = tile_size(gen->ctx, group->shared_tile);
+			size = isl_val_mul_ui(size, array->size);
 
-			if (isl_int_le(size, left)) {
-				isl_int_sub(left, left, size);
+			if (isl_val_le(size, left)) {
+				left = isl_val_sub(left, size);
 				continue;
 			}
+			isl_val_free(size);
 
 			group->shared_tile = free_tile(group->shared_tile);
 		}
 	}
 
-	isl_int_clear(size);
-	isl_int_clear(left);
+	isl_val_free(left);
 }
 
 /* Fill up the groups array with singleton groups, i.e., one group
@@ -2668,27 +2665,21 @@ static int group_last_shared_overlapping_writes(struct gpu_gen *gen, int n,
 /* Is the size of the tile specified by "tile" smaller than the sum of
  * the sizes of the tiles specified by "tile1" and "tile2"?
  */
-static int smaller_tile(struct gpu_array_tile *tile,
+static int smaller_tile(isl_ctx *ctx, struct gpu_array_tile *tile,
 	struct gpu_array_tile *tile1, struct gpu_array_tile *tile2)
 {
 	int smaller;
-	isl_int size, size1, size2;
+	isl_val *size, *size1, *size2;
 
-	isl_int_init(size);
-	isl_int_init(size1);
-	isl_int_init(size2);
+	size = tile_size(ctx, tile);
+	size1 = tile_size(ctx, tile1);
+	size2 = tile_size(ctx, tile2);
 
-	tile_size(tile, &size);
-	tile_size(tile1, &size1);
-	tile_size(tile2, &size2);
+	size = isl_val_sub(size, size1);
+	size = isl_val_sub(size, size2);
+	smaller = isl_val_is_neg(size);
 
-	isl_int_sub(size, size, size1);
-	isl_int_sub(size, size, size2);
-	smaller = isl_int_is_neg(size);
-
-	isl_int_clear(size2);
-	isl_int_clear(size1);
-	isl_int_clear(size);
+	isl_val_free(size);
 
 	return smaller;
 }
@@ -2735,7 +2726,7 @@ static int group_common_shared_memory_tile(struct gpu_gen *gen,
 			group = join_groups(groups[i], groups[j]);
 			compute_group_bounds(gen, group);
 			if (!group->shared_tile ||
-			    !smaller_tile(group->shared_tile,
+			    !smaller_tile(ctx, group->shared_tile,
 					groups[i]->shared_tile,
 					groups[j]->shared_tile)) {
 				free_array_ref_group(group);
@@ -2989,8 +2980,8 @@ static void create_kernel_var(isl_ctx *ctx, struct gpu_array_ref_group *group,
 	var->size = isl_vec_alloc(ctx, group->array->n_index);
 
 	for (j = 0; j < group->array->n_index; ++j)
-		var->size = isl_vec_set_element(var->size, j,
-						tile->bound[j].size);
+		var->size = isl_vec_set_element_val(var->size, j,
+					    isl_val_copy(tile->bound[j].size));
 }
 
 static void create_kernel_vars(struct gpu_gen *gen, struct ppcg_kernel *kernel)
