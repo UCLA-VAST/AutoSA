@@ -317,6 +317,41 @@ static struct pet_array *find_array(struct ppcg_scop *scop,
 	return i < scop->n_array ? scop->arrays[i] : NULL;
 }
 
+/* Compute and return the extent of "array", taking into account the set of
+ * accessed elements.
+ *
+ * In particular, the extent in the outer dimension is taken
+ * from "accessed", while then extent in the remaing dimensions
+ * are taken from array->extent.
+ *
+ * The extent in the outer dimension cannot be taken from array->extent
+ * because that may be unbounded.  Furthermore, even if it is bounded,
+ * it may be larger than the piece of the array that is being accessed.
+ */
+static __isl_give isl_set *compute_extent(struct pet_array *array,
+	__isl_keep isl_set *accessed)
+{
+	int n_index;
+	isl_id *id;
+	isl_set *outer;
+	isl_set *extent;
+
+	extent = isl_set_copy(array->extent);
+
+	n_index = isl_set_dim(accessed, isl_dim_set);
+	if (n_index == 0)
+		return extent;
+
+	extent = isl_set_project_out(extent, isl_dim_set, 0, 1);
+	outer = isl_set_copy(accessed);
+	outer = isl_set_project_out(outer, isl_dim_set, 1, n_index - 1);
+	extent = isl_set_flat_product(outer, extent);
+	id = isl_set_get_tuple_id(accessed);
+	extent = isl_set_set_tuple_id(extent, id);
+
+	return extent;
+}
+
 /* Compute bounds on the host arrays based on the accessed elements
  * and collect all references to the array.
  *
@@ -331,6 +366,7 @@ static int extract_array_info(__isl_take isl_set *array, void *user)
 	int n_index;
 	isl_pw_aff **bounds;
 	struct pet_array *pa;
+	isl_set *extent;
 
 	n_index = isl_set_dim(array, isl_dim_set);
 	name = isl_set_get_tuple_name(array);
@@ -364,14 +400,14 @@ static int extract_array_info(__isl_take isl_set *array, void *user)
 		prog->array[prog->n_array].read_only = empty;
 	}
 
+	extent = compute_extent(pa, array);
 	for (i = 0; i < n_index; ++i) {
 		isl_set *dom;
 		isl_local_space *ls;
 		isl_aff *one;
 		isl_pw_aff *bound;
-		isl_set *size = i == 0 ? array : pa->extent;
 
-		bound = isl_set_dim_max(isl_set_copy(size), i);
+		bound = isl_set_dim_max(isl_set_copy(extent), i);
 		assert(bound);
 		dom = isl_pw_aff_domain(isl_pw_aff_copy(bound));
 		ls = isl_local_space_from_space(isl_set_get_space(dom));
@@ -382,6 +418,7 @@ static int extract_array_info(__isl_take isl_set *array, void *user)
 
 		bounds[i] = bound;
 	}
+	prog->array[prog->n_array].extent = extent;
 
 	collect_references(prog, &prog->array[prog->n_array]);
 
@@ -420,6 +457,7 @@ static void free_array_info(struct gpu_prog *prog)
 		for (j = 0; j < n_index; ++j)
 			isl_pw_aff_free(prog->array[i].bound[j]);
 		isl_space_free(prog->array[i].dim);
+		isl_set_free(prog->array[i].extent);
 		free(prog->array[i].bound);
 		free(prog->array[i].refs);
 	}

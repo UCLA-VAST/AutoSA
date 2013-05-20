@@ -12,9 +12,11 @@ struct gpu_array_info {
 	int size;
 	/* Name of the array. */
 	char *name;
+	/* Extent of the array that needs to be copied. */
+	isl_set *extent;
 	/* Number of indices. */
 	unsigned n_index;
-	/* For each index, a bound on the array in that direction. */
+	/* For each index, a bound on "extent" in that direction. */
 	isl_pw_aff **bound;
 
 	/* All references to this array; point to elements of a linked list. */
