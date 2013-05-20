@@ -772,31 +772,29 @@ static __isl_give isl_printer *print_host_code(__isl_take isl_printer *p,
 	return p;
 }
 
-/* For each array that is written anywhere in the gpu_prog,
+/* For each array that needs to be copied out (based on prog->copy_out),
  * copy the contents back from the GPU to the host.
  *
- * Arrays that are not visible outside the corresponding scop
- * do not need to be copied back.
+ * If any element of a given array appears in prog->copy_out, then its
+ * entire extent is in prog->copy_out.  The bounds on this extent have
+ * been precomputed in extract_array_info and are used in print_array_size.
  */
 static __isl_give isl_printer *copy_arrays_from_device(
 	__isl_take isl_printer *p, struct gpu_prog *prog)
 {
 	int i;
-	isl_union_set *write;
-	write = isl_union_map_range(isl_union_map_copy(prog->write));
+	isl_union_set *copy_out;
+	copy_out = isl_union_set_copy(prog->copy_out);
 
 	for (i = 0; i < prog->n_array; ++i) {
 		isl_space *dim;
-		isl_set *write_i;
+		isl_set *copy_out_i;
 		int empty;
 
-		if (prog->array[i].local)
-			continue;
-
 		dim = isl_space_copy(prog->array[i].dim);
-		write_i = isl_union_set_extract_set(write, dim);
-		empty = isl_set_fast_is_empty(write_i);
-		isl_set_free(write_i);
+		copy_out_i = isl_union_set_extract_set(copy_out, dim);
+		empty = isl_set_fast_is_empty(copy_out_i);
+		isl_set_free(copy_out_i);
 		if (empty)
 			continue;
 
@@ -812,7 +810,7 @@ static __isl_give isl_printer *copy_arrays_from_device(
 		p = isl_printer_end_line(p);
 	}
 
-	isl_union_set_free(write);
+	isl_union_set_free(copy_out);
 	p = isl_printer_start_line(p);
 	p = isl_printer_end_line(p);
 	return p;

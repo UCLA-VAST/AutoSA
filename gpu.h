@@ -55,6 +55,8 @@ struct gpu_prog {
 
 	/* Uninitialized data elements (or an overapproximation) */
 	isl_union_set *copy_in;
+	/* Set of array elements that need to be copied out. */
+	isl_union_set *copy_out;
 
 	/* Array of statements */
 	int n_stmts;

@@ -4741,6 +4741,47 @@ static void compute_schedule(struct gpu_gen *gen)
 	isl_schedule_free(schedule);
 }
 
+/* Compute the set of array elements that need to be copied out.
+ *
+ * In particular, for each array that is written anywhere in gen->prog and
+ * that is visible outside the corresponding scop, we copy out its entire
+ * extent.
+ */
+static void compute_copy_out(struct gpu_gen *gen)
+{
+	int i;
+	isl_union_set *write;
+	isl_union_set *copy_out;
+	isl_union_set *not_written;
+
+	write = isl_union_map_range(isl_union_map_copy(gen->prog->write));
+	write = isl_union_set_intersect_params(write,
+					    isl_set_copy(gen->prog->context));
+	copy_out = isl_union_set_empty(isl_union_set_get_space(write));
+
+	for (i = 0; i < gen->prog->n_array; ++i) {
+		isl_space *space;
+		isl_set *write_i;
+		int empty;
+
+		if (gen->prog->array[i].local)
+			continue;
+
+		space = isl_space_copy(gen->prog->array[i].dim);
+		write_i = isl_union_set_extract_set(write, space);
+		empty = isl_set_fast_is_empty(write_i);
+		isl_set_free(write_i);
+		if (empty)
+			continue;
+
+		write_i = isl_set_copy(gen->prog->array[i].extent);
+		copy_out = isl_union_set_add_set(copy_out, write_i);
+	}
+
+	gen->prog->copy_out = copy_out;
+	isl_union_set_free(write);
+}
+
 static struct gpu_stmt_access **expr_extract_access(struct pet_expr *expr,
 	struct gpu_stmt_access **next_access)
 {
@@ -4862,6 +4903,7 @@ __isl_give isl_ast_node *generate_gpu(isl_ctx *ctx, struct gpu_prog *prog,
 	gen.options = options;
 
 	compute_schedule(&gen);
+	compute_copy_out(&gen);
 
 	gen.kernel_id = 0;
 	tree = generate_host_code(&gen);
@@ -4901,6 +4943,7 @@ void gpu_prog_free(struct gpu_prog *prog)
 	free_array_info(prog);
 	free_stmts(prog->stmts, prog->n_stmts);
 	isl_union_set_free(prog->copy_in);
+	isl_union_set_free(prog->copy_out);
 	isl_union_map_free(prog->read);
 	isl_union_map_free(prog->write);
 	isl_set_free(prog->context);
