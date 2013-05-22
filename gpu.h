@@ -53,7 +53,7 @@ struct gpu_prog {
 	/* All write accesses in the entire program */
 	isl_union_map *write;
 
-	/* Uninitialized data elements (or an overapproximation) */
+	/* Set of array elements that need to be copied in. */
 	isl_union_set *copy_in;
 	/* Set of array elements that need to be copied out. */
 	isl_union_set *copy_out;

@@ -4711,14 +4711,10 @@ static void compute_schedule(struct gpu_gen *gen)
 {
 	isl_union_set *domain;
 	isl_union_map *dep_raw, *dep;
-	isl_union_map *uninitialized;
 	isl_union_map *sched;
 	isl_schedule *schedule;
 
 	dep_raw = isl_union_map_copy(gen->prog->scop->dep_flow);
-	uninitialized = isl_union_map_copy(gen->prog->scop->live_in);
-
-	gen->prog->copy_in = isl_union_map_range(uninitialized);
 
 	dep = isl_union_map_copy(gen->prog->scop->dep_false);
 	dep = isl_union_map_union(dep, dep_raw);
@@ -4741,18 +4737,30 @@ static void compute_schedule(struct gpu_gen *gen)
 	isl_schedule_free(schedule);
 }
 
-/* Compute the set of array elements that need to be copied out.
+/* Compute the sets of array elements that need to be copied in and out.
  *
  * In particular, for each array that is written anywhere in gen->prog and
  * that is visible outside the corresponding scop, we copy out its entire
  * extent.
+ *
+ * Any array elements that is read without first being written needs
+ * to be copied in. Furthermore, if there are any array elements that
+ * are copied out, but that are not written inside gen->prog, then
+ * they also need to be copied in to ensure that the value after execution
+ * is the same as the value before execution.
+ * While computing the set of array elements that
+ * are copied out but not written, we intersect both sets with the context.
+ * This helps in those cases where the arrays are declared with a fixed size,
+ * while the accesses are parametric and the context assigns a fixed value
+ * to the parameters.
  */
-static void compute_copy_out(struct gpu_gen *gen)
+static void compute_copy_in_and_out(struct gpu_gen *gen)
 {
 	int i;
 	isl_union_set *write;
-	isl_union_set *copy_out;
+	isl_union_set *copy_in, *copy_out;
 	isl_union_set *not_written;
+	isl_union_map *uninitialized;
 
 	write = isl_union_map_range(isl_union_map_copy(gen->prog->write));
 	write = isl_union_set_intersect_params(write,
@@ -4778,8 +4786,17 @@ static void compute_copy_out(struct gpu_gen *gen)
 		copy_out = isl_union_set_add_set(copy_out, write_i);
 	}
 
-	gen->prog->copy_out = copy_out;
-	isl_union_set_free(write);
+	copy_out = isl_union_set_intersect_params(copy_out,
+					    isl_set_copy(gen->prog->context));
+
+	gen->prog->copy_out = isl_union_set_copy(copy_out);
+
+	uninitialized = isl_union_map_copy(gen->prog->scop->live_in);
+	copy_in = isl_union_map_range(uninitialized);
+
+	not_written = isl_union_set_subtract(copy_out, write);
+	copy_in = isl_union_set_union(copy_in, not_written);
+	gen->prog->copy_in = copy_in;
 }
 
 static struct gpu_stmt_access **expr_extract_access(struct pet_expr *expr,
@@ -4903,7 +4920,7 @@ __isl_give isl_ast_node *generate_gpu(isl_ctx *ctx, struct gpu_prog *prog,
 	gen.options = options;
 
 	compute_schedule(&gen);
-	compute_copy_out(&gen);
+	compute_copy_in_and_out(&gen);
 
 	gen.kernel_id = 0;
 	tree = generate_host_code(&gen);
