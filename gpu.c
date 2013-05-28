@@ -1932,11 +1932,15 @@ static int compute_size_in_direction(__isl_take isl_constraint *c, void *user)
 	unsigned nparam;
 	unsigned n_div;
 	isl_int v;
+	isl_aff *aff;
+	isl_aff *lb;
+	enum isl_lp_result res;
 
 	nparam = isl_basic_set_dim(size->bset, isl_dim_param);
 	n_div = isl_constraint_dim(c, isl_dim_div);
 
-	if (isl_constraint_involves_dims(c, isl_dim_div, 0, n_div)) {
+	if (isl_constraint_involves_dims(c, isl_dim_div, 0, n_div) ||
+	    !isl_constraint_is_lower_bound(c, isl_dim_set, size->pos)) {
 		isl_constraint_free(c);
 		return 0;
 	}
@@ -1945,35 +1949,28 @@ static int compute_size_in_direction(__isl_take isl_constraint *c, void *user)
 
 	isl_constraint_get_coefficient(c, isl_dim_set, size->pos, &v);
 
-	if (isl_int_is_pos(v)) {
-		isl_aff *aff;
-		isl_aff *lb;
-		enum isl_lp_result res;
+	aff = isl_constraint_get_bound(c, isl_dim_set, size->pos);
+	aff = isl_aff_ceil(aff);
 
-		aff = isl_constraint_get_bound(c, isl_dim_set, size->pos);
-		aff = isl_aff_ceil(aff);
+	lb = isl_aff_copy(aff);
 
-		lb = isl_aff_copy(aff);
+	aff = isl_aff_neg(aff);
+	aff = isl_aff_add_coefficient_si(aff, isl_dim_in, size->pos, 1);
 
-		aff = isl_aff_neg(aff);
-		aff = isl_aff_add_coefficient_si(aff, isl_dim_in, size->pos, 1);
+	res = isl_basic_set_max(size->bset, aff, &v);
+	isl_aff_free(aff);
 
-		res = isl_basic_set_max(size->bset, aff, &v);
-		isl_aff_free(aff);
-
-		if (res == isl_lp_ok) {
-			isl_int_add_ui(v, v, 1);
-			if (isl_int_is_neg(size->bound->size) ||
-			    isl_int_lt(v, size->bound->size)) {
-				isl_int_set(size->bound->size, v);
-				lb = isl_aff_drop_dims(lb, isl_dim_in,
-							size->pos, 1);
-				isl_aff_free(size->bound->lb);
-				size->bound->lb = isl_aff_copy(lb);
-			}
+	if (res == isl_lp_ok) {
+		isl_int_add_ui(v, v, 1);
+		if (isl_int_is_neg(size->bound->size) ||
+		    isl_int_lt(v, size->bound->size)) {
+			isl_int_set(size->bound->size, v);
+			lb = isl_aff_drop_dims(lb, isl_dim_in, size->pos, 1);
+			isl_aff_free(size->bound->lb);
+			size->bound->lb = isl_aff_copy(lb);
 		}
-		isl_aff_free(lb);
 	}
+	isl_aff_free(lb);
 
 	isl_int_clear(v);
 	isl_constraint_free(c);
