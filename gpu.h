@@ -1,6 +1,8 @@
 #ifndef _GPU_H
 #define _GPU_H
 
+#include <isl/ast.h>
+
 #include "ppcg.h"
 #include "ppcg_options.h"
 
