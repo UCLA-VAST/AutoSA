@@ -161,7 +161,7 @@ struct ppcg_kernel_var {
  *
  * the first n_block elements of block_dim represent the size of the block.
  *
- * grid_size reflects the effect grid size.
+ * grid_size reflects the effective grid size.
  *
  * context is a parametric set containing the values of the parameters
  * for which this kernel may be run.
