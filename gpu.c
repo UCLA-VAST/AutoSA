@@ -2863,6 +2863,39 @@ static void free_local_array_info(struct gpu_gen *gen)
 	}
 }
 
+/* Compute the size of a bounding box around the origin and "set",
+ * where "set" is assumed to contain only non-negative elements.
+ * In particular, compute the maximal value of "set" in each direction
+ * and add one.
+ */
+static __isl_give isl_multi_pw_aff *extract_size(__isl_take isl_set *set,
+	__isl_keep isl_set *context)
+{
+	int i, n;
+	isl_multi_pw_aff *mpa;
+
+	n = isl_set_dim(set, isl_dim_set);
+	mpa = isl_multi_pw_aff_zero(isl_set_get_space(set));
+	for (i = 0; i < n; ++i) {
+		isl_space *space;
+		isl_aff *one;
+		isl_pw_aff *bound;
+
+		bound = isl_set_dim_max(isl_set_copy(set), i);
+		bound = isl_pw_aff_coalesce(bound);
+		bound = isl_pw_aff_gist(bound, isl_set_copy(context));
+
+		space = isl_pw_aff_get_domain_space(bound);
+		one = isl_aff_zero_on_domain(isl_local_space_from_space(space));
+		one = isl_aff_add_constant_si(one, 1);
+		bound = isl_pw_aff_add(bound, isl_pw_aff_from_aff(one));
+		mpa = isl_multi_pw_aff_set_pw_aff(mpa, i, bound);
+	}
+	isl_set_free(set);
+
+	return mpa;
+}
+
 /* Compute the effective grid size as a list of the sizes in each dimension.
  *
  * The grid size specified by the user or set by default
@@ -2886,7 +2919,6 @@ static __isl_give isl_multi_pw_aff *extract_grid_size(struct gpu_gen *gen,
 {
 	int i;
 	isl_set *grid;
-	isl_multi_pw_aff *mpa;
 
 	grid = isl_union_map_params(isl_union_map_copy(gen->tiled_sched));
 	grid = isl_set_from_params(grid);
@@ -2902,25 +2934,7 @@ static __isl_give isl_multi_pw_aff *extract_grid_size(struct gpu_gen *gen,
 		grid = isl_set_project_out(grid, isl_dim_param, pos, 1);
 	}
 
-	mpa = isl_multi_pw_aff_zero(isl_set_get_space(grid));
-	for (i = 0; i < gen->n_grid; ++i) {
-		isl_space *space;
-		isl_aff *one;
-		isl_pw_aff *bound;
-
-		bound = isl_set_dim_max(isl_set_copy(grid), i);
-		bound = isl_pw_aff_coalesce(bound);
-		bound = isl_pw_aff_gist(bound, isl_set_copy(kernel->context));
-
-		space = isl_pw_aff_get_domain_space(bound);
-		one = isl_aff_zero_on_domain(isl_local_space_from_space(space));
-		one = isl_aff_add_constant_si(one, 1);
-		bound = isl_pw_aff_add(bound, isl_pw_aff_from_aff(one));
-		mpa = isl_multi_pw_aff_set_pw_aff(mpa, i, bound);
-	}
-	isl_set_free(grid);
-
-	return mpa;
+	return extract_size(grid, kernel->context);
 }
 
 void ppcg_kernel_free(void *user)
