@@ -311,7 +311,7 @@ static void print_indent(FILE *dst, int indent)
 
 static void print_kernel_iterators(FILE *out, struct ppcg_kernel *kernel)
 {
-	int i;
+	int i, n_grid;
 	isl_ctx *ctx = isl_ast_node_get_ctx(kernel->tree);
 	const char *type;
 	const char *block_dims[] = { "blockIdx.x", "blockIdx.y" };
@@ -320,14 +320,15 @@ static void print_kernel_iterators(FILE *out, struct ppcg_kernel *kernel)
 
 	type = isl_options_get_ast_iterator_type(ctx);
 
-	if (kernel->n_grid > 0) {
+	n_grid = isl_multi_pw_aff_dim(kernel->grid_size, isl_dim_set);
+	if (n_grid > 0) {
 		print_indent(out, 4);
 		fprintf(out, "%s ", type);
-		for (i = 0; i < kernel->n_grid; ++i) {
+		for (i = 0; i < n_grid; ++i) {
 			if (i)
 				fprintf(out, ", ");
 			fprintf(out, "b%d = %s",
-				i, block_dims[kernel->n_grid - 1 - i]);
+				i, block_dims[n_grid - 1 - i]);
 		}
 		fprintf(out, ";\n");
 	}

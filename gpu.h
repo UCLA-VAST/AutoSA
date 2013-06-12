@@ -180,9 +180,6 @@ struct ppcg_kernel_var {
 struct ppcg_kernel {
 	int id;
 
-	int n_grid;
-	int grid_dim[2];
-
 	int n_block;
 	int block_dim[3];
 

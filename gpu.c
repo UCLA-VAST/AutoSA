@@ -4303,9 +4303,6 @@ static __isl_give isl_ast_node *create_host_leaf(
 	kernel->n_block = gen->n_block;
 	for (i = 0; i < gen->n_block; ++i)
 		kernel->block_dim[i] = gen->block_dim[i];
-	kernel->n_grid = gen->n_grid;
-	for (i = 0; i < gen->n_grid; ++i)
-		kernel->grid_dim[i] = gen->grid_dim[i];
 	kernel->context = isl_union_map_params(isl_union_map_copy(schedule));
 	kernel->grid_size = extract_grid_size(gen, kernel);
 	kernel->arrays = isl_union_map_range(access);
