@@ -47,7 +47,7 @@ location, then you may need to use the --with-gmp-prefix,
 when calling "./configure".
 
 
-Using PPCG to generate CUDA code
+Using PPCG to generate CUDA or OpenCL code
 
 To convert a fragment of a C program to CUDA, insert a line containing
 
@@ -57,12 +57,20 @@ before the fragment and add a line containing
 
 	#pragma endscop
 
-after the fragment.  Then run
+after the fragment.  To generate CUDA code run
 	
 	ppcg --target=cuda file.c
 
 where file.c is the file containing the fragment.  The generated
 code is stored in file_host.cu and file_kernel.cu.
+
+To generate OpenCL code run
+
+	ppcg --target=opencl file.c
+
+where file.c is the file containing the fragment.  The generated code
+is stored in file_host.c and file_kernel.cl.
+
 
 Specifying tile, grid and block sizes
 
@@ -98,7 +106,7 @@ tile, grid or block sizes, you may want to run PPCG first with the defaults,
 examine the kernels and then run PPCG again with the desired sizes.
 
 
-Compiling the generated code with nvcc
+Compiling the generated CUDA code with nvcc
 
 To get optimal performance from nvcc, it is important to choose --arch
 according to your target GPU.  Specifically, use the flag "--arch sm_20"
@@ -111,6 +119,22 @@ correctness issues.
 If you want to obtain results that are identical to those obtained
 by the original code, then you may need to disable some optimizations
 by passing the "--fmad=false" option.
+
+
+Compiling the generated OpenCL code with gcc
+
+To compile the host code you need to link against the file
+ocl_utilities.c which contains utility functions used by the generated
+OpenCL host code.  To compile the host code with gcc, run
+
+  gcc -std=c99 file_host.c ocl_utilities.c -lOpenCL
+
+Note that we have experienced the generated OpenCL code freezing
+on some inputs (e.g., the PolyBench symm benchmark) when using
+at least some version of the Nvidia OpenCL library, while the
+corresponding CUDA code runs fine.
+We have experienced no such freezes when using AMD, ARM or Intel
+OpenCL libraries.
 
 
 Processing PolyBench

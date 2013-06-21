@@ -238,7 +238,7 @@ static __isl_give isl_printer *print_kernel_arguments(__isl_take isl_printer *p,
 
 		if (types)
 			p = gpu_array_info_print_declaration_argument(p,
-				&prog->array[i]);
+				&prog->array[i], NULL);
 		else
 			p = gpu_array_info_print_call_argument(p,
 				&prog->array[i]);

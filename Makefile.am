@@ -30,6 +30,8 @@ ppcg_SOURCES = \
 	cpu.h \
 	cuda.c \
 	cuda.h \
+	opencl.c \
+	opencl.h \
 	cuda_common.h \
 	cuda_common.c \
 	gpu.c \
@@ -49,6 +51,8 @@ ppcg_SOURCES = \
 TESTS = @extra_tests@
 EXTRA_TESTS = polybench_test.sh
 TEST_EXTENSIONS = .sh
+
+EXTRA_DIST = ocl_utilities.c
 
 dist-hook:
 	echo @GIT_HEAD_VERSION@ > $(distdir)/GIT_HEAD_ID

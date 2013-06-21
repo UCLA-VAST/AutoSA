@@ -24,6 +24,7 @@
 #include "ppcg.h"
 #include "ppcg_options.h"
 #include "cuda.h"
+#include "opencl.h"
 #include "cpu.h"
 
 struct options {
@@ -45,7 +46,7 @@ ISL_ARG_CHILD(struct options, isl, "isl", &isl_options_args, "isl options")
 ISL_ARG_CHILD(struct options, pet, "pet", &pet_options_args, "pet options")
 ISL_ARG_CHILD(struct options, ppcg, NULL, &ppcg_options_args, "ppcg options")
 ISL_ARG_STR(struct options, output, 'o', NULL,
-	"filename", NULL, "output filename (c target)")
+	"filename", NULL, "output filename (c and opencl targets)")
 ISL_ARG_ARG(struct options, input, "input", NULL)
 ISL_ARG_VERSION(print_version)
 ISL_ARGS_END
@@ -750,6 +751,9 @@ int main(int argc, char **argv)
 		r = EXIT_FAILURE;
 	else if (options->ppcg->target == PPCG_TARGET_CUDA)
 		r = generate_cuda(ctx, options->ppcg, options->input);
+	else if (options->ppcg->target == PPCG_TARGET_OPENCL)
+		r = generate_opencl(ctx, options->ppcg, options->input,
+				options->output);
 	else
 		r = generate_cpu(ctx, options->ppcg, options->input,
 				options->output);

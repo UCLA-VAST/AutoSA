@@ -13,6 +13,7 @@
 static struct isl_arg_choice target[] = {
 	{"c",		PPCG_TARGET_C},
 	{"cuda",	PPCG_TARGET_CUDA},
+	{"opencl",      PPCG_TARGET_OPENCL},
 	{0}
 };
 
@@ -21,6 +22,13 @@ ISL_ARG_BOOL(struct ppcg_debug_options, dump_schedule_constraints, 0,
 	"dump-schedule-constraints", 0, "dump schedule constraints")
 ISL_ARG_BOOL(struct ppcg_debug_options, dump_schedule, 0,
 	"dump-schedule", 0, "dump isl computed schedule")
+ISL_ARGS_END
+
+ISL_ARGS_START(struct ppcg_options, ppcg_opencl_options_args)
+ISL_ARG_STR(struct ppcg_options, opencl_compiler_options, 0, "compiler-options",
+	"options", NULL, "options to pass to the OpenCL compiler")
+ISL_ARG_BOOL(struct ppcg_options, opencl_use_gpu, 0, "use-gpu", 1,
+	"use GPU device (if available)")
 ISL_ARGS_END
 
 ISL_ARGS_START(struct ppcg_options, ppcg_options_args)
@@ -51,4 +59,5 @@ ISL_ARG_BOOL(struct ppcg_options, live_range_reordering, 0,
 	"live-range-reordering", 1,
 	"allow successive live ranges on the same memory element "
 	"to be reordered")
+ISL_ARG_GROUP("opencl", &ppcg_opencl_options_args, "OpenCL options")
 ISL_ARGS_END

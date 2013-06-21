@@ -12,7 +12,8 @@ __isl_give isl_printer *gpu_print_macros(__isl_take isl_printer *p,
 __isl_give isl_printer *gpu_array_info_print_size(__isl_take isl_printer *prn,
 	struct gpu_array_info *array);
 __isl_give isl_printer *gpu_array_info_print_declaration_argument(
-	__isl_take isl_printer *p, struct gpu_array_info *array);
+	__isl_take isl_printer *p, struct gpu_array_info *array,
+	const char *memory_space);
 __isl_give isl_printer *gpu_array_info_print_call_argument(
 	__isl_take isl_printer *p, struct gpu_array_info *array);
 

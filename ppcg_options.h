@@ -39,6 +39,11 @@ struct ppcg_options {
 
 	/* Allow live range to be reordered. */
 	int live_range_reordering;
+
+	/* Options to pass to the OpenCL compiler.  */
+	char *opencl_compiler_options;
+	/* Prefer GPU device over CPU. */
+	int opencl_use_gpu;
 };
 
 ISL_ARG_DECL(ppcg_debug_options, struct ppcg_debug_options,
@@ -47,5 +52,6 @@ ISL_ARG_DECL(ppcg_options, struct ppcg_options, ppcg_options_args)
 
 #define		PPCG_TARGET_C		0
 #define		PPCG_TARGET_CUDA	1
+#define		PPCG_TARGET_OPENCL      2
 
 #endif

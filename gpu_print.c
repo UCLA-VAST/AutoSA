@@ -79,15 +79,22 @@ static __isl_give isl_printer *print_non_linearized_declaration_argument(
 }
 
 /* Print the declaration of an array argument.
+ * "memory_space" allows to specify a memory space prefix.
  */
 __isl_give isl_printer *gpu_array_info_print_declaration_argument(
-	__isl_take isl_printer *p, struct gpu_array_info *array)
+	__isl_take isl_printer *p, struct gpu_array_info *array,
+	const char *memory_space)
 {
 	if (gpu_array_is_read_only_scalar(array)) {
 		p = isl_printer_print_str(p, array->type);
 		p = isl_printer_print_str(p, " ");
 		p = isl_printer_print_str(p, array->name);
 		return p;
+	}
+
+	if (memory_space) {
+		p = isl_printer_print_str(p, memory_space);
+		p = isl_printer_print_str(p, " ");
 	}
 
 	if (array->n_index != 0 && !array->linearize)
