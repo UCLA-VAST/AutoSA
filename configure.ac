@@ -8,6 +8,12 @@ AC_PROG_CC
 AC_PROG_LIBTOOL
 PKG_PROG_PKG_CONFIG
 
+AX_SUBMODULE(gmp,system,system)
+
+if test "x$with_gmp_prefix" != "x"; then
+	GMP_CPPFLAGS="-I$with_gmp_prefix/include"
+fi
+
 AX_SUBMODULE(isl,build|bundled|system,bundled)
 AM_CONDITIONAL(BUNDLED_ISL, test $with_isl = bundled)
 
@@ -16,6 +22,7 @@ AC_SUBST(ISL_LIBS)
 case "$with_isl" in
 bundled)
 	ISL_CFLAGS="-I\$(top_srcdir)/isl/include -I\$(top_builddir)/isl/include"
+	ISL_CFLAGS="$ISL_CFLAGS $GMP_CPPFLAGS"
 	ppcg_configure_args="$ppcg_configure_args --with-isl-builddir=../isl"
 	ppcg_configure_args="$ppcg_configure_args --with-isl=build"
 	;;
@@ -23,6 +30,7 @@ build)
 	ISL_BUILDDIR=`echo @abs_builddir@ | $with_isl_builddir/config.status --file=-`
 	ppcg_configure_args="$ppcg_configure_args --with-isl-builddir=$ISL_BUILDDIR"
 	ISL_CFLAGS="-I$isl_srcdir/include -I$ISL_BUILDDIR/include"
+	ISL_CFLAGS="$ISL_CFLAGS $GMP_CPPFLAGS"
 	ISL_LIBS="$with_isl_builddir/libisl.la -lgmp"
 	;;
 system)
