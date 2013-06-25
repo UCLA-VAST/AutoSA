@@ -4,7 +4,7 @@ EXEEXT=@EXEEXT@
 DIR=@POLYBENCH_DIR@
 SIZE=-DMINI_DATASET
 CC="@CC@"
-TMPDIR=`mktemp -d --suffix=.ppcg`
+TMPDIR=`mktemp -d --suffix=.ppcg` || exit 1
 CPPFLAGS="-DPOLYBENCH_DUMP_ARRAYS $SIZE -I $DIR/utilities"
 CFLAGS="-lm --std=gnu99"
 
