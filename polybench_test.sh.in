@@ -4,11 +4,14 @@ EXEEXT=@EXEEXT@
 DIR=@POLYBENCH_DIR@
 SIZE=-DMINI_DATASET
 CC="@CC@"
-TMPDIR=`mktemp -d --suffix=.ppcg` || exit 1
+if test "x$TMPDIR" = "x"; then
+	TMPDIR=/tmp
+fi
+OUTDIR=`mktemp -d $TMPDIR/ppcg.XXXXXXXXXX` || exit 1
 CPPFLAGS="-DPOLYBENCH_DUMP_ARRAYS $SIZE -I $DIR/utilities"
 CFLAGS="-lm --std=gnu99"
 
-echo "Running tests in folder ${TMPDIR}"
+echo "Running tests in folder ${OUTDIR}"
 
 run_tests () {
 	ext=$1
@@ -33,11 +36,11 @@ run_tests () {
 		echo $i
 		name=`basename $i`
 		name=${name%.c}
-		source_opt="${TMPDIR}/$name.$ext.c"
-		prog_orig=${TMPDIR}/$name.orig${EXEEXT}
-		prog_opt=${TMPDIR}/$name.$ext${EXEEXT}
-		output_orig=${TMPDIR}/$name.orig.out
-		output_opt=${TMPDIR}/$name.$ext.out
+		source_opt="${OUTDIR}/$name.$ext.c"
+		prog_orig=${OUTDIR}/$name.orig${EXEEXT}
+		prog_opt=${OUTDIR}/$name.$ext${EXEEXT}
+		output_orig=${OUTDIR}/$name.orig.out
+		output_opt=${OUTDIR}/$name.$ext.out
 		dir=`dirname $i`
 		./ppcg$EXEEXT --target=c -I $DIR/$dir $DIR/$i $CPPFLAGS \
 			-o $source_opt $ppcg_options || exit
@@ -59,9 +62,9 @@ echo  | $CC -x c - -fsyntax-only -fopenmp -Werror 1> /dev/null 2> /dev/null
 OUT=$?
 if [ $OUT -eq 0 ]; then
 	run_tests ppcg_omp --openmp -fopenmp
-	echo Introduced `grep -R 'omp parallel' "${TMPDIR}" | wc -l` '"pragma omp parallel for"'
+	echo Introduced `grep -R 'omp parallel' "${OUTDIR}" | wc -l` '"pragma omp parallel for"'
 else
 	echo Compiler does not support OpenMP. Skipping OpenMP tests.
 fi
 
-rm -r "${TMPDIR}"
+rm -r "${OUTDIR}"
