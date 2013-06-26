@@ -12,6 +12,7 @@
 
 #include <assert.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include <isl/polynomial.h>
 #include <isl/union_set.h>
