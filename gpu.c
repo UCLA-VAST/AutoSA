@@ -1,6 +1,6 @@
 /*
  * Copyright 2010-2011 INRIA Saclay
- * Copyright 2012      Ecole Normale Superieure
+ * Copyright 2012-2013 Ecole Normale Superieure
  *
  * Use of this software is governed by the MIT license
  *
@@ -24,6 +24,7 @@
 #include <isl/options.h>
 #include <isl/ast_build.h>
 
+#include "cpu.h"
 #include "gpu.h"
 #include "schedule.h"
 #include "ppcg_options.h"
@@ -116,6 +117,8 @@ struct gpu_gen {
 	int kernel_id;
 	/* Pointer to the current kernel. */
 	struct ppcg_kernel *kernel;
+	/* Does the computed schedule exhibit any parallelism? */
+	int any_parallelism;
 
 	/* First tile dimension. */
 	int tile_first;
@@ -4553,6 +4556,7 @@ static void band_select_outer_band(struct gpu_gen *gen,
 
 	info->n_parallel = n_parallel;
 	if (n_parallel) {
+		gen->any_parallelism = 1;
 		info->gen = gen;
 		info->tile_first = pos;
 		info->tile_len = n;
@@ -4923,6 +4927,9 @@ static struct gpu_stmt *extract_stmts(isl_ctx *ctx, struct ppcg_scop *scop,
  * we call "print" to print the AST in the desired output format
  * to a printer hooked up to "out".
  *
+ * If it turns out that it does not make sense to generate GPU code,
+ * then we generate CPU code instead.
+ *
  * We first compute a schedule that respects the dependences
  * of the original program and select the outermost band
  * of tilable dimensions that has at least one parallel loop.
@@ -4992,14 +4999,20 @@ int generate_gpu(isl_ctx *ctx, const char *input, FILE *out,
 	gen.sizes = extract_sizes_from_str(ctx, options->sizes);
 	gen.options = options;
 
+	gen.any_parallelism = 0;
 	compute_schedule(&gen);
-	compute_copy_in_and_out(&gen);
 
-	gen.kernel_id = 0;
-	tree = generate_host_code(&gen);
-	p = ppcg_print_exposed_declarations(p, prog->scop);
-	p = print(p, prog, tree, user);
-	isl_ast_node_free(tree);
+	if (!gen.any_parallelism) {
+		p = print_cpu(p, scop, options);
+	} else {
+		compute_copy_in_and_out(&gen);
+
+		gen.kernel_id = 0;
+		tree = generate_host_code(&gen);
+		p = ppcg_print_exposed_declarations(p, prog->scop);
+		p = print(p, prog, tree, user);
+		isl_ast_node_free(tree);
+	}
 
 	clear_gpu_gen(&gen);
 
