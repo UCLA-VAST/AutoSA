@@ -1,20 +1,51 @@
 Requirements:
 
+- automake, autoconf, libtool
+	(not needed when compiling a release)
+- pkg-config (http://www.freedesktop.org/wiki/Software/pkg-config)
+	(not needed when compiling a release using the included isl and pet)
 - gmp (http://gmplib.org/)
 - libyaml (http://pyyaml.org/wiki/LibYAML)
+	(only needed if you want to compile the pet executable)
 - LLVM/clang libraries, 2.9 or higher (http://clang.llvm.org/get_started.html)
+	Unless you have some other reasons for wanting to use the svn version,
+	it is best to install the latest release (3.3).
 	For more details, see pet/README.
 
-Compilation:
+If you are installing on Ubuntu, then you can install the following packages:
+
+automake autoconf libtool pkg-config libgmp3-dev libyaml-dev libclang-dev llvm
+
+Note that you need at least version 3.2 of libclang-dev (ubuntu raring).
+Older versions of this package did not include the required libraries.
+If you are using an older version of ubuntu, then you need to compile and
+install LLVM/clang from source.
+
+
+Preparing:
+
+Grab the latest release and extract it or get the source from
+the git repository as follows.  This process requires autoconf,
+automake, libtool and pkg-config.
 
 	git clone git://repo.or.cz/ppcg.git
 	cd ppcg
 	git submodule init
 	git submodule update
 	./autogen.sh
+
+
+Compilation:
+
 	./configure
 	make
 	make check
+
+If you have installed any of the required libraries in a non-standard
+location, then you may need to use the --with-gmp-prefix,
+--with-libyaml-prefix and/or --with-clang-prefix options
+when calling "./configure".
+
 
 Using PPCG to generate CUDA code
 
