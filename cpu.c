@@ -552,9 +552,10 @@ error:
 
 /* Code generate the scop 'scop' and print the corresponding C code to 'p'.
  */
-static __isl_give isl_printer *print_scop(isl_ctx *ctx, struct ppcg_scop *scop,
+static __isl_give isl_printer *print_scop(struct ppcg_scop *scop,
 	__isl_take isl_printer *p, struct ppcg_options *options)
 {
+	isl_ctx *ctx = isl_printer_get_ctx(p);
 	isl_set *context;
 	isl_union_set *domain_set;
 	isl_union_map *schedule_map;
@@ -618,13 +619,40 @@ static int any_hidden_declarations(struct ppcg_scop *scop)
 	return 0;
 }
 
+/* Generate CPU code for the scop "ps" and print the corresponding C code
+ * to "p", including variable declarations.
+ */
+__isl_give isl_printer *print_cpu(__isl_take isl_printer *p,
+	struct ppcg_scop *ps, struct ppcg_options *options)
+{
+	int hidden;
+
+	p = isl_printer_start_line(p);
+	p = isl_printer_print_str(p, "/* ppcg generated CPU code */");
+	p = isl_printer_end_line(p);
+
+	p = isl_printer_start_line(p);
+	p = isl_printer_end_line(p);
+
+	p = ppcg_print_exposed_declarations(p, ps);
+	hidden = any_hidden_declarations(ps);
+	if (hidden) {
+		p = ppcg_start_block(p);
+		p = ppcg_print_hidden_declarations(p, ps);
+	}
+	p = print_scop(ps, p, options);
+	if (hidden)
+		p = ppcg_end_block(p);
+
+	return p;
+}
+
 int generate_cpu(isl_ctx *ctx, struct ppcg_scop *ps,
 	struct ppcg_options *options, const char *input, const char *output)
 {
 	FILE *input_file;
 	FILE *output_file;
 	isl_printer *p;
-	int hidden;
 
 	if (!ps)
 		return -1;
@@ -633,18 +661,9 @@ int generate_cpu(isl_ctx *ctx, struct ppcg_scop *ps,
 	output_file = get_output_file(input, output);
 
 	copy(input_file, output_file, 0, ps->start);
-	fprintf(output_file, "/* ppcg generated CPU code */\n\n");
 	p = isl_printer_to_file(ctx, output_file);
 	p = isl_printer_set_output_format(p, ISL_FORMAT_C);
-	p = ppcg_print_exposed_declarations(p, ps);
-	hidden = any_hidden_declarations(ps);
-	if (hidden) {
-		p = ppcg_start_block(p);
-		p = ppcg_print_hidden_declarations(p, ps);
-	}
-	p = print_scop(ctx, ps, p, options);
-	if (hidden)
-		p = ppcg_end_block(p);
+	p = print_cpu(p, ps, options);
 	isl_printer_free(p);
 	copy(input_file, output_file, ps->end, -1);
 
