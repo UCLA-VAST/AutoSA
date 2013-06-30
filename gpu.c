@@ -108,7 +108,15 @@ struct gpu_gen {
 	isl_ctx *ctx;
 	struct ppcg_options *options;
 
+	/* Callback for printing of AST in appropriate format. */
+	__isl_give isl_printer *(*print)(__isl_take isl_printer *p,
+		struct gpu_prog *prog, __isl_keep isl_ast_node *tree,
+		void *user);
+	void *print_user;
+
 	struct gpu_prog *prog;
+	/* The generated AST. */
+	isl_ast_node *tree;
 
 	/* tile, grid and block sizes for each kernel */
 	isl_union_map *sizes;
@@ -4917,6 +4925,15 @@ static struct gpu_stmt *extract_stmts(isl_ctx *ctx, struct ppcg_scop *scop,
 	return stmts;
 }
 
+/* Callback for ppcg_print_guarded that calls the callback for generate_gpu.
+ */
+static __isl_give isl_printer *print_gpu(__isl_take isl_printer *p, void *user)
+{
+	struct gpu_gen *gen = user;
+
+	return gen->print(p, gen->prog, gen->tree, gen->print_user);
+}
+
 /* Replace the scop in the "input" file by equivalent code
  * that uses the GPU and print the result to "out".
  * "scop" is assumed to correspond to this scop.
@@ -4929,6 +4946,12 @@ static struct gpu_stmt *extract_stmts(isl_ctx *ctx, struct ppcg_scop *scop,
  *
  * If it turns out that it does not make sense to generate GPU code,
  * then we generate CPU code instead.
+ *
+ * The GPU code is generated in a context where at least one
+ * statement instance is executed.  The corresponding guard (if any) is printed
+ * around the entire generated GPU code, except for the declaration
+ * of the arrays that are visible outside of the scop and that therefore
+ * cannot be declared inside the body of any possible guard.
  *
  * We first compute a schedule that respects the dependences
  * of the original program and select the outermost band
@@ -4977,7 +5000,7 @@ int generate_gpu(isl_ctx *ctx, const char *input, FILE *out,
 {
 	struct gpu_gen gen;
 	struct gpu_prog *prog;
-	isl_ast_node *tree;
+	isl_set *context, *guard;
 	isl_printer *p;
 	FILE *in;
 
@@ -4994,6 +5017,10 @@ int generate_gpu(isl_ctx *ctx, const char *input, FILE *out,
 	p = isl_printer_to_file(ctx, out);
 	p = isl_printer_set_output_format(p, ISL_FORMAT_C);
 
+	context = isl_set_copy(prog->context);
+	guard = isl_union_set_params(isl_union_set_copy(prog->scop->domain));
+	prog->context = isl_set_intersect(prog->context, isl_set_copy(guard));
+
 	gen.ctx = ctx;
 	gen.prog = prog;
 	gen.sizes = extract_sizes_from_str(ctx, options->sizes);
@@ -5003,15 +5030,19 @@ int generate_gpu(isl_ctx *ctx, const char *input, FILE *out,
 	compute_schedule(&gen);
 
 	if (!gen.any_parallelism) {
+		isl_set_free(context);
+		isl_set_free(guard);
 		p = print_cpu(p, scop, options);
 	} else {
 		compute_copy_in_and_out(&gen);
 
 		gen.kernel_id = 0;
-		tree = generate_host_code(&gen);
+		gen.print = print;
+		gen.print_user = user;
+		gen.tree = generate_host_code(&gen);
 		p = ppcg_print_exposed_declarations(p, prog->scop);
-		p = print(p, prog, tree, user);
-		isl_ast_node_free(tree);
+		p = ppcg_print_guarded(p, guard, context, &print_gpu, &gen);
+		isl_ast_node_free(gen.tree);
 	}
 
 	clear_gpu_gen(&gen);
