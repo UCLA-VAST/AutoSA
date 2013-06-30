@@ -614,6 +614,8 @@ int generate_cuda(isl_ctx *ctx, struct ppcg_scop *scop,
 		return -1;
 
 	prog = gpu_prog_alloc(ctx, scop);
+	if (!prog)
+		return -1;
 
 	tree = generate_gpu(ctx, prog, options);
 

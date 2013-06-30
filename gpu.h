@@ -204,7 +204,7 @@ int gpu_array_is_scalar(struct gpu_array_info *array);
 int gpu_array_is_read_only_scalar(struct gpu_array_info *array);
 
 struct gpu_prog *gpu_prog_alloc(isl_ctx *ctx, struct ppcg_scop *scop);
-void gpu_prog_free(struct gpu_prog *prog);
+void *gpu_prog_free(struct gpu_prog *prog);
 
 __isl_give isl_ast_node *generate_gpu(isl_ctx *ctx, struct gpu_prog *prog,
 	struct ppcg_options *options);

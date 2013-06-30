@@ -648,9 +648,12 @@ static void read_sizes(struct gpu_gen *gen)
 	read_grid_sizes(gen);
 }
 
-static void free_stmts(struct gpu_stmt *stmts, int n)
+static void *free_stmts(struct gpu_stmt *stmts, int n)
 {
 	int i;
+
+	if (!stmts)
+		return NULL;
 
 	for (i = 0; i < n; ++i) {
 		struct gpu_stmt_access *access, *next;
@@ -664,6 +667,8 @@ static void free_stmts(struct gpu_stmt *stmts, int n)
 		isl_id_free(stmts[i].id);
 	}
 	free(stmts);
+
+	return NULL;
 }
 
 void clear_gpu_gen(struct gpu_gen *gen)
@@ -4892,10 +4897,16 @@ static struct gpu_stmt *extract_stmts(isl_ctx *ctx, struct ppcg_scop *scop,
 	struct gpu_stmt *stmts;
 
 	stmts = isl_calloc_array(ctx, struct gpu_stmt, scop->n_stmt);
-	assert(stmts);
+	if (!stmts)
+		return NULL;
 
 	for (i = 0; i < scop->n_stmt; ++i) {
 		struct gpu_stmt *s = &stmts[i];
+
+		if (scop->stmts[i]->n_arg > 0)
+			isl_die(ctx, isl_error_unsupported,
+				"data dependent conditions not supported",
+				return free_stmts(stmts, scop->n_stmt));
 
 		s->id = isl_set_get_tuple_id(scop->stmts[i]->domain);
 		s->body = scop->stmts[i]->body;
@@ -4991,15 +5002,18 @@ struct gpu_prog *gpu_prog_alloc(isl_ctx *ctx, struct ppcg_scop *scop)
 	prog->read = isl_union_map_copy(scop->reads);
 	prog->write = isl_union_map_copy(scop->writes);
 
+	if (!prog->stmts)
+		return gpu_prog_free(prog);
+
 	collect_array_info(prog);
 
 	return prog;
 }
 
-void gpu_prog_free(struct gpu_prog *prog)
+void *gpu_prog_free(struct gpu_prog *prog)
 {
 	if (!prog)
-		return;
+		return NULL;
 	free_array_info(prog);
 	free_stmts(prog->stmts, prog->n_stmts);
 	isl_union_set_free(prog->copy_in);
@@ -5008,4 +5022,5 @@ void gpu_prog_free(struct gpu_prog *prog)
 	isl_union_map_free(prog->write);
 	isl_set_free(prog->context);
 	free(prog);
+	return NULL;
 }
