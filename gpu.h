@@ -226,6 +226,7 @@ struct ppcg_kernel {
 
 int gpu_array_is_scalar(struct gpu_array_info *array);
 int gpu_array_is_read_only_scalar(struct gpu_array_info *array);
+__isl_give isl_set *gpu_array_positive_size_guard(struct gpu_array_info *array);
 
 struct gpu_prog *gpu_prog_alloc(isl_ctx *ctx, struct ppcg_scop *scop);
 void *gpu_prog_free(struct gpu_prog *prog);

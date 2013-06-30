@@ -673,6 +673,34 @@ int gpu_array_is_read_only_scalar(struct gpu_array_info *array)
 	return array->read_only_scalar;
 }
 
+/* Return the set of parameter values for which the array has a positive
+ * size in all dimensions.
+ * If the sizes are only valid for some parameter values, then those
+ * constraints are also taken into account.
+ */
+__isl_give isl_set *gpu_array_positive_size_guard(struct gpu_array_info *array)
+{
+	int i;
+	isl_space *space;
+	isl_set *guard;
+
+	space = isl_space_params(isl_space_copy(array->space));
+	guard = isl_set_universe(space);
+
+	for (i = 0; i < array->n_index; ++i) {
+		isl_pw_aff *bound;
+		isl_set *guard_i, *zero;
+
+		bound = isl_pw_aff_copy(array->bound[i]);
+		guard_i = isl_pw_aff_nonneg_set(isl_pw_aff_copy(bound));
+		zero = isl_pw_aff_zero_set(bound);
+		guard_i = isl_set_subtract(guard_i, zero);
+		guard = isl_set_intersect(guard, guard_i);
+	}
+
+	return guard;
+}
+
 /* Internal data structure for extract_size_of_type.
  * "type" specifies the name of the space that we want to extract.
  * "res" is used to store the subset of that space.
