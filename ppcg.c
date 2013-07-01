@@ -269,6 +269,44 @@ static __isl_give isl_set *set_intersect_str(__isl_take isl_set *set,
 	return set;
 }
 
+/* Does "expr" involve any data dependent accesses?
+ */
+static int expr_has_data_dependent_accesses(struct pet_expr *expr)
+{
+	int i;
+
+	for (i = 0; i < expr->n_arg; ++i)
+		if (expr_has_data_dependent_accesses(expr->args[i]))
+			return 1;
+
+	if (expr->type == pet_expr_access && expr->n_arg > 0)
+		return 1;
+
+	return 0;
+}
+
+/* Does "stmt" contain any data dependent accesses?
+ */
+static int stmt_has_data_dependent_accesses(struct pet_stmt *stmt)
+{
+	return expr_has_data_dependent_accesses(stmt->body);
+}
+
+/* Does "scop" contain any data dependent accesses?
+ */
+static int scop_has_data_dependent_accesses(struct pet_scop *scop)
+{
+	int i;
+
+	if (!scop)
+		return -1;
+	for (i = 0; i < scop->n_stmt; ++i)
+		if (stmt_has_data_dependent_accesses(scop->stmts[i]))
+			return 1;
+
+	return 0;
+}
+
 /* Extract a ppcg_scop from a pet_scop.
  *
  * The constructed ppcg_scop refers to elements from the pet_scop
@@ -284,6 +322,11 @@ static struct ppcg_scop *ppcg_scop_from_pet_scop(struct pet_scop *scop,
 		return NULL;
 
 	ctx = isl_set_get_ctx(scop->context);
+
+	if (scop_has_data_dependent_accesses(scop))
+		isl_die(ctx, isl_error_unsupported,
+			"data dependent accesses not supported",
+			return NULL);
 
 	ps = isl_calloc_type(ctx, struct ppcg_scop);
 	if (!ps)
