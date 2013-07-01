@@ -108,3 +108,21 @@ correctness issues with compilation for older architectures.
 Note that in the absence of any --arch flag, nvcc defaults to
 "--arch sm_13". This will not only be slower, but can also cause
 correctness issues.
+If you want to obtain results that are identical to those obtained
+by the original code, then you may need to disable some optimizations
+by passing the "--fmad=false" option.
+
+
+CUDA and function overloading
+
+While CUDA supports function overloading based on the arguments types,
+no such function overloading exists in the input language C.  Since PPCG
+simply prints out the same function name as in the original code, this
+may result in a different function being called based on the types
+of the arguments.  For example, if the original code contains a call
+to the function sqrt() with a float argument, then the argument will
+be promoted to a double and the sqrt() function will be called.
+In the transformed (CUDA) code, however, overloading will cause the
+function sqrtf() to be called.  Until this issue has been resolved in PPCG,
+we recommend that users either explicitly call the function sqrtf() or
+explicitly cast the argument to double in the input code.
