@@ -1341,6 +1341,23 @@ static __isl_give isl_map *shift_access(__isl_take isl_map *access,
 	return sched;
 }
 
+/* Does "map" have an obviously fixed value at variable "pos" of "type"?
+ */
+static int map_plain_is_fixed(isl_map *map, enum isl_dim_type type,
+	unsigned pos)
+{
+	isl_val *v;
+	int fixed;
+
+	v = isl_map_plain_get_val_if_fixed(map, type, pos);
+	if (!v)
+		return -1;
+	fixed = isl_val_is_int(v);
+	isl_val_free(v);
+
+	return fixed;
+}
+
 /* Given a schedule that iterates over all elements in a piece of an array,
  * perform tiling/wrapping over the threads.
  *
@@ -1373,8 +1390,7 @@ static __isl_give isl_map *tile_access_schedule(struct gpu_gen *gen,
 	first = nvar - n_tile;
 
 	for (; first > 0; first --)
-		if (!isl_map_plain_is_fixed(sched, isl_dim_out,
-						first + n_tile - 1, NULL))
+		if (!map_plain_is_fixed(sched, isl_dim_out, first + n_tile - 1))
 			break;
 
 	dim = isl_map_get_space(sched);
@@ -2400,7 +2416,7 @@ static __isl_give isl_map *eliminate_fixed_inner_loops(
 	n = isl_map_dim(access, isl_dim_in);
 
 	for (i = n - 1; i >= 0; --i) {
-		if (!isl_map_plain_is_fixed(access, isl_dim_in, i, NULL))
+		if (!map_plain_is_fixed(access, isl_dim_in, i))
 			break;
 		access = isl_map_eliminate(access, isl_dim_in, i, 1);
 	}
