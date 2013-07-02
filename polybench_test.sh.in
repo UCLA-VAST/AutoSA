@@ -8,7 +8,8 @@ if test "x$TMPDIR" = "x"; then
 	TMPDIR=/tmp
 fi
 OUTDIR=`mktemp -d $TMPDIR/ppcg.XXXXXXXXXX` || exit 1
-CPPFLAGS="-DPOLYBENCH_DUMP_ARRAYS $SIZE -I $DIR/utilities"
+CPPFLAGS="-DPOLYBENCH_USE_C99_PROTO -DPOLYBENCH_DUMP_ARRAYS"
+CPPFLAGS="$CPPFLAGS $SIZE -I $DIR/utilities"
 CFLAGS="-lm --std=gnu99"
 
 echo "Running tests in folder ${OUTDIR}"
