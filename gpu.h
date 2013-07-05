@@ -187,7 +187,7 @@ struct gpu_prog *gpu_prog_alloc(isl_ctx *ctx, struct ppcg_scop *scop);
 void *gpu_prog_free(struct gpu_prog *prog);
 
 int generate_gpu(isl_ctx *ctx, const char *input, FILE *out,
-	struct ppcg_scop *scop, struct ppcg_options *options,
+	struct ppcg_options *options,
 	__isl_give isl_printer *(*print)(__isl_take isl_printer *p,
 		struct gpu_prog *prog, __isl_keep isl_ast_node *tree,
 		void *user), void *user);

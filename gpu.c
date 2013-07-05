@@ -29,7 +29,6 @@
 #include "schedule.h"
 #include "ppcg_options.h"
 #include "print.h"
-#include "rewrite.h"
 
 /* The fields stride, shift and shift_map only contain valid information
  * if shift != NULL.
@@ -693,12 +692,6 @@ static void *free_stmts(struct gpu_stmt *stmts, int n)
 	free(stmts);
 
 	return NULL;
-}
-
-void clear_gpu_gen(struct gpu_gen *gen)
-{
-	isl_union_map_free(gen->sizes);
-	isl_union_map_free(gen->sched);
 }
 
 /* Construct a map from a domain of dimensionality "len"
@@ -4967,15 +4960,10 @@ static __isl_give isl_printer *print_gpu(__isl_take isl_printer *p, void *user)
 	return gen->print(p, gen->prog, gen->tree, gen->print_user);
 }
 
-/* Replace the scop in the "input" file by equivalent code
- * that uses the GPU and print the result to "out".
- * "scop" is assumed to correspond to this scop.
- * The code before the scop is first copied to "out",
- * then the transformed scop is printed and finally
- * the code after the scop is copied to "out".
+/* Generate CUDA code for "scop" and print it to "p".
  * After generating an AST for the transformed scop as explained below,
- * we call "print" to print the AST in the desired output format
- * to a printer hooked up to "out".
+ * we call "gen->print" to print the AST in the desired output format
+ * to "p".
  *
  * If it turns out that it does not make sense to generate GPU code,
  * then we generate CPU code instead.
@@ -5025,69 +5013,83 @@ static __isl_give isl_printer *print_gpu(__isl_take isl_printer *p, void *user)
  * to h%d parameters and the T1P loops to the block dimensions.
  * Finally, we generate code for the remaining loops in a similar fashion.
  */
-int generate_gpu(isl_ctx *ctx, const char *input, FILE *out,
-	struct ppcg_scop *scop, struct ppcg_options *options,
-	__isl_give isl_printer *(*print)(__isl_take isl_printer *p,
-		struct gpu_prog *prog, __isl_keep isl_ast_node *tree,
-		void *user), void *user)
+static __isl_give isl_printer *generate(__isl_take isl_printer *p,
+	struct gpu_gen *gen, struct ppcg_scop *scop,
+	struct ppcg_options *options)
 {
-	struct gpu_gen gen;
 	struct gpu_prog *prog;
+	isl_ctx *ctx;
 	isl_set *context, *guard;
-	isl_printer *p;
-	FILE *in;
 
 	if (!scop)
-		return -1;
+		return isl_printer_free(p);
 
-	in = fopen(input, "r");
-	copy(in, out, 0, scop->start);
-
+	ctx = isl_printer_get_ctx(p);
 	prog = gpu_prog_alloc(ctx, scop);
 	if (!prog)
-		return -1;
-
-	p = isl_printer_to_file(ctx, out);
-	p = isl_printer_set_output_format(p, ISL_FORMAT_C);
+		return isl_printer_free(p);
 
 	context = isl_set_copy(prog->context);
 	guard = isl_union_set_params(isl_union_set_copy(prog->scop->domain));
 	prog->context = isl_set_intersect(prog->context, isl_set_copy(guard));
 
-	gen.ctx = ctx;
-	gen.prog = prog;
-	gen.sizes = extract_sizes_from_str(ctx, options->sizes);
-	gen.options = options;
+	gen->prog = prog;
+	gen->any_parallelism = 0;
+	compute_schedule(gen);
 
-	gen.any_parallelism = 0;
-	compute_schedule(&gen);
-
-	if (!gen.any_parallelism) {
+	if (!gen->any_parallelism) {
 		isl_set_free(context);
 		isl_set_free(guard);
 		p = print_cpu(p, scop, options);
 	} else {
-		compute_copy_in_and_out(&gen);
-
-		gen.kernel_id = 0;
-		gen.print = print;
-		gen.print_user = user;
-		gen.tree = generate_host_code(&gen);
+		compute_copy_in_and_out(gen);
+		gen->tree = generate_host_code(gen);
 		p = ppcg_print_exposed_declarations(p, prog->scop);
-		p = ppcg_print_guarded(p, guard, context, &print_gpu, &gen);
-		isl_ast_node_free(gen.tree);
+		p = ppcg_print_guarded(p, guard, context, &print_gpu, gen);
+		isl_ast_node_free(gen->tree);
 	}
 
-	clear_gpu_gen(&gen);
-
-	isl_printer_free(p);
+	isl_union_map_free(gen->sched);
 
 	gpu_prog_free(prog);
 
-	copy(in, out, scop->end, -1);
-	fclose(in);
+	return p;
+}
 
-	return p ? 0 : -1;
+/* Wrapper around generate for use as a ppcg_transform callback.
+ */
+static __isl_give isl_printer *generate_wrap(__isl_take isl_printer *p,
+	struct ppcg_scop *scop, void *user)
+{
+	struct gpu_gen *gen = user;
+
+	return generate(p, gen, scop, gen->options);
+}
+
+/* Transform the code in the file called "input" by replacing
+ * all scops by corresponding GPU code and write the results to "out".
+ */
+int generate_gpu(isl_ctx *ctx, const char *input, FILE *out,
+	struct ppcg_options *options,
+	__isl_give isl_printer *(*print)(__isl_take isl_printer *p,
+		struct gpu_prog *prog, __isl_keep isl_ast_node *tree,
+		void *user), void *user)
+{
+	struct gpu_gen gen;
+	int r;
+
+	gen.ctx = ctx;
+	gen.sizes = extract_sizes_from_str(ctx, options->sizes);
+	gen.options = options;
+	gen.kernel_id = 0;
+	gen.print = print;
+	gen.print_user = user;
+
+	r = ppcg_transform(ctx, input, out, options, &generate_wrap, &gen);
+
+	isl_union_map_free(gen.sizes);
+
+	return r;
 }
 
 struct gpu_prog *gpu_prog_alloc(isl_ctx *ctx, struct ppcg_scop *scop)

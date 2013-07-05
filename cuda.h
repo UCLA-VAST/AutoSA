@@ -4,7 +4,7 @@
 #include "ppcg_options.h"
 #include "ppcg.h"
 
-int generate_cuda(isl_ctx *ctx, struct ppcg_scop *scop,
-	struct ppcg_options *options, const char *input);
+int generate_cuda(isl_ctx *ctx, struct ppcg_options *options,
+	const char *input);
 
 #endif

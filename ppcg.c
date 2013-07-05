@@ -411,6 +411,52 @@ static struct ppcg_scop *ppcg_scop_from_pet_scop(struct pet_scop *scop,
 	return ps;
 }
 
+/* Internal data structure for ppcg_transform.
+ */
+struct ppcg_transform_data {
+	struct ppcg_options *options;
+	__isl_give isl_printer *(*transform)(__isl_take isl_printer *p,
+		struct ppcg_scop *scop, void *user);
+	void *user;
+};
+
+/* Callback for pet_transform_C_source that transforms
+ * the given pet_scop to a ppcg_scop before calling the
+ * ppcg_transform callback.
+ */
+static __isl_give isl_printer *transform(__isl_take isl_printer *p,
+	struct pet_scop *scop, void *user)
+{
+	struct ppcg_transform_data *data = user;
+	struct ppcg_scop *ps;
+
+	scop = pet_scop_align_params(scop);
+	ps = ppcg_scop_from_pet_scop(scop, data->options);
+
+	p = data->transform(p, ps, data->user);
+
+	ppcg_scop_free(ps);
+	pet_scop_free(scop);
+
+	return p;
+}
+
+/* Transform the C source file "input" by rewriting each scop
+ * through a call to "transform".
+ * The transformed C code is written to "out".
+ *
+ * This is a wrapper around pet_transform_C_source that transforms
+ * the pet_scop to a ppcg_scop before calling "fn".
+ */
+int ppcg_transform(isl_ctx *ctx, const char *input, FILE *out,
+	struct ppcg_options *options,
+	__isl_give isl_printer *(*fn)(__isl_take isl_printer *p,
+		struct ppcg_scop *scop, void *user), void *user)
+{
+	struct ppcg_transform_data data = { options, fn, user };
+	return pet_transform_C_source(ctx, input, out, &transform, &data);
+}
+
 /* Check consistency of options.
  *
  * Return -1 on error.
@@ -432,37 +478,6 @@ static int check_options(isl_ctx *ctx)
 	return 0;
 }
 
-/* Extract a model from the input file, transform the model and
- * write out the result to the output file(s).
- */
-static int transform(isl_ctx *ctx)
-{
-	int r;
-	struct pet_scop *scop;
-	struct ppcg_scop *ps;
-	struct options *options;
-
-	options = isl_ctx_peek_options(ctx, &options_args);
-	if (!options)
-		isl_die(ctx, isl_error_internal,
-			"unable to find options", return EXIT_FAILURE);
-
-	scop = pet_scop_extract_from_C_source(ctx, options->input, NULL);
-	scop = pet_scop_align_params(scop);
-	ps = ppcg_scop_from_pet_scop(scop, options->ppcg);
-
-	if (options->ppcg->target == PPCG_TARGET_CUDA)
-		r = generate_cuda(ctx, ps, options->ppcg, options->input);
-	else
-		r = generate_cpu(ctx, ps, options->ppcg, options->input,
-				options->output);
-
-	ppcg_scop_free(ps);
-	pet_scop_free(scop);
-
-	return r;
-}
-
 int main(int argc, char **argv)
 {
 	int r;
@@ -479,8 +494,11 @@ int main(int argc, char **argv)
 
 	if (check_options(ctx) < 0)
 		r = EXIT_FAILURE;
+	else if (options->ppcg->target == PPCG_TARGET_CUDA)
+		r = generate_cuda(ctx, options->ppcg, options->input);
 	else
-		r = transform(ctx);
+		r = generate_cpu(ctx, options->ppcg, options->input,
+				options->output);
 
 	isl_ctx_free(ctx);
 

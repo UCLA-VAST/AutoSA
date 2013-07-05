@@ -629,7 +629,8 @@ static __isl_give isl_printer *print_cuda(__isl_take isl_printer *p,
 	return p;
 }
 
-/* Generate CUDA code for the given "scop", with the given "options".
+/* Transform the code in the file called "input" by replacing
+ * all scops by corresponding CUDA code.
  * The names of the output files are derived from "input".
  *
  * We let generate_gpu do all the hard work and then let it call
@@ -638,19 +639,15 @@ static __isl_give isl_printer *print_cuda(__isl_take isl_printer *p,
  * To prepare for this printing, we first open the output files
  * and we close them after generate_gpu has finished.
  */
-int generate_cuda(isl_ctx *ctx, struct ppcg_scop *scop,
-	struct ppcg_options *options, const char *input)
+int generate_cuda(isl_ctx *ctx, struct ppcg_options *options,
+	const char *input)
 {
 	struct cuda_info cuda;
 	int r;
 
-	if (!scop)
-		return -1;
-
 	cuda_open_files(&cuda, input);
 
-	r = generate_gpu(ctx, input, cuda.host_c, scop, options,
-			&print_cuda, &cuda);
+	r = generate_gpu(ctx, input, cuda.host_c, options, &print_cuda, &cuda);
 
 	cuda_close_files(&cuda);
 

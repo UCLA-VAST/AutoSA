@@ -22,7 +22,6 @@
 #include "ppcg_options.h"
 #include "cpu.h"
 #include "print.h"
-#include "rewrite.h"
 
 /* Representation of a statement inside a generated AST.
  *
@@ -500,28 +499,32 @@ __isl_give isl_printer *print_cpu(__isl_take isl_printer *p,
 	return p;
 }
 
-int generate_cpu(isl_ctx *ctx, struct ppcg_scop *ps,
-	struct ppcg_options *options, const char *input, const char *output)
+/* Wrapper around print_cpu for use as a ppcg_transform callback.
+ */
+static __isl_give isl_printer *print_cpu_wrap(__isl_take isl_printer *p,
+	struct ppcg_scop *scop, void *user)
 {
-	FILE *input_file;
+	struct ppcg_options *options = user;
+
+	return print_cpu(p, scop, options);
+}
+
+/* Transform the code in the file called "input" by replacing
+ * all scops by corresponding CPU code and write the results to a file
+ * called "output".
+ */
+int generate_cpu(isl_ctx *ctx, struct ppcg_options *options,
+	const char *input, const char *output)
+{
 	FILE *output_file;
-	isl_printer *p;
+	int r;
 
-	if (!ps)
-		return -1;
-
-	input_file = fopen(input, "r");
 	output_file = get_output_file(input, output);
 
-	copy(input_file, output_file, 0, ps->start);
-	p = isl_printer_to_file(ctx, output_file);
-	p = isl_printer_set_output_format(p, ISL_FORMAT_C);
-	p = print_cpu(p, ps, options);
-	isl_printer_free(p);
-	copy(input_file, output_file, ps->end, -1);
+	r = ppcg_transform(ctx, input, output_file, options,
+					&print_cpu_wrap, options);
 
 	fclose(output_file);
-	fclose(input_file);
 
-	return 0;
+	return r;
 }

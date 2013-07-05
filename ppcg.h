@@ -6,6 +6,8 @@
 #include <isl/union_map.h>
 #include <pet.h>
 
+#include "ppcg_options.h"
+
 int ppcg_extract_base_name(char *name, const char *input);
 
 /* Representation of the scop for use inside PPCG.
@@ -46,5 +48,10 @@ struct ppcg_scop {
 	int n_stmt;
 	struct pet_stmt **stmts;
 };
+
+int ppcg_transform(isl_ctx *ctx, const char *input, FILE *out,
+	struct ppcg_options *options,
+	__isl_give isl_printer *(*fn)(__isl_take isl_printer *p,
+		struct ppcg_scop *scop, void *user), void *user);
 
 #endif

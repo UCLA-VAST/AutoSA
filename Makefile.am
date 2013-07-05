@@ -36,8 +36,6 @@ ppcg_SOURCES = \
 	gpu.h \
 	gpu_print.c \
 	gpu_print.h \
-	rewrite.c \
-	rewrite.h \
 	schedule.c \
 	schedule.h \
 	ppcg_options.c \
