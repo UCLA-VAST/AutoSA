@@ -6,6 +6,8 @@
 #include <isl/union_map.h>
 #include <pet.h>
 
+int ppcg_extract_base_name(char *name, const char *input);
+
 /* Representation of the scop for use inside PPCG.
  *
  * "start" and "end" are file offsets of the corresponding program text.

@@ -64,21 +64,14 @@ static void ppcg_stmt_free(void *user)
 static FILE *get_output_file(const char *input, const char *output)
 {
 	char name[PATH_MAX];
-	const char *base;
 	const char *ext;
 	const char ppcg_marker[] = ".ppcg";
 	int len;
 
-	base = strrchr(input, '/');
-	if (base)
-		base++;
-	else
-		base = input;
-	ext = strrchr(base, '.');
-	len = ext ? ext - base : strlen(base);
+	len = ppcg_extract_base_name(name, input);
 
-	memcpy(name, base, len);
 	strcpy(name + len, ppcg_marker);
+	ext = strrchr(input, '.');
 	strcpy(name + len + sizeof(ppcg_marker) - 1, ext ? ext : ".c");
 
 	if (!output)

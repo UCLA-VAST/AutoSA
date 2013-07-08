@@ -11,6 +11,7 @@
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <isl/ctx.h>
 #include <isl/flow.h>
 #include <isl/options.h>
@@ -48,6 +49,31 @@ ISL_ARG_VERSION(print_version)
 ISL_ARGS_END
 
 ISL_ARG_DEF(options, struct options, options_args)
+
+/* Copy the base name of "input" to "name" and return its length.
+ * "name" is not NULL terminated.
+ *
+ * In particular, remove all leading directory components and
+ * the final extension, if any.
+ */
+int ppcg_extract_base_name(char *name, const char *input)
+{
+	const char *base;
+	const char *ext;
+	int len;
+
+	base = strrchr(input, '/');
+	if (base)
+		base++;
+	else
+		base = input;
+	ext = strrchr(base, '.');
+	len = ext ? ext - base : strlen(base);
+
+	memcpy(name, base, len);
+
+	return len;
+}
 
 /* Is "stmt" a kill statement?
  */

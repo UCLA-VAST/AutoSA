@@ -13,6 +13,7 @@
 #include <string.h>
 
 #include "cuda_common.h"
+#include "ppcg.h"
 
 /* Open the host .cu file and the kernel .hu and .cu files for writing.
  * Add the necessary includes.
@@ -20,19 +21,10 @@
 void cuda_open_files(struct cuda_info *info, const char *input)
 {
     char name[PATH_MAX];
-    const char *base;
-    const char *ext;
     int len;
 
-    base = strrchr(input, '/');
-    if (base)
-        base++;
-    else
-        base = input;
-    ext = strrchr(base, '.');
-    len = ext ? ext - base : strlen(base);
+    len = ppcg_extract_base_name(name, input);
 
-    memcpy(name, base, len);
     strcpy(name + len, "_host.cu");
     info->host_c = fopen(name, "w");
 
