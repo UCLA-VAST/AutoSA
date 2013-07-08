@@ -79,7 +79,7 @@ static FILE *get_output_file(const char *input, const char *output)
 
 	memcpy(name, base, len);
 	strcpy(name + len, ppcg_marker);
-	strcpy(name + len + sizeof(ppcg_marker) - 1, ext);
+	strcpy(name + len + sizeof(ppcg_marker) - 1, ext ? ext : ".c");
 
 	if (!output)
 		output = name;
