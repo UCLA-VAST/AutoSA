@@ -21,22 +21,20 @@
 #include "ppcg.h"
 #include "ppcg_options.h"
 #include "cpu.h"
-#include "pet_printer.h"
 #include "print.h"
 #include "rewrite.h"
 
 /* Representation of a statement inside a generated AST.
  *
  * "stmt" refers to the original statement.
- * "n_access" is the number of accesses in the statement.
- * "access" is the list of accesses transformed to refer to the iterators
- * in the generated AST.
+ * "ref2expr" maps the reference identifier of each access in
+ * the statement to an AST expression that should be printed
+ * at the place of the access.
  */
 struct ppcg_stmt {
 	struct pet_stmt *stmt;
 
-	int n_access;
-	isl_ast_expr_list **access;
+	isl_id_to_ast_expr *ref2expr;
 };
 
 static void ppcg_stmt_free(void *user)
@@ -47,10 +45,8 @@ static void ppcg_stmt_free(void *user)
 	if (!stmt)
 		return;
 
-	for (i = 0; i < stmt->n_access; ++i)
-		isl_ast_expr_list_free(stmt->access[i]);
+	isl_id_to_ast_expr_free(stmt->ref2expr);
 
-	free(stmt->access);
 	free(stmt);
 }
 
@@ -238,51 +234,6 @@ static __isl_give isl_ast_node *ast_build_after_for(__isl_take isl_ast_node *nod
 	return node;
 }
 
-/* Print a memory access 'access' to the printer 'p'.
- *
- * "expr" refers to the original access.
- * "access" is the list of index expressions transformed to refer
- * to the iterators of the generated AST.
- *
- * In case the original access is unnamed (and presumably single-dimensional),
- * we assume this is not a memory access, but just an expression.
- */
-static __isl_give isl_printer *print_access(__isl_take isl_printer *p,
-	struct pet_expr *expr, __isl_keep isl_ast_expr_list *access)
-{
-	int i;
-	const char *name;
-	unsigned n_index;
-
-	n_index = isl_ast_expr_list_n_ast_expr(access);
-	name = isl_map_get_tuple_name(expr->acc.access, isl_dim_out);
-
-	if (name == NULL) {
-		isl_ast_expr *index;
-		index = isl_ast_expr_list_get_ast_expr(access, 0);
-		p = isl_printer_print_str(p, "(");
-		p = isl_printer_print_ast_expr(p, index);
-		p = isl_printer_print_str(p, ")");
-		isl_ast_expr_free(index);
-		return p;
-	}
-
-	p = isl_printer_print_str(p, name);
-
-	for (i = 0; i < n_index; ++i) {
-		isl_ast_expr *index;
-
-		index = isl_ast_expr_list_get_ast_expr(access, i);
-
-		p = isl_printer_print_str(p, "[");
-		p = isl_printer_print_ast_expr(p, index);
-		p = isl_printer_print_str(p, "]");
-		isl_ast_expr_free(index);
-	}
-
-	return p;
-}
-
 /* Find the element in scop->stmts that has the given "id".
  */
 static struct pet_stmt *find_stmt(struct ppcg_scop *scop, __isl_keep isl_id *id)
@@ -304,22 +255,6 @@ static struct pet_stmt *find_stmt(struct ppcg_scop *scop, __isl_keep isl_id *id)
 		"statement not found", return NULL);
 }
 
-/* To print the transformed accesses we walk the list of transformed accesses
- * simultaneously with the pet printer. This means that whenever
- * the pet printer prints a pet access expression we have
- * the corresponding transformed access available for printing.
- */
-static __isl_give isl_printer *print_access_expr(__isl_take isl_printer *p,
-	struct pet_expr *expr, void *user)
-{
-	isl_ast_expr_list ***access = user;
-
-	p = print_access(p, expr, **access);
-	(*access)++;
-
-	return p;
-}
-
 /* Print a user statement in the generated AST.
  * The ppcg_stmt has been attached to the node in at_each_domain.
  */
@@ -328,19 +263,13 @@ static __isl_give isl_printer *print_user(__isl_take isl_printer *p,
 	__isl_keep isl_ast_node *node, void *user)
 {
 	struct ppcg_stmt *stmt;
-	isl_ast_expr_list **access;
 	isl_id *id;
 
 	id = isl_ast_node_get_annotation(node);
 	stmt = isl_id_get_user(id);
 	isl_id_free(id);
 
-	access = stmt->access;
-
-	p = isl_printer_start_line(p);
-	p = print_pet_expr(p, stmt->stmt->body, &print_access_expr, &access);
-	p = isl_printer_print_str(p, ";");
-	p = isl_printer_end_line(p);
+	p = pet_stmt_print_body(stmt->stmt, p, stmt->ref2expr);
 
 	isl_ast_print_options_free(print_options);
 
@@ -410,82 +339,27 @@ static __isl_give isl_printer *print_for(__isl_take isl_printer *p,
 	return p;
 }
 
-/* Call "fn" on each access expression in "expr".
- */
-static int foreach_access_expr(struct pet_expr *expr,
-	int (*fn)(struct pet_expr *expr, void *user), void *user)
-{
-	int i;
-
-	if (!expr)
-		return -1;
-
-	if (expr->type == pet_expr_access)
-		return fn(expr, user);
-
-	for (i = 0; i < expr->n_arg; ++i)
-		if (foreach_access_expr(expr->args[i], fn, user) < 0)
-			return -1;
-
-	return 0;
-}
-
-static int inc_n_access(struct pet_expr *expr, void *user)
-{
-	struct ppcg_stmt *stmt = user;
-	stmt->n_access++;
-	return 0;
-}
-
-/* Internal data for add_access.
+/* Index transformation callback for pet_stmt_build_ast_exprs.
  *
- * "stmt" is the statement to which an access needs to be added.
- * "build" is the current AST build.
- * "map" maps the AST loop iterators to the iteration domain of the statement.
+ * "index" expresses the array indices in terms of statement iterators
+ * "iterator_map" expresses the statement iterators in terms of
+ * AST loop iterators.
+ *
+ * The result expresses the array indices in terms of
+ * AST loop iterators.
  */
-struct ppcg_add_access_data {
-	struct ppcg_stmt *stmt;
-	isl_ast_build *build;
-	isl_map *map;
-};
-
-/* Given an access expression, add it to data->stmt after
- * transforming it to refer to the AST loop iterators.
- */
-static int add_access(struct pet_expr *expr, void *user)
+static __isl_give isl_multi_pw_aff *pullback_index(
+	__isl_take isl_multi_pw_aff *index, __isl_keep isl_id *id, void *user)
 {
-	int i, n;
-	isl_ctx *ctx;
-	isl_map *access;
-	isl_pw_multi_aff *pma;
-	struct ppcg_add_access_data *data = user;
-	isl_ast_expr_list *index;
+	isl_pw_multi_aff *iterator_map = user;
 
-	ctx = isl_map_get_ctx(expr->acc.access);
-	n = isl_map_dim(expr->acc.access, isl_dim_out);
-	access = isl_map_copy(expr->acc.access);
-	access = isl_map_apply_range(isl_map_copy(data->map), access);
-	pma = isl_pw_multi_aff_from_map(access);
-	pma = isl_pw_multi_aff_coalesce(pma);
-
-	index = isl_ast_expr_list_alloc(ctx, n);
-	for (i = 0; i < n; ++i) {
-		isl_pw_aff *pa;
-		isl_ast_expr *expr;
-
-		pa = isl_pw_multi_aff_get_pw_aff(pma, i);
-		expr = isl_ast_build_expr_from_pw_aff(data->build, pa);
-		index = isl_ast_expr_list_add(index, expr);
-	}
-	isl_pw_multi_aff_free(pma);
-
-	data->stmt->access[data->stmt->n_access] = index;
-	data->stmt->n_access++;
-	return 0;
+	iterator_map = isl_pw_multi_aff_copy(iterator_map);
+	return isl_multi_pw_aff_pullback_pw_multi_aff(index, iterator_map);
 }
 
 /* Transform the accesses in the statement associated to the domain
- * called by "node" to refer to the AST loop iterators,
+ * called by "node" to refer to the AST loop iterators, construct
+ * corresponding AST expressions using "build",
  * collect them in a ppcg_stmt and annotate the node with the ppcg_stmt.
  */
 static __isl_give isl_ast_node *at_each_domain(__isl_take isl_ast_node *node,
@@ -496,8 +370,8 @@ static __isl_give isl_ast_node *at_each_domain(__isl_take isl_ast_node *node,
 	isl_ctx *ctx;
 	isl_id *id;
 	isl_map *map;
+	isl_pw_multi_aff *iterator_map;
 	struct ppcg_stmt *stmt;
-	struct ppcg_add_access_data data;
 
 	ctx = isl_ast_node_get_ctx(node);
 	stmt = isl_calloc_type(ctx, struct ppcg_stmt);
@@ -514,26 +388,12 @@ static __isl_give isl_ast_node *at_each_domain(__isl_take isl_ast_node *node,
 	if (!stmt->stmt)
 		goto error;
 
-	stmt->n_access = 0;
-	if (foreach_access_expr(stmt->stmt->body, &inc_n_access, stmt) < 0)
-		goto error;
-
-	stmt->access = isl_calloc_array(ctx, isl_ast_expr_list *,
-					stmt->n_access);
-	if (!stmt->access)
-		goto error;
-
 	map = isl_map_from_union_map(isl_ast_build_get_schedule(build));
 	map = isl_map_reverse(map);
-
-	stmt->n_access = 0;
-	data.stmt = stmt;
-	data.build = build;
-	data.map = map;
-	if (foreach_access_expr(stmt->stmt->body, &add_access, &data) < 0)
-		node = isl_ast_node_free(node);
-
-	isl_map_free(map);
+	iterator_map = isl_pw_multi_aff_from_map(map);
+	stmt->ref2expr = pet_stmt_build_ast_exprs(stmt->stmt, build,
+				    &pullback_index, iterator_map, NULL, NULL);
+	isl_pw_multi_aff_free(iterator_map);
 
 	id = isl_id_alloc(isl_ast_node_get_ctx(node), NULL, stmt);
 	id = isl_id_set_free_user(id, &ppcg_stmt_free);
