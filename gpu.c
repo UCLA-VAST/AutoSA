@@ -27,6 +27,8 @@
 #include "gpu.h"
 #include "schedule.h"
 #include "ppcg_options.h"
+#include "print.h"
+#include "rewrite.h"
 
 /* The fields stride, shift and shift_map only contain valid information
  * if shift != NULL.
@@ -4912,7 +4914,14 @@ static struct gpu_stmt *extract_stmts(isl_ctx *ctx, struct ppcg_scop *scop,
 }
 
 /* Replace the scop in the "input" file by equivalent code
- * that uses the GPU.  "scop" is assumed to correspond to this scop.
+ * that uses the GPU and print the result to "out".
+ * "scop" is assumed to correspond to this scop.
+ * The code before the scop is first copied to "out",
+ * then the transformed scop is printed and finally
+ * the code after the scop is copied to "out".
+ * After generating an AST for the transformed scop as explained below,
+ * we call "print" to print the AST in the desired output format
+ * to a printer hooked up to "out".
  *
  * We first compute a schedule that respects the dependences
  * of the original program and select the outermost band
@@ -4953,15 +4962,30 @@ static struct gpu_stmt *extract_stmts(isl_ctx *ctx, struct ppcg_scop *scop,
  * to h%d parameters and the T1P loops to the block dimensions.
  * Finally, we generate code for the remaining loops in a similar fashion.
  */
-__isl_give isl_ast_node *generate_gpu(isl_ctx *ctx, struct gpu_prog *prog,
-	struct ppcg_options *options)
+int generate_gpu(isl_ctx *ctx, const char *input, FILE *out,
+	struct ppcg_scop *scop, struct ppcg_options *options,
+	__isl_give isl_printer *(*print)(__isl_take isl_printer *p,
+		struct gpu_prog *prog, __isl_keep isl_ast_node *tree,
+		void *user), void *user)
 {
-	isl_union_map *sched;
 	struct gpu_gen gen;
+	struct gpu_prog *prog;
 	isl_ast_node *tree;
+	isl_printer *p;
+	FILE *in;
 
+	if (!scop)
+		return -1;
+
+	in = fopen(input, "r");
+	copy(in, out, 0, scop->start);
+
+	prog = gpu_prog_alloc(ctx, scop);
 	if (!prog)
-		return NULL;
+		return -1;
+
+	p = isl_printer_to_file(ctx, out);
+	p = isl_printer_set_output_format(p, ISL_FORMAT_C);
 
 	gen.ctx = ctx;
 	gen.prog = prog;
@@ -4973,10 +4997,20 @@ __isl_give isl_ast_node *generate_gpu(isl_ctx *ctx, struct gpu_prog *prog,
 
 	gen.kernel_id = 0;
 	tree = generate_host_code(&gen);
+	p = ppcg_print_exposed_declarations(p, prog->scop);
+	p = print(p, prog, tree, user);
+	isl_ast_node_free(tree);
 
 	clear_gpu_gen(&gen);
 
-	return tree;
+	isl_printer_free(p);
+
+	gpu_prog_free(prog);
+
+	copy(in, out, scop->end, -1);
+	fclose(in);
+
+	return p ? 0 : -1;
 }
 
 struct gpu_prog *gpu_prog_alloc(isl_ctx *ctx, struct ppcg_scop *scop)

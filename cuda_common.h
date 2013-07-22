@@ -3,14 +3,7 @@
 
 #include <stdio.h>
 
-/* start and end are file offsets of the program text that corresponds
- * to the scop being transformed.
- */
 struct cuda_info {
-	unsigned start;
-	unsigned end;
-
-	FILE *input;
 	FILE *host_c;
 	FILE *kernel_c;
 	FILE *kernel_h;

@@ -13,12 +13,9 @@
 #include <string.h>
 
 #include "cuda_common.h"
-#include "rewrite.h"
 
-/* Open the "input" file for reading and open the host .cu file
- * and the kernel .hu and .cu files for writing.
- * Add the necessary includes and copy all code from the input
- * file up to the openscop pragma to the host .cu file.
+/* Open the host .cu file and the kernel .hu and .cu files for writing.
+ * Add the necessary includes.
  */
 void cuda_open_files(struct cuda_info *info, const char *input)
 {
@@ -48,18 +45,12 @@ void cuda_open_files(struct cuda_info *info, const char *input)
     fprintf(info->host_c, "#include \"%s\"\n", name);
     fprintf(info->kernel_c, "#include \"%s\"\n", name);
     fprintf(info->kernel_h, "#include \"cuda.h\"\n\n");
-
-    info->input = fopen(input, "r");
-    copy(info->input, info->host_c, 0, info->start);
 }
 
-/* Copy all code starting at the endscop pragma from the input
- * file to the host .cu file and close all input and output files.
+/* Close all output files.
  */
 void cuda_close_files(struct cuda_info *info)
 {
-    copy(info->input, info->host_c, info->end, -1);
-    fclose(info->input);
     fclose(info->kernel_c);
     fclose(info->kernel_h);
     fclose(info->host_c);

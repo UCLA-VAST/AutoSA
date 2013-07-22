@@ -602,30 +602,15 @@ static __isl_give isl_printer *free_device_arrays(__isl_take isl_printer *p,
 	return p;
 }
 
-int generate_cuda(isl_ctx *ctx, struct ppcg_scop *scop,
-	struct ppcg_options *options, const char *input)
+/* Given a gpu_prog "prog" and the corresponding transformed AST
+ * "tree", print the entire CUDA code to "p".
+ */
+static __isl_give isl_printer *print_cuda(__isl_take isl_printer *p,
+	struct gpu_prog *prog, __isl_keep isl_ast_node *tree,
+	void *user)
 {
-	struct cuda_info cuda;
-	struct gpu_prog *prog;
-	isl_ast_node *tree;
-	isl_printer *p;
+	struct cuda_info *cuda = user;
 
-	if (!scop)
-		return -1;
-
-	prog = gpu_prog_alloc(ctx, scop);
-	if (!prog)
-		return -1;
-
-	tree = generate_gpu(ctx, prog, options);
-
-	cuda.start = scop->start;
-	cuda.end = scop->end;
-	cuda_open_files(&cuda, input);
-
-	p = isl_printer_to_file(ctx, cuda.host_c);
-	p = isl_printer_set_output_format(p, ISL_FORMAT_C);
-	p = ppcg_print_exposed_declarations(p, scop);
 	p = ppcg_start_block(p);
 
 	p = print_cuda_macros(p);
@@ -634,18 +619,40 @@ int generate_cuda(isl_ctx *ctx, struct ppcg_scop *scop,
 	p = allocate_device_arrays(p, prog);
 	p = copy_arrays_to_device(p, prog);
 
-	p = print_host_code(p, prog, tree, &cuda);
-	isl_ast_node_free(tree);
+	p = print_host_code(p, prog, tree, cuda);
 
 	p = copy_arrays_from_device(p, prog);
 	p = free_device_arrays(p, prog);
 
 	p = ppcg_end_block(p);
-	isl_printer_free(p);
+
+	return p;
+}
+
+/* Generate CUDA code for the given "scop", with the given "options".
+ * The names of the output files are derived from "input".
+ *
+ * We let generate_gpu do all the hard work and then let it call
+ * us back for printing the AST in print_cuda.
+ *
+ * To prepare for this printing, we first open the output files
+ * and we close them after generate_gpu has finished.
+ */
+int generate_cuda(isl_ctx *ctx, struct ppcg_scop *scop,
+	struct ppcg_options *options, const char *input)
+{
+	struct cuda_info cuda;
+	int r;
+
+	if (!scop)
+		return -1;
+
+	cuda_open_files(&cuda, input);
+
+	r = generate_gpu(ctx, input, cuda.host_c, scop, options,
+			&print_cuda, &cuda);
 
 	cuda_close_files(&cuda);
 
-	gpu_prog_free(prog);
-
-	return 0;
+	return r;
 }
