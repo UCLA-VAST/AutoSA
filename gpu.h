@@ -2,6 +2,7 @@
 #define _GPU_H
 
 #include <isl/ast.h>
+#include <isl/id_to_ast_expr.h>
 
 #include "ppcg.h"
 #include "ppcg_options.h"
@@ -80,25 +81,6 @@ enum ppcg_kernel_stmt_type {
 	ppcg_kernel_sync
 };
 
-/* Instance specific information about an access inside a kernel statement.
- *
- * type indicates whether it is a global, shared or private access
- * array is the original array information and may be NULL in case
- *	of an affine expression
- * local_array is a pointer to the appropriate element in the "array"
- *	array of the ppcg_kernel to which this access belongs.  It is
- *	NULL whenever array is NULL.
- * local_name is the name of the array or its local copy
- * index is the sequence of local index expressions
- */
-struct ppcg_kernel_access {
-	enum ppcg_kernel_access_type type;
-	struct gpu_array_info *array;
-	struct gpu_local_array_info *local_array;
-	char *local_name;
-	isl_ast_expr_list *index;
-};
-
 /* Representation of special statements, in particular copy statements
  * and __syncthreads statements, inside a kernel.
  *
@@ -139,9 +121,7 @@ struct ppcg_kernel_stmt {
 		} c;
 		struct {
 			struct gpu_stmt *stmt;
-
-			int n_access;
-			struct ppcg_kernel_access *access;
+			isl_id_to_ast_expr *ref2expr;
 		} d;
 	} u;
 };

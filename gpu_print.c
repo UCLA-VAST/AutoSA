@@ -10,7 +10,6 @@
 #include <isl/aff.h>
 
 #include "gpu_print.h"
-#include "pet_printer.h"
 #include "schedule.h"
 
 static int print_macro(enum isl_ast_op_type type, void *user)
@@ -159,101 +158,8 @@ __isl_give isl_printer *ppcg_kernel_print_copy(__isl_take isl_printer *p,
 	return p;
 }
 
-/* Print an access based on the information in "access".
- * If this an access to global memory, then the index expression
- * is linearized.
- *
- * If access->array is NULL, then we are
- * accessing an iterator in the original program.
- */
-static __isl_give isl_printer *print_access(__isl_take isl_printer *p,
-	struct ppcg_kernel_access *access)
-{
-	int i;
-	unsigned n_index;
-	struct gpu_array_info *array;
-	isl_pw_aff_list *bound;
-
-	array = access->array;
-	bound = array ? access->local_array->bound : NULL;
-	if (!array)
-		p = isl_printer_print_str(p, "(");
-	else {
-		if (access->type == ppcg_access_global &&
-		    gpu_array_is_scalar(array) && !array->read_only)
-			p = isl_printer_print_str(p, "*");
-		p = isl_printer_print_str(p, access->local_name);
-		if (gpu_array_is_scalar(array))
-			return p;
-		p = isl_printer_print_str(p, "[");
-	}
-
-	n_index = isl_ast_expr_list_n_ast_expr(access->index);
-	if (access->type == ppcg_access_global)
-		for (i = 0; i + 1 < n_index; ++i)
-			p = isl_printer_print_str(p, "(");
-
-	for (i = 0; i < n_index; ++i) {
-		isl_ast_expr *index;
-
-		index = isl_ast_expr_list_get_ast_expr(access->index, i);
-		if (array && i) {
-			if (access->type == ppcg_access_global) {
-				isl_pw_aff *bound_i;
-				bound_i = isl_pw_aff_list_get_pw_aff(bound, i);
-				p = isl_printer_print_str(p, ") * (");
-				p = isl_printer_print_pw_aff(p, bound_i);
-				p = isl_printer_print_str(p, ") + ");
-				isl_pw_aff_free(bound_i);
-			} else
-				p = isl_printer_print_str(p, "][");
-		}
-		p = isl_printer_print_ast_expr(p, index);
-		isl_ast_expr_free(index);
-	}
-	if (!array)
-		p = isl_printer_print_str(p, ")");
-	else
-		p = isl_printer_print_str(p, "]");
-
-	return p;
-}
-
-struct gpu_access_print_info {
-	int i;
-	struct ppcg_kernel_stmt *stmt;
-};
-
-/* To print the gpu accesses we walk the list of gpu accesses simultaneously
- * with the pet printer. This means that whenever the pet printer prints a
- * pet access expression we have the corresponding gpu access available and can
- * print the modified access.
- */
-static __isl_give isl_printer *print_gpu_access(__isl_take isl_printer *p,
-	struct pet_expr *expr, void *usr)
-{
-	struct gpu_access_print_info *info =
-		(struct gpu_access_print_info *) usr;
-
-	p = print_access(p, &info->stmt->u.d.access[info->i]);
-	info->i++;
-
-	return p;
-}
-
 __isl_give isl_printer *ppcg_kernel_print_domain(__isl_take isl_printer *p,
 	struct ppcg_kernel_stmt *stmt)
 {
-	struct gpu_access_print_info info;
-
-	info.i = 0;
-	info.stmt = stmt;
-
-	p = isl_printer_start_line(p);
-	p = print_pet_expr(p, stmt->u.d.stmt->stmt->body,
-				&print_gpu_access, &info);
-	p = isl_printer_print_str(p, ";");
-	p = isl_printer_end_line(p);
-
-	return p;
+	return pet_stmt_print_body(stmt->u.d.stmt->stmt, p, stmt->u.d.ref2expr);
 }

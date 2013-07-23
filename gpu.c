@@ -1279,51 +1279,6 @@ static __isl_give isl_map *tile_access_schedule(struct gpu_gen *gen,
 	return sched;
 }
 
-/* Given an index expression "pa" into a tile of an array, adjust the expression
- * to a shift of the tile to the origin
- * (based on the lower bounds in "bound".
- * If the index is strided, then we first add
- * bound->shift and divide by bound->stride.
- * In the end, we compute the gist with respect to "domain".
- *
- * All of the input expression "pa", the set "domain" and
- * the output are expressed in terms of the AST schedule domain.
- * The expressions in "bound" are expressed
- * in terms of the first shared_len dimensions of the schedule computed by PPCG.
- * The mapping "sched2shared" maps the former domain to the latter domain.
- */
-static __isl_give isl_pw_aff *shift_index(__isl_take isl_pw_aff *pa,
-	struct gpu_array_info *array,
-	struct gpu_array_bound *bound, __isl_take isl_set *domain,
-	__isl_take isl_map *sched2shared)
-{
-	isl_map *map;
-	isl_pw_aff *tmp;
-	isl_pw_multi_aff *pma;
-
-	if (bound->shift) {
-		map = isl_map_from_aff(isl_aff_copy(bound->shift));
-		map = isl_map_apply_range(isl_map_copy(sched2shared), map);
-		pma = isl_pw_multi_aff_from_map(map);
-		tmp = isl_pw_multi_aff_get_pw_aff(pma, 0);
-		isl_pw_multi_aff_free(pma);
-		pa = isl_pw_aff_add(pa, tmp);
-		pa = isl_pw_aff_scale_down_val(pa, isl_val_copy(bound->stride));
-	}
-
-
-	map = isl_map_from_aff(isl_aff_copy(bound->lb));
-	map = isl_map_apply_range(sched2shared, map);
-	pma = isl_pw_multi_aff_from_map(map);
-	tmp = isl_pw_multi_aff_get_pw_aff(pma, 0);
-	isl_pw_multi_aff_free(pma);
-	pa = isl_pw_aff_sub(pa, tmp);
-	pa = isl_pw_aff_coalesce(pa);
-	pa = isl_pw_aff_gist(pa, domain);
-
-	return pa;
-}
-
 /* Return the union of all read (read = 1) and/or write (write = 1)
  * access relations in the group.
  */
@@ -3236,11 +3191,7 @@ void ppcg_kernel_stmt_free(void *user)
 		isl_ast_expr_free(stmt->u.c.local_index);
 		break;
 	case ppcg_kernel_domain:
-		for (i = 0; i < stmt->u.d.n_access; ++i) {
-			isl_ast_expr_list_free(stmt->u.d.access[i].index);
-			free(stmt->u.d.access[i].local_name);
-		}
-		free(stmt->u.d.access);
+		isl_id_to_ast_expr_free(stmt->u.d.ref2expr);
 		break;
 	case ppcg_kernel_sync:
 		break;
@@ -3321,120 +3272,212 @@ static __isl_give isl_union_map *extend_schedule(
 	return schedule;
 }
 
-/* This function is called for each access to an array in each instance
- * in the kernel of some statement in the original code.
- * Replace that access by an access to global, shared or private memory
- * and store the results in *kernel_access.
- *
- * Since the array in shared or private memory is just
- * a shifted copy of part of the original array, we simply need
- * to subtract the lower bound, which was computed in can_tile.
- * If any of the indices is strided, then we first add
- * shared_tile->bound[i].shift and divide by shared_tile->bound[i].stride.
- *
- * If the given array is accessed directly from global memory,
- * we don't need to perform any shifting and simply simplify
- * the expression in the context of the domain instead.
- *
- * If the array space (range of access) has no name, then we are
- * accessing an iterator in the original program.
- *
- * The input stmt_access->access relation maps the iteration domain
- * of the current statement to an array element.
- * The first step is to reformulate
- * this access relation in terms of the loop iterators of the generated
- * code through precomposition with gen->stmt_it.
- *
- * The expressions in "tile" are formulated in terms of the first
- * gen->shared_len dimensions of the computed schedule using the mapping
- * sched2shared which maps the loop iterators to these dimensions.
+/* Return the gpu_stmt_access in the list "accesses" that corresponds
+ * to "ref_id".
  */
-static void compute_index_expression(struct gpu_gen *gen,
-	struct ppcg_kernel_access *kernel_access,
-	struct gpu_stmt_access *stmt_access, __isl_keep isl_map *stmt_it,
-	__isl_keep isl_map *sched2shared, __isl_keep isl_ast_build *build)
+static struct gpu_stmt_access *find_access(struct gpu_stmt_access *accesses,
+	__isl_keep isl_id *ref_id)
 {
-	isl_map *access;
-	isl_pw_multi_aff *pma;
+	struct gpu_stmt_access *access;
+
+	for (access = accesses; access; access = access->next)
+		if (access->ref_id == ref_id)
+			return access;
+
+	return NULL;
+}
+
+/* Return the index of the array called "name" in the list of arrays.
+ */
+static int find_array_index(struct gpu_gen *gen, const char *name)
+{
 	int i;
-	unsigned n_index;
-	struct gpu_array_tile *tile = NULL;
 
-	if (isl_map_has_tuple_name(stmt_access->access, isl_dim_out)) {
-		int i;
-		const char *name;
-		struct gpu_array_ref_group *group;
-		isl_printer *p;
+	for (i = 0; i < gen->prog->n_array; ++i)
+		if (!strcmp(name, gen->prog->array[i].name))
+			return i;
 
-		name = isl_map_get_tuple_name(stmt_access->access, isl_dim_out);
+	return -1;
+}
 
-		for (i = 0; i < gen->prog->n_array; ++i) {
-			if (strcmp(name, gen->prog->array[i].name))
-				continue;
-			kernel_access->array = &gen->prog->array[i];
-			kernel_access->local_array = &gen->kernel->array[i];
-		}
-		assert(kernel_access->array);
-		group = kernel_access->array->groups[stmt_access->group];
-		p = isl_printer_to_str(gen->ctx);
-		p = print_array_name(p, group);
-		kernel_access->local_name = isl_printer_get_str(p);
-		isl_printer_free(p);
-		tile = group->private_tile;
-		kernel_access->type = ppcg_access_private;
-		if (!tile) {
-			tile = group->shared_tile;
-			kernel_access->type = ppcg_access_shared;
-		}
-	}
+/* Internal data structure for the index and AST expression transformation
+ * callbacks for pet_stmt_build_ast_exprs.
+ *
+ * "accesses" is the list of gpu_stmt_access in the statement.
+ * "iterator_map" expresses the statement iterators in terms of
+ * the AST loop iterators.
+ * "sched2shared" expresses the first shared_len dimensions of
+ * the computed schedule in terms of the AST loop iterators.
+ *
+ * The following fields are set in transform_index and used in transform_expr.
+ * "array" is the array that is being accessed.
+ * "global" is set if the global array is accessed (rather than
+ * shared/private memory).
+ * "bound" refers to the bounds on the array specialized to the current kernel.
+ */
+struct ppcg_transform_data {
+	struct gpu_gen *gen;
+	struct gpu_stmt_access *accesses;
+	isl_pw_multi_aff *iterator_map;
+	isl_pw_multi_aff *sched2shared;
+
+	struct gpu_array_info *array;
+	int global;
+	isl_pw_aff_list *bound;
+};
+
+/* Index transformation callback for pet_stmt_build_ast_exprs.
+ *
+ * "index" expresses the array indices in terms of statement iterators
+ *
+ * We first reformulate "index" in terms of the AST loop iterators.
+ * Then we check if we are accessing the global array or
+ * a shared/private copy.  In the former case, we simply return
+ * the updated index.  If "index" is an affine expression rather
+ * than an array access, then we also return the updated index here.
+ *
+ * Otherwise, we apply the tiling to the index.
+ * This tiling is of the form
+ *
+ *	[D -> A] -> T
+ *
+ * The index is of the form
+ *
+ *	L -> A
+ *
+ * We update the tiling to refer to the AST loop iteratos
+ *
+ *	[L -> A] -> T
+ *
+ * and modify index to keep track of those iterators
+ *
+ *	L -> [L -> A]
+ *
+ * Combining these two yields a tiled index expression in terms
+ * of the AST loop iterators
+ *
+ *	L -> T
+ */
+static __isl_give isl_multi_pw_aff *transform_index(
+	__isl_take isl_multi_pw_aff *index, __isl_keep isl_id *ref_id,
+	void *user)
+{
+	struct ppcg_transform_data *data = user;
+	struct gpu_stmt_access *access;
+	struct gpu_array_ref_group *group;
+	struct gpu_array_tile *tile;
+	isl_pw_multi_aff *iterator_map;
+	int i;
+	const char *name;
+	isl_space *space;
+	isl_multi_pw_aff *tiling;
+	isl_pw_multi_aff *pma;
+	isl_multi_pw_aff *mpa;
+
+	data->array = NULL;
+
+	iterator_map = isl_pw_multi_aff_copy(data->iterator_map);
+	index = isl_multi_pw_aff_pullback_pw_multi_aff(index, iterator_map);
+
+	access = find_access(data->accesses, ref_id);
+	if (!access)
+		return index;
+	if (!isl_map_has_tuple_name(access->access, isl_dim_out))
+		return index;
+
+	name = isl_map_get_tuple_name(access->access, isl_dim_out);
+	i = find_array_index(data->gen, name);
+	if (i < 0)
+		isl_die(isl_multi_pw_aff_get_ctx(index), isl_error_internal,
+			"cannot find array reference group",
+			return isl_multi_pw_aff_free(index));
+
+	data->array = &data->gen->prog->array[i];
+	data->bound = data->gen->kernel->array[i].bound;
+	group = data->array->groups[access->group];
+	tile = group->private_tile;
 	if (!tile)
-		kernel_access->type = ppcg_access_global;
+		tile = group->shared_tile;
+	data->global = !tile;
+	if (!tile)
+		return index;
 
-	n_index = isl_map_dim(stmt_access->access, isl_dim_out);
-	kernel_access->index = isl_ast_expr_list_alloc(gen->ctx, n_index);
+	space = isl_space_range(isl_multi_pw_aff_get_space(index));
+	space = isl_space_map_from_set(space);
+	pma = isl_pw_multi_aff_identity(space);
+	pma = isl_pw_multi_aff_product(
+			isl_pw_multi_aff_copy(data->sched2shared), pma);
+	tiling = isl_multi_pw_aff_from_multi_aff(
+				    isl_multi_aff_copy(tile->tiling));
+	tiling = isl_multi_pw_aff_pullback_pw_multi_aff(tiling, pma);
 
-	if (n_index == 0)
-		return;
+	space = isl_space_domain(isl_multi_pw_aff_get_space(index));
+	space = isl_space_map_from_set(space);
+	mpa = isl_multi_pw_aff_identity(space);
+	index = isl_multi_pw_aff_range_product(mpa, index);
+	index = isl_multi_pw_aff_pullback_multi_pw_aff(tiling, index);
 
-	access = isl_map_copy(stmt_access->access);
-	access = isl_map_apply_range(isl_map_copy(stmt_it), access);
-	pma = isl_pw_multi_aff_from_map(access);
-	pma = isl_pw_multi_aff_coalesce(pma);
+	return index;
+}
 
-	for (i = 0; i < n_index; ++i) {
-		isl_set *domain;
-		isl_pw_aff *index;
-		isl_ast_expr *expr;
+/* AST expression transformation callback for pet_stmt_build_ast_exprs.
+ *
+ * If the AST expression refers to an access to a global array,
+ * then we linearize the access exploiting the bounds in data->bounds.
+ */
+static __isl_give isl_ast_expr *transform_expr(__isl_take isl_ast_expr *expr,
+	__isl_keep isl_id *id, void *user)
+{
+	int i, n;
+	isl_ctx *ctx;
+	isl_set *context;
+	isl_ast_expr *res;
+	isl_ast_expr_list *list;
+	isl_ast_build *build;
+	struct ppcg_transform_data *data = user;
 
-		index = isl_pw_multi_aff_get_pw_aff(pma, i);
+	if (!data->array)
+		return expr;
+	if (gpu_array_is_scalar(data->array))
+		return expr;
+	if (!data->global)
+		return expr;
 
-		if (!kernel_access->array) {
-		} else if (!tile) {
-			domain = isl_map_domain(isl_map_copy(stmt_it));
-			index = isl_pw_aff_coalesce(index);
-			index = isl_pw_aff_gist(index, domain);
-		} else {
-			domain = isl_map_domain(isl_map_copy(stmt_it));
-			index = shift_index(index, kernel_access->array,
-				&tile->bound[i], domain,
-				isl_map_copy(sched2shared));
-		}
+	ctx = isl_ast_expr_get_ctx(expr);
+	context = isl_set_universe(isl_space_params_alloc(ctx, 0));
+	build = isl_ast_build_from_context(context);
 
-		expr = isl_ast_build_expr_from_pw_aff(build, index);
+	n = isl_ast_expr_get_op_n_arg(expr);
+	res = isl_ast_expr_get_op_arg(expr, 1);
+	for (i = 2; i < n; ++i) {
+		isl_pw_aff *bound_i;
+		isl_ast_expr *expr_i;
 
-		kernel_access->index = isl_ast_expr_list_add(
-			kernel_access->index, expr);
+		bound_i = isl_pw_aff_list_get_pw_aff(data->bound, i - 1);
+		expr_i = isl_ast_build_expr_from_pw_aff(build, bound_i);
+		res = isl_ast_expr_mul(res, expr_i);
+		expr_i = isl_ast_expr_get_op_arg(expr, i);
+		res = isl_ast_expr_add(res, expr_i);
 	}
 
-	isl_pw_multi_aff_free(pma);
+	isl_ast_build_free(build);
+
+	list = isl_ast_expr_list_from_ast_expr(res);
+	res = isl_ast_expr_get_op_arg(expr, 0);
+	res = isl_ast_expr_access(res, list);
+
+	isl_ast_expr_free(expr);
+
+	return res;
 }
 
 /* This function is called for each instance of a user statement
  * in the kernel.
  *
  * We attach a struct ppcg_kernel_stmt to the "node", containing
- * local information about the accesses.
- * This information is computed from stmt_it, which expresses the domain
+ * a computed AST expression for each access.
+ * These AST expressions are computed from iterator_map,
+ * which expresses the domain
  * elements in terms of the generated loops, and sched2shared,
  * which expresses the first shared_len dimensions of the schedule
  * computed by PPCG in terms of the generated loops.
@@ -3442,10 +3485,12 @@ static void compute_index_expression(struct gpu_gen *gen,
 static __isl_give isl_ast_node *at_each_domain(__isl_take isl_ast_node *node,
 	__isl_keep isl_ast_build *build, void *user)
 {
+	struct ppcg_transform_data data;
 	struct gpu_gen *gen = (struct gpu_gen *) user;
 	struct ppcg_kernel_stmt *stmt;
 	isl_id *id;
-	isl_map *stmt_it, *sched2shared;
+	isl_pw_multi_aff *sched2shared;
+	isl_map *map;
 	isl_pw_multi_aff *iterator_map;
 	isl_ast_expr *expr, *arg;
 	isl_union_map *schedule;
@@ -3461,36 +3506,27 @@ static __isl_give isl_ast_node *at_each_domain(__isl_take isl_ast_node *node,
 	id = isl_ast_expr_get_id(arg);
 
 	schedule = isl_ast_build_get_schedule(build);
-	stmt_it = isl_map_reverse(isl_map_from_union_map(schedule));
-	iterator_map = isl_pw_multi_aff_from_map(isl_map_copy(stmt_it));
-	iterator_map = compute_sched_to_shared(gen, iterator_map);
-	sched2shared = isl_map_from_pw_multi_aff(iterator_map);
+	map = isl_map_reverse(isl_map_from_union_map(schedule));
+	iterator_map = isl_pw_multi_aff_from_map(map);
+	sched2shared = compute_sched_to_shared(gen,
+					isl_pw_multi_aff_copy(iterator_map));
 
 	stmt->type = ppcg_kernel_domain;
 	stmt->u.d.stmt = find_stmt(gen->prog, id);
 	if (!stmt->u.d.stmt)
 		goto error;
 
-	n = 0;
-	for (access = stmt->u.d.stmt->accesses; access; access = access->next)
-		++n;
-
-	stmt->u.d.access = isl_calloc_array(gen->ctx,
-						struct ppcg_kernel_access, n);
-	if (!stmt->u.d.access)
-		goto error;
-
-	stmt->u.d.n_access = n;
-
-	access = stmt->u.d.stmt->accesses;
-	for (i = 0; i < n; ++i, access = access->next) {
-		compute_index_expression(gen, &stmt->u.d.access[i], access,
-					    stmt_it, sched2shared, build);
-	}
+	data.gen = gen;
+	data.accesses = stmt->u.d.stmt->accesses;
+	data.iterator_map = iterator_map;
+	data.sched2shared = sched2shared;
+	stmt->u.d.ref2expr = pet_stmt_build_ast_exprs(stmt->u.d.stmt->stmt,
+					    build, &transform_index, &data,
+					    &transform_expr, &data);
 
 	isl_id_free(id);
-	isl_map_free(stmt_it);
-	isl_map_free(sched2shared);
+	isl_pw_multi_aff_free(iterator_map);
+	isl_pw_multi_aff_free(sched2shared);
 	isl_ast_expr_free(arg);
 	isl_ast_expr_free(expr);
 
@@ -3499,9 +3535,9 @@ static __isl_give isl_ast_node *at_each_domain(__isl_take isl_ast_node *node,
 	return isl_ast_node_set_annotation(node, id);
 error:
 	isl_id_free(id);
-	isl_map_free(stmt_it);
+	isl_pw_multi_aff_free(iterator_map);
 	ppcg_kernel_stmt_free(stmt);
-	isl_map_free(sched2shared);
+	isl_pw_multi_aff_free(sched2shared);
 	return isl_ast_node_free(node);
 }
 
