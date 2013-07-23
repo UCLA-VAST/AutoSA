@@ -4893,7 +4893,7 @@ static void pet_stmt_extract_accesses(struct gpu_stmt *stmt)
 	struct gpu_stmt_access **next_access = &stmt->accesses;
 
 	stmt->accesses = NULL;
-	expr_extract_accesses(stmt->body, next_access);
+	expr_extract_accesses(stmt->stmt->body, next_access);
 }
 
 /* Return an array of gpu_stmt representing the statements in "scop".
@@ -4912,7 +4912,7 @@ static struct gpu_stmt *extract_stmts(isl_ctx *ctx, struct ppcg_scop *scop,
 		struct gpu_stmt *s = &stmts[i];
 
 		s->id = isl_set_get_tuple_id(scop->stmts[i]->domain);
-		s->body = scop->stmts[i]->body;
+		s->stmt = scop->stmts[i];
 		pet_stmt_extract_accesses(s);
 	}
 

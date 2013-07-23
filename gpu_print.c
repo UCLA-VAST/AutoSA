@@ -250,7 +250,8 @@ __isl_give isl_printer *ppcg_kernel_print_domain(__isl_take isl_printer *p,
 	info.stmt = stmt;
 
 	p = isl_printer_start_line(p);
-	p = print_pet_expr(p, stmt->u.d.stmt->body, &print_gpu_access, &info);
+	p = print_pet_expr(p, stmt->u.d.stmt->stmt->body,
+				&print_gpu_access, &info);
 	p = isl_printer_print_str(p, ";");
 	p = isl_printer_end_line(p);
 
