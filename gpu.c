@@ -1441,18 +1441,18 @@ static __isl_give isl_map *group_tile(struct gpu_array_ref_group *group)
 	return tile;
 }
 
-/* Given a mapping "sched" from the AST schedule to a domain,
+/* Given a mapping "iterator_map" from the AST schedule to a domain,
  * return the corresponding mapping from the AST schedule to
  * to the first shared_len dimensions of the schedule computed by PPCG.
  */
-static __isl_give isl_map *compute_sched_to_shared(struct gpu_gen *gen,
-	__isl_take isl_map *sched)
+static __isl_give isl_pw_multi_aff *compute_sched_to_shared(struct gpu_gen *gen,
+	__isl_take isl_pw_multi_aff *iterator_map)
 {
 	isl_union_map *umap;
 	isl_space *space;
-	isl_map *map;
+	isl_map *map, *sched;;
 
-	space = isl_space_range(isl_map_get_space(sched));
+	space = isl_space_range(isl_pw_multi_aff_get_space(iterator_map));
 	space = isl_space_from_domain(space);
 	space = isl_space_add_dims(space, isl_dim_out, gen->shared_len);
 
@@ -1462,10 +1462,10 @@ static __isl_give isl_map *compute_sched_to_shared(struct gpu_gen *gen,
 	map = isl_union_map_extract_map(umap, space);
 	isl_union_map_free(umap);
 
-	sched = isl_map_apply_range(sched, map);
+	sched = isl_map_preimage_domain_pw_multi_aff(map, iterator_map);
 	sched = isl_map_detect_equalities(sched);
 
-	return sched;
+	return isl_pw_multi_aff_from_map(sched);
 }
 
 /* Set unroll[j] if the input dimension j is involved in
@@ -3446,6 +3446,7 @@ static __isl_give isl_ast_node *at_each_domain(__isl_take isl_ast_node *node,
 	struct ppcg_kernel_stmt *stmt;
 	isl_id *id;
 	isl_map *stmt_it, *sched2shared;
+	isl_pw_multi_aff *iterator_map;
 	isl_ast_expr *expr, *arg;
 	isl_union_map *schedule;
 	int i, n;
@@ -3461,7 +3462,9 @@ static __isl_give isl_ast_node *at_each_domain(__isl_take isl_ast_node *node,
 
 	schedule = isl_ast_build_get_schedule(build);
 	stmt_it = isl_map_reverse(isl_map_from_union_map(schedule));
-	sched2shared = compute_sched_to_shared(gen, isl_map_copy(stmt_it));
+	iterator_map = isl_pw_multi_aff_from_map(isl_map_copy(stmt_it));
+	iterator_map = compute_sched_to_shared(gen, iterator_map);
+	sched2shared = isl_map_from_pw_multi_aff(iterator_map);
 
 	stmt->type = ppcg_kernel_domain;
 	stmt->u.d.stmt = find_stmt(gen->prog, id);
