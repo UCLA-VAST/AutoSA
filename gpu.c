@@ -683,6 +683,7 @@ static void *free_stmts(struct gpu_stmt *stmts, int n)
 
 		for (access = stmts[i].accesses; access; access = next) {
 			next = access->next;
+			isl_id_free(access->ref_id);
 			isl_map_free(access->access);
 			free(access);
 		}
@@ -4865,6 +4866,7 @@ static struct gpu_stmt_access **expr_extract_access(struct pet_expr *expr,
 	access->read = expr->acc.read;
 	access->write = expr->acc.write;
 	access->access = isl_map_copy(expr->acc.access);
+	access->ref_id = isl_id_copy(expr->acc.ref_id);
 
 	*next_access = access;
 	next_access = &(*next_access)->next;

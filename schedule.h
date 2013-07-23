@@ -16,6 +16,8 @@ struct gpu_stmt_access {
 
 	/* Access relation */
 	isl_map *access;
+	/* The reference id of the corresponding pet_expr. */
+	isl_id *ref_id;
 
 	struct gpu_stmt_access *next;
 };
