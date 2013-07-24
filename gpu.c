@@ -3548,11 +3548,13 @@ static __isl_give isl_ast_node *create_domain_leaf(
  * for copying to or from shared/private memory.
  * Attach a pointer to a ppcg_kernel_stmt representing the copy
  * statement to the node.
- * The statement name is {read,write}_{shared,private}_<array>.
+ * The statement name is "read" or "write", depending on whether we are
+ * reading from global memory or writing to global memory.
+ * The name of the T space is {shared,private}_<array>.
  *
  * The schedule is of the form
  *
- *	[A -> T] -> L
+ *	type[A -> T] -> L
  *
  * where A refers to a piece of an array and T to the corresponding
  * shifted tile.  We split this schedule into mappings L -> A and L -> T
@@ -3569,7 +3571,7 @@ static __isl_give isl_ast_node *attach_copy_stmt(__isl_take isl_ast_node *node,
 	isl_space *space;
 	isl_map *access, *local_access, *map;
 	isl_pw_multi_aff *pma;
-	const char *name;
+	const char *type;
 	int array_index;
 
 	stmt = isl_calloc_type(gen->ctx, struct ppcg_kernel_stmt);
@@ -3577,8 +3579,8 @@ static __isl_give isl_ast_node *attach_copy_stmt(__isl_take isl_ast_node *node,
 		return isl_ast_node_free(node);
 
 	access = isl_map_from_union_map(isl_ast_build_get_schedule(build));
-	name = isl_map_get_tuple_name(access, isl_dim_in);
-	stmt->u.c.read = !strncmp(name, "read", 4);
+	type = isl_map_get_tuple_name(access, isl_dim_in);
+	stmt->u.c.read = !strcmp(type, "read");
 	access = isl_map_reverse(access);
 	space = isl_space_unwrap(isl_space_range(isl_map_get_space(access)));
 	local_access = isl_map_copy(access);
@@ -3693,7 +3695,7 @@ static __isl_give isl_ast_node *copy_access(struct gpu_gen *gen,
 
 	schedule = isl_map_apply_domain(schedule, map);
 
-	schedule = isl_map_set_tuple_name(schedule, isl_dim_in, name);
+	schedule = isl_map_set_tuple_name(schedule, isl_dim_in, type);
 	free(name);
 
 	build = isl_ast_build_restrict(build, set);
