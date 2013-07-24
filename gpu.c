@@ -1347,86 +1347,95 @@ static __isl_give isl_union_map *group_access_relation(
 	return access;
 }
 
-/* Return a map from the first shared_len dimensions of the computed
- * schedule to the values of the given index "i"
- * of the elements in the array tile in global memory that corresponds
- * to the shared memory copy.
- * In particular, if a is the index, then the range of the map
- *
- *	{ D -> [a] }
- *
- * is constrained as follows
- *
- *	tile_offset(D) <= a <= tile_offset(D) + tile_size - 1		(1)
- *
- * and
- *
- *	0 <= a <= array_size - 1					(2)
- *
- *
- * Note that if some stride has been detected (i.e., when
- * group->shared_tile->bound[i].shift is set), then offset and size (i.e.,
- * constraints (1)) apply to the shifted and scaled down copy of the tile.
- * These constraints therefore have to be mapped back to the original
- * array space using the inverse of the shift_map.
+/* Return the extent of "array", recomputed from the bounds.
+ * The recomputed extent may be simpler than the original extent.
  */
-static __isl_give isl_map *group_tile_dim(struct gpu_array_ref_group *group,
-	int i)
+static __isl_give isl_set *array_extent(struct gpu_array_info *array)
 {
-	isl_aff *aff;
+	int i;
+	isl_id *id;
 	isl_space *space;
-	isl_map *map, *tile, *gt;
-	isl_set *bound;
+	isl_local_space *ls;
+	isl_set *extent;
 
-	map = isl_map_from_aff(isl_aff_copy(group->shared_tile->bound[i].lb));
-	space = isl_space_range(isl_map_get_space(map));
-	map = isl_map_apply_range(map, isl_map_lex_le(isl_space_copy(space)));
-	tile = map;
+	id = isl_set_get_tuple_id(array->extent);
+	space = isl_set_get_space(array->extent);
+	extent = isl_set_universe(isl_space_copy(space));
+	ls = isl_local_space_from_space(space);
+	for (i = 0; i < array->n_index; ++i) {
+		isl_pw_aff *bound;
+		isl_aff *aff;
+		isl_pw_aff *index;
+		isl_set *lt;
 
-	aff = isl_aff_copy(group->shared_tile->bound[i].lb);
-	aff = isl_aff_add_constant_val(aff,
-			    isl_val_copy(group->shared_tile->bound[i].size));
-	map = isl_map_from_aff(aff);
-	gt = isl_map_lex_gt(space);
-	map = isl_map_apply_range(map, isl_map_copy(gt));
-	tile = isl_map_intersect(tile, map);
+		extent = isl_set_lower_bound_si(extent, isl_dim_set, i, 0);
 
-	if (group->shared_tile->bound[i].shift) {
-		isl_basic_map *shift;
-		shift = isl_basic_map_copy(group->shared_tile->bound[i].shift_map);
-		shift = isl_basic_map_reverse(shift);
-		tile = isl_set_unwrap(isl_set_apply(isl_map_wrap(tile),
-					isl_map_from_basic_map(shift)));
+		aff = isl_aff_var_on_domain(isl_local_space_copy(ls),
+						isl_dim_set, i);
+		index = isl_pw_aff_from_aff(aff);
+		bound = isl_pw_aff_copy(array->bound[i]);
+		bound = isl_pw_aff_from_range(bound);
+		bound = isl_pw_aff_add_dims(bound, isl_dim_in, array->n_index);
+		bound = isl_pw_aff_set_tuple_id(bound, isl_dim_in,
+						isl_id_copy(id));
+		lt = isl_pw_aff_lt_set(index, bound);
+		extent = isl_set_intersect(extent, lt);
 	}
+	isl_local_space_free(ls);
+	isl_id_free(id);
 
-	tile = isl_map_lower_bound_si(tile, isl_dim_out, 0, 0);
-
-	bound = isl_set_from_pw_aff(isl_pw_aff_copy(group->array->bound[i]));
-	bound = isl_set_apply(bound, gt);
-	tile = isl_map_intersect_range(tile, bound);
-
-	return tile;
+	return extent;
 }
 
 /* Return a map from the first shared_len dimensions of the computed
  * schedule to the array tile in
  * global memory that corresponds to the shared memory copy.
+ *
+ * In particular, return a map
+ *
+ *	{ D[i] -> A[a] }
+ *
+ * with constraints
+ *
+ *	tile_offset(i) <= a <= tile_offset(i) + tile_size - 1		(1)
+ *
+ * and
+ *
+ *	0 <= a <= array_size - 1					(2)
+ *
+ * Note that if some stride has been detected (i.e., when
+ * group->shared_tile->bound[i].shift is set), then a in (1) refers
+ * to the shifted and scaled down version.
+ *
+ * Constraints (1) are obtained by mapping the size constraints on the
+ * shared/private memory tile back to the access relation.
+ * Constraints (2) are obtained from the (recomputed) extent.
  */
 static __isl_give isl_map *group_tile(struct gpu_array_ref_group *group)
 {
 	int i;
 	int n_index = group->array->n_index;
 	isl_map *tile;
+	isl_space *space;
+	isl_set *local;
+	isl_set *extent;
 
-	tile = group_tile_dim(group, 0);
-	for (i = 1; i < n_index; ++i) {
-		isl_map *tile_i;
+	space = isl_multi_aff_get_space(group->shared_tile->tiling);
+	space = isl_space_range(space);
+	local = isl_set_universe(space);
+	for (i = 0; i < n_index; ++i) {
+		isl_val *bound;
 
-		tile_i = group_tile_dim(group, i);
-		tile = isl_map_flat_range_product(tile, tile_i);
+		local = isl_set_lower_bound_si(local, isl_dim_set, i, 0);
+		bound = isl_val_copy(group->shared_tile->bound[i].size);
+		bound = isl_val_sub_ui(bound, 1);
+		local = isl_set_upper_bound_val(local, isl_dim_set, i, bound);
 	}
-
-	tile = isl_map_set_tuple_name(tile, isl_dim_out, group->array->name);
+	local = isl_set_preimage_multi_aff(local,
+				isl_multi_aff_copy(group->shared_tile->tiling));
+	tile = isl_set_unwrap(local);
+	extent = array_extent(group->array);
+	tile = isl_map_intersect_range(tile, extent);
 
 	return tile;
 }
