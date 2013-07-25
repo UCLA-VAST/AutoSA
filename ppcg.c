@@ -85,6 +85,13 @@ static __isl_give isl_union_set *collect_domains(struct pet_scop *scop,
 
 		if (!pred(stmt))
 			continue;
+
+		if (stmt->n_arg > 0)
+			isl_die(isl_union_set_get_ctx(domain),
+				isl_error_unsupported,
+				"data dependent conditions not supported",
+				return isl_union_set_free(domain));
+
 		domain_i = isl_set_copy(scop->stmts[i]->domain);
 		domain = isl_union_set_add_set(domain, domain_i);
 	}
@@ -307,6 +314,27 @@ static int scop_has_data_dependent_accesses(struct pet_scop *scop)
 	return 0;
 }
 
+static void *ppcg_scop_free(struct ppcg_scop *ps)
+{
+	if (!ps)
+		return NULL;
+
+	isl_set_free(ps->context);
+	isl_union_set_free(ps->domain);
+	isl_union_set_free(ps->call);
+	isl_union_map_free(ps->reads);
+	isl_union_map_free(ps->live_in);
+	isl_union_map_free(ps->writes);
+	isl_union_map_free(ps->kills);
+	isl_union_map_free(ps->dep_flow);
+	isl_union_map_free(ps->dep_false);
+	isl_union_map_free(ps->schedule);
+
+	free(ps);
+
+	return NULL;
+}
+
 /* Extract a ppcg_scop from a pet_scop.
  *
  * The constructed ppcg_scop refers to elements from the pet_scop
@@ -350,26 +378,11 @@ static struct ppcg_scop *ppcg_scop_from_pet_scop(struct pet_scop *scop,
 	compute_dependences(ps);
 	eliminate_dead_code(ps);
 
+	if (!ps->context || !ps->domain || !ps->call || !ps->reads ||
+	    !ps->writes || !ps->kills || !ps->schedule)
+		return ppcg_scop_free(ps);
+
 	return ps;
-}
-
-static void ppcg_scop_free(struct ppcg_scop *ps)
-{
-	if (!ps)
-		return;
-
-	isl_set_free(ps->context);
-	isl_union_set_free(ps->domain);
-	isl_union_set_free(ps->call);
-	isl_union_map_free(ps->reads);
-	isl_union_map_free(ps->live_in);
-	isl_union_map_free(ps->writes);
-	isl_union_map_free(ps->kills);
-	isl_union_map_free(ps->dep_flow);
-	isl_union_map_free(ps->dep_false);
-	isl_union_map_free(ps->schedule);
-
-	free(ps);
 }
 
 /* Check consistency of options.

@@ -4903,11 +4903,6 @@ static struct gpu_stmt *extract_stmts(isl_ctx *ctx, struct ppcg_scop *scop,
 	for (i = 0; i < scop->n_stmt; ++i) {
 		struct gpu_stmt *s = &stmts[i];
 
-		if (scop->stmts[i]->n_arg > 0)
-			isl_die(ctx, isl_error_unsupported,
-				"data dependent conditions not supported",
-				return free_stmts(stmts, scop->n_stmt));
-
 		s->id = isl_set_get_tuple_id(scop->stmts[i]->domain);
 		s->body = scop->stmts[i]->body;
 		pet_stmt_extract_accesses(s);
