@@ -62,10 +62,19 @@ struct gpu_array_bound {
  * n is the dimension of the array.
  * bound is an array of size "n" representing the lower bound
  *	and size for each index.
+ *
+ * tiling maps a tile in the global array to the correspondin
+ * shared/private memory tile and is of the form
+ *
+ *	{ [D[i] -> A[a]] -> T[(a + shift(i))/stride - lb(i)] }
+ *
+ * where D represents the initial shared_len dimensions
+ * of the computed schedule.
  */
 struct gpu_array_tile {
 	int n;
 	struct gpu_array_bound *bound;
+	isl_multi_aff *tiling;
 };
 
 struct gpu_array_info;
@@ -305,6 +314,7 @@ static void *free_tile(struct gpu_array_tile *tile)
 		isl_basic_map_free(tile->bound[j].shift_map);
 	}
 	free(tile->bound);
+	isl_multi_aff_free(tile->tiling);
 	free(tile);
 
 	return NULL;
@@ -1172,191 +1182,27 @@ static __isl_give isl_set *add_bounded_parameters_dynamic(
 	return set;
 }
 
-/* Given a mapping "sched" of the form
+/* Construct a map from an access to group->array to the corresponding
+ * shared/private memory tile.
+ * The map is of the form
  *
- *	[D -> A] -> [D -> T(A)]
+ *	{ [D[i] -> A[a]] -> T[t] }
  *
- * apply the mapping encoded in tile->bound[i].shift_map
- * to the range of "sched".
- * The mappings in tile->bound[i].shift_map are of the form
- *
- *	[D -> a] -> [D -> s(D,a)]
- *
- * We first compose them with a mapping
- *
- *	[D -> v] -> v
- *
- * (If tile->bound[i].shift_map is not set, then it is assumed to be
- * an identity mapping and then we use this second mapping instead.)
- * This results in
- *
- *	[D -> a] -> s(D,a)
- *
- * We precompose them with a projection on the i th dimension to obtain
- *
- *	[D -> T] -> s(D,T)
- *
- * and collect these into
- *
- *	[D -> T] -> S(D,T)
- *
- * Introducing D in the range yields
- *
- *	[D -> T] -> [D -> S(D,T)]
- *
- * and application to "sched" yields
- *
- *	[D -> A] -> [D -> S(D,T(A))]
+ * where D represents the initial shared_len dimensions
+ * of the computed schedule.
  */
-static __isl_give isl_map *pre_shift(__isl_take isl_map *sched,
-	struct gpu_array_tile *tile)
+static __isl_give isl_map *shift_access(struct gpu_array_ref_group *group)
 {
-	int i;
-	isl_ctx *ctx = isl_map_get_ctx(sched);
-	isl_space *space, *space2;
-	isl_basic_map *def;
-	isl_map *map, *id, *pre_shift;
-
-	space = isl_space_range(isl_map_get_space(sched));
-	space2 = isl_space_from_domain(isl_space_copy(space));
-	pre_shift = isl_map_universe(space2);
-	space = isl_space_domain(isl_space_unwrap(space));
-	id = isl_map_identity(isl_space_map_from_set(isl_space_copy(space)));
-	space = isl_space_from_domain(space);
-	space = isl_space_add_dims(space, isl_dim_out, 1);
-	def = isl_basic_map_range_map(isl_basic_map_universe(space));
-
-	for (i = 0; i < tile->n; ++i) {
-		isl_basic_map *bmap, *drop;
-		isl_map *proj;
-
-		space = isl_space_alloc(ctx, 0, tile->n, tile->n);
-		proj = isl_map_identity(space);
-		proj = isl_map_project_out(proj, isl_dim_out,
-						i + 1, tile->n - (i + 1));
-		proj = isl_map_project_out(proj, isl_dim_out, 0, i);
-		proj = isl_map_product(isl_map_copy(id), proj);
-
-		if (!tile->bound[i].shift_map)
-			bmap = isl_basic_map_copy(def);
-		else {
-			bmap = isl_basic_map_copy(tile->bound[i].shift_map);
-			bmap = isl_basic_map_apply_range(bmap,
-						isl_basic_map_copy(def));
-		}
-
-		map = isl_map_from_basic_map(bmap);
-		map = isl_map_apply_range(proj, map);
-		pre_shift = isl_map_flat_range_product(pre_shift, map);
-	}
-
-	isl_map_free(id);
-	isl_basic_map_free(def);
-
-	space = isl_space_domain(isl_map_get_space(pre_shift));
-	map = isl_map_domain_map(isl_map_universe(isl_space_unwrap(space)));
-	pre_shift = isl_map_range_product(map, pre_shift);
-
-	sched = isl_map_apply_range(sched, pre_shift);
-
-	return sched;
-}
-
-/* Given an access relation to a tile of an array, construct a map that
- * maps each element in the space of the access relation
- * to a copy of the tile shifted to the origin
- * (based on the lower bounds in group->private_tile or group->shared_tile).
- * If any of the indices is strided, then
- * {private,shared}_tile->bound[i].shift_map is applied to the index first.
- * The domain space of the resulting map is that of access "access",
- * while the range space is anonymous.
- * The resulting map only encodes the mapping to the shift tile and
- * not the constraints of "access".
- *
- * Let the space of the access relation be
- *
- *	D -> A
- *
- * We first construct an identity relation on a wrapped copy of this space,
- * except that it strips off the name of array
- *
- *	[D -> A] -> [D -> T(A)]					(1)
- *
- * The bounds in tile->bound[i].lb are of the form
- *
- *	D -> b(D)
- *
- * We collect them into
- *
- *	D -> B(D)
- *
- * and then transform them into
- *
- *	[D -> T] -> T - B(D)					(2)
- *
- * Combining those two mappings (1) and (2) yields
- *
- *	[D -> A] -> T(A) - B(D)
- *
- * If there are any strides, then (1) is first transformed into (1')
- *
- *	[D -> A] -> [D -> T'(A)]				(1')
- *
- * by a call to pre_shift.
- */
-static __isl_give isl_map *shift_access(__isl_take isl_map *access,
-	struct gpu_array_ref_group *group)
-{
-	int i;
-	isl_space *space;
-	isl_map *id1, *id2;
-	isl_map *map;
-	isl_map *shift;
-	isl_map *sched;
 	struct gpu_array_tile *tile;
-	int n_index = group->array->n_index;
+	isl_multi_aff *tiling;
 
 	tile = group->private_tile;
 	if (!tile)
 		tile = group->shared_tile;
 
-	space = isl_space_domain(isl_map_get_space(access));
-	space = isl_space_map_from_set(space);
-	id1 = isl_map_identity(space);
-	space = isl_space_range(isl_map_get_space(access));
-	space = isl_space_map_from_set(space);
-	space = isl_space_set_tuple_name(space, isl_dim_out, NULL);
-	id2 = isl_map_identity(space);
-	sched = isl_map_product(id1, id2);
+	tiling = isl_multi_aff_copy(tile->tiling);
 
-	space = isl_space_unwrap(isl_space_range(isl_map_get_space(sched)));
-	space = isl_space_from_domain(isl_space_domain(space));
-	shift = isl_map_universe(space);
-	for (i = 0; i < n_index; ++i) {
-		map = isl_map_from_aff(isl_aff_copy(tile->bound[i].lb));
-		shift = isl_map_flat_range_product(shift, map);
-	}
-
-	space = isl_space_unwrap(isl_space_range(isl_map_get_space(sched)));
-	map = isl_map_universe(space);
-	id1 = isl_map_range_map(isl_map_copy(map));
-	map = isl_map_domain_map(map);
-	shift = isl_map_neg(shift);
-	shift = isl_map_apply_range(map, shift);
-	shift = isl_map_sum(id1, shift);
-
-	for (i = 0; i < n_index; ++i)
-		if (tile->bound[i].shift_map)
-			break;
-
-	if (i < n_index)
-		sched = pre_shift(sched, tile);
-
-	sched = isl_map_apply_range(sched, shift);
-
-	isl_map_free(access);
-
-	return sched;
+	return isl_map_from_multi_aff(tiling);
 }
 
 /* Does "map" have an obviously fixed value at variable "pos" of "type"?
@@ -2353,6 +2199,155 @@ static void check_shared_memory_bound(struct gpu_gen *gen)
 	}
 
 	isl_val_free(left);
+}
+
+/* Given a description of an array tile "tile" and the "space"
+ *
+ *	{ D -> A }
+ *
+ * where D represents the first shared_len schedule dimensions
+ * and A represents the array, construct an isl_multi_aff
+ *
+ *	{ [D[i] -> A[a]] -> A'[a'] }
+ *
+ * with A' a scaled down copy of A according to the shifts and strides
+ * in "tile".  In particular,
+ *
+ *	a' = (a + shift(i))/stride
+ *
+ * "insert_array" represents
+ *
+ *	{ [D -> A] -> D }
+ *
+ * and is used to insert A into the domain of functions that only
+ * reference D.
+ */
+static __isl_give isl_multi_aff *strided_tile(
+	struct gpu_array_tile *tile, __isl_keep isl_space *space,
+	__isl_keep isl_multi_aff *insert_array)
+{
+	int i;
+	isl_ctx *ctx;
+	isl_multi_aff *shift;
+	isl_multi_val *stride;
+	isl_space *space2;
+	isl_local_space *ls;
+	isl_multi_aff *tiling;
+
+	ctx = isl_space_get_ctx(space);
+	space2 = isl_space_domain(isl_space_copy(space));
+	ls = isl_local_space_from_space(space2);
+	space2 = isl_space_range(isl_space_copy(space));
+	stride = isl_multi_val_zero(space2);
+	shift = isl_multi_aff_zero(isl_space_copy(space));
+
+	for (i = 0; i < tile->n; ++i) {
+		struct gpu_array_bound *bound = &tile->bound[i];
+		isl_val *stride_i;
+		isl_aff *shift_i;
+
+		if (tile->bound[i].shift) {
+			stride_i = isl_val_copy(bound->stride);
+			shift_i = isl_aff_copy(bound->shift);
+		} else {
+			stride_i = isl_val_one(ctx);
+			shift_i = isl_aff_zero_on_domain(
+					isl_local_space_copy(ls));
+		}
+
+		stride = isl_multi_val_set_val(stride, i, stride_i);
+		shift = isl_multi_aff_set_aff(shift, i, shift_i);
+	}
+	isl_local_space_free(ls);
+
+	shift = isl_multi_aff_pullback_multi_aff(shift,
+				    isl_multi_aff_copy(insert_array));
+
+	tiling = isl_multi_aff_range_map(isl_space_copy(space));
+	tiling = isl_multi_aff_add(tiling, shift);
+	tiling = isl_multi_aff_scale_down_multi_val(tiling, stride);
+
+	return tiling;
+}
+
+/* Compute a tiling for the array reference group "group".
+ *
+ * The tiling is of the form
+ *
+ *	{ [D[i] -> A[a]] -> T[t] }
+ *
+ * where D represents the first shared_len schedule dimensions,
+ * A represents the global array and T represents the shared or
+ * private memory tile.  The name of T is the name of the local
+ * array.
+ *
+ * If there is any stride in the accesses, then the mapping is
+ *
+ *	t = (a + shift(i))/stride - lb(i)
+ *
+ * otherwise, it is simply
+ *
+ *	t = a - lb(i)
+ */
+static void compute_group_tiling(struct gpu_array_ref_group *group)
+{
+	int i;
+	struct gpu_array_tile *tile;
+	struct gpu_array_info *array = group->array;
+	isl_space *space;
+	isl_multi_aff *tiling, *lb, *insert_array;
+	isl_printer *p;
+	char *local_name;
+
+	tile = group->private_tile;
+	if (!tile)
+		tile = group->shared_tile;
+	if (!tile)
+		return;
+
+	space = isl_map_get_space(group->access);
+	insert_array = isl_multi_aff_domain_map(isl_space_copy(space));
+
+	for (i = 0; i < tile->n; ++i)
+		if (tile->bound[i].shift)
+			break;
+
+	if (i < tile->n)
+		tiling = strided_tile(tile, space, insert_array);
+	else
+		tiling = isl_multi_aff_range_map(isl_space_copy(space));
+
+	lb = isl_multi_aff_zero(space);
+	for (i = 0; i < tile->n; ++i) {
+		isl_aff *lb_i = isl_aff_copy(tile->bound[i].lb);
+		lb = isl_multi_aff_set_aff(lb, i, lb_i);
+	}
+	lb = isl_multi_aff_pullback_multi_aff(lb, insert_array);
+
+	tiling = isl_multi_aff_sub(tiling, lb);
+
+	p = isl_printer_to_str(isl_multi_aff_get_ctx(tiling));
+	p = print_array_name(p, group);
+	local_name = isl_printer_get_str(p);
+	isl_printer_free(p);
+	tiling = isl_multi_aff_set_tuple_name(tiling, isl_dim_out, local_name);
+	free(local_name);
+
+	tile->tiling = tiling;
+}
+
+/* Compute a tiling for all the array reference groups.
+ */
+static void compute_group_tilings(struct gpu_gen *gen)
+{
+	int i, j;
+
+	for (i = 0; i < gen->prog->n_array; ++i) {
+		struct gpu_array_info *array = &gen->prog->array[i];
+
+		for (j = 0; j < array->n_group; ++j)
+			compute_group_tiling(array->groups[j]);
+	}
 }
 
 /* Fill up the groups array with singleton groups, i.e., one group
@@ -3654,9 +3649,6 @@ static __isl_give isl_ast_node *copy_access(struct gpu_gen *gen,
 	const char *type, struct gpu_array_ref_group *group,
 	__isl_take isl_ast_build *build, int private)
 {
-	const char *array_name;
-	const char *mem = private ? "private" : "shared";
-	char *name;
 	isl_space *space;
 	isl_ast_node *tree;
 	isl_map *schedule, *shift, *map;
@@ -3664,11 +3656,10 @@ static __isl_give isl_ast_node *copy_access(struct gpu_gen *gen,
 	isl_id_list *iterators;
 	int n;
 
-	shift = isl_set_unwrap(isl_map_domain(isl_map_copy(sched)));
-	array_name = isl_map_get_tuple_name(shift, isl_dim_out);
-	shift = shift_access(shift, group);
+	shift = shift_access(group);
 
 	schedule = isl_map_copy(shift);
+	schedule = isl_map_reset_tuple_id(schedule, isl_dim_out);
 	if (!private)
 		schedule = tile_access_schedule(gen, schedule);
 
@@ -3679,16 +3670,6 @@ static __isl_give isl_ast_node *copy_access(struct gpu_gen *gen,
 
 	schedule = isl_map_range_product(sched, schedule);
 
-	assert(array_name);
-	name = isl_alloc_array(gen->ctx, char,
-		strlen(type) + sizeof("_private_") + strlen(array_name) + 20);
-	if (group->array->n_group > 1)
-		sprintf(name, "%s_%s_%s_%d", type, mem, array_name, group->nr);
-	else
-		sprintf(name, "%s_%s_%s", type, mem, array_name);
-	shift = isl_map_set_tuple_name(shift,
-					isl_dim_out, name + strlen(type) + 1);
-
 	space = isl_space_domain(isl_map_get_space(shift));
 	map = isl_map_range_map(isl_map_universe(isl_space_unwrap(space)));
 	map = isl_map_range_product(map, shift);
@@ -3696,7 +3677,6 @@ static __isl_give isl_ast_node *copy_access(struct gpu_gen *gen,
 	schedule = isl_map_apply_domain(schedule, map);
 
 	schedule = isl_map_set_tuple_name(schedule, isl_dim_in, type);
-	free(name);
 
 	build = isl_ast_build_restrict(build, set);
 
@@ -4441,6 +4421,7 @@ static __isl_give isl_ast_node *create_host_leaf(
 	group_references(gen);
 	compute_private_access(gen);
 	check_shared_memory_bound(gen);
+	compute_group_tilings(gen);
 	host_domain = isl_set_from_union_set(isl_union_map_range(
 						isl_union_map_copy(schedule)));
 	localize_bounds(gen, kernel, host_domain);
