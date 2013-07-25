@@ -126,3 +126,28 @@ In the transformed (CUDA) code, however, overloading will cause the
 function sqrtf() to be called.  Until this issue has been resolved in PPCG,
 we recommend that users either explicitly call the function sqrtf() or
 explicitly cast the argument to double in the input code.
+
+
+Citing PPCG
+
+If you use PPCG for your research, you are invited do cite
+the following paper.
+
+@article{Verdoolaege2013PPCG,
+    author = {Verdoolaege, Sven and Juega, Juan Carlos and Cohen, Albert and
+		G\'{o}mez, Jos{\'e} Ignacio and Tenllado, Christian and
+		Catthoor, Francky},
+    title = {Polyhedral parallel code generation for CUDA},
+    journal = {ACM Trans. Archit. Code Optim.},
+    issue_date = {January 2013},
+    volume = {9},
+    number = {4},
+    month = jan,
+    year = {2013},
+    issn = {1544-3566},
+    pages = {54:1--54:23},
+    doi = {10.1145/2400682.2400713},
+    acmid = {2400713},
+    publisher = {ACM},
+    address = {New York, NY, USA},
+}
