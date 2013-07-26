@@ -636,6 +636,10 @@ struct ppcg_transform_data {
 /* Callback for pet_transform_C_source that transforms
  * the given pet_scop to a ppcg_scop before calling the
  * ppcg_transform callback.
+ *
+ * If "scop" contains any data dependent conditions or if we may
+ * not be able to print the transformed program, then just print
+ * the original code.
  */
 static __isl_give isl_printer *transform(__isl_take isl_printer *p,
 	struct pet_scop *scop, void *user)
@@ -643,7 +647,8 @@ static __isl_give isl_printer *transform(__isl_take isl_printer *p,
 	struct ppcg_transform_data *data = user;
 	struct ppcg_scop *ps;
 
-	if (pet_scop_has_data_dependent_conditions(scop)) {
+	if (!pet_scop_can_build_ast_exprs(scop) ||
+	    pet_scop_has_data_dependent_conditions(scop)) {
 		p = pet_scop_print_original(scop, p);
 		pet_scop_free(scop);
 		return p;
