@@ -430,6 +430,13 @@ static __isl_give isl_printer *transform(__isl_take isl_printer *p,
 	struct ppcg_transform_data *data = user;
 	struct ppcg_scop *ps;
 
+	if (pet_scop_has_data_dependent_accesses(scop) ||
+	    pet_scop_has_data_dependent_conditions(scop)) {
+		p = pet_scop_print_original(scop, p);
+		pet_scop_free(scop);
+		return p;
+	}
+
 	scop = pet_scop_align_params(scop);
 	ps = ppcg_scop_from_pet_scop(scop, data->options);
 
