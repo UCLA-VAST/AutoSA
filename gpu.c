@@ -4790,6 +4790,11 @@ static __isl_give isl_union_map *select_outer_tilable_band(struct gpu_gen *gen,
 
 	list = isl_schedule_get_band_forest(schedule);
 
+	if (isl_band_list_n_band(list) == 0) {
+		isl_band_list_free(list);
+		return isl_schedule_get_map(schedule);
+	}
+
 	list_select_outer_band(gen, list, 0, &info);
 
 	gen->tile_first = info.tile_first;
