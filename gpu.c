@@ -3711,6 +3711,63 @@ struct band_info {
 	isl_union_map *suffix;
 };
 
+/* Construct an isl_multi_val for use as tile sizes for tiling "node"
+ * from the elements in "tile_size".
+ */
+static __isl_give isl_multi_val *construct_band_tiles_sizes(
+	__isl_keep isl_schedule_node *node, int *tile_size)
+{
+	int i, n;
+	isl_ctx *ctx;
+	isl_space *space;
+	isl_multi_val *mv;
+
+	if (!node)
+		return NULL;
+
+	ctx = isl_schedule_node_get_ctx(node);
+	space = isl_schedule_node_band_get_space(node);
+	n = isl_schedule_node_band_n_member(node);
+	mv = isl_multi_val_zero(space);
+	for (i = 0; i < n; ++i) {
+		isl_val *v;
+
+		v = isl_val_int_from_si(ctx, tile_size[i]);
+		mv = isl_multi_val_set_val(mv, i, v);
+	}
+
+	return mv;
+}
+
+/* Tile "band" with tile size specified by "sizes".
+ *
+ * Since the tile loops will be mapped to block ids, we forcibly
+ * turn off tile loop scaling.  We may want to enable tile loop scaling
+ * at some later point, but then we would have to support the detection
+ * of strides during the mapping to block ids.
+ * Similarly, since the point loops will be mapped to thread ids,
+ * we forcibly shift the point loops so that they start at zero.
+ */
+static __isl_give isl_schedule_node *tile_band(
+	__isl_take isl_schedule_node *node, __isl_take isl_multi_val *sizes)
+{
+	isl_ctx *ctx = isl_schedule_node_get_ctx(node);
+	int scale_tile;
+	int shift_point;
+
+	scale_tile = isl_options_get_tile_scale_tile_loops(ctx);
+	isl_options_set_tile_scale_tile_loops(ctx, 0);
+	shift_point = isl_options_get_tile_shift_point_loops(ctx);
+	isl_options_set_tile_shift_point_loops(ctx, 1);
+
+	node = isl_schedule_node_band_tile(node, sizes);
+
+	isl_options_set_tile_scale_tile_loops(ctx, scale_tile);
+	isl_options_set_tile_shift_point_loops(ctx, shift_point);
+
+	return node;
+}
+
 /* Extract the set of parameter values and outer schedule dimensions
  * for which any statement instance
  * in the kernel inserted at "node" needs to be executed.
@@ -3844,6 +3901,9 @@ static __isl_give isl_schedule_node *group_statements(
 /* Create a ppcg_kernel representing the domain instances that reach "node"
  * and replace the subtree at "node" by a mark node pointing
  * to the ppcg_kernel.
+ * If "scale" is set, then the band that "node" points to is scaled
+ * by "sizes".
+ *
  * Mark all outer band nodes as atomic to ensure each kernel is only
  * scheduled once.
  * If the domain elements that reach "node" live in more than one space,
@@ -3857,7 +3917,8 @@ static __isl_give isl_schedule_node *group_statements(
  * is freed due to some error condition.
  */
 static __isl_give isl_schedule_node *create_kernel(struct gpu_gen *gen,
-	__isl_take isl_schedule_node *node)
+	__isl_take isl_schedule_node *node, int scale,
+	__isl_keep isl_multi_val *sizes)
 {
 	struct ppcg_kernel *kernel;
 	isl_id *id;
@@ -3894,6 +3955,10 @@ static __isl_give isl_schedule_node *create_kernel(struct gpu_gen *gen,
 		node = group_statements(node, kernel->id);
 
 	node = isl_schedule_node_child(node, 0);
+	if (scale)
+		node = isl_schedule_node_band_scale(node,
+						    isl_multi_val_copy(sizes));
+
 	node = isl_schedule_node_cut(node);
 	node = isl_schedule_node_parent(node);
 
@@ -3934,6 +3999,9 @@ static __isl_give isl_schedule_node *insert_empty_permutable_band(
  * permutable band such that we can assume that "node" always
  * points to a band node.
  *
+ * Tile "node" using user specified tile sizes, after splitting the band
+ * if the number of specified tile sizes is smaller than the dimension
+ * of the band.
  * Create a kernel representing the domain instances that reach "node" and
  * replace the band node with a mark node pointing to the kernel.
  */
@@ -3941,8 +4009,10 @@ static __isl_give isl_schedule_node *mark_outer_permutable(
 	struct gpu_gen *gen, __isl_take isl_schedule_node *node)
 {
 	struct ppcg_kernel *kernel;
+	int scale;
 	int tile_len;
 	int *tile_size;
+	isl_multi_val *sizes;
 
 	if (isl_schedule_node_get_type(node) == isl_schedule_node_leaf)
 		node = insert_empty_permutable_band(node);
@@ -3953,7 +4023,12 @@ static __isl_give isl_schedule_node *mark_outer_permutable(
 		return isl_schedule_node_free(node);
 	if (tile_len < isl_schedule_node_band_n_member(node))
 		node = isl_schedule_node_band_split(node, tile_len);
-	node = create_kernel(gen, node);
+	sizes = construct_band_tiles_sizes(node, tile_size);
+	node = tile_band(node, isl_multi_val_copy(sizes));
+
+	scale = gen->options->scale_tile_loops;
+	node = create_kernel(gen, node, scale, sizes);
+	isl_multi_val_free(sizes);
 	if (!node)
 		return NULL;
 	kernel = gen->kernel;
