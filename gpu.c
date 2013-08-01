@@ -3951,14 +3951,14 @@ static __isl_give isl_schedule_node *mark_outer_permutable(
 	tile_size = read_tile_sizes(gen, &tile_len);
 	if (!tile_size)
 		return isl_schedule_node_free(node);
+	if (tile_len < isl_schedule_node_band_n_member(node))
+		node = isl_schedule_node_band_split(node, tile_len);
 	node = create_kernel(gen, node);
 	if (!node)
 		return NULL;
 	kernel = gen->kernel;
 	kernel->tile_len = tile_len;
 	kernel->tile_size = tile_size;
-	if (kernel->n_parallel > kernel->tile_len)
-		kernel->n_parallel = kernel->tile_len;
 
 	return node;
 }
