@@ -392,8 +392,8 @@ static struct ppcg_scop *ppcg_scop_from_pet_scop(struct pet_scop *scop,
 	ps->context = set_intersect_str(ps->context, options->ctx);
 	ps->domain = collect_non_kill_domains(scop);
 	ps->call = collect_call_domains(scop);
-	ps->reads = pet_scop_collect_reads(scop);
-	ps->writes = pet_scop_collect_writes(scop);
+	ps->reads = pet_scop_collect_may_reads(scop);
+	ps->writes = pet_scop_collect_may_writes(scop);
 	ps->kills = collect_kills(scop);
 	ps->schedule = pet_scop_collect_schedule(scop);
 	ps->n_array = scop->n_array;

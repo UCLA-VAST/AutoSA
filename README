@@ -113,6 +113,14 @@ by the original code, then you may need to disable some optimizations
 by passing the "--fmad=false" option.
 
 
+Processing PolyBench
+
+When processing a PolyBench/C 3.2 benchmark, you should always specify
+-DPOLYBENCH_USE_C99_PROTO on the command line.  Otherwise, the source
+files are inconsistent, having fixed size arrays but parametrically
+bounded loops iterating over them.
+
+
 CUDA and function overloading
 
 While CUDA supports function overloading based on the arguments types,
