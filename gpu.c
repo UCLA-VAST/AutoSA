@@ -119,12 +119,15 @@ struct gpu_gen {
 	/* Callback for printing of AST in appropriate format. */
 	__isl_give isl_printer *(*print)(__isl_take isl_printer *p,
 		struct gpu_prog *prog, __isl_keep isl_ast_node *tree,
-		void *user);
+		struct gpu_types *types, void *user);
 	void *print_user;
 
 	struct gpu_prog *prog;
 	/* The generated AST. */
 	isl_ast_node *tree;
+
+	/* The sequence of types for which a definition has been printed. */
+	struct gpu_types types;
 
 	/* tile, grid and block sizes for each kernel */
 	isl_union_map *sizes;
@@ -230,12 +233,18 @@ static __isl_give isl_printer *print_array_name(__isl_take isl_printer *p,
 
 /* Collect all references to the given array and store pointers to them
  * in array->refs.
+ *
+ * If the array contains structures, then there is no need to collect
+ * the references since we will not be computing any reference groups.
  */
 static void collect_references(struct gpu_prog *prog,
 	struct gpu_array_info *array)
 {
 	int i;
 	int n;
+
+	if (array->has_compound_element)
+		return;
 
 	n = 0;
 	for (i = 0; i < prog->n_stmts; ++i) {
@@ -378,6 +387,7 @@ static __isl_give isl_set *compute_extent(struct pet_array *array,
 /* Is the array "array" being extracted a read-only scalar?
  *
  * That is, is "array" a scalar that is never written to.
+ * An array containing structures is never considered to be a scalar.
  */
 static int is_read_only_scalar(struct gpu_array_info *array,
 	struct gpu_prog *prog)
@@ -386,6 +396,8 @@ static int is_read_only_scalar(struct gpu_array_info *array,
 	isl_union_map *write;
 	int empty;
 
+	if (array->has_compound_element)
+		return 0;
 	if (array->n_index != 0)
 		return 0;
 
@@ -402,8 +414,8 @@ static int is_read_only_scalar(struct gpu_array_info *array,
 /* Compute bounds on the host arrays based on the accessed elements
  * and collect all references to the array.
  *
- * If the array is zero-dimensional, i.e., a scalar, we check
- * whether it is read-only.
+ * If the array is zero-dimensional and does not contain structures,
+ * i.e., if the array is a scalar, we check whether it is read-only.
  */
 static int extract_array_info(__isl_take isl_set *array, void *user)
 {
@@ -440,6 +452,7 @@ static int extract_array_info(__isl_take isl_set *array, void *user)
 	info->type = strdup(pa->element_type);
 	info->size = pa->element_size;
 	info->local = pa->declared && !pa->exposed;
+	info->has_compound_element = pa->element_is_record;
 	info->read_only_scalar = is_read_only_scalar(info, prog);
 
 	extent = compute_extent(pa, array);
@@ -473,8 +486,58 @@ error:
 	return -1;
 }
 
+/* Compute a mapping from all outer arrays (of structs) in scop
+ * to their innermost arrays.
+ *
+ * In particular, for each array of a primitive type, the result
+ * contains the identity mapping on that array.
+ * For each array involving member accesses, the result
+ * contains a mapping from the elements of the outer array of structs
+ * to all corresponding elements of the innermost nested arrays.
+ */
+static __isl_give isl_union_map *compute_to_inner(struct ppcg_scop *scop)
+{
+	int i;
+	isl_union_map *to_inner;
+
+	to_inner = isl_union_map_empty(isl_set_get_space(scop->context));
+
+	for (i = 0; i < scop->n_array; ++i) {
+		struct pet_array *array = scop->arrays[i];
+		isl_set *set;
+		isl_map *map;
+
+		if (array->element_is_record)
+			continue;
+
+		set = isl_set_copy(array->extent);
+		map = isl_set_identity(isl_set_copy(set));
+
+		while (set && isl_set_is_wrapping(set)) {
+			isl_id *id;
+			isl_map *wrapped;
+
+			id = isl_set_get_tuple_id(set);
+			wrapped = isl_set_unwrap(set);
+			wrapped = isl_map_domain_map(wrapped);
+			wrapped = isl_map_set_tuple_id(wrapped, isl_dim_in, id);
+			map = isl_map_apply_domain(map, wrapped);
+			set = isl_map_domain(isl_map_copy(map));
+		}
+
+		map = isl_map_gist_domain(map, set);
+
+		to_inner = isl_union_map_add_map(to_inner, map);
+	}
+
+	return to_inner;
+}
+
 /* Construct a gpu_array_info for each array accessed by "prog" and
  * collect them in prog->array.
+ *
+ * If there are any member accesses involved, then they are first mapped
+ * to the outer arrays of structs.
  */
 static int collect_array_info(struct gpu_prog *prog)
 {
@@ -484,10 +547,14 @@ static int collect_array_info(struct gpu_prog *prog)
 	arrays = isl_union_map_range(isl_union_map_copy(prog->read));
 	arrays = isl_union_set_union(arrays,
 			isl_union_map_range(isl_union_map_copy(prog->write)));
+
+	arrays = isl_union_set_apply(arrays,
+					isl_union_map_copy(prog->to_outer));
+
 	arrays = isl_union_set_coalesce(arrays);
 
 	prog->n_array = isl_union_set_n_set(arrays);
-	prog->array = isl_alloc_array(prog->ctx,
+	prog->array = isl_calloc_array(prog->ctx,
 				     struct gpu_array_info, prog->n_array);
 	assert(prog->array);
 	prog->n_array = 0;
@@ -516,12 +583,14 @@ static void free_array_info(struct gpu_prog *prog)
 }
 
 /* Check if a gpu array is a scalar.  A scalar is a value that is not stored
- * as an array or through a pointer reference, but as single data element.  At
- * the moment, scalars are represented as zero dimensional arrays.
+ * as an array or through a pointer reference, but as a single data element.
+ * At the moment, scalars are represented as zero-dimensional arrays.
+ * A zero-dimensional array containing structures is not considered
+ * to be a scalar.
  */
 int gpu_array_is_scalar(struct gpu_array_info *array)
 {
-	return (array->n_index == 0);
+	return !array->has_compound_element && array->n_index == 0;
 }
 
 /* Is "array" a read-only scalar?
@@ -2087,6 +2156,9 @@ static void set_last_shared(struct gpu_gen *gen,
 
 /* Compute a privatized copy of all access relations from reference groups that
  * are mapped to private memory and store the result in gen->privatization.
+ *
+ * Read-only scalars and arrays containing structures are not mapped
+ * to private memory.
  */
 static void compute_private_access(struct gpu_gen *gen)
 {
@@ -2102,6 +2174,8 @@ static void compute_private_access(struct gpu_gen *gen)
 		struct gpu_array_info *array = &gen->prog->array[i];
 
 		if (gpu_array_is_read_only_scalar(array))
+			continue;
+		if (array->has_compound_element)
 			continue;
 
 		for (j = 0; j < array->n_group; ++j) {
@@ -2797,6 +2871,10 @@ static void set_array_groups(struct gpu_array_info *array,
  * Furthermore, if two groups admit a shared memory tile and if the
  * combination of the two also admits a shared memory tile, we merge
  * the two groups.
+ *
+ * If the array contains structures, then there is no need to compute
+ * reference groups since we do not map such arrays to private or shared
+ * memory.
  */
 static void group_array_references(struct gpu_gen *gen,
 	struct gpu_array_info *array, __isl_keep isl_union_map *sched)
@@ -2805,6 +2883,9 @@ static void group_array_references(struct gpu_gen *gen,
 	int n;
 	isl_ctx *ctx = isl_union_map_get_ctx(sched);
 	struct gpu_array_ref_group **groups;
+
+	if (array->has_compound_element)
+		return;
 
 	groups = isl_calloc_array(ctx, struct gpu_array_ref_group *,
 					array->n_ref);
@@ -3120,6 +3201,11 @@ static void create_kernel_vars(struct gpu_gen *gen, struct ppcg_kernel *kernel)
  * extract_array_info may depend on the parameters.  Use the extra
  * constraints on the parameters that are valid at "host_domain"
  * to simplify these expressions and store the results in kernel->array.
+ *
+ * We only need these localized bounds for arrays that are accessed
+ * by the current kernel.  If we have found at least one reference group
+ * then the array is accessed by the kernel.  If the array has compound
+ * elements then we skipped the construction of array reference groups.
  */
 static void localize_bounds(struct gpu_gen *gen, struct ppcg_kernel *kernel,
 	__isl_keep isl_set *host_domain)
@@ -3139,7 +3225,7 @@ static void localize_bounds(struct gpu_gen *gen, struct ppcg_kernel *kernel,
 		struct gpu_array_info *array = &gen->prog->array[i];
 		isl_pw_aff_list *local;
 
-		if (array->n_group == 0)
+		if (array->n_group == 0 && !array->has_compound_element)
 			continue;
 
 		local = isl_pw_aff_list_alloc(gen->ctx, array->n_index);
@@ -3350,6 +3436,22 @@ struct ppcg_transform_data {
 	struct gpu_local_array_info *local_array;
 };
 
+/* Return the name of the outer array (of structs) accessed by "access".
+ */
+static const char *get_outer_array_name(__isl_keep isl_map *access)
+{
+	isl_space *space;
+	const char *name;
+
+	space = isl_space_range(isl_map_get_space(access));
+	while (space && isl_space_is_wrapping(space))
+		space = isl_space_domain(isl_space_unwrap(space));
+	name = isl_space_get_tuple_name(space, isl_dim_set);
+	isl_space_free(space);
+
+	return name;
+}
+
 /* Index transformation callback for pet_stmt_build_ast_exprs.
  *
  * "index" expresses the array indices in terms of statement iterators
@@ -3359,6 +3461,9 @@ struct ppcg_transform_data {
  * a shared/private copy.  In the former case, we simply return
  * the updated index.  If "index" is an affine expression rather
  * than an array access, then we also return the updated index here.
+ *
+ * If no reference groups have been computed for the array,
+ * then we can only be accessing the global array.
  *
  * Otherwise, we apply the tiling to the index.
  * This tiling is of the form
@@ -3409,15 +3514,20 @@ static __isl_give isl_multi_pw_aff *transform_index(
 	if (!isl_map_has_tuple_name(access->access, isl_dim_out))
 		return index;
 
-	name = isl_map_get_tuple_name(access->access, isl_dim_out);
+	name = get_outer_array_name(access->access);
 	i = find_array_index(data->gen, name);
 	if (i < 0)
 		isl_die(isl_multi_pw_aff_get_ctx(index), isl_error_internal,
-			"cannot find array reference group",
+			"cannot find array",
 			return isl_multi_pw_aff_free(index));
-
 	data->array = &data->gen->prog->array[i];
 	data->local_array = &data->gen->kernel->array[i];
+
+	if (access->group < 0) {
+		data->global = 1;
+		return index;
+	}
+
 	group = data->array->groups[access->group];
 	tile = group->private_tile;
 	if (!tile)
@@ -3446,12 +3556,25 @@ static __isl_give isl_multi_pw_aff *transform_index(
 
 /* Dereference "expr" by adding an index [0].
  * The original "expr" is assumed not to have any indices.
+ *
+ * If "expr" is a member access, then the dereferencing needs
+ * to be applied to the structure argument of this member access.
  */
 static __isl_give isl_ast_expr *dereference(__isl_take isl_ast_expr *expr)
 {
 	isl_ctx *ctx;
 	isl_ast_expr *res;
 	isl_ast_expr_list *list;
+
+	if (isl_ast_expr_get_op_type(expr) == isl_ast_op_member) {
+		isl_ast_expr *arg;
+
+		arg = isl_ast_expr_get_op_arg(expr, 0);
+		arg = dereference(arg);
+		expr = isl_ast_expr_set_op_arg(expr, 0, arg);
+
+		return expr;
+	}
 
 	ctx = isl_ast_expr_get_ctx(expr);
 	res = isl_ast_expr_from_val(isl_val_zero(ctx));
@@ -3475,6 +3598,9 @@ static __isl_give isl_ast_expr *dereference(__isl_take isl_ast_expr *expr)
  *	A[(..((i_0 * b_1 + i_1) ... ) * b_n + i_n]
  *
  * where b_0, b_1, ..., b_n are the bounds on the array.
+ *
+ * If the base of "expr" is a member access, then the linearization needs
+ * to be applied to the structure argument of this member access.
  */
 __isl_give isl_ast_expr *gpu_local_array_info_linearize_index(
 	struct gpu_local_array_info *array, __isl_take isl_ast_expr *expr)
@@ -3482,9 +3608,24 @@ __isl_give isl_ast_expr *gpu_local_array_info_linearize_index(
 	int i, n;
 	isl_ctx *ctx;
 	isl_set *context;
+	isl_ast_expr *arg0;
 	isl_ast_expr *res;
 	isl_ast_expr_list *list;
 	isl_ast_build *build;
+
+	arg0 = isl_ast_expr_get_op_arg(expr, 0);
+	if (isl_ast_expr_get_type(arg0) == isl_ast_expr_op &&
+	    isl_ast_expr_get_op_type(arg0) == isl_ast_op_member) {
+		isl_ast_expr *arg;
+
+		arg = isl_ast_expr_get_op_arg(arg0, 0);
+		arg = gpu_local_array_info_linearize_index(array, arg);
+		arg0 = isl_ast_expr_set_op_arg(arg0, 0, arg);
+		expr = isl_ast_expr_set_op_arg(expr, 0, arg0);
+
+		return expr;
+	}
+	isl_ast_expr_free(arg0);
 
 	ctx = isl_ast_expr_get_ctx(expr);
 	context = isl_set_universe(isl_space_params_alloc(ctx, 0));
@@ -4533,6 +4674,8 @@ static __isl_give isl_ast_node *create_host_leaf(
 	kernel->grid_size = extract_grid_size(gen, kernel);
 	extract_block_size(gen, kernel);
 	kernel->arrays = isl_union_map_range(access);
+	kernel->arrays = isl_union_set_apply(kernel->arrays,
+				isl_union_map_copy(gen->prog->to_outer));
 	kernel->space = isl_ast_build_get_schedule_space(build);
 
 	gen->private_access = NULL;
@@ -4907,7 +5050,7 @@ static void compute_schedule(struct gpu_gen *gen)
 	isl_schedule_free(schedule);
 }
 
-/* Compute the sets of array elements that need to be copied in and out.
+/* Compute the sets of outer array elements that need to be copied in and out.
  *
  * In particular, for each array that is written anywhere in gen->prog and
  * that is visible outside the corresponding scop, we copy out its entire
@@ -4918,6 +5061,10 @@ static void compute_schedule(struct gpu_gen *gen)
  * are copied out, but that are not written inside gen->prog, then
  * they also need to be copied in to ensure that the value after execution
  * is the same as the value before execution.
+ * In case the array elements are structures, we need to take into
+ * account that all members of the structures need to be written
+ * by gen->prog before we can avoid copying the data structure in.
+ *
  * While computing the set of array elements that
  * are copied out but not written, we intersect both sets with the context.
  * This helps in those cases where the arrays are declared with a fixed size,
@@ -4932,7 +5079,7 @@ static void compute_copy_in_and_out(struct gpu_gen *gen)
 {
 	int i;
 	isl_union_set *local;
-	isl_union_set *write;
+	isl_union_set *may_write, *write;
 	isl_union_set *copy_in, *copy_out;
 	isl_union_set *not_written;
 	isl_union_map *uninitialized;
@@ -4941,7 +5088,10 @@ static void compute_copy_in_and_out(struct gpu_gen *gen)
 	write = isl_union_map_range(isl_union_map_copy(gen->prog->write));
 	write = isl_union_set_intersect_params(write,
 					    isl_set_copy(gen->prog->context));
-	copy_out = isl_union_set_empty(isl_union_set_get_space(write));
+	may_write = isl_union_set_universe(isl_union_set_copy(write));
+	may_write = isl_union_set_apply(may_write,
+				    isl_union_map_copy(gen->prog->to_outer));
+	copy_out = isl_union_set_empty(isl_union_set_get_space(may_write));
 	local = isl_union_set_copy(copy_out);
 
 	for (i = 0; i < gen->prog->n_array; ++i) {
@@ -4959,7 +5109,7 @@ static void compute_copy_in_and_out(struct gpu_gen *gen)
 			continue;
 		}
 
-		write_i = isl_union_set_extract_set(write, space);
+		write_i = isl_union_set_extract_set(may_write, space);
 		empty = isl_set_fast_is_empty(write_i);
 		isl_set_free(write_i);
 		if (empty)
@@ -4968,15 +5118,22 @@ static void compute_copy_in_and_out(struct gpu_gen *gen)
 		write_i = isl_set_copy(gen->prog->array[i].extent);
 		copy_out = isl_union_set_add_set(copy_out, write_i);
 	}
+	isl_union_set_free(may_write);
 
 	copy_out = isl_union_set_intersect_params(copy_out,
 					    isl_set_copy(gen->prog->context));
 
 	gen->prog->copy_out = isl_union_set_copy(copy_out);
 
+	copy_out = isl_union_set_apply(copy_out,
+				    isl_union_map_copy(gen->prog->to_inner));
+	not_written = isl_union_set_subtract(copy_out, write);
+
 	uninitialized = isl_union_map_copy(gen->prog->scop->live_in);
 	local_uninitialized = isl_union_map_copy(uninitialized);
 
+	local = isl_union_set_apply(local,
+				    isl_union_map_copy(gen->prog->to_inner));
 	local_uninitialized = isl_union_map_intersect_range(local_uninitialized,
 							    local);
 	if (!isl_union_map_is_empty(local_uninitialized)) {
@@ -4986,9 +5143,10 @@ static void compute_copy_in_and_out(struct gpu_gen *gen)
 	uninitialized = isl_union_map_subtract(uninitialized,
 						local_uninitialized);
 	copy_in = isl_union_map_range(uninitialized);
-
-	not_written = isl_union_set_subtract(copy_out, write);
 	copy_in = isl_union_set_union(copy_in, not_written);
+	copy_in = isl_union_set_apply(copy_in,
+				    isl_union_map_copy(gen->prog->to_outer));
+
 	gen->prog->copy_in = copy_in;
 }
 
@@ -5005,6 +5163,7 @@ static struct gpu_stmt_access **expr_extract_access(struct pet_expr *expr,
 	access->write = expr->acc.write;
 	access->access = isl_map_copy(expr->acc.access);
 	access->ref_id = isl_id_copy(expr->acc.ref_id);
+	access->group = -1;
 
 	*next_access = access;
 	next_access = &(*next_access)->next;
@@ -5063,7 +5222,8 @@ static __isl_give isl_printer *print_gpu(__isl_take isl_printer *p, void *user)
 {
 	struct gpu_gen *gen = user;
 
-	return gen->print(p, gen->prog, gen->tree, gen->print_user);
+	return gen->print(p, gen->prog, gen->tree, &gen->types,
+			    gen->print_user);
 }
 
 /* Generate CUDA code for "scop" and print it to "p".
@@ -5179,10 +5339,11 @@ int generate_gpu(isl_ctx *ctx, const char *input, FILE *out,
 	struct ppcg_options *options,
 	__isl_give isl_printer *(*print)(__isl_take isl_printer *p,
 		struct gpu_prog *prog, __isl_keep isl_ast_node *tree,
-		void *user), void *user)
+		struct gpu_types *types, void *user), void *user)
 {
 	struct gpu_gen gen;
 	int r;
+	int i;
 
 	gen.ctx = ctx;
 	gen.sizes = extract_sizes_from_str(ctx, options->sizes);
@@ -5190,10 +5351,15 @@ int generate_gpu(isl_ctx *ctx, const char *input, FILE *out,
 	gen.kernel_id = 0;
 	gen.print = print;
 	gen.print_user = user;
+	gen.types.n = 0;
+	gen.types.name = NULL;
 
 	r = ppcg_transform(ctx, input, out, options, &generate_wrap, &gen);
 
 	isl_union_map_free(gen.sizes);
+	for (i = 0; i < gen.types.n; ++i)
+		free(gen.types.name[i]);
+	free(gen.types.name);
 
 	return r;
 }
@@ -5215,6 +5381,9 @@ struct gpu_prog *gpu_prog_alloc(isl_ctx *ctx, struct ppcg_scop *scop)
 	prog->stmts = extract_stmts(ctx, scop, prog->context);
 	prog->read = isl_union_map_copy(scop->reads);
 	prog->write = isl_union_map_copy(scop->writes);
+	prog->to_inner = compute_to_inner(scop);
+	prog->to_outer = isl_union_map_copy(prog->to_inner);
+	prog->to_outer = isl_union_map_reverse(prog->to_outer);
 
 	if (!prog->stmts)
 		return gpu_prog_free(prog);
@@ -5231,6 +5400,8 @@ void *gpu_prog_free(struct gpu_prog *prog)
 		return NULL;
 	free_array_info(prog);
 	free_stmts(prog->stmts, prog->n_stmts);
+	isl_union_map_free(prog->to_outer);
+	isl_union_map_free(prog->to_inner);
 	isl_union_set_free(prog->copy_in);
 	isl_union_set_free(prog->copy_out);
 	isl_union_map_free(prog->read);

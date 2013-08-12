@@ -7,6 +7,8 @@
  * Ecole Normale Superieure, 45 rue d’Ulm, 75230 Paris, France
  */
 
+#include <string.h>
+
 #include <isl/aff.h>
 
 #include "gpu_print.h"
@@ -188,4 +190,58 @@ __isl_give isl_printer *ppcg_kernel_print_domain(__isl_take isl_printer *p,
 	struct ppcg_kernel_stmt *stmt)
 {
 	return pet_stmt_print_body(stmt->u.d.stmt->stmt, p, stmt->u.d.ref2expr);
+}
+
+/* Was the definition of "type" printed before?
+ * That is, does its name appear in the list of printed types "types"?
+ */
+static int already_printed(struct gpu_types *types,
+	struct pet_type *type)
+{
+	int i;
+
+	for (i = 0; i < types->n; ++i)
+		if (!strcmp(types->name[i], type->name))
+			return 1;
+
+	return 0;
+}
+
+/* Print the definitions of all types prog->scop that have not been
+ * printed before (according to "types") on "p".
+ * Extend the list of printed types "types" with the newly printed types.
+ */
+__isl_give isl_printer *gpu_print_types(__isl_take isl_printer *p,
+	struct gpu_types *types, struct gpu_prog *prog)
+{
+	int i, n;
+	isl_ctx *ctx;
+	char **name;
+
+	n = prog->scop->n_type;
+
+	if (n == 0)
+		return p;
+
+	ctx = isl_printer_get_ctx(p);
+	name = isl_realloc_array(ctx, types->name, char *, types->n + n);
+	if (!name)
+		return isl_printer_free(p);
+	types->name = name;
+
+	for (i = 0; i < n; ++i) {
+		struct pet_type *type = prog->scop->types[i];
+
+		if (already_printed(types, type))
+			continue;
+
+		p = isl_printer_start_line(p);
+		p = isl_printer_print_str(p, type->definition);
+		p = isl_printer_print_str(p, ";");
+		p = isl_printer_end_line(p);
+
+		types->name[types->n++] = strdup(type->name);
+	}
+
+	return p;
 }

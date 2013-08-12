@@ -7,6 +7,10 @@
 #include "ppcg.h"
 #include "ppcg_options.h"
 
+/* Represents an outer array accessed by a gpu_prog.
+ * If this outer array contains structures, then the references are not
+ * collected and the reference groups are not computed.
+ */
 struct gpu_array_info {
 	/* The array data space. */
 	isl_space *space;
@@ -34,6 +38,9 @@ struct gpu_array_info {
 	/* Is this a scalar that is read-only within the entire program? */
 	int read_only_scalar;
 
+	/* Are the elements of the array structures? */
+	int has_compound_element;
+
 	/* Is the array local to the scop? */
 	int local;
 
@@ -49,6 +56,19 @@ struct gpu_local_array_info {
 __isl_give isl_ast_expr *gpu_local_array_info_linearize_index(
 	struct gpu_local_array_info *array, __isl_take isl_ast_expr *expr);
 
+/* A sequence of "n" names of types.
+ */
+struct gpu_types {
+	int n;
+	char **name;
+};
+
+/* "read" and "write" contain the original access relations, possibly
+ * involving member accesses.
+ *
+ * The elements of "array", as well as the ranges of "copy_in" and "copy_out"
+ * only refer to the outer arrays of any possible member accesses.
+ */
 struct gpu_prog {
 	isl_ctx *ctx;
 
@@ -63,10 +83,15 @@ struct gpu_prog {
 	/* All write accesses in the entire program */
 	isl_union_map *write;
 
-	/* Set of array elements that need to be copied in. */
+	/* Set of outer array elements that need to be copied in. */
 	isl_union_set *copy_in;
-	/* Set of array elements that need to be copied out. */
+	/* Set of outer array elements that need to be copied out. */
 	isl_union_set *copy_out;
+
+	/* A mapping from all innermost arrays to their outer arrays. */
+	isl_union_map *to_outer;
+	/* A mapping from the outer arrays to all corresponding inner arrays. */
+	isl_union_map *to_inner;
 
 	/* Array of statements */
 	int n_stmts;
@@ -153,7 +178,7 @@ struct ppcg_kernel_var {
  * context is a parametric set containing the values of the parameters
  * for which this kernel may be run.
  *
- * arrays is the set of accessed array elements.
+ * arrays is the set of accessed outer array elements.
  *
  * space is the schedule space of the AST context.  That is, it represents
  * the loops of the generated host code containing the kernel launch.
@@ -196,6 +221,6 @@ int generate_gpu(isl_ctx *ctx, const char *input, FILE *out,
 	struct ppcg_options *options,
 	__isl_give isl_printer *(*print)(__isl_take isl_printer *p,
 		struct gpu_prog *prog, __isl_keep isl_ast_node *tree,
-		void *user), void *user);
+		struct gpu_types *types, void *user), void *user);
 
 #endif

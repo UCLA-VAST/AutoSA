@@ -28,7 +28,7 @@ int ppcg_extract_base_name(char *name, const char *input);
  * "dep_false" represents the false (anti and output) dependences.
  * "schedule" represents the (original) schedule.
  *
- * "arrays" and "stmts" are copies of the corresponding elements
+ * "types", "arrays" and "stmts" are copies of the corresponding elements
  * of the original pet_scop.
  */
 struct ppcg_scop {
@@ -48,6 +48,8 @@ struct ppcg_scop {
 	isl_union_map *dep_false;
 	isl_union_map *schedule;
 
+	int n_type;
+	struct pet_type **types;
 	int n_array;
 	struct pet_array **arrays;
 	int n_stmt;

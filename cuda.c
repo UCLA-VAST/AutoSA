@@ -623,12 +623,23 @@ static __isl_give isl_printer *free_device_arrays(__isl_take isl_printer *p,
 
 /* Given a gpu_prog "prog" and the corresponding transformed AST
  * "tree", print the entire CUDA code to "p".
+ * "types" collects the types for which a definition has already
+ * been printed.
  */
 static __isl_give isl_printer *print_cuda(__isl_take isl_printer *p,
 	struct gpu_prog *prog, __isl_keep isl_ast_node *tree,
-	void *user)
+	struct gpu_types *types, void *user)
 {
 	struct cuda_info *cuda = user;
+	isl_printer *kernel;
+
+	kernel = isl_printer_to_file(isl_printer_get_ctx(p), cuda->kernel_c);
+	kernel = isl_printer_set_output_format(kernel, ISL_FORMAT_C);
+	kernel = gpu_print_types(kernel, types, prog);
+	isl_printer_free(kernel);
+
+	if (!kernel)
+		return isl_printer_free(p);
 
 	p = ppcg_start_block(p);
 

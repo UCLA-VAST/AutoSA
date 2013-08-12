@@ -11,7 +11,9 @@ struct gpu_stmt_access {
 	/* Access writes elements */
 	int write;
 
-	/* Index of the array reference group this reference belong to. */
+	/* Index of the array reference group this reference belong to.
+	 * -1 if no reference groups have been computed for the array.
+	 */
 	int group;
 
 	/* Access relation */

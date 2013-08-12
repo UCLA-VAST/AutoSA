@@ -370,6 +370,8 @@ static struct ppcg_scop *ppcg_scop_from_pet_scop(struct pet_scop *scop,
 	ps->writes = pet_scop_collect_may_writes(scop);
 	ps->kills = pet_scop_collect_must_kills(scop);
 	ps->schedule = pet_scop_collect_schedule(scop);
+	ps->n_type = scop->n_type;
+	ps->types = scop->types;
 	ps->n_array = scop->n_array;
 	ps->arrays = scop->arrays;
 	ps->n_stmt = scop->n_stmt;
