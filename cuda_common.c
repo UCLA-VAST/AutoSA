@@ -34,6 +34,7 @@ void cuda_open_files(struct cuda_info *info, const char *input)
     strcpy(name + len, "_kernel.hu");
     info->kernel_h = fopen(name, "w");
     fprintf(info->host_c, "#include <assert.h>\n");
+    fprintf(info->host_c, "#include <stdio.h>\n");
     fprintf(info->host_c, "#include \"%s\"\n", name);
     fprintf(info->kernel_c, "#include \"%s\"\n", name);
     fprintf(info->kernel_h, "#include \"cuda.h\"\n\n");
