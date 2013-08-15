@@ -42,6 +42,9 @@ struct gpu_local_array_info {
 	isl_pw_aff_list *bound;
 };
 
+__isl_give isl_ast_expr *gpu_local_array_info_linearize_index(
+	struct gpu_local_array_info *array, __isl_take isl_ast_expr *expr);
+
 struct gpu_prog {
 	isl_ctx *ctx;
 

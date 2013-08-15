@@ -3306,7 +3306,8 @@ static int find_array_index(struct gpu_gen *gen, const char *name)
  * "array" is the array that is being accessed.
  * "global" is set if the global array is accessed (rather than
  * shared/private memory).
- * "bound" refers to the bounds on the array specialized to the current kernel.
+ * "local_array" refers to information on the array specialized
+ * to the current kernel.
  */
 struct ppcg_transform_data {
 	struct gpu_gen *gen;
@@ -3316,7 +3317,7 @@ struct ppcg_transform_data {
 
 	struct gpu_array_info *array;
 	int global;
-	isl_pw_aff_list *bound;
+	struct gpu_local_array_info *local_array;
 };
 
 /* Index transformation callback for pet_stmt_build_ast_exprs.
@@ -3386,7 +3387,7 @@ static __isl_give isl_multi_pw_aff *transform_index(
 			return isl_multi_pw_aff_free(index));
 
 	data->array = &data->gen->prog->array[i];
-	data->bound = data->gen->kernel->array[i].bound;
+	data->local_array = &data->gen->kernel->array[i];
 	group = data->array->groups[access->group];
 	tile = group->private_tile;
 	if (!tile)
@@ -3432,17 +3433,21 @@ static __isl_give isl_ast_expr *dereference(__isl_take isl_ast_expr *expr)
 	return res;
 }
 
-/* AST expression transformation callback for pet_stmt_build_ast_exprs.
+/* Linearize the index expression "expr" based on the array bounds
+ * of "array".
  *
- * If the AST expression refers to a global scalar that is not
- * a read-only scalar, then its address was passed to the kernel and
- * we need to dereference it.
+ * That is, transform expression
  *
- * If the AST expression refers to an access to a global array,
- * then we linearize the access exploiting the bounds in data->bounds.
+ *	A[i_0][i_1]...[i_n]
+ *
+ * to
+ *
+ *	A[(..((i_0 * b_1 + i_1) ... ) * b_n + i_n]
+ *
+ * where b_0, b_1, ..., b_n are the bounds on the array.
  */
-static __isl_give isl_ast_expr *transform_expr(__isl_take isl_ast_expr *expr,
-	__isl_keep isl_id *id, void *user)
+__isl_give isl_ast_expr *gpu_local_array_info_linearize_index(
+	struct gpu_local_array_info *array, __isl_take isl_ast_expr *expr)
 {
 	int i, n;
 	isl_ctx *ctx;
@@ -3450,16 +3455,6 @@ static __isl_give isl_ast_expr *transform_expr(__isl_take isl_ast_expr *expr,
 	isl_ast_expr *res;
 	isl_ast_expr_list *list;
 	isl_ast_build *build;
-	struct ppcg_transform_data *data = user;
-
-	if (!data->array)
-		return expr;
-	if (gpu_array_is_read_only_scalar(data->array))
-		return expr;
-	if (!data->global)
-		return expr;
-	if (data->array->n_index == 0)
-		return dereference(expr);
 
 	ctx = isl_ast_expr_get_ctx(expr);
 	context = isl_set_universe(isl_space_params_alloc(ctx, 0));
@@ -3471,7 +3466,7 @@ static __isl_give isl_ast_expr *transform_expr(__isl_take isl_ast_expr *expr,
 		isl_pw_aff *bound_i;
 		isl_ast_expr *expr_i;
 
-		bound_i = isl_pw_aff_list_get_pw_aff(data->bound, i - 1);
+		bound_i = isl_pw_aff_list_get_pw_aff(array->bound, i - 1);
 		expr_i = isl_ast_build_expr_from_pw_aff(build, bound_i);
 		res = isl_ast_expr_mul(res, expr_i);
 		expr_i = isl_ast_expr_get_op_arg(expr, i);
@@ -3487,6 +3482,32 @@ static __isl_give isl_ast_expr *transform_expr(__isl_take isl_ast_expr *expr,
 	isl_ast_expr_free(expr);
 
 	return res;
+}
+
+/* AST expression transformation callback for pet_stmt_build_ast_exprs.
+ *
+ * If the AST expression refers to a global scalar that is not
+ * a read-only scalar, then its address was passed to the kernel and
+ * we need to dereference it.
+ *
+ * If the AST expression refers to an access to a global array,
+ * then we linearize the access exploiting the bounds in data->local_array.
+ */
+static __isl_give isl_ast_expr *transform_expr(__isl_take isl_ast_expr *expr,
+	__isl_keep isl_id *id, void *user)
+{
+	struct ppcg_transform_data *data = user;
+
+	if (!data->array)
+		return expr;
+	if (gpu_array_is_read_only_scalar(data->array))
+		return expr;
+	if (!data->global)
+		return expr;
+	if (data->array->n_index == 0)
+		return dereference(expr);
+
+	return gpu_local_array_info_linearize_index(data->local_array, expr);
 }
 
 /* This function is called for each instance of a user statement
