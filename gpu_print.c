@@ -77,7 +77,8 @@ static __isl_give isl_printer *stmt_print_global_index(
 {
 	int i;
 	struct gpu_array_info *array = stmt->u.c.array;
-	isl_pw_aff_list *bound = stmt->u.c.local_array->bound;
+	struct gpu_local_array_info *local = stmt->u.c.local_array;
+	isl_ast_expr *index;
 
 	if (gpu_array_is_scalar(array)) {
 		if (!array->read_only)
@@ -86,27 +87,10 @@ static __isl_give isl_printer *stmt_print_global_index(
 		return p;
 	}
 
-	p = isl_printer_print_str(p, array->name);
-	p = isl_printer_print_str(p, "[");
-	for (i = 0; i + 1 < array->n_index; ++i)
-		p = isl_printer_print_str(p, "(");
-	for (i = 0; i < array->n_index; ++i) {
-		isl_ast_expr *expr;
-		expr = isl_ast_expr_get_op_arg(stmt->u.c.index, 1 + i);
-		if (i) {
-			isl_pw_aff *bound_i;
-			bound_i = isl_pw_aff_list_get_pw_aff(bound, i);
-			p = isl_printer_print_str(p, ") * (");
-			p = isl_printer_print_pw_aff(p, bound_i);
-			p = isl_printer_print_str(p, ") + (");
-			isl_pw_aff_free(bound_i);
-		}
-		p = isl_printer_print_ast_expr(p, expr);
-		if (i)
-			p = isl_printer_print_str(p, ")");
-		isl_ast_expr_free(expr);
-	}
-	p = isl_printer_print_str(p, "]");
+	index = isl_ast_expr_copy(stmt->u.c.index);
+	index = gpu_local_array_info_linearize_index(local, index);
+	p = isl_printer_print_ast_expr(p, index);
+	isl_ast_expr_free(index);
 
 	return p;
 }
