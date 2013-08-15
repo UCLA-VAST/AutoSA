@@ -92,8 +92,7 @@ enum ppcg_kernel_stmt_type {
  * read is set if the statement should copy data from global memory
  * to shared memory or registers.
  *
- * index expresses the array element that needs to be copied as a "call"
- * to the array
+ * index expresses an access to the array element that needs to be copied
  * local_index expresses the corresponding element in the tile
  *
  * array refers to the original array being copied

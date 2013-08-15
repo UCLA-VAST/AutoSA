@@ -3652,7 +3652,7 @@ static __isl_give isl_ast_node *attach_copy_stmt(__isl_take isl_ast_node *node,
 	map = isl_map_set_tuple_id(map, isl_dim_in, id);
 	access = isl_map_apply_range(access, map);
 	pma = isl_pw_multi_aff_from_map(access);
-	expr = isl_ast_build_call_from_pw_multi_aff(build, pma);
+	expr = isl_ast_build_access_from_pw_multi_aff(build, pma);
 	stmt->u.c.index = expr;
 
 	map = isl_map_range_map(isl_map_universe(space));
@@ -3660,7 +3660,7 @@ static __isl_give isl_ast_node *attach_copy_stmt(__isl_take isl_ast_node *node,
 	map = isl_map_set_tuple_id(map, isl_dim_in, id);
 	local_access = isl_map_apply_range(local_access, map);
 	pma = isl_pw_multi_aff_from_map(local_access);
-	expr = isl_ast_build_call_from_pw_multi_aff(build, pma);
+	expr = isl_ast_build_access_from_pw_multi_aff(build, pma);
 	stmt->u.c.local_index = expr;
 
 	stmt->u.c.array = gen->copy_group->array;
