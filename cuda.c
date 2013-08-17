@@ -100,6 +100,7 @@ static __isl_give isl_printer *copy_arrays_to_device(__isl_take isl_printer *p,
 		if (empty)
 			continue;
 
+		p = isl_printer_start_line(p);
 		p = isl_printer_print_str(p, "cudaCheckReturn(cudaMemcpy(dev_");
 		p = isl_printer_print_str(p, prog->array[i].name);
 		p = isl_printer_print_str(p, ", ");
@@ -567,6 +568,7 @@ static __isl_give isl_printer *copy_arrays_from_device(
 		if (empty)
 			continue;
 
+		p = isl_printer_start_line(p);
 		p = isl_printer_print_str(p, "cudaCheckReturn(cudaMemcpy(");
 		if (gpu_array_is_scalar(&prog->array[i]))
 			p = isl_printer_print_str(p, "&");
@@ -593,6 +595,7 @@ static __isl_give isl_printer *free_device_arrays(__isl_take isl_printer *p,
 	for (i = 0; i < prog->n_array; ++i) {
 		if (gpu_array_is_read_only_scalar(&prog->array[i]))
 			continue;
+		p = isl_printer_start_line(p);
 		p = isl_printer_print_str(p, "cudaCheckReturn(cudaFree(dev_");
 		p = isl_printer_print_str(p, prog->array[i].name);
 		p = isl_printer_print_str(p, "));");
