@@ -3831,7 +3831,7 @@ static __isl_give isl_ast_node *copy_group_shared_accesses(
 
 	sched = isl_map_reset_tuple_id(sched, isl_dim_in);
 
-	if (read && group->array->n_index > 0) {
+	if (read && !gpu_array_is_scalar(group->array)) {
 		isl_space *space;
 		isl_map *map;
 
