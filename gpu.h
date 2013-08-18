@@ -157,7 +157,7 @@ struct ppcg_kernel_var {
  * n_array is the total number of arrays in the input program and also
  * the number of element in the array array.
  * array contains information about each array that is local
- * to the current kernel.  If an array is not ussed in a kernel,
+ * to the current kernel.  If an array is not used in a kernel,
  * then the corresponding entry does not contain any information.
  */
 struct ppcg_kernel {
