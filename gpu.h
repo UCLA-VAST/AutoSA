@@ -7,7 +7,7 @@
 #include "ppcg.h"
 #include "ppcg_options.h"
 
-/* Represents an outer array accessed by a gpu_prog.
+/* Represents an outer array possibly accessed by a gpu_prog.
  * If this outer array contains structures, then the references are not
  * collected and the reference groups are not computed.
  */
@@ -77,11 +77,13 @@ struct gpu_prog {
 	/* Set of parameter values */
 	isl_set *context;
 
-	/* All read accesses in the entire program */
+	/* All potential read accesses in the entire program */
 	isl_union_map *read;
 
-	/* All write accesses in the entire program */
-	isl_union_map *write;
+	/* All potential write accesses in the entire program */
+	isl_union_map *may_write;
+	/* All definite write accesses in the entire program */
+	isl_union_map *must_write;
 
 	/* Set of outer array elements that need to be copied in. */
 	isl_union_set *copy_in;
@@ -178,7 +180,7 @@ struct ppcg_kernel_var {
  * context is a parametric set containing the values of the parameters
  * for which this kernel may be run.
  *
- * arrays is the set of accessed outer array elements.
+ * arrays is the set of possibly accessed outer array elements.
  *
  * space is the schedule space of the AST context.  That is, it represents
  * the loops of the generated host code containing the kernel launch.

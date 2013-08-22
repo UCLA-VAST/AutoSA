@@ -94,9 +94,11 @@ struct gpu_array_ref_group {
 	 * memory tiling.  In particular, the domain of the map corresponds
 	 * to the first shared_len dimensions of the computed schedule.
 	 * write is set if any access in the group is a write.
+	 * exact_write is set if all writes are definite writes.
 	 */
 	isl_map *access;
 	int write;
+	int exact_write;
 
 	/* The shared memory tile, NULL if none. */
 	struct gpu_array_tile *shared_tile;
@@ -386,7 +388,7 @@ static __isl_give isl_set *compute_extent(struct pet_array *array,
 
 /* Is the array "array" being extracted a read-only scalar?
  *
- * That is, is "array" a scalar that is never written to.
+ * That is, is "array" a scalar that is never possibly written to.
  * An array containing structures is never considered to be a scalar.
  */
 static int is_read_only_scalar(struct gpu_array_info *array,
@@ -401,7 +403,7 @@ static int is_read_only_scalar(struct gpu_array_info *array,
 	if (array->n_index != 0)
 		return 0;
 
-	write = isl_union_map_copy(prog->write);
+	write = isl_union_map_copy(prog->may_write);
 	space = isl_set_universe(isl_space_copy(array->space));
 	write = isl_union_map_intersect_range(write,
 						isl_union_set_from_set(space));
@@ -533,7 +535,7 @@ static __isl_give isl_union_map *compute_to_inner(struct ppcg_scop *scop)
 	return to_inner;
 }
 
-/* Construct a gpu_array_info for each array accessed by "prog" and
+/* Construct a gpu_array_info for each array possibly accessed by "prog" and
  * collect them in prog->array.
  *
  * If there are any member accesses involved, then they are first mapped
@@ -546,7 +548,7 @@ static int collect_array_info(struct gpu_prog *prog)
 
 	arrays = isl_union_map_range(isl_union_map_copy(prog->read));
 	arrays = isl_union_set_union(arrays,
-			isl_union_map_range(isl_union_map_copy(prog->write)));
+		    isl_union_map_range(isl_union_map_copy(prog->may_write)));
 
 	arrays = isl_union_set_apply(arrays,
 					isl_union_map_copy(prog->to_outer));
@@ -2452,6 +2454,7 @@ static int populate_array_references(struct gpu_array_info *array,
 		group->array = array;
 		group->access = map;
 		group->write = access->write;
+		group->exact_write = access->exact_write;
 		group->refs = &array->refs[i];
 		group->n_ref = 1;
 
@@ -2541,6 +2544,7 @@ static struct gpu_array_ref_group *join_groups(
 	group->access = isl_map_union(isl_map_copy(group1->access),
 					isl_map_copy(group2->access));
 	group->write = group1->write || group2->write;
+	group->exact_write = group1->exact_write && group2->exact_write;
 	group->n_ref = group1->n_ref + group2->n_ref;
 	group->refs = isl_alloc_array(ctx, struct gpu_stmt_access *,
 					group->n_ref);
@@ -2573,6 +2577,13 @@ static struct gpu_array_ref_group *join_groups_and_free(
  *
  * If the array is a read-only scalar or if the user requested
  * not to use shared or private memory, then we do not need to do anything.
+ *
+ * If the array group involves any may writes (that are not must writes),
+ * then we would have to make sure that we load the data into shared/private
+ * memory first in case the data is not written by the kernel
+ * (but still written back out to global memory).
+ * Since we don't have any such mechanism at the moment, we don't
+ * compute shared/private tiles for groups involving may writes.
  *
  * We only try to compute a shared memory tile if there is any reuse
  * or if the access is not coalesced.
@@ -2618,6 +2629,8 @@ static void compute_group_bounds_core(struct gpu_gen *gen,
 	if (!use_shared && !use_private)
 		return;
 	if (gpu_array_is_read_only_scalar(group->array))
+		return;
+	if (!group->exact_write)
 		return;
 
 	access = group_access_relation(group, 1, 1);
@@ -4653,7 +4666,7 @@ static __isl_give isl_ast_node *create_host_leaf(
 	local_sched = isl_union_map_copy(gen->sched);
 	local_sched = isl_union_map_intersect_domain(local_sched, domain);
 	access = isl_union_map_union(isl_union_map_copy(gen->prog->read),
-				     isl_union_map_copy(gen->prog->write));
+				     isl_union_map_copy(gen->prog->may_write));
 	access = isl_union_map_apply_domain(access,
 					    isl_union_map_copy(local_sched));
 
@@ -5060,21 +5073,21 @@ static void compute_schedule(struct gpu_gen *gen)
 
 /* Compute the sets of outer array elements that need to be copied in and out.
  *
- * In particular, for each array that is written anywhere in gen->prog and
- * that is visible outside the corresponding scop, we copy out its entire
- * extent.
+ * In particular, for each array that is possibly written anywhere in
+ * gen->prog and that is visible outside the corresponding scop,
+ * we copy out its entire extent.
  *
  * Any array elements that is read without first being written needs
  * to be copied in. Furthermore, if there are any array elements that
- * are copied out, but that are not written inside gen->prog, then
+ * are copied out, but that may not be written inside gen->prog, then
  * they also need to be copied in to ensure that the value after execution
  * is the same as the value before execution.
  * In case the array elements are structures, we need to take into
  * account that all members of the structures need to be written
  * by gen->prog before we can avoid copying the data structure in.
  *
- * While computing the set of array elements that
- * are copied out but not written, we intersect both sets with the context.
+ * While computing the set of array elements that are copied out but
+ * not necessarily written, we intersect both sets with the context.
  * This helps in those cases where the arrays are declared with a fixed size,
  * while the accesses are parametric and the context assigns a fixed value
  * to the parameters.
@@ -5087,16 +5100,21 @@ static void compute_copy_in_and_out(struct gpu_gen *gen)
 {
 	int i;
 	isl_union_set *local;
-	isl_union_set *may_write, *write;
+	isl_union_set *may_write, *must_write;
 	isl_union_set *copy_in, *copy_out;
 	isl_union_set *not_written;
 	isl_union_map *uninitialized;
 	isl_union_map *local_uninitialized;
 
-	write = isl_union_map_range(isl_union_map_copy(gen->prog->write));
-	write = isl_union_set_intersect_params(write,
+	must_write = isl_union_map_range(
+				isl_union_map_copy(gen->prog->must_write));
+	must_write = isl_union_set_intersect_params(must_write,
 					    isl_set_copy(gen->prog->context));
-	may_write = isl_union_set_universe(isl_union_set_copy(write));
+	may_write = isl_union_map_range(
+				isl_union_map_copy(gen->prog->may_write));
+	may_write = isl_union_set_intersect_params(may_write,
+					    isl_set_copy(gen->prog->context));
+	may_write = isl_union_set_universe(may_write);
 	may_write = isl_union_set_apply(may_write,
 				    isl_union_map_copy(gen->prog->to_outer));
 	copy_out = isl_union_set_empty(isl_union_set_get_space(may_write));
@@ -5135,7 +5153,7 @@ static void compute_copy_in_and_out(struct gpu_gen *gen)
 
 	copy_out = isl_union_set_apply(copy_out,
 				    isl_union_map_copy(gen->prog->to_inner));
-	not_written = isl_union_set_subtract(copy_out, write);
+	not_written = isl_union_set_subtract(copy_out, must_write);
 
 	uninitialized = isl_union_map_copy(gen->prog->scop->live_in);
 	local_uninitialized = isl_union_map_copy(uninitialized);
@@ -5145,7 +5163,8 @@ static void compute_copy_in_and_out(struct gpu_gen *gen)
 	local_uninitialized = isl_union_map_intersect_range(local_uninitialized,
 							    local);
 	if (!isl_union_map_is_empty(local_uninitialized)) {
-		fprintf(stderr, "uninitialized reads (not copied in):\n");
+		fprintf(stderr,
+			"possibly uninitialized reads (not copied in):\n");
 		isl_union_map_dump(local_uninitialized);
 	}
 	uninitialized = isl_union_map_subtract(uninitialized,
@@ -5169,7 +5188,9 @@ static struct gpu_stmt_access **expr_extract_access(struct pet_expr *expr,
 	access->next = NULL;
 	access->read = expr->acc.read;
 	access->write = expr->acc.write;
-	access->access = isl_map_copy(expr->acc.access);
+	access->access = pet_expr_access_get_may_access(expr);
+	access->exact_write = !expr->acc.write ||
+		isl_map_is_equal(expr->acc.access, access->access);
 	access->ref_id = isl_id_copy(expr->acc.ref_id);
 	access->group = -1;
 
@@ -5388,7 +5409,8 @@ struct gpu_prog *gpu_prog_alloc(isl_ctx *ctx, struct ppcg_scop *scop)
 	prog->n_stmts = scop->n_stmt;
 	prog->stmts = extract_stmts(ctx, scop, prog->context);
 	prog->read = isl_union_map_copy(scop->reads);
-	prog->write = isl_union_map_copy(scop->writes);
+	prog->may_write = isl_union_map_copy(scop->may_writes);
+	prog->must_write = isl_union_map_copy(scop->must_writes);
 	prog->to_inner = compute_to_inner(scop);
 	prog->to_outer = isl_union_map_copy(prog->to_inner);
 	prog->to_outer = isl_union_map_reverse(prog->to_outer);
@@ -5413,7 +5435,8 @@ void *gpu_prog_free(struct gpu_prog *prog)
 	isl_union_set_free(prog->copy_in);
 	isl_union_set_free(prog->copy_out);
 	isl_union_map_free(prog->read);
-	isl_union_map_free(prog->write);
+	isl_union_map_free(prog->may_write);
+	isl_union_map_free(prog->must_write);
 	isl_set_free(prog->context);
 	free(prog);
 	return NULL;

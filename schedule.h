@@ -10,13 +10,15 @@ struct gpu_stmt_access {
 	int read;
 	/* Access writes elements */
 	int write;
+	/* All writes are definite writes. */
+	int exact_write;
 
 	/* Index of the array reference group this reference belong to.
 	 * -1 if no reference groups have been computed for the array.
 	 */
 	int group;
 
-	/* Access relation */
+	/* May access relation */
 	isl_map *access;
 	/* The reference id of the corresponding pet_expr. */
 	isl_id *ref_id;
