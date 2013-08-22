@@ -62,7 +62,7 @@ struct gpu_array_bound {
  * bound is an array of size "n" representing the lower bound
  *	and size for each index.
  *
- * tiling maps a tile in the global array to the correspondin
+ * tiling maps a tile in the global array to the corresponding
  * shared/private memory tile and is of the form
  *
  *	{ [D[i] -> A[a]] -> T[(a + shift(i))/stride - lb(i)] }
@@ -3700,7 +3700,7 @@ static __isl_give isl_ast_node *attach_copy_stmt(__isl_take isl_ast_node *node,
  *
  * (with S the first shared_len dimensions of the computed schedule,
  * A the array and L the schedule correponding to the generated loops),
- * indicating where the copying the array elements that need to be copied,
+ * indicating where to copy the array elements that need to be copied,
  * construct code for performing the copying.
  *
  * "group" is the array reference group that is being copied
@@ -4449,7 +4449,7 @@ static __isl_give isl_ast_node *construct_launch(
 
 /* This function is called for each leaf in the AST of the host code.
  * We first specialize the schedule to the site of the leaf, compute
- * the size of shared memory and then construct the body of host code
+ * the size of shared memory and then construct the body of the host code
  * and the associated kernel.
  *
  * The necessary information for printing the kernel launch is
