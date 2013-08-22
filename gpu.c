@@ -389,24 +389,32 @@ static int extract_array_info(__isl_take isl_set *array, void *user)
 	int n_index;
 	isl_pw_aff **bounds;
 	struct pet_array *pa;
+	struct gpu_array_info *info;
 	isl_set *extent;
+
+	info = &prog->array[prog->n_array];
+	prog->n_array++;
 
 	n_index = isl_set_dim(array, isl_dim_set);
 	name = isl_set_get_tuple_name(array);
 	bounds = isl_alloc_array(isl_set_get_ctx(array),
 				 isl_pw_aff *, n_index);
-	assert(bounds);
-	prog->array[prog->n_array].dim = isl_set_get_space(array);
-	prog->array[prog->n_array].name = strdup(name);
-	prog->array[prog->n_array].n_index = n_index;
-	prog->array[prog->n_array].bound = bounds;
+	if (!bounds)
+		goto error;
+
+	info->dim = isl_set_get_space(array);
+	info->name = strdup(name);
+	info->n_index = n_index;
+	info->bound = bounds;
 
 	pa = find_array(prog->scop, array);
-	assert(pa);
+	if (!pa)
+		isl_die(isl_set_get_ctx(array), isl_error_internal,
+			"unable to find array in scop", goto error);
 
-	prog->array[prog->n_array].type = strdup(pa->element_type);
-	prog->array[prog->n_array].size = pa->element_size;
-	prog->array[prog->n_array].local = pa->declared && !pa->exposed;
+	info->type = strdup(pa->element_type);
+	info->size = pa->element_size;
+	info->local = pa->declared && !pa->exposed;
 
 	if (n_index == 0) {
 		isl_set *space;
@@ -420,7 +428,7 @@ static int extract_array_info(__isl_take isl_set *array, void *user)
 		empty = isl_union_map_is_empty(write);
 		isl_union_map_free(write);
 
-		prog->array[prog->n_array].read_only = empty;
+		info->read_only = empty;
 	}
 
 	extent = compute_extent(pa, array);
@@ -441,18 +449,23 @@ static int extract_array_info(__isl_take isl_set *array, void *user)
 
 		bounds[i] = bound;
 	}
-	prog->array[prog->n_array].extent = extent;
+	info->extent = extent;
 
-	collect_references(prog, &prog->array[prog->n_array]);
-
-	prog->n_array++;
+	collect_references(prog, info);
 
 	isl_set_free(array);
 	return 0;
+error:
+	isl_set_free(array);
+	return -1;
 }
 
-void collect_array_info(struct gpu_prog *prog)
+/* Construct a gpu_array_info for each array accessed by "prog" and
+ * collect them in prog->array.
+ */
+static int collect_array_info(struct gpu_prog *prog)
 {
+	int r;
 	isl_union_set *arrays;
 
 	arrays = isl_union_map_range(isl_union_map_copy(prog->read));
@@ -465,8 +478,10 @@ void collect_array_info(struct gpu_prog *prog)
 				     struct gpu_array_info, prog->n_array);
 	assert(prog->array);
 	prog->n_array = 0;
-	isl_union_set_foreach_set(arrays, &extract_array_info, prog);
+	r = isl_union_set_foreach_set(arrays, &extract_array_info, prog);
 	isl_union_set_free(arrays);
+
+	return r;
 }
 
 static void free_array_info(struct gpu_prog *prog)
@@ -5164,7 +5179,8 @@ struct gpu_prog *gpu_prog_alloc(isl_ctx *ctx, struct ppcg_scop *scop)
 	if (!prog->stmts)
 		return gpu_prog_free(prog);
 
-	collect_array_info(prog);
+	if (collect_array_info(prog) < 0)
+		return gpu_prog_free(prog);
 
 	return prog;
 }
