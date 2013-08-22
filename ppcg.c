@@ -164,6 +164,19 @@ static __isl_give isl_union_set *collect_call_domains(struct pet_scop *scop)
 	return collect_domains(scop, &has_call);
 }
 
+/* Compute the flow dependences and the live in accesses.
+ */
+static void compute_flow_dep(struct ppcg_scop *ps)
+{
+	isl_union_map *empty;
+
+	empty = isl_union_map_empty(isl_union_set_get_space(ps->domain));
+	isl_union_map_compute_flow(isl_union_map_copy(ps->reads),
+				isl_union_map_copy(ps->writes), empty,
+				isl_union_map_copy(ps->schedule),
+				&ps->dep_flow, NULL, &ps->live_in, NULL);
+}
+
 /* Compute the dependences of the program represented by "scop".
  * Store the computed flow dependences
  * in scop->dep_flow and the reads with no corresponding writes in
@@ -172,17 +185,12 @@ static __isl_give isl_union_set *collect_call_domains(struct pet_scop *scop)
  */
 static void compute_dependences(struct ppcg_scop *scop)
 {
-	isl_union_map *empty;
 	isl_union_map *dep1, *dep2;
 
 	if (!scop)
 		return;
 
-	empty = isl_union_map_empty(isl_union_set_get_space(scop->domain));
-	isl_union_map_compute_flow(isl_union_map_copy(scop->reads),
-				isl_union_map_copy(scop->writes), empty,
-				isl_union_map_copy(scop->schedule),
-				&scop->dep_flow, NULL, &scop->live_in, NULL);
+	compute_flow_dep(scop);
 
 	isl_union_map_compute_flow(isl_union_map_copy(scop->writes),
 				isl_union_map_copy(scop->writes),
