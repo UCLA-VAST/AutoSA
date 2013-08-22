@@ -31,8 +31,8 @@ struct gpu_array_info {
 	int n_group;
 	struct gpu_array_ref_group **groups;
 
-	/* For scalars, is this scalar read-only within the entire program? */
-	int read_only;
+	/* Is this a scalar that is read-only within the entire program? */
+	int read_only_scalar;
 
 	/* Is the array local to the scop? */
 	int local;

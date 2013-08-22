@@ -81,7 +81,7 @@ static __isl_give isl_printer *stmt_print_global_index(
 	isl_ast_expr *index;
 
 	if (gpu_array_is_scalar(array)) {
-		if (!array->read_only)
+		if (!gpu_array_is_read_only_scalar(array))
 			p = isl_printer_print_str(p, "*");
 		p = isl_printer_print_str(p, array->name);
 		return p;

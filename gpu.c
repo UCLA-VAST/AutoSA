@@ -375,6 +375,30 @@ static __isl_give isl_set *compute_extent(struct pet_array *array,
 	return extent;
 }
 
+/* Is the array "array" being extracted a read-only scalar?
+ *
+ * That is, is "array" a scalar that is never written to.
+ */
+static int is_read_only_scalar(struct gpu_array_info *array,
+	struct gpu_prog *prog)
+{
+	isl_set *space;
+	isl_union_map *write;
+	int empty;
+
+	if (array->n_index != 0)
+		return 0;
+
+	write = isl_union_map_copy(prog->write);
+	space = isl_set_universe(isl_space_copy(array->space));
+	write = isl_union_map_intersect_range(write,
+						isl_union_set_from_set(space));
+	empty = isl_union_map_is_empty(write);
+	isl_union_map_free(write);
+
+	return empty;
+}
+
 /* Compute bounds on the host arrays based on the accessed elements
  * and collect all references to the array.
  *
@@ -415,21 +439,7 @@ static int extract_array_info(__isl_take isl_set *array, void *user)
 	info->type = strdup(pa->element_type);
 	info->size = pa->element_size;
 	info->local = pa->declared && !pa->exposed;
-
-	if (n_index == 0) {
-		isl_set *space;
-		isl_union_map *write;
-		int empty;
-
-		write = isl_union_map_copy(prog->write);
-		space = isl_set_universe(isl_set_get_space(array));
-		write = isl_union_map_intersect_range(write,
-				    isl_union_set_from_set(space));
-		empty = isl_union_map_is_empty(write);
-		isl_union_map_free(write);
-
-		info->read_only = empty;
-	}
+	info->read_only_scalar = is_read_only_scalar(info, prog);
 
 	extent = compute_extent(pa, array);
 	for (i = 0; i < n_index; ++i) {
@@ -515,7 +525,7 @@ int gpu_array_is_scalar(struct gpu_array_info *array)
  */
 int gpu_array_is_read_only_scalar(struct gpu_array_info *array)
 {
-	return gpu_array_is_scalar(array) && array->read_only;
+	return array->read_only_scalar;
 }
 
 /* Internal data structure for extract_size_of_type.
