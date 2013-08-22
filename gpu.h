@@ -8,7 +8,8 @@
 #include "ppcg_options.h"
 
 struct gpu_array_info {
-	isl_space *dim;
+	/* The array data space. */
+	isl_space *space;
 	/* Element type. */
 	char *type;
 	/* Element size. */

@@ -402,7 +402,7 @@ static int extract_array_info(__isl_take isl_set *array, void *user)
 	if (!bounds)
 		goto error;
 
-	info->dim = isl_set_get_space(array);
+	info->space = isl_set_get_space(array);
 	info->name = strdup(name);
 	info->n_index = n_index;
 	info->bound = bounds;
@@ -494,7 +494,7 @@ static void free_array_info(struct gpu_prog *prog)
 		free(prog->array[i].name);
 		for (j = 0; j < n_index; ++j)
 			isl_pw_aff_free(prog->array[i].bound[j]);
-		isl_space_free(prog->array[i].dim);
+		isl_space_free(prog->array[i].space);
 		isl_set_free(prog->array[i].extent);
 		free(prog->array[i].bound);
 		free(prog->array[i].refs);
@@ -2518,7 +2518,7 @@ static struct gpu_array_ref_group *join_groups_and_free(
 static void compute_group_bounds_core(struct gpu_gen *gen,
 	struct gpu_array_ref_group *group)
 {
-	isl_ctx *ctx = isl_space_get_ctx(group->array->dim);
+	isl_ctx *ctx = isl_space_get_ctx(group->array->space);
 	isl_union_map *access;
 	int n_index = group->array->n_index;
 	int no_reuse;
@@ -2700,7 +2700,7 @@ static int group_common_shared_memory_tile(struct gpu_gen *gen,
 {
 	int i, j;
 	int recompute_overlap = 0;
-	isl_ctx *ctx = isl_space_get_ctx(array->dim);
+	isl_ctx *ctx = isl_space_get_ctx(array->space);
 
 	for (i = 0; i < n; ++i) {
 		if (!groups[i]->shared_tile)
@@ -4243,7 +4243,7 @@ static __isl_give isl_union_map *add_group_schedule(struct gpu_gen *gen,
 					    isl_union_map_copy(schedule));
 	access_map = isl_map_from_union_map(access);
 
-	space = isl_space_copy(group->array->dim);
+	space = isl_space_copy(group->array->space);
 	space = isl_space_from_range(space);
 	space = isl_space_add_dims(space, isl_dim_in, gen->shared_len);
 	map = isl_map_domain_map(isl_map_universe(space));
@@ -4928,7 +4928,7 @@ static void compute_copy_in_and_out(struct gpu_gen *gen)
 		if (gen->prog->array[i].local)
 			continue;
 
-		space = isl_space_copy(gen->prog->array[i].dim);
+		space = isl_space_copy(gen->prog->array[i].space);
 		write_i = isl_union_set_extract_set(write, space);
 		empty = isl_set_fast_is_empty(write_i);
 		isl_set_free(write_i);
