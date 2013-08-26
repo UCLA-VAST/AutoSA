@@ -42,4 +42,7 @@ ISL_ARG_BOOL(struct ppcg_options, openmp, 0, "openmp", 0,
 	"Generate OpenMP macros (only for C target)")
 ISL_ARG_CHOICE(struct ppcg_options, target, 0, "target", target,
 	PPCG_TARGET_CUDA, "the target to generate code for")
+ISL_ARG_BOOL(struct ppcg_options, linearize_device_arrays, 0,
+	"linearize-device-arrays", 1,
+	"linearize all device arrays, even those of fixed size")
 ISL_ARGS_END

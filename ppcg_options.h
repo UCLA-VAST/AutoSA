@@ -32,6 +32,9 @@ struct ppcg_options {
 
 	/* Generate OpenMP macros (C target only). */
 	int openmp;
+
+	/* Linearize all device arrays. */
+	int linearize_device_arrays;
 };
 
 ISL_ARG_DECL(ppcg_debug_options, struct ppcg_debug_options,

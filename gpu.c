@@ -430,6 +430,7 @@ static int extract_array_info(__isl_take isl_set *array, void *user)
 	info->name = strdup(name);
 	info->n_index = n_index;
 	info->bound = bounds;
+	info->linearize = prog->scop->options->linearize_device_arrays;
 
 	pa = find_array(prog->scop, array);
 	if (!pa)
@@ -458,6 +459,8 @@ static int extract_array_info(__isl_take isl_set *array, void *user)
 		bound = isl_pw_aff_gist(bound, isl_set_copy(prog->context));
 
 		bounds[i] = bound;
+		if (!isl_pw_aff_is_cst(bound))
+			info->linearize = 1;
 	}
 	info->extent = extent;
 
@@ -3533,6 +3536,8 @@ static __isl_give isl_ast_expr *transform_expr(__isl_take isl_ast_expr *expr,
 		return expr;
 	if (data->array->n_index == 0)
 		return dereference(expr);
+	if (!data->array->linearize)
+		return expr;
 
 	return gpu_local_array_info_linearize_index(data->local_array, expr);
 }

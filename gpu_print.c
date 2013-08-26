@@ -55,6 +55,27 @@ __isl_give isl_printer *gpu_array_info_print_size(__isl_take isl_printer *prn,
 	return prn;
 }
 
+/* Print the declaration of a non-linearized array argument.
+ */
+static __isl_give isl_printer *print_non_linearized_declaration_argument(
+	__isl_take isl_printer *p, struct gpu_array_info *array)
+{
+	int i;
+
+	p = isl_printer_print_str(p, array->type);
+	p = isl_printer_print_str(p, " ");
+
+	p = isl_printer_print_str(p, array->name);
+
+	for (i = 0; i < array->n_index; i++) {
+		p = isl_printer_print_str(p, "[");
+		p = isl_printer_print_pw_aff(p, array->bound[i]);
+		p = isl_printer_print_str(p, "]");
+	}
+
+	return p;
+}
+
 /* Print the declaration of an array argument.
  */
 __isl_give isl_printer *gpu_array_info_print_declaration_argument(
@@ -66,6 +87,9 @@ __isl_give isl_printer *gpu_array_info_print_declaration_argument(
 		p = isl_printer_print_str(p, array->name);
 		return p;
 	}
+
+	if (array->n_index != 0 && !array->linearize)
+		return print_non_linearized_declaration_argument(p, array);
 
 	p = isl_printer_print_str(p, array->type);
 	p = isl_printer_print_str(p, " ");
@@ -122,7 +146,9 @@ static __isl_give isl_printer *stmt_print_global_index(
 	}
 
 	index = isl_ast_expr_copy(stmt->u.c.index);
-	index = gpu_local_array_info_linearize_index(local, index);
+	if (array->linearize)
+		index = gpu_local_array_info_linearize_index(local, index);
+
 	p = isl_printer_print_ast_expr(p, index);
 	isl_ast_expr_free(index);
 
