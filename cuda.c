@@ -212,20 +212,12 @@ static __isl_give isl_printer *print_kernel_arguments(__isl_take isl_printer *p,
 		if (!first)
 			p = isl_printer_print_str(p, ", ");
 
-		if (types) {
-			p = isl_printer_print_str(p, prog->array[i].type);
-			p = isl_printer_print_str(p, " ");
-		}
-
-		if (gpu_array_is_read_only_scalar(&prog->array[i])) {
-			p = isl_printer_print_str(p, prog->array[i].name);
-		} else {
-			if (types)
-				p = isl_printer_print_str(p, "*");
-			else
-				p = isl_printer_print_str(p, "dev_");
-			p = isl_printer_print_str(p, prog->array[i].name);
-		}
+		if (types)
+			p = gpu_array_info_print_declaration_argument(p,
+				&prog->array[i]);
+		else
+			p = gpu_array_info_print_call_argument(p,
+				&prog->array[i]);
 
 		first = 0;
 	}

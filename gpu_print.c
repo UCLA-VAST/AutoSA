@@ -55,6 +55,40 @@ __isl_give isl_printer *gpu_array_info_print_size(__isl_take isl_printer *prn,
 	return prn;
 }
 
+/* Print the declaration of an array argument.
+ */
+__isl_give isl_printer *gpu_array_info_print_declaration_argument(
+	__isl_take isl_printer *p, struct gpu_array_info *array)
+{
+	if (gpu_array_is_read_only_scalar(array)) {
+		p = isl_printer_print_str(p, array->type);
+		p = isl_printer_print_str(p, " ");
+		p = isl_printer_print_str(p, array->name);
+		return p;
+	}
+
+	p = isl_printer_print_str(p, array->type);
+	p = isl_printer_print_str(p, " ");
+	p = isl_printer_print_str(p, "*");
+	p = isl_printer_print_str(p, array->name);
+
+	return p;
+}
+
+/* Print the call of an array argument.
+ */
+__isl_give isl_printer *gpu_array_info_print_call_argument(
+	__isl_take isl_printer *p, struct gpu_array_info *array)
+{
+	if (gpu_array_is_read_only_scalar(array))
+		return isl_printer_print_str(p, array->name);
+
+	p = isl_printer_print_str(p, "dev_");
+	p = isl_printer_print_str(p, array->name);
+
+	return p;
+}
+
 /* Print an access to the element in the private/shared memory copy
  * described by "stmt".  The index of the copy is recorded in
  * stmt->local_index as an access to the array.
