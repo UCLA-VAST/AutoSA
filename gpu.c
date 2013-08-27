@@ -2165,6 +2165,8 @@ static void check_shared_memory_bound(struct gpu_gen *gen)
 			struct gpu_array_ref_group *group;
 
 			group = array->groups[j];
+			if (group->private_tile)
+				continue;
 			if (!group->shared_tile)
 				continue;
 
