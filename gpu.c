@@ -4805,7 +4805,7 @@ static void band_select_outer_band(struct gpu_gen *gen,
 	int n_parallel;
 
 	for (n_parallel = 0; n_parallel < n; ++n_parallel)
-		if (!isl_band_member_is_zero_distance(band, n_parallel))
+		if (!isl_band_member_is_coincident(band, n_parallel))
 			break;
 
 	info->n_parallel = n_parallel;
@@ -5039,6 +5039,8 @@ static void compute_schedule(struct gpu_gen *gen)
 				isl_set_copy(gen->prog->scop->context));
 	sc = isl_schedule_constraints_on_domain(isl_union_set_copy(domain));
 	sc = isl_schedule_constraints_set_validity(sc, isl_union_map_copy(dep));
+	sc = isl_schedule_constraints_set_coincidence(sc,
+						    isl_union_map_copy(dep));
 	sc = isl_schedule_constraints_set_proximity(sc, dep);
 
 	if (gen->options->debug->dump_schedule_constraints)
