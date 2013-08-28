@@ -2595,6 +2595,7 @@ static struct gpu_array_ref_group *join_groups_and_free(
 
 /* Compute the private and/or shared memory tiles for the array
  * reference group "group" of array "array".
+ * Return 0 on success and -1 on error.
  *
  * If the array is a read-only scalar or if the user requested
  * not to use shared or private memory, then we do not need to do anything.
@@ -2636,7 +2637,7 @@ static struct gpu_array_ref_group *join_groups_and_free(
  * tile size using can_tile, after introducing a dependence
  * on the thread indices.
  */
-static void compute_group_bounds_core(struct gpu_gen *gen,
+static int compute_group_bounds_core(struct gpu_gen *gen,
 	struct gpu_array_ref_group *group)
 {
 	isl_ctx *ctx = isl_space_get_ctx(group->array->space);
@@ -2648,11 +2649,11 @@ static void compute_group_bounds_core(struct gpu_gen *gen,
 	int use_private = gen->options->use_private_memory;
 
 	if (!use_shared && !use_private)
-		return;
+		return 0;
 	if (gpu_array_is_read_only_scalar(group->array))
-		return;
+		return 0;
 	if (!group->exact_write)
-		return;
+		return 0;
 
 	access = group_access_relation(group, 1, 1);
 	no_reuse = isl_union_map_is_injective(access);
@@ -2665,7 +2666,7 @@ static void compute_group_bounds_core(struct gpu_gen *gen,
 
 	if (!use_private || no_reuse) {
 		isl_union_map_free(access);
-		return;
+		return 0;
 	}
 
 	access = isl_union_map_apply_domain(access,
@@ -2675,7 +2676,7 @@ static void compute_group_bounds_core(struct gpu_gen *gen,
 
 	if (!access_is_bijective(gen, acc)) {
 		isl_map_free(acc);
-		return;
+		return 0;
 	}
 
 	group->private_tile = create_tile(gen->ctx, n_index);
@@ -2684,16 +2685,22 @@ static void compute_group_bounds_core(struct gpu_gen *gen,
 		group->private_tile = free_tile(group->private_tile);
 
 	isl_map_free(acc);
+
+	return 0;
 }
 
 /* Compute the private and/or shared memory tiles for the array
  * reference group "group" of array "array" and set last_shared.
+ * Return 0 on success and -1 on error.
  */
-static void compute_group_bounds(struct gpu_gen *gen,
+static int compute_group_bounds(struct gpu_gen *gen,
 	struct gpu_array_ref_group *group)
 {
-	compute_group_bounds_core(gen, group);
+	if (compute_group_bounds_core(gen, group) < 0)
+		return -1;
 	set_last_shared(gen, group);
+
+	return 0;
 }
 
 /* If two groups have overlapping access relations (as determined by
@@ -2703,6 +2710,7 @@ static void compute_group_bounds(struct gpu_gen *gen,
  * on the merged groups.
  *
  * Return the updated number of groups.
+ * Return -1 on error.
  */
 static int group_writes(struct gpu_gen *gen,
 	int n, struct gpu_array_ref_group **groups,
@@ -2720,10 +2728,12 @@ static int group_writes(struct gpu_gen *gen,
 				continue;
 
 			groups[i] = join_groups_and_free(groups[i], groups[j]);
-			if (compute_bounds)
-				compute_group_bounds(gen, groups[i]);
+			if (compute_bounds &&
+			    compute_group_bounds(gen, groups[i]) < 0)
+				return -1;
 			if (j != n - 1)
 				groups[j] = groups[n - 1];
+			groups[n - 1] = NULL;
 			n--;
 		}
 	}
@@ -2816,6 +2826,7 @@ static int smaller_tile(isl_ctx *ctx, struct gpu_array_tile *tile,
  * writes again.
  *
  * Return the number of groups after merging.
+ * Return -1 on error.
  */
 static int group_common_shared_memory_tile(struct gpu_gen *gen,
 	struct gpu_array_info *array, int n,
@@ -2845,7 +2856,10 @@ static int group_common_shared_memory_tile(struct gpu_gen *gen,
 				continue;
 
 			group = join_groups(groups[i], groups[j]);
-			compute_group_bounds(gen, group);
+			if (compute_group_bounds(gen, group) < 0) {
+				free_array_ref_group(group);
+				return -1;
+			}
 			if (!group->shared_tile ||
 			    !smaller_tile(ctx, group->shared_tile,
 					groups[i]->shared_tile,
@@ -2932,7 +2946,8 @@ static int group_array_references(struct gpu_gen *gen,
 	n = group_overlapping_writes(gen, n, groups);
 
 	for (i = 0; i < n; ++i)
-		compute_group_bounds(gen, groups[i]);
+		if (compute_group_bounds(gen, groups[i]) < 0)
+			n = -1;
 
 	n = group_last_shared_overlapping_writes(gen, n, groups);
 
@@ -2940,7 +2955,12 @@ static int group_array_references(struct gpu_gen *gen,
 
 	set_array_groups(array, n, groups);
 
-	return 0;
+	if (n >= 0)
+		return 0;
+
+	for (i = 0; i < array->n_ref; ++i)
+		free_array_ref_group(groups[i]);
+	return -1;
 }
 
 /* Take tiled_sched, project it onto the shared tile loops and
