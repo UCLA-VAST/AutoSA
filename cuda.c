@@ -38,6 +38,21 @@ static __isl_give isl_printer *print_cuda_macros(__isl_take isl_printer *p)
 	return p;
 }
 
+/* Print a declaration for the device array corresponding to "array" on "p".
+ */
+static __isl_give isl_printer *declare_device_array(__isl_take isl_printer *p,
+	struct gpu_array_info *array)
+{
+	p = isl_printer_start_line(p);
+	p = isl_printer_print_str(p, array->type);
+	p = isl_printer_print_str(p, " *dev_");
+	p = isl_printer_print_str(p, array->name);
+	p = isl_printer_print_str(p, ";");
+	p = isl_printer_end_line(p);
+
+	return p;
+}
+
 static __isl_give isl_printer *declare_device_arrays(__isl_take isl_printer *p,
 	struct gpu_prog *prog)
 {
@@ -46,12 +61,8 @@ static __isl_give isl_printer *declare_device_arrays(__isl_take isl_printer *p,
 	for (i = 0; i < prog->n_array; ++i) {
 		if (gpu_array_is_read_only_scalar(&prog->array[i]))
 			continue;
-		p = isl_printer_start_line(p);
-		p = isl_printer_print_str(p, prog->array[i].type);
-		p = isl_printer_print_str(p, " *dev_");
-		p = isl_printer_print_str(p, prog->array[i].name);
-		p = isl_printer_print_str(p, ";");
-		p = isl_printer_end_line(p);
+
+		p = declare_device_array(p, &prog->array[i]);
 	}
 	p = isl_printer_start_line(p);
 	p = isl_printer_end_line(p);
