@@ -2894,6 +2894,7 @@ static void set_array_groups(struct gpu_array_info *array,
 
 /* Group array references that should be considered together when
  * deciding whether to access them from private, shared or global memory.
+ * Return -1 on error.
  *
  * In particular, if two array references overlap and if one of them
  * is a write, then the two references are grouped together.
@@ -2910,7 +2911,7 @@ static void set_array_groups(struct gpu_array_info *array,
  * reference groups since we do not map such arrays to private or shared
  * memory.
  */
-static void group_array_references(struct gpu_gen *gen,
+static int group_array_references(struct gpu_gen *gen,
 	struct gpu_array_info *array, __isl_keep isl_union_map *sched)
 {
 	int i;
@@ -2919,11 +2920,12 @@ static void group_array_references(struct gpu_gen *gen,
 	struct gpu_array_ref_group **groups;
 
 	if (array->has_compound_element)
-		return;
+		return 0;
 
 	groups = isl_calloc_array(ctx, struct gpu_array_ref_group *,
 					array->n_ref);
-	assert(groups);
+	if (!groups)
+		return -1;
 
 	n = populate_array_references(array, sched, groups);
 
@@ -2937,6 +2939,8 @@ static void group_array_references(struct gpu_gen *gen,
 	n = group_common_shared_memory_tile(gen, array, n, groups);
 
 	set_array_groups(array, n, groups);
+
+	return 0;
 }
 
 /* Take tiled_sched, project it onto the shared tile loops and
@@ -2967,18 +2971,24 @@ static void compute_shared_sched(struct gpu_gen *gen)
 
 /* Group references of all arrays in the program.
  */
-static void group_references(struct gpu_gen *gen)
+static int group_references(struct gpu_gen *gen)
 {
 	int i;
+	int r = 0;
 	isl_union_map *sched;
 
 	sched = isl_union_map_apply_range(isl_union_map_copy(gen->shared_sched),
 					  isl_union_map_copy(gen->shared_proj));
 
-	for (i = 0; i < gen->prog->n_array; ++i)
-		group_array_references(gen, &gen->prog->array[i], sched);
+	for (i = 0; i < gen->prog->n_array; ++i) {
+		r = group_array_references(gen, &gen->prog->array[i], sched);
+		if (r < 0)
+			break;
+	}
 
 	isl_union_map_free(sched);
+
+	return r;
 }
 
 /* Free all array information that is local to the current kernel.
@@ -4873,7 +4883,8 @@ static __isl_give isl_ast_node *create_host_leaf(
 	gen->private_access = NULL;
 	compute_shared_sched(gen);
 	gen->privatization = compute_privatization(gen);
-	group_references(gen);
+	if (group_references(gen) < 0)
+		schedule = isl_union_map_free(schedule);
 	compute_private_access(gen);
 	check_shared_memory_bound(gen);
 	compute_group_tilings(gen);
