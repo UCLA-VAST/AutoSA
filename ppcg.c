@@ -164,33 +164,6 @@ static __isl_give isl_union_set *collect_call_domains(struct pet_scop *scop)
 	return collect_domains(scop, &has_call);
 }
 
-/* Collect all kill accesses in "scop".
- */
-static __isl_give isl_union_map *collect_kills(struct pet_scop *scop)
-{
-	int i;
-	isl_union_map *kills;
-
-	if (!scop)
-		return NULL;
-
-	kills = isl_union_map_empty(isl_set_get_space(scop->context));
-
-	for (i = 0; i < scop->n_stmt; ++i) {
-		struct pet_stmt *stmt = scop->stmts[i];
-		isl_map *kill_i;
-
-		if (!is_kill(stmt))
-			continue;
-		kill_i = isl_map_copy(stmt->body->args[0]->acc.access);
-		kill_i = isl_map_intersect_domain(kill_i,
-						    isl_set_copy(stmt->domain));
-		kills = isl_union_map_add_map(kills, kill_i);
-	}
-
-	return kills;
-}
-
 /* Compute the dependences of the program represented by "scop".
  * Store the computed flow dependences
  * in scop->dep_flow and the reads with no corresponding writes in
@@ -395,7 +368,7 @@ static struct ppcg_scop *ppcg_scop_from_pet_scop(struct pet_scop *scop,
 	ps->call = collect_call_domains(scop);
 	ps->reads = pet_scop_collect_may_reads(scop);
 	ps->writes = pet_scop_collect_may_writes(scop);
-	ps->kills = collect_kills(scop);
+	ps->kills = pet_scop_collect_must_kills(scop);
 	ps->schedule = pet_scop_collect_schedule(scop);
 	ps->n_array = scop->n_array;
 	ps->arrays = scop->arrays;
