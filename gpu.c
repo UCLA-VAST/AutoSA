@@ -3413,7 +3413,30 @@ static __isl_give isl_multi_pw_aff *transform_index(
 	return index;
 }
 
+/* Dereference "expr" by adding an index [0].
+ * The original "expr" is assumed not to have any indices.
+ */
+static __isl_give isl_ast_expr *dereference(__isl_take isl_ast_expr *expr)
+{
+	isl_ctx *ctx;
+	isl_ast_expr *res;
+	isl_ast_expr_list *list;
+
+	ctx = isl_ast_expr_get_ctx(expr);
+	res = isl_ast_expr_from_val(isl_val_zero(ctx));
+	list = isl_ast_expr_list_from_ast_expr(res);
+	res = isl_ast_expr_get_op_arg(expr, 0);
+	res = isl_ast_expr_access(res, list);
+	isl_ast_expr_free(expr);
+
+	return res;
+}
+
 /* AST expression transformation callback for pet_stmt_build_ast_exprs.
+ *
+ * If the AST expression refers to a global scalar that is not
+ * a read-only scalar, then its address was passed to the kernel and
+ * we need to dereference it.
  *
  * If the AST expression refers to an access to a global array,
  * then we linearize the access exploiting the bounds in data->bounds.
@@ -3431,10 +3454,12 @@ static __isl_give isl_ast_expr *transform_expr(__isl_take isl_ast_expr *expr,
 
 	if (!data->array)
 		return expr;
-	if (gpu_array_is_scalar(data->array))
+	if (gpu_array_is_read_only_scalar(data->array))
 		return expr;
 	if (!data->global)
 		return expr;
+	if (data->array->n_index == 0)
+		return dereference(expr);
 
 	ctx = isl_ast_expr_get_ctx(expr);
 	context = isl_set_universe(isl_space_params_alloc(ctx, 0));
