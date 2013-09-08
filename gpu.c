@@ -4923,29 +4923,42 @@ static void compute_schedule(struct gpu_gen *gen)
  * This helps in those cases where the arrays are declared with a fixed size,
  * while the accesses are parametric and the context assigns a fixed value
  * to the parameters.
+ *
+ * If an element from a local array is read without first being written,
+ * then there is no point in copying it in since it cannot have been
+ * written prior to the scop.  Warn about the uninitialized read instead.
  */
 static void compute_copy_in_and_out(struct gpu_gen *gen)
 {
 	int i;
+	isl_union_set *local;
 	isl_union_set *write;
 	isl_union_set *copy_in, *copy_out;
 	isl_union_set *not_written;
 	isl_union_map *uninitialized;
+	isl_union_map *local_uninitialized;
 
 	write = isl_union_map_range(isl_union_map_copy(gen->prog->write));
 	write = isl_union_set_intersect_params(write,
 					    isl_set_copy(gen->prog->context));
 	copy_out = isl_union_set_empty(isl_union_set_get_space(write));
+	local = isl_union_set_copy(copy_out);
 
 	for (i = 0; i < gen->prog->n_array; ++i) {
 		isl_space *space;
 		isl_set *write_i;
 		int empty;
 
-		if (gen->prog->array[i].local)
-			continue;
-
 		space = isl_space_copy(gen->prog->array[i].space);
+
+		if (gen->prog->array[i].local) {
+			isl_set *set;
+
+			set = isl_set_universe(space);
+			local = isl_union_set_add_set(local, set);
+			continue;
+		}
+
 		write_i = isl_union_set_extract_set(write, space);
 		empty = isl_set_fast_is_empty(write_i);
 		isl_set_free(write_i);
@@ -4962,6 +4975,16 @@ static void compute_copy_in_and_out(struct gpu_gen *gen)
 	gen->prog->copy_out = isl_union_set_copy(copy_out);
 
 	uninitialized = isl_union_map_copy(gen->prog->scop->live_in);
+	local_uninitialized = isl_union_map_copy(uninitialized);
+
+	local_uninitialized = isl_union_map_intersect_range(local_uninitialized,
+							    local);
+	if (!isl_union_map_is_empty(local_uninitialized)) {
+		fprintf(stderr, "uninitialized reads (not copied in):\n");
+		isl_union_map_dump(local_uninitialized);
+	}
+	uninitialized = isl_union_map_subtract(uninitialized,
+						local_uninitialized);
 	copy_in = isl_union_map_range(uninitialized);
 
 	not_written = isl_union_set_subtract(copy_out, write);
