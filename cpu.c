@@ -441,7 +441,7 @@ static __isl_give isl_printer *print_scop(struct ppcg_scop *scop,
 
 	context = isl_set_copy(scop->context);
 	domain_set = isl_union_set_copy(scop->domain);
-	schedule_map = isl_union_map_copy(scop->schedule);
+	schedule_map = isl_schedule_get_map(scop->schedule);
 	schedule_map = isl_union_map_intersect_domain(schedule_map, domain_set);
 
 	isl_union_map_foreach_map(schedule_map, &set_depth, &depth);

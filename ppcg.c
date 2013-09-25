@@ -354,7 +354,7 @@ static void compute_live_out(struct ppcg_scop *ps)
 	isl_union_flow *flow;
 
 	tagger = isl_union_map_copy(ps->tagger);
-	schedule = isl_union_map_copy(ps->schedule);
+	schedule = isl_schedule_get_map(ps->schedule);
 	schedule = isl_union_map_apply_domain(schedule, tagger);
 	kills = isl_union_map_union(isl_union_map_copy(ps->tagged_must_writes),
 				    isl_union_map_copy(ps->tagged_must_kills));
@@ -401,7 +401,7 @@ static void compute_tagged_flow_dep(struct ppcg_scop *ps)
 	isl_union_map *tagged_flow;
 
 	tagger = isl_union_map_copy(ps->tagger);
-	schedule = isl_union_map_copy(ps->schedule);
+	schedule = isl_schedule_get_map(ps->schedule);
 	schedule = isl_union_map_apply_domain(schedule, tagger);
 	kills = isl_union_map_copy(ps->tagged_must_kills);
 	must_source = isl_union_map_copy(ps->tagged_must_writes);
@@ -539,10 +539,11 @@ static void compute_external_false_dependences(struct ppcg_scop *ps,
 static void compute_live_range_reordering_dependences(struct ppcg_scop *ps)
 {
 	isl_union_map *before;
+	isl_union_map *schedule;
 
-	before = isl_union_map_lex_lt_union_map(
-			isl_union_map_copy(ps->schedule),
-			isl_union_map_copy(ps->schedule));
+	schedule = isl_schedule_get_map(ps->schedule);
+	before = isl_union_map_lex_lt_union_map(schedule,
+			isl_union_map_copy(schedule));
 
 	compute_tagged_flow_dep(ps);
 	compute_order_dependences(ps, isl_union_map_copy(before));
@@ -563,7 +564,7 @@ static void compute_flow_dep(struct ppcg_scop *ps)
 	access = isl_union_access_info_set_may_source(access,
 				isl_union_map_copy(ps->may_writes));
 	access = isl_union_access_info_set_schedule_map(access,
-				isl_union_map_copy(ps->schedule));
+				isl_schedule_get_map(ps->schedule));
 	flow = isl_union_access_info_compute_flow(access);
 
 	ps->dep_flow = isl_union_flow_get_may_dependence(flow);
@@ -608,7 +609,7 @@ static void compute_dependences(struct ppcg_scop *scop)
 				isl_union_map_copy(scop->must_writes));
 	access = isl_union_access_info_set_may_source(access, may_source);
 	access = isl_union_access_info_set_schedule_map(access,
-				isl_union_map_copy(scop->schedule));
+				isl_schedule_get_map(scop->schedule));
 	flow = isl_union_access_info_compute_flow(access);
 
 	scop->dep_false = isl_union_flow_get_may_dependence(flow);
@@ -721,7 +722,7 @@ static void *ppcg_scop_free(struct ppcg_scop *ps)
 	isl_union_map_free(ps->dep_external);
 	isl_union_map_free(ps->tagged_dep_order);
 	isl_union_map_free(ps->dep_order);
-	isl_union_map_free(ps->schedule);
+	isl_schedule_free(ps->schedule);
 	isl_union_map_free(ps->tagger);
 	isl_union_map_free(ps->independence);
 	isl_id_to_ast_expr_free(ps->names);
@@ -767,7 +768,7 @@ static struct ppcg_scop *ppcg_scop_from_pet_scop(struct pet_scop *scop,
 	ps->tagged_must_writes = pet_scop_collect_tagged_must_writes(scop);
 	ps->must_writes = pet_scop_collect_must_writes(scop);
 	ps->tagged_must_kills = pet_scop_collect_tagged_must_kills(scop);
-	ps->schedule = isl_schedule_get_map(scop->schedule);
+	ps->schedule = isl_schedule_copy(scop->schedule);
 	ps->pet = scop;
 	ps->independence = isl_union_map_empty(isl_set_get_space(ps->context));
 	for (i = 0; i < scop->n_independence; ++i)

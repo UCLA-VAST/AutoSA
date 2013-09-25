@@ -1,6 +1,7 @@
 #ifndef PPCG_H
 #define PPCG_H
 
+#include <isl/schedule.h>
 #include <isl/set.h>
 #include <isl/union_set.h>
 #include <isl/union_map.h>
@@ -93,7 +94,7 @@ struct ppcg_scop {
 	isl_union_map *dep_external;
 	isl_union_map *dep_order;
 	isl_union_map *tagged_dep_order;
-	isl_union_map *schedule;
+	isl_schedule *schedule;
 
 	isl_id_to_ast_expr *names;
 
