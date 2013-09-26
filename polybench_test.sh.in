@@ -1,11 +1,15 @@
 #!/bin/sh
 
 keep=no
+verbose=no
 
 for option; do
 	case "$option" in
 		--keep)
 			keep=yes
+			;;
+		--verbose)
+			verbose=yes
 			;;
 	esac
 done
@@ -59,11 +63,20 @@ run_tests () {
 		output_orig=${OUTDIR}/$name.orig.out
 		output_opt=${OUTDIR}/$name.$ext.out
 		dir=`dirname $i`
+		if [ $verbose = "yes" ]; then
+			echo ./ppcg$EXEEXT --target=c -I $DIR/$dir $DIR/$i \
+				$CPPFLAGS -o $source_opt $ppcg_options
+		fi
 		./ppcg$EXEEXT --target=c -I $DIR/$dir $DIR/$i $CPPFLAGS \
 			-o $source_opt $ppcg_options || exit
 		$CC -I $DIR/$dir $CPPFLAGS $DIR/$i -o $prog_orig \
 			$DIR/utilities/polybench.c $CFLAGS
 		$prog_orig 2> $output_orig
+		if [ $verbose = "yes" ]; then
+			echo $CC -I $DIR/$dir $CPPFLAGS $source_opt \
+				-o $prog_opt $DIR/utilities/polybench.c \
+				$CFLAGS $cc_options
+		fi
 		$CC -I $DIR/$dir $CPPFLAGS $source_opt -o $prog_opt \
 			$DIR/utilities/polybench.c $CFLAGS $cc_options || exit
 
