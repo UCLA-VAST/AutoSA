@@ -2078,12 +2078,12 @@ static struct gpu_stmt_access *find_access(struct gpu_stmt_access *accesses,
 
 /* Return the index of the array called "name" in the list of arrays.
  */
-static int find_array_index(struct gpu_gen *gen, const char *name)
+static int find_array_index(struct ppcg_kernel *kernel, const char *name)
 {
 	int i;
 
-	for (i = 0; i < gen->prog->n_array; ++i)
-		if (!strcmp(name, gen->prog->array[i].name))
+	for (i = 0; i < kernel->n_array; ++i)
+		if (!strcmp(name, kernel->array[i].array->name))
 			return i;
 
 	return -1;
@@ -2215,7 +2215,7 @@ static __isl_give isl_multi_pw_aff *transform_index(
 		return index;
 
 	name = get_outer_array_name(access->access);
-	i = find_array_index(data->gen, name);
+	i = find_array_index(data->gen->kernel, name);
 	if (i < 0)
 		isl_die(isl_multi_pw_aff_get_ctx(index), isl_error_internal,
 			"cannot find array",
