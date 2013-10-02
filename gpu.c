@@ -4122,6 +4122,10 @@ static __isl_give isl_schedule_node *group_statements(
  * instances to block identifiers.  In particular, the block identifiers
  * are equated to the partial schedule of band that was marked for mapping
  * to blocks modulo the grid size.
+ * Insert a filter node inside the "thread" mark mapping the statement
+ * instances to thread identifiers.  In particular, the thread identifiers
+ * are equated to the partial schedule of band that was marked for mapping
+ * to threads modulo the block size.
  *
  * Store a pointer to the created ppcg_kernel in gen->kernel.
  *
@@ -4205,6 +4209,11 @@ static __isl_give isl_schedule_node *create_kernel(struct gpu_gen *gen,
 	node = isl_schedule_node_child(node, 0);
 	node = isl_schedule_node_insert_filter(node,
 				    isl_union_set_copy(kernel->block_filter));
+
+	node = gpu_tree_move_down_to_thread(node, kernel->core);
+	node = isl_schedule_node_child(node, 0);
+	node = isl_schedule_node_insert_filter(node,
+				    isl_union_set_copy(kernel->thread_filter));
 
 	node = gpu_tree_move_up_to_kernel(node);
 
