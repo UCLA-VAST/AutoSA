@@ -3598,7 +3598,6 @@ static __isl_give isl_ast_node *create_host_leaf(
 	gen->local_sched = thread_tile_schedule(gen, gen->local_sched);
 	gen->local_sched = scale_thread_tile_loops(gen, gen->local_sched);
 
-	kernel->context = isl_union_map_params(isl_union_map_copy(schedule));
 	kernel->grid_size = extract_grid_size(gen, kernel);
 	extract_block_size(gen, kernel);
 	kernel->arrays = isl_union_map_range(access);
@@ -3760,6 +3759,28 @@ static int set_stmt_tile_len(__isl_take isl_map *map, void *user)
 	return 0;
 }
 
+/* Extract the set of parameter values for which any statement instance
+ * in the kernel inserted at "node" needs to be executed.
+ * Intersect the set of parameter values derived from the host schedule
+ * relation with the context of "prog".
+ */
+static __isl_give isl_set *extract_context(__isl_keep isl_schedule_node *node,
+	struct gpu_prog *prog)
+{
+	isl_union_map *schedule;
+	isl_union_set *schedule_domain;
+	isl_set *context;
+
+	schedule = isl_schedule_node_get_prefix_schedule_relation(node);
+	schedule_domain = isl_union_map_range(schedule);
+	context = isl_set_from_union_set(schedule_domain);
+	context = isl_set_intersect_params(context,
+					    isl_set_copy(prog->context));
+	context = isl_set_params(context);
+
+	return context;
+}
+
 /* Mark all dimensions in the current band node atomic.
  */
 static __isl_give isl_schedule_node *atomic(__isl_take isl_schedule_node *node)
@@ -3847,6 +3868,7 @@ static __isl_give isl_schedule_node *create_kernel(struct gpu_gen *gen,
 
 	kernel->ctx = gen->ctx;
 	kernel->options = gen->options;
+	kernel->context = extract_context(node, gen->prog);
 	kernel->id = gen->kernel_id++;
 
 	node = atomic_ancestors(node);

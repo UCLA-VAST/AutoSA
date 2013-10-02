@@ -310,7 +310,7 @@ struct ppcg_kernel_var {
  * grid_size reflects the effective grid size.
  *
  * context is a parametric set containing the values of the parameters
- * for which this kernel may be run.
+ * for which any statement instance in this kernel needs to be executed.
  *
  * arrays is the set of possibly accessed outer array elements.
  *
