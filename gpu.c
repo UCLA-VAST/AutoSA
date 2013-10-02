@@ -2881,13 +2881,14 @@ static int group_writes(struct gpu_gen *gen,
 				continue;
 
 			groups[i] = join_groups_and_free(groups[i], groups[j]);
-			if (compute_bounds &&
-			    compute_group_bounds(gen, groups[i]) < 0)
-				return -1;
 			if (j != n - 1)
 				groups[j] = groups[n - 1];
 			groups[n - 1] = NULL;
 			n--;
+
+			if (compute_bounds &&
+			    compute_group_bounds(gen, groups[i]) < 0)
+				return -1;
 		}
 	}
 
