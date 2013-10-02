@@ -3138,9 +3138,10 @@ static __isl_give isl_union_map *wrapped_reference_to_access(
  * to the corresponding access relation and take the union with
  * the live out/in relation.
  */
-static __isl_give isl_union_map *remove_local_accesses(struct gpu_gen *gen,
-	struct gpu_array_ref_group *group, __isl_take isl_union_map *access,
-	__isl_take isl_union_map *sched, int read)
+static __isl_give isl_union_map *remove_local_accesses(
+	struct gpu_prog *prog, struct gpu_array_ref_group *group,
+	__isl_take isl_union_map *access, __isl_take isl_union_map *sched,
+	int read)
 {
 	int empty;
 	isl_union_pw_multi_aff *tagger;
@@ -3155,7 +3156,7 @@ static __isl_give isl_union_map *remove_local_accesses(struct gpu_gen *gen,
 
 	tagged = group_tagged_access_relation(group);
 
-	tagger = isl_union_pw_multi_aff_copy(gen->prog->scop->tagger);
+	tagger = isl_union_pw_multi_aff_copy(prog->scop->tagger);
 	domain = isl_union_map_domain(isl_union_map_copy(tagged));
 	tagger = isl_union_pw_multi_aff_intersect_domain(tagger, domain);
 	sched = isl_union_map_preimage_domain_union_pw_multi_aff(sched, tagger);
@@ -3163,25 +3164,25 @@ static __isl_give isl_union_map *remove_local_accesses(struct gpu_gen *gen,
 	local = isl_union_map_apply_range(sched,
 			    isl_union_map_reverse(isl_union_map_copy(sched)));
 	local = isl_union_map_intersect(local,
-			isl_union_map_copy(gen->prog->scop->tagged_dep_flow));
+			isl_union_map_copy(prog->scop->tagged_dep_flow));
 
 	empty = isl_union_map_is_empty(local);
 
-	external = isl_union_map_copy(gen->prog->scop->tagged_dep_flow);
+	external = isl_union_map_copy(prog->scop->tagged_dep_flow);
 	external = isl_union_map_intersect_params(external,
-				isl_set_copy(gen->prog->scop->context));
+				isl_set_copy(prog->scop->context));
 	external = isl_union_map_subtract(external, local);
 
 	if (read) {
 		tag_set = isl_union_map_range(external);
 		external = wrapped_reference_to_access(tag_set, tagged);
 		external = isl_union_map_union(external,
-				isl_union_map_copy(gen->prog->scop->live_in));
+				isl_union_map_copy(prog->scop->live_in));
 	} else {
 		tag_set = isl_union_map_domain(external);
 		external = wrapped_reference_to_access(tag_set, tagged);
 		external = isl_union_map_union(external,
-				isl_union_map_copy(gen->prog->scop->live_out));
+				isl_union_map_copy(prog->scop->live_out));
 	}
 
 	if (empty < 0)
@@ -3220,7 +3221,7 @@ static __isl_give isl_union_map *remove_local_accesses_group(
 	proj = projection(space, gen->untiled_len, group->last_shared + 1);
 	sched = isl_union_map_apply_range(sched, isl_union_map_from_map(proj));
 
-	return remove_local_accesses(gen, group, access, sched, read);
+	return remove_local_accesses(gen->prog, group, access, sched, read);
 }
 
 /* Given the AST context schedule "schedule" and the mapping from
