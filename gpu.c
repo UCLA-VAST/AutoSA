@@ -613,14 +613,14 @@ static void read_grid_sizes(struct ppcg_kernel *kernel,
 	read_sizes_from_set(size, kernel->grid_dim, &kernel->n_grid);
 }
 
-/* Extract user specified grid and block sizes from the "sizes"
+/* Extract user specified grid and block sizes from the gen->sizes
  * command line option after filling in some potentially useful defaults.
+ * Store the extracted sizes in "kernel".
  * Add the effectively used sizes to gen->used_sizes.
  */
-static void read_grid_and_block_sizes(struct gpu_gen *gen)
+static void read_grid_and_block_sizes(struct ppcg_kernel *kernel,
+	struct gpu_gen *gen)
 {
-	struct ppcg_kernel *kernel = gen->kernel;
-
 	read_block_sizes(kernel, gen->sizes);
 	read_grid_sizes(kernel, gen->sizes);
 	set_used_sizes(gen, "block", kernel->id,
@@ -3561,8 +3561,6 @@ static __isl_give isl_ast_node *create_host_leaf(
 	if (!kernel)
 		goto error;
 
-	read_grid_and_block_sizes(gen);
-
 	domain = isl_union_map_domain(isl_union_map_copy(schedule));
 
 	local_sched = isl_union_map_copy(gen->sched);
@@ -3942,6 +3940,7 @@ static __isl_give isl_schedule_node *create_kernel(struct gpu_gen *gen,
 	kernel->n_grid = kernel->n_parallel;
 	kernel->n_block = kernel->n_parallel;
 	kernel->id = gen->kernel_id++;
+	read_grid_and_block_sizes(kernel, gen);
 
 	gen->kernel = kernel;
 
