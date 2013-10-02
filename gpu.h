@@ -308,6 +308,9 @@ struct ppcg_kernel_var {
  * context contains the values of the parameters and outer schedule dimensions
  * for which any statement instance in this kernel needs to be executed.
  *
+ * n_sync is the number of synchronization operations that have
+ * been introduced in the schedule tree corresponding to this kernel (so far).
+ *
  * core contains the spaces of the statement domains that form
  * the core computation of the kernel.  It is used to navigate
  * the tree during the construction of the device part of the schedule
@@ -357,6 +360,7 @@ struct ppcg_kernel {
 	isl_multi_pw_aff *grid_size;
 	isl_set *context;
 
+	int n_sync;
 	isl_union_set *core;
 	isl_union_set *arrays;
 

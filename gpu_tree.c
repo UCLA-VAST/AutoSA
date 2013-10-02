@@ -9,6 +9,7 @@
 
 #include <string.h>
 
+#include <isl/set.h>
 #include <isl/union_set.h>
 
 #include "gpu_tree.h"
@@ -22,6 +23,14 @@
  * The filter of this element (and only this filter) contains
  * domain elements identified by the "core" argument of the functions
  * that move down this tree.
+ *
+ * Synchronization statements have a name that starts with "sync" and
+ * a user pointer pointing to the kernel that contains the synchronization.
+ * The functions inserting or detecting synchronizations take a ppcg_kernel
+ * argument to be able to create or identify such statements.
+ * They may also use two fields in this structure, the "core" field
+ * to move around in the tree and the "n_sync" field to make sure that
+ * each synchronization has a different name (within the kernel).
  */
 
 /* Is "node" a mark node with an identifier called "name"?
@@ -199,6 +208,335 @@ __isl_give isl_schedule_node *gpu_tree_move_down_to_depth(
 		node = core_child(node, core);
 	if (is_thread < 0)
 		node = isl_schedule_node_free(node);
+
+	return node;
+}
+
+/* Create a union set containing a single set with a tuple identifier
+ * called "syncX" and user pointer equal to "kernel".
+ */
+static __isl_give isl_union_set *create_sync_domain(struct ppcg_kernel *kernel)
+{
+	isl_space *space;
+	isl_id *id;
+	char name[40];
+
+	space = isl_space_set_alloc(kernel->ctx, 0, 0);
+	snprintf(name, sizeof(name), "sync%d", kernel->n_sync++);
+	id = isl_id_alloc(kernel->ctx, name, kernel);
+	space = isl_space_set_tuple_id(space, isl_dim_set, id);
+	return isl_union_set_from_set(isl_set_universe(space));
+}
+
+/* Is "id" the identifier of a synchronization statement inside "kernel"?
+ * That is, does its name start with "sync" and does it point to "kernel"?
+ */
+int gpu_tree_id_is_sync(__isl_keep isl_id *id, struct ppcg_kernel *kernel)
+{
+	const char *name;
+
+	name = isl_id_get_name(id);
+	if (!name)
+		return 0;
+	else if (strncmp(name, "sync", 4))
+		return 0;
+	return isl_id_get_user(id) == kernel;
+}
+
+/* Does "domain" consist of a single set with a tuple identifier
+ * corresponding to a synchronization for "kernel"?
+ */
+static int domain_is_sync(__isl_keep isl_union_set *domain,
+	struct ppcg_kernel *kernel)
+{
+	int is_sync;
+	isl_id *id;
+	isl_set *set;
+
+	if (isl_union_set_n_set(domain) != 1)
+		return 0;
+	set = isl_set_from_union_set(isl_union_set_copy(domain));
+	id = isl_set_get_tuple_id(set);
+	is_sync = gpu_tree_id_is_sync(id, kernel);
+	isl_id_free(id);
+	isl_set_free(set);
+
+	return is_sync;
+}
+
+/* Does "node" point to a filter selecting a synchronization statement
+ * for "kernel"?
+ */
+static int node_is_sync_filter(__isl_keep isl_schedule_node *node,
+	struct ppcg_kernel *kernel)
+{
+	int is_sync;
+	enum isl_schedule_node_type type;
+	isl_union_set *domain;
+
+	if (!node)
+		return -1;
+	type = isl_schedule_node_get_type(node);
+	if (type != isl_schedule_node_filter)
+		return 0;
+	domain = isl_schedule_node_filter_get_filter(node);
+	is_sync = domain_is_sync(domain, kernel);
+	isl_union_set_free(domain);
+
+	return is_sync;
+}
+
+/* Is "node" part of a sequence with a previous synchronization statement
+ * for "kernel"?
+ * That is, is the parent of "node" a filter such that there is
+ * a previous filter that picks out exactly such a synchronization statement?
+ */
+static int has_preceding_sync(__isl_keep isl_schedule_node *node,
+	struct ppcg_kernel *kernel)
+{
+	int found = 0;
+
+	node = isl_schedule_node_copy(node);
+	node = isl_schedule_node_parent(node);
+	while (!found && isl_schedule_node_has_previous_sibling(node)) {
+		node = isl_schedule_node_previous_sibling(node);
+		if (!node)
+			break;
+		found = node_is_sync_filter(node, kernel);
+	}
+	if (!node)
+		found = -1;
+	isl_schedule_node_free(node);
+
+	return found;
+}
+
+/* Is "node" part of a sequence with a subsequent synchronization statement
+ * for "kernel"?
+ * That is, is the parent of "node" a filter such that there is
+ * a subsequent filter that picks out exactly such a synchronization statement?
+ */
+static int has_following_sync(__isl_keep isl_schedule_node *node,
+	struct ppcg_kernel *kernel)
+{
+	int found = 0;
+
+	node = isl_schedule_node_copy(node);
+	node = isl_schedule_node_parent(node);
+	while (!found && isl_schedule_node_has_next_sibling(node)) {
+		node = isl_schedule_node_next_sibling(node);
+		if (!node)
+			break;
+		found = node_is_sync_filter(node, kernel);
+	}
+	if (!node)
+		found = -1;
+	isl_schedule_node_free(node);
+
+	return found;
+}
+
+/* Does the subtree rooted at "node" (which is a band node) contain
+ * any synchronization statement for "kernel" that precedes
+ * the core computation of "kernel" (identified by the elements
+ * in kernel->core)?
+ */
+static int has_sync_before_core(__isl_keep isl_schedule_node *node,
+	struct ppcg_kernel *kernel)
+{
+	int has_sync = 0;
+	int is_thread;
+
+	node = isl_schedule_node_copy(node);
+	while ((is_thread = node_is_thread(node)) == 0) {
+		node = core_child(node, kernel->core);
+		has_sync = has_preceding_sync(node, kernel);
+		if (has_sync < 0 || has_sync)
+			break;
+	}
+	if (is_thread < 0 || !node)
+		has_sync = -1;
+	isl_schedule_node_free(node);
+
+	return has_sync;
+}
+
+/* Does the subtree rooted at "node" (which is a band node) contain
+ * any synchronization statement for "kernel" that follows
+ * the core computation of "kernel" (identified by the elements
+ * in kernel->core)?
+ */
+static int has_sync_after_core(__isl_keep isl_schedule_node *node,
+	struct ppcg_kernel *kernel)
+{
+	int has_sync = 0;
+	int is_thread;
+
+	node = isl_schedule_node_copy(node);
+	while ((is_thread = node_is_thread(node)) == 0) {
+		node = core_child(node, kernel->core);
+		has_sync = has_following_sync(node, kernel);
+		if (has_sync < 0 || has_sync)
+			break;
+	}
+	if (is_thread < 0 || !node)
+		has_sync = -1;
+	isl_schedule_node_free(node);
+
+	return has_sync;
+}
+
+/* Insert (or extend) an extension on top of "node" that puts
+ * a synchronization node for "kernel" before "node".
+ * Return a pointer to the original node in the updated schedule tree.
+ */
+static __isl_give isl_schedule_node *insert_sync_before(
+	__isl_take isl_schedule_node *node, struct ppcg_kernel *kernel)
+{
+	isl_union_set *domain;
+	isl_schedule_node *graft;
+
+	if (!node)
+		return NULL;
+
+	domain = create_sync_domain(kernel);
+	graft = isl_schedule_node_from_domain(domain);
+	node = isl_schedule_node_graft_before(node, graft);
+
+	return node;
+}
+
+/* Insert (or extend) an extension on top of "node" that puts
+ * a synchronization node for "kernel" afater "node".
+ * Return a pointer to the original node in the updated schedule tree.
+ */
+static __isl_give isl_schedule_node *insert_sync_after(
+	__isl_take isl_schedule_node *node, struct ppcg_kernel *kernel)
+{
+	isl_union_set *domain;
+	isl_schedule_node *graft;
+
+	if (!node)
+		return NULL;
+
+	domain = create_sync_domain(kernel);
+	graft = isl_schedule_node_from_domain(domain);
+	node = isl_schedule_node_graft_after(node, graft);
+
+	return node;
+}
+
+/* Insert an extension on top of "node" that puts a synchronization node
+ * for "kernel" before "node" unless there already is
+ * such a synchronization node.
+ */
+__isl_give isl_schedule_node *gpu_tree_ensure_preceding_sync(
+	__isl_take isl_schedule_node *node, struct ppcg_kernel *kernel)
+{
+	int has_sync;
+
+	has_sync = has_preceding_sync(node, kernel);
+	if (has_sync < 0)
+		return isl_schedule_node_free(node);
+	if (has_sync)
+		return node;
+	return insert_sync_before(node, kernel);
+}
+
+/* Insert an extension on top of "node" that puts a synchronization node
+ * for "kernel" after "node" unless there already is
+ * such a synchronization node.
+ */
+__isl_give isl_schedule_node *gpu_tree_ensure_following_sync(
+	__isl_take isl_schedule_node *node, struct ppcg_kernel *kernel)
+{
+	int has_sync;
+
+	has_sync = has_following_sync(node, kernel);
+	if (has_sync < 0)
+		return isl_schedule_node_free(node);
+	if (has_sync)
+		return node;
+	return insert_sync_after(node, kernel);
+}
+
+/* Insert an extension on top of "node" that puts a synchronization node
+ * for "kernel" after "node" unless there already is such a sync node or
+ * "node" itself already * contains a synchronization node following
+ * the core computation of "kernel".
+ */
+__isl_give isl_schedule_node *gpu_tree_ensure_sync_after_core(
+	__isl_take isl_schedule_node *node, struct ppcg_kernel *kernel)
+{
+	int has_sync;
+
+	has_sync = has_sync_after_core(node, kernel);
+	if (has_sync < 0)
+		return isl_schedule_node_free(node);
+	if (has_sync)
+		return node;
+	has_sync = has_following_sync(node, kernel);
+	if (has_sync < 0)
+		return isl_schedule_node_free(node);
+	if (has_sync)
+		return node;
+	return insert_sync_after(node, kernel);
+}
+
+/* Move left in the sequence on top of "node" to a synchronization node
+ * for "kernel".
+ * If "node" itself contains a synchronization node preceding
+ * the core computation of "kernel", then return "node" itself.
+ * Otherwise, if "node" does not have a preceding synchronization node,
+ * then create one first.
+ */
+__isl_give isl_schedule_node *gpu_tree_move_left_to_sync(
+	__isl_take isl_schedule_node *node, struct ppcg_kernel *kernel)
+{
+	int has_sync;
+	int is_sync;
+
+	has_sync = has_sync_before_core(node, kernel);
+	if (has_sync < 0)
+		return isl_schedule_node_free(node);
+	if (has_sync)
+		return node;
+	node = gpu_tree_ensure_preceding_sync(node, kernel);
+	node = isl_schedule_node_parent(node);
+	while ((is_sync = node_is_sync_filter(node, kernel)) == 0)
+		node = isl_schedule_node_previous_sibling(node);
+	if (is_sync < 0)
+		node = isl_schedule_node_free(node);
+	node = isl_schedule_node_child(node, 0);
+
+	return node;
+}
+
+/* Move right in the sequence on top of "node" to a synchronization node
+ * for "kernel".
+ * If "node" itself contains a synchronization node following
+ * the core computation of "kernel", then return "node" itself.
+ * Otherwise, if "node" does not have a following synchronization node,
+ * then create one first.
+ */
+__isl_give isl_schedule_node *gpu_tree_move_right_to_sync(
+	__isl_take isl_schedule_node *node, struct ppcg_kernel *kernel)
+{
+	int has_sync;
+	int is_sync;
+
+	has_sync = has_sync_after_core(node, kernel);
+	if (has_sync < 0)
+		return isl_schedule_node_free(node);
+	if (has_sync)
+		return node;
+	node = gpu_tree_ensure_following_sync(node, kernel);
+	node = isl_schedule_node_parent(node);
+	while ((is_sync = node_is_sync_filter(node, kernel)) == 0)
+		node = isl_schedule_node_next_sibling(node);
+	if (is_sync < 0)
+		node = isl_schedule_node_free(node);
+	node = isl_schedule_node_child(node, 0);
 
 	return node;
 }
