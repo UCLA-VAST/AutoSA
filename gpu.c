@@ -1843,7 +1843,7 @@ static void create_kernel_var(isl_ctx *ctx, struct gpu_array_ref_group *group,
 					    isl_val_copy(tile->bound[j].size));
 }
 
-static void create_kernel_vars(struct gpu_gen *gen, struct ppcg_kernel *kernel)
+static void create_kernel_vars(struct ppcg_kernel *kernel)
 {
 	int i, j, n;
 
@@ -1859,7 +1859,7 @@ static void create_kernel_vars(struct gpu_gen *gen, struct ppcg_kernel *kernel)
 	}
 
 	kernel->n_var = n;
-	kernel->var = isl_calloc_array(gen->ctx, struct ppcg_kernel_var, n);
+	kernel->var = isl_calloc_array(kernel->ctx, struct ppcg_kernel_var, n);
 	assert(kernel->var);
 
 	n = 0;
@@ -1870,7 +1870,7 @@ static void create_kernel_vars(struct gpu_gen *gen, struct ppcg_kernel *kernel)
 			struct gpu_array_ref_group *group = array->groups[j];
 			if (!group->private_tile && !group->shared_tile)
 				continue;
-			create_kernel_var(gen->ctx, group, &kernel->var[n]);
+			create_kernel_var(kernel->ctx, group, &kernel->var[n]);
 			++n;
 		}
 	}
@@ -3602,7 +3602,7 @@ static __isl_give isl_ast_node *create_host_leaf(
 
 	kernel->tree = generate_kernel(gen, build, host_domain,
 					kernel->grid_size);
-	create_kernel_vars(gen, kernel);
+	create_kernel_vars(kernel);
 
 	isl_map_free(gen->privatization);
 	isl_union_map_free(gen->local_sched);
