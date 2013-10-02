@@ -1,5 +1,3 @@
-#include <assert.h>
-
 #include <isl/ilp.h>
 
 #include "gpu_array_tile.h"
@@ -767,6 +765,7 @@ static int compute_group_bounds_core(struct gpu_gen *gen,
 	int force_private = group->array->force_private;
 	int use_shared = gen->options->use_shared_memory && gen->n_block > 0;
 	int use_private = force_private || gen->options->use_private_memory;
+	int r = 0;
 
 	if (!use_shared && !use_private)
 		return 0;
@@ -779,24 +778,28 @@ static int compute_group_bounds_core(struct gpu_gen *gen,
 
 	access = gpu_array_ref_group_access_relation(group, 1, 1);
 	no_reuse = isl_union_map_is_injective(access);
+	if (no_reuse < 0)
+		r = -1;
 	if (use_shared && no_reuse)
 		coalesced = access_is_coalesced(gen, access);
 
-	if (gen->options->debug->verbose && use_shared && no_reuse && coalesced)
+	if (r >= 0 && gen->options->debug->verbose &&
+	    use_shared && no_reuse && coalesced)
 		report_no_reuse_and_coalesced(gen->kernel, access);
 
 	if (use_shared && (!no_reuse || !coalesced)) {
 		group->shared_tile = gpu_array_tile_create(ctx,
 							group->array->n_index);
-		assert(group->shared_tile);
-		if (!can_tile(group->access, group->shared_tile))
+		if (!group->shared_tile)
+			r = -1;
+		else if (!can_tile(group->access, group->shared_tile))
 			group->shared_tile =
 					gpu_array_tile_free(group->shared_tile);
 	}
 
-	if (!force_private && (!use_private || no_reuse)) {
+	if (r < 0 || (!force_private && (!use_private || no_reuse))) {
 		isl_union_map_free(access);
-		return 0;
+		return r;
 	}
 
 	access = isl_union_map_apply_domain(access,
@@ -810,7 +813,10 @@ static int compute_group_bounds_core(struct gpu_gen *gen,
 	}
 
 	group->private_tile = gpu_array_tile_create(gen->ctx, n_index);
-	assert(group->private_tile);
+	if (!group->private_tile) {
+		isl_map_free(acc);
+		return -1;
+	}
 	acc = isl_map_apply_domain(acc, isl_map_copy(gen->privatization));
 	if (!can_tile(acc, group->private_tile))
 		group->private_tile = gpu_array_tile_free(group->private_tile);
