@@ -28,6 +28,7 @@
 #include "gpu.h"
 #include "gpu_array_tile.h"
 #include "gpu_group.h"
+#include "gpu_tree.h"
 #include "schedule.h"
 #include "ppcg_options.h"
 #include "print.h"
@@ -3900,6 +3901,9 @@ static __isl_give isl_schedule_node *group_statements(
 /* Create a ppcg_kernel representing the domain instances that reach "node"
  * and replace the subtree at "node" by a mark node pointing
  * to the ppcg_kernel.
+ * The band that "node" points to is the band that needs to be mapped
+ * to block identifiers.  The band that needs to be mapped to thread
+ * identifiers should be marked by a "thread" mark by the caller.
  * If "scale" is set, then the band that "node" points to is scaled
  * by "sizes".
  *
@@ -3921,6 +3925,7 @@ static __isl_give isl_schedule_node *create_kernel(struct gpu_gen *gen,
 {
 	struct ppcg_kernel *kernel;
 	isl_id *id;
+	isl_schedule_node *node_thread;
 	isl_union_set *domain;
 	int single_statement;
 
@@ -3940,7 +3945,11 @@ static __isl_give isl_schedule_node *create_kernel(struct gpu_gen *gen,
 	kernel->tile_len = isl_schedule_node_band_n_member(node);
 	kernel->n_parallel = n_outer_coincidence(node);
 	kernel->n_grid = kernel->n_parallel;
-	kernel->n_block = kernel->n_parallel;
+	node_thread = isl_schedule_node_copy(node);
+	node_thread = gpu_tree_move_down_to_thread(node_thread, kernel->core);
+	node_thread = isl_schedule_node_child(node_thread, 0);
+	kernel->n_block = n_outer_coincidence(node_thread);
+	isl_schedule_node_free(node_thread);
 	kernel->id = gen->kernel_id++;
 	read_grid_and_block_sizes(kernel, gen);
 
