@@ -315,6 +315,7 @@ struct ppcg_kernel_var {
  */
 struct ppcg_kernel {
 	isl_ctx *ctx;
+	struct ppcg_options *options;
 
 	int id;
 
