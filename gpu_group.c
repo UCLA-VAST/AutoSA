@@ -18,7 +18,7 @@ __isl_give isl_printer *gpu_array_ref_group_print_name(
 	else
 		global = 1;
 	p = isl_printer_print_str(p, group->array->name);
-	if (!global && group->array->n_group > 1) {
+	if (!global && group->local_array->n_group > 1) {
 		p = isl_printer_print_str(p, "_");
 		p = isl_printer_print_int(p, group->nr);
 	}
@@ -521,7 +521,7 @@ static void set_last_shared(struct gpu_gen *gen,
  * Return the number of elements initialized, i.e., the number of
  * active references in the current kernel.
  */
-static int populate_array_references(struct gpu_array_info *array,
+static int populate_array_references(struct gpu_local_array_info *local,
 	__isl_keep isl_union_map *sched, struct gpu_array_ref_group **groups)
 {
 	int i;
@@ -529,11 +529,11 @@ static int populate_array_references(struct gpu_array_info *array,
 	isl_ctx *ctx = isl_union_map_get_ctx(sched);
 
 	n = 0;
-	for (i = 0; i < array->n_ref; ++i) {
+	for (i = 0; i < local->array->n_ref; ++i) {
 		isl_union_map *umap;
 		isl_map *map;
 		struct gpu_array_ref_group *group;
-		struct gpu_stmt_access *access = array->refs[i];
+		struct gpu_stmt_access *access = local->array->refs[i];
 
 		map = isl_map_copy(access->access);
 		umap = isl_union_map_from_map(map);
@@ -551,12 +551,13 @@ static int populate_array_references(struct gpu_array_info *array,
 		group = isl_calloc_type(ctx, struct gpu_array_ref_group);
 		if (!group)
 			return -1;
-		group->array = array;
+		group->local_array = local;
+		group->array = local->array;
 		group->access = map;
 		group->write = access->write;
 		group->exact_write = access->exact_write;
-		group->slice = access->n_index < array->n_index;
-		group->refs = &array->refs[i];
+		group->slice = access->n_index < local->array->n_index;
+		group->refs = &local->array->refs[i];
 		group->n_ref = 1;
 
 		groups[n++] = group;
@@ -644,6 +645,7 @@ static struct gpu_array_ref_group *join_groups(
 	group = isl_calloc_type(ctx, struct gpu_array_ref_group);
 	if (!group)
 		return NULL;
+	group->local_array = group1->local_array;
 	group->array = group1->array;
 	group->access = isl_map_union(isl_map_copy(group1->access),
 					isl_map_copy(group2->access));
@@ -1037,7 +1039,7 @@ static int group_common_shared_memory_tile(struct gpu_gen *gen,
  * Additionally, set the "nr" field of each group
  * and the "group" field of each reference in each group.
  */
-static void set_array_groups(struct gpu_array_info *array,
+static void set_array_groups(struct gpu_local_array_info *array,
 	int n, struct gpu_array_ref_group **groups)
 {
 	int i, j;
@@ -1073,22 +1075,22 @@ static void set_array_groups(struct gpu_array_info *array,
  * memory.
  */
 static int group_array_references(struct gpu_gen *gen,
-	struct gpu_array_info *array, __isl_keep isl_union_map *sched)
+	struct gpu_local_array_info *local, __isl_keep isl_union_map *sched)
 {
 	int i;
 	int n;
 	isl_ctx *ctx = isl_union_map_get_ctx(sched);
 	struct gpu_array_ref_group **groups;
 
-	if (array->has_compound_element)
+	if (local->array->has_compound_element)
 		return 0;
 
 	groups = isl_calloc_array(ctx, struct gpu_array_ref_group *,
-					array->n_ref);
+					local->array->n_ref);
 	if (!groups)
 		return -1;
 
-	n = populate_array_references(array, sched, groups);
+	n = populate_array_references(local, sched, groups);
 
 	n = group_overlapping_writes(gen, n, groups);
 
@@ -1098,14 +1100,14 @@ static int group_array_references(struct gpu_gen *gen,
 
 	n = group_last_shared_overlapping_writes(gen, n, groups);
 
-	n = group_common_shared_memory_tile(gen, array, n, groups);
+	n = group_common_shared_memory_tile(gen, local->array, n, groups);
 
-	set_array_groups(array, n, groups);
+	set_array_groups(local, n, groups);
 
 	if (n >= 0)
 		return 0;
 
-	for (i = 0; i < array->n_ref; ++i)
+	for (i = 0; i < local->array->n_ref; ++i)
 		gpu_array_ref_group_free(groups[i]);
 	return -1;
 }
@@ -1165,7 +1167,7 @@ static void check_scalar_live_ranges(struct gpu_gen *gen)
 	isl_union_set_free(domain);
 }
 
-/* Group references of all arrays in the program.
+/* Group references of all arrays in the current kernel.
  */
 int gpu_group_references(struct gpu_gen *gen)
 {
@@ -1178,8 +1180,8 @@ int gpu_group_references(struct gpu_gen *gen)
 	sched = isl_union_map_apply_range(isl_union_map_copy(gen->shared_sched),
 					  isl_union_map_copy(gen->shared_proj));
 
-	for (i = 0; i < gen->prog->n_array; ++i) {
-		r = group_array_references(gen, &gen->prog->array[i], sched);
+	for (i = 0; i < gen->kernel->n_array; ++i) {
+		r = group_array_references(gen, &gen->kernel->array[i], sched);
 		if (r < 0)
 			break;
 	}

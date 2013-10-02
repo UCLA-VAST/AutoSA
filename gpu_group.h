@@ -9,7 +9,9 @@
  * Otherwise, it is accessed from global memory.
  */
 struct gpu_array_ref_group {
-	/* The references in this group access this array. */
+	/* The references in this group access this local array. */
+	struct gpu_local_array_info *local_array;
+	/* This is the corresponding array. */
 	struct gpu_array_info *array;
 	/* Position of this group in the list of reference groups of array. */
 	int nr;

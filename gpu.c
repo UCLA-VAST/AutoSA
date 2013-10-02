@@ -1342,14 +1342,14 @@ static void remove_private_tiles(struct gpu_gen *gen)
 {
 	int i, j;
 
-	for (i = 0; i < gen->prog->n_array; ++i) {
-		struct gpu_array_info *array = &gen->prog->array[i];
+	for (i = 0; i < gen->kernel->n_array; ++i) {
+		struct gpu_local_array_info *local = &gen->kernel->array[i];
 
-		if (array->force_private)
+		if (local->array->force_private)
 			continue;
 
-		for (j = 0; j < array->n_group; ++j) {
-			struct gpu_array_ref_group *group = array->groups[j];
+		for (j = 0; j < local->n_group; ++j) {
+			struct gpu_array_ref_group *group = local->groups[j];
 
 			group->private_tile =
 				    gpu_array_tile_free(group->private_tile);
@@ -1383,6 +1383,7 @@ static void remove_private_tiles(struct gpu_gen *gen)
 static __isl_give isl_union_map *interchange_for_unroll(struct gpu_gen *gen,
 	__isl_take isl_union_map *sched)
 {
+	struct ppcg_kernel *kernel = gen->kernel;
 	int i, j;
 	int unroll[gen->thread_tiled_len];
 	int perm[gen->thread_tiled_len];
@@ -1395,8 +1396,8 @@ static __isl_give isl_union_map *interchange_for_unroll(struct gpu_gen *gen,
 	sched = isl_union_map_detect_equalities(sched);
 	for (i = 0; i < gen->thread_tiled_len; ++i)
 		unroll[i] = 0;
-	for (i = 0; i < gen->prog->n_array; ++i) {
-		struct gpu_array_info *array = &gen->prog->array[i];
+	for (i = 0; i < kernel->n_array; ++i) {
+		struct gpu_local_array_info *array = &kernel->array[i];
 
 		for (j = 0; j < array->n_group; ++j) {
 			isl_union_map *access;
@@ -1519,20 +1520,20 @@ static void check_shared_memory_bound(struct gpu_gen *gen)
 
 	left = isl_val_int_from_si(gen->ctx, gen->options->max_shared_memory);
 
-	for (i = 0; i < gen->prog->n_array; ++i) {
-		struct gpu_array_info *array = &gen->prog->array[i];
+	for (i = 0; i < gen->kernel->n_array; ++i) {
+		struct gpu_local_array_info *local = &gen->kernel->array[i];
 
-		for (j = 0; j < array->n_group; ++j) {
+		for (j = 0; j < local->n_group; ++j) {
 			struct gpu_array_ref_group *group;
 
-			group = array->groups[j];
+			group = local->groups[j];
 			if (group->private_tile)
 				continue;
 			if (!group->shared_tile)
 				continue;
 
 			size = gpu_array_tile_size(group->shared_tile);
-			size = isl_val_mul_ui(size, array->size);
+			size = isl_val_mul_ui(size, local->array->size);
 
 			if (isl_val_le(size, left)) {
 				left = isl_val_sub(left, size);
@@ -1554,8 +1555,8 @@ static void compute_group_tilings(struct gpu_gen *gen)
 {
 	int i, j;
 
-	for (i = 0; i < gen->prog->n_array; ++i) {
-		struct gpu_array_info *array = &gen->prog->array[i];
+	for (i = 0; i < gen->kernel->n_array; ++i) {
+		struct gpu_local_array_info *array = &gen->kernel->array[i];
 
 		for (j = 0; j < array->n_group; ++j)
 			gpu_array_ref_group_compute_tiling(array->groups[j]);
@@ -1594,8 +1595,8 @@ static void free_local_array_info(struct gpu_gen *gen)
 {
 	int i, j;
 
-	for (i = 0; i < gen->prog->n_array; ++i) {
-		struct gpu_array_info *array = &gen->prog->array[i];
+	for (i = 0; i < gen->kernel->n_array; ++i) {
+		struct gpu_local_array_info *array = &gen->kernel->array[i];
 
 		for (j = 0; j < array->n_group; ++j)
 			gpu_array_ref_group_free(array->groups[j]);
@@ -1824,8 +1825,8 @@ static void create_kernel_vars(struct gpu_gen *gen, struct ppcg_kernel *kernel)
 	int i, j, n;
 
 	n = 0;
-	for (i = 0; i < gen->prog->n_array; ++i) {
-		struct gpu_array_info *array = &gen->prog->array[i];
+	for (i = 0; i < kernel->n_array; ++i) {
+		struct gpu_local_array_info *array = &kernel->array[i];
 
 		for (j = 0; j < array->n_group; ++j) {
 			struct gpu_array_ref_group *group = array->groups[j];
@@ -1839,8 +1840,8 @@ static void create_kernel_vars(struct gpu_gen *gen, struct ppcg_kernel *kernel)
 	assert(kernel->var);
 
 	n = 0;
-	for (i = 0; i < gen->prog->n_array; ++i) {
-		struct gpu_array_info *array = &gen->prog->array[i];
+	for (i = 0; i < kernel->n_array; ++i) {
+		struct gpu_local_array_info *array = &kernel->array[i];
 
 		for (j = 0; j < array->n_group; ++j) {
 			struct gpu_array_ref_group *group = array->groups[j];
@@ -1892,31 +1893,33 @@ static void localize_bounds(struct gpu_gen *gen, struct ppcg_kernel *kernel,
 	context = isl_set_copy(host_domain);
 	context = isl_set_params(context);
 
-	for (i = 0; i < gen->prog->n_array; ++i) {
-		struct gpu_array_info *array = &gen->prog->array[i];
-		isl_pw_aff_list *local;
+	for (i = 0; i < kernel->n_array; ++i) {
+		struct gpu_local_array_info *local = &kernel->array[i];
+		isl_pw_aff_list *bound;
+		int n_index;
 
-		if (array->n_group == 0 && !array->has_compound_element)
+		if (local->n_group == 0 && !local->array->has_compound_element)
 			continue;
 
-		local = isl_pw_aff_list_alloc(gen->ctx, array->n_index);
+		n_index = local->array->n_index;
+		bound = isl_pw_aff_list_alloc(gen->ctx, n_index);
 
-		for (j = 0; j < array->n_index; ++j) {
+		for (j = 0; j < n_index; ++j) {
 			isl_pw_aff *pwaff;
 			int empty;
 
-			pwaff = isl_pw_aff_copy(array->bound[j]);
+			pwaff = isl_pw_aff_copy(local->array->bound[j]);
 			pwaff = isl_pw_aff_gist(pwaff, isl_set_copy(context));
 			empty = isl_pw_aff_is_empty(pwaff);
 			if (empty < 0)
 				pwaff = isl_pw_aff_free(pwaff);
 			else if (empty)
 				pwaff = set_universally_zero(pwaff);
-			local = isl_pw_aff_list_add(local, pwaff);
+			bound = isl_pw_aff_list_add(bound, pwaff);
 		}
 
-		kernel->array[i].n_index = array->n_index;
-		kernel->array[i].bound = local;
+		local->n_index = n_index;
+		local->bound = bound;
 	}
 	isl_set_free(context);
 }
@@ -1924,10 +1927,13 @@ static void localize_bounds(struct gpu_gen *gen, struct ppcg_kernel *kernel,
 /* Create the array of gpu_local_array_info structures "array"
  * inside "kernel".  The number of elements in this array is
  * the same as the number of arrays in "prog".
+ * Initialize the "array" field of each local array to point
+ * to the corresponding array in "prog".
  */
 static struct ppcg_kernel *ppcg_kernel_create_local_arrays(
 	struct ppcg_kernel *kernel, struct gpu_prog *prog)
 {
+	int i;
 	isl_ctx *ctx;
 
 	ctx = isl_set_get_ctx(prog->context);
@@ -1936,6 +1942,9 @@ static struct ppcg_kernel *ppcg_kernel_create_local_arrays(
 	if (!kernel->array)
 		return ppcg_kernel_free(kernel);
 	kernel->n_array = prog->n_array;
+
+	for (i = 0; i < prog->n_array; ++i)
+		kernel->array[i].array = &prog->array[i];
 
 	return kernel;
 }
@@ -2204,7 +2213,7 @@ static __isl_give isl_multi_pw_aff *transform_index(
 		return index;
 	}
 
-	group = data->array->groups[access->group];
+	group = data->local_array->groups[access->group];
 	tile = group->private_tile;
 	if (!tile)
 		tile = group->shared_tile;
@@ -3388,12 +3397,12 @@ static __isl_give isl_union_map *body_schedule(struct gpu_gen *gen,
 	res = isl_union_map_range_product(isl_union_map_copy(schedule), sched);
 
 	s = 0;
-	for (i = 0; i < gen->prog->n_array; ++i)
-		s += gen->prog->array[i].n_group;
+	for (i = 0; i < gen->kernel->n_array; ++i)
+		s += gen->kernel->array[i].n_group;
 
 	k = 0;
-	for (i = 0; i < gen->prog->n_array; ++i) {
-		struct gpu_array_info *array = &gen->prog->array[i];
+	for (i = 0; i < gen->kernel->n_array; ++i) {
+		struct gpu_local_array_info *array = &gen->kernel->array[i];
 
 		for (j = 0; j < array->n_group; ++j) {
 			struct gpu_array_ref_group *group;

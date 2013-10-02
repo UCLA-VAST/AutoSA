@@ -8,8 +8,6 @@
 #include "ppcg_options.h"
 
 /* Represents an outer array possibly accessed by a gpu_prog.
- * If this outer array contains structures, then the references are not
- * collected and the reference groups are not computed.
  */
 struct gpu_array_info {
 	/* The array data space. */
@@ -30,10 +28,6 @@ struct gpu_array_info {
 	/* All references to this array; point to elements of a linked list. */
 	int n_ref;
 	struct gpu_stmt_access **refs;
-
-	/* The reference groups associated to this array. */
-	int n_group;
-	struct gpu_array_ref_group **groups;
 
 	/* Is this array accessed at all by the program? */
 	int accessed;
@@ -59,10 +53,23 @@ struct gpu_array_info {
 	int force_private;
 };
 
-/* For each index i with 0 <= i < n_index,
+/* Represents an outer array accessed by a ppcg_kernel, localized
+ * to the context of this kernel.
+ *
+ * "array" points to the corresponding array in the gpu_prog.
+ * The "n_group" "groups" are the reference groups associated to the array.
+ * If the outer array represented by the gpu_local_array_info
+ * contains structures, then the references are not
+ * collected and the reference groups are not computed.
+ * For each index i with 0 <= i < n_index,
  * bound[i] is equal to array->bound[i] specialized to the current kernel.
  */
 struct gpu_local_array_info {
+	struct gpu_array_info *array;
+
+	int n_group;
+	struct gpu_array_ref_group **groups;
+
 	unsigned n_index;
 	isl_pw_aff_list *bound;
 };
