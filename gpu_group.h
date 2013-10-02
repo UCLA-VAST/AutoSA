@@ -20,7 +20,7 @@ struct gpu_array_ref_group {
 	int nr;
 
 	/* The following fields are use during the construction of the groups.
-	 * access is the combined access relation relative to the shared
+	 * access is the combined access relation relative to the private
 	 * memory tiling.  In particular, the domain of the map corresponds
 	 * to the first thread_depth dimensions of the kernel schedule.
 	 * write is set if any access in the group is a write.
