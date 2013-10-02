@@ -36,6 +36,8 @@ ppcg_SOURCES = \
 	cuda_common.c \
 	gpu.c \
 	gpu.h \
+	gpu_array_tile.c \
+	gpu_array_tile.h \
 	gpu_print.c \
 	gpu_print.h \
 	schedule.c \
