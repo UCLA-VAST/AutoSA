@@ -216,14 +216,7 @@ struct gpu_gen {
 	 */
 	int first_unroll;
 
-	int n_grid;
 	int n_block;
-	/* Note: in the input file, the sizes of the grid and the blocks
-	 * are specified in the order x, y, z, but internally, the sizes
-	 * are stored in reverse order, so that the last element always
-	 * refers to the x dimension.
-	 */
-	int grid_dim[2];
 	int block_dim[3];
 	int *tile_size;
 };
@@ -304,8 +297,14 @@ struct ppcg_kernel_var {
  * n_parallel is the number of initial parallel loops among those
  * tile dimensions.
  *
+ * the first n_grid elements of grid_dim represent the specified size
+ * of the grid.
  * the first n_block elements of block_dim represent the effective size
  * of the block.
+ * Note that in the input file, the sizes of the grid and the blocks
+ * are specified in the order x, y, z, but internally, the sizes
+ * are stored in reverse order, so that the last element always
+ * refers to the x dimension.
  *
  * grid_size reflects the effective grid size.
  *
@@ -337,7 +336,9 @@ struct ppcg_kernel {
 	int tile_len;
 	int n_parallel;
 
+	int n_grid;
 	int n_block;
+	int grid_dim[2];
 	int block_dim[3];
 
 	isl_multi_pw_aff *grid_size;
