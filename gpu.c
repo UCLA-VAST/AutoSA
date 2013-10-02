@@ -1589,21 +1589,6 @@ static void compute_shared_sched(struct gpu_gen *gen)
 	gen->shared_proj = isl_union_map_from_map(proj);
 }
 
-/* Free all array information that is local to the current kernel.
- */
-static void free_local_array_info(struct gpu_gen *gen)
-{
-	int i, j;
-
-	for (i = 0; i < gen->kernel->n_array; ++i) {
-		struct gpu_local_array_info *array = &gen->kernel->array[i];
-
-		for (j = 0; j < array->n_group; ++j)
-			gpu_array_ref_group_free(array->groups[j]);
-		free(array->groups);
-	}
-}
-
 /* Compute the size of a bounding box around the origin and "set",
  * where "set" is assumed to contain only non-negative elements.
  * In particular, compute the maximal value of "set" in each direction
@@ -1754,7 +1739,7 @@ static void extract_block_size(struct gpu_gen *gen, struct ppcg_kernel *kernel)
 
 struct ppcg_kernel *ppcg_kernel_free(struct ppcg_kernel *kernel)
 {
-	int i;
+	int i, j;
 
 	if (!kernel)
 		return NULL;
@@ -1767,8 +1752,15 @@ struct ppcg_kernel *ppcg_kernel_free(struct ppcg_kernel *kernel)
 	isl_space_free(kernel->space);
 	isl_ast_node_free(kernel->tree);
 
-	for (i = 0; i < kernel->n_array; ++i)
-		isl_pw_aff_list_free(kernel->array[i].bound);
+	for (i = 0; i < kernel->n_array; ++i) {
+		struct gpu_local_array_info *array = &kernel->array[i];
+
+		for (j = 0; j < array->n_group; ++j)
+			gpu_array_ref_group_free(array->groups[j]);
+		free(array->groups);
+
+		isl_pw_aff_list_free(array->bound);
+	}
 	free(kernel->array);
 
 	for (i = 0; i < kernel->n_var; ++i) {
@@ -3609,7 +3601,6 @@ static __isl_give isl_ast_node *create_host_leaf(
 					kernel->grid_size);
 	create_kernel_vars(gen, kernel);
 
-	free_local_array_info(gen);
 	isl_map_free(gen->privatization);
 	isl_union_map_free(gen->local_sched);
 	isl_union_map_free(gen->tiled_sched);
