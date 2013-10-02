@@ -2219,7 +2219,7 @@ static __isl_give isl_ast_node *generate_code(struct gpu_gen *gen,
 	if (isl_schedule_foreach_schedule_node(schedule, &update_depth,
 						&depth) < 0)
 		return NULL;
-	build = isl_ast_build_from_context(isl_set_copy(gen->prog->context));
+	build = isl_ast_build_alloc(gen->prog->ctx);
 	iterators = ppcg_scop_generate_names(gen->prog->scop, depth, "c");
 	build = isl_ast_build_set_iterators(build, iterators);
 	build = isl_ast_build_set_at_each_domain(build, &at_domain, gen);
@@ -3517,19 +3517,11 @@ static __isl_give isl_schedule_node *mark_outer_permutable(
  * in front of all outermost tilable band that (by construction)
  * have at least one parallel loop.
  */
-static __isl_give isl_schedule *mark_kernels(struct gpu_gen *gen,
-	__isl_take isl_schedule *schedule)
+static __isl_give isl_schedule_node *mark_kernels(struct gpu_gen *gen,
+	__isl_take isl_schedule_node *node)
 {
-	isl_schedule_node *node;
-
-	node = isl_schedule_get_root(schedule);
-	isl_schedule_free(schedule);
-	node = isl_schedule_node_child(node, 0);
-	node = isl_schedule_node_map_descendant(node,
+	return isl_schedule_node_map_descendant(node,
 						&mark_outer_permutable, gen);
-	schedule = isl_schedule_node_get_schedule(node);
-	isl_schedule_node_free(node);
-	return schedule;
 }
 
 /* Save the schedule "schedule" to a file called "filename".
@@ -3786,6 +3778,33 @@ static void compute_copy_in_and_out(struct gpu_gen *gen)
 				    isl_union_map_copy(gen->prog->to_outer));
 
 	gen->prog->copy_in = copy_in;
+}
+
+/* Update "schedule" for mapping to a GPU device.
+ *
+ * In particular, insert a context node and create kernels for
+ * each outermost tilable band.
+ */
+static __isl_give isl_schedule *map_to_device(struct gpu_gen *gen,
+	__isl_take isl_schedule *schedule)
+{
+	isl_schedule_node *node;
+	isl_set *context;
+
+	context = isl_set_copy(gen->prog->context);
+	context = isl_set_from_params(context);
+	schedule = isl_schedule_insert_context(schedule, context);
+
+	node = isl_schedule_get_root(schedule);
+	isl_schedule_free(schedule);
+	node = isl_schedule_node_child(node, 0);
+	if (isl_schedule_node_get_type(node) == isl_schedule_node_context)
+		node = isl_schedule_node_child(node, 0);
+	node = mark_kernels(gen, node);
+	schedule = isl_schedule_node_get_schedule(node);
+	isl_schedule_node_free(node);
+
+	return schedule;
 }
 
 /* Internal data structure for extract_access.
@@ -4058,7 +4077,7 @@ static __isl_give isl_printer *generate(__isl_take isl_printer *p,
 		isl_schedule_free(schedule);
 	} else {
 		compute_copy_in_and_out(gen);
-		schedule = mark_kernels(gen, schedule);
+		schedule = map_to_device(gen, schedule);
 		gen->tree = generate_code(gen, schedule);
 		p = ppcg_print_exposed_declarations(p, prog->scop);
 		p = ppcg_print_guarded(p, guard, context, &print_gpu, gen);
