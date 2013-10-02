@@ -3741,6 +3741,34 @@ static __isl_give isl_multi_val *construct_band_tiles_sizes(
 	return mv;
 }
 
+/* Replace the partial schedule S of the band node "node" by
+ *
+ *	floor(S/f)
+ *
+ * or
+ *
+ *	f * floor(S/f)
+ *
+ * if scale_tile_loops is set, with f the integers in "factor".
+ * The list that "factor" points to is assumed to contain at least
+ * as many elements as the number of members in the band.
+ */
+static __isl_give isl_schedule_node *snap_band_to_sizes(
+	__isl_take isl_schedule_node *node, int *factor,
+	struct ppcg_options *options)
+{
+	isl_multi_val *mv;
+
+	mv = construct_band_tiles_sizes(node, factor);
+	node = isl_schedule_node_band_scale_down(node, isl_multi_val_copy(mv));
+	if (options->scale_tile_loops)
+		node = isl_schedule_node_band_scale(node,
+							isl_multi_val_copy(mv));
+	isl_multi_val_free(mv);
+
+	return node;
+}
+
 /* Tile "band" with tile size specified by "sizes".
  *
  * Since the tile loops will be mapped to block ids, we forcibly
@@ -4187,6 +4215,9 @@ static __isl_give isl_schedule_node *create_kernel(struct gpu_gen *gen,
 						kernel->grid_dim);
 	kernel->grid_size = extract_grid_size(kernel,
 						isl_union_set_copy(domain));
+	if (!kernel->options->wrap)
+		node = snap_band_to_sizes(node, kernel->grid_dim,
+						kernel->options);
 	if (scale)
 		node = scale_band(node, isl_multi_val_copy(sizes));
 	node = isl_schedule_node_parent(node);
@@ -4212,6 +4243,9 @@ static __isl_give isl_schedule_node *create_kernel(struct gpu_gen *gen,
 
 	node = gpu_tree_move_down_to_thread(node, kernel->core);
 	node = isl_schedule_node_child(node, 0);
+	if (!kernel->options->wrap)
+		node = snap_band_to_sizes(node, kernel->block_dim,
+						kernel->options);
 	node = isl_schedule_node_insert_filter(node,
 				    isl_union_set_copy(kernel->thread_filter));
 
