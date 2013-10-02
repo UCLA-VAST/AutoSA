@@ -1175,7 +1175,7 @@ static void create_kernel_var(isl_ctx *ctx, struct gpu_array_ref_group *group,
 					    isl_val_copy(tile->bound[j].size));
 }
 
-static void create_kernel_vars(struct ppcg_kernel *kernel)
+static int create_kernel_vars(struct ppcg_kernel *kernel)
 {
 	int i, j, n;
 
@@ -1192,7 +1192,8 @@ static void create_kernel_vars(struct ppcg_kernel *kernel)
 
 	kernel->n_var = n;
 	kernel->var = isl_calloc_array(kernel->ctx, struct ppcg_kernel_var, n);
-	assert(kernel->var);
+	if (!kernel->var)
+		return -1;
 
 	n = 0;
 	for (i = 0; i < kernel->n_array; ++i) {
@@ -1206,6 +1207,8 @@ static void create_kernel_vars(struct ppcg_kernel *kernel)
 			++n;
 		}
 	}
+
+	return 0;
 }
 
 /* Replace "pa" by the zero function defined over the universe domain
@@ -3339,7 +3342,8 @@ static __isl_give isl_schedule_node *create_kernel(struct gpu_gen *gen,
 
 	node = gpu_tree_move_up_to_kernel(node);
 
-	create_kernel_vars(kernel);
+	if (create_kernel_vars(kernel) < 0)
+		node = isl_schedule_node_free(node);
 
 	if (!single_statement)
 		node = isl_schedule_node_parent(node);
