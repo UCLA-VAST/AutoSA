@@ -1960,34 +1960,6 @@ static struct gpu_stmt *find_stmt(struct gpu_prog *prog, __isl_keep isl_id *id)
 	return i < prog->n_stmts ? &prog->stmts[i] : NULL;
 }
 
-/* Set gen->tile_len and gen->n_parallel to those of the statement
- * affected by the first map (part of the schedule)
- * on which this function is called.
- * Because of the way the schedule is constructed, the other statements
- * in the list, if any, should have the same values for these properties.
- */
-static int extract_tile_len(__isl_take isl_map *map, void *user)
-{
-	struct gpu_gen *gen = (struct gpu_gen *) user;
-	isl_id *id;
-	struct gpu_stmt *stmt;
-
-	id = isl_map_get_tuple_id(map, isl_dim_in);
-	stmt = find_stmt(gen->prog, id);
-	isl_id_free(id);
-
-	isl_map_free(map);
-
-	if (!stmt)
-		isl_die(gen->ctx, isl_error_unknown,
-			"statement not found", return -1);
-
-	gen->tile_len = stmt->tile_len;
-	gen->n_parallel = stmt->n_parallel;
-
-	return -1;
-}
-
 void ppcg_kernel_stmt_free(void *user)
 {
 	int i;
@@ -3574,7 +3546,8 @@ static __isl_give isl_ast_node *create_host_leaf(
 	if (!kernel)
 		goto error;
 
-	isl_union_map_foreach_map(schedule, &extract_tile_len, gen);
+	gen->tile_len = kernel->tile_len;
+	gen->n_parallel = kernel->n_parallel;
 	read_sizes(gen);
 
 	domain = isl_union_map_domain(isl_union_map_copy(schedule));
@@ -3713,10 +3686,6 @@ __isl_give isl_union_map *extract_sizes_from_str(isl_ctx *ctx, const char *str)
 
 /* Information about the outermost tilable bands in the forest of bands.
  *
- * tile_len and n_parallel are only sets on band_info structures
- * that correspond to outermost bands.  For other bands (in particular,
- * ancestors of the outermost bands), n_parallal is set to 0.
- *
  * prefix is the (padded) schedule leading up to the outermost tilable bands.
  *
  * tile_first is the number of schedule dimensions in prefix.
@@ -3726,32 +3695,9 @@ __isl_give isl_union_map *extract_sizes_from_str(isl_ctx *ctx, const char *str)
 struct band_info {
 	struct gpu_gen *gen;
 	int tile_first;
-	int tile_len;
-	int n_parallel;
 	isl_union_map *prefix;
 	isl_union_map *suffix;
 };
-
-/* Set tile_len and n_parallel of the statement to that of
- * their outermost band, recorded in the band_info.
- */
-static int set_stmt_tile_len(__isl_take isl_map *map, void *user)
-{
-	struct band_info *info = user;
-	struct gpu_stmt *stmt;
-	isl_id *id;
-
-	id = isl_map_get_tuple_id(map, isl_dim_in);
-	stmt = find_stmt(info->gen->prog, id);
-	isl_id_free(id);
-
-	stmt->tile_len = info->tile_len;
-	stmt->n_parallel = info->n_parallel;
-
-	isl_map_free(map);
-
-	return 0;
-}
 
 /* Extract the set of parameter values and outer schedule dimensions
  * for which any statement instance
@@ -3916,6 +3862,8 @@ static __isl_give isl_schedule_node *create_kernel(struct gpu_gen *gen,
 	kernel->options = gen->options;
 	kernel->context = extract_context(node, gen->prog);
 	kernel->arrays = accessed_by_domain(domain, gen->prog);
+	kernel->tile_len = isl_schedule_node_band_n_member(node);
+	kernel->n_parallel = n_outer_coincidence(node);
 	kernel->id = gen->kernel_id++;
 
 	node = atomic_ancestors(node);
@@ -4006,14 +3954,11 @@ static __isl_give isl_schedule_node *band_select_outer_band(struct gpu_gen *gen,
 		return isl_schedule_node_parent(node);
 	}
 
-	info->n_parallel = n_parallel;
 	gen->any_parallelism = 1;
 	info->gen = gen;
 	info->tile_first = pos;
-	info->tile_len = n;
 	info->prefix = isl_schedule_node_get_prefix_schedule_union_map(node);
 	info->suffix = isl_schedule_node_get_subtree_schedule_union_map(node);
-	isl_union_map_foreach_map(info->prefix, &set_stmt_tile_len, info);
 
 	node = mark_outer_permutable(gen, node);
 
@@ -4090,7 +4035,6 @@ static __isl_give isl_schedule_node *list_select_outer_band(
 	}
 
 	list_info->tile_first = info[0].tile_first;
-	list_info->tile_len = -1;
 	list_info->prefix = prefix;
 	list_info->suffix = suffix;
 
@@ -4109,10 +4053,8 @@ static __isl_give isl_schedule_node *leaf_select_outer_band(struct gpu_gen *gen,
 {
 	info->gen = gen;
 	info->tile_first = pos;
-	info->tile_len = 0;
 	info->prefix = isl_schedule_node_get_prefix_schedule_union_map(node);
 	info->suffix = isl_schedule_node_get_subtree_schedule_union_map(node);
-	isl_union_map_foreach_map(info->prefix, &set_stmt_tile_len, info);
 
 	node = mark_outer_permutable(gen, node);
 

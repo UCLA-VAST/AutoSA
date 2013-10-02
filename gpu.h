@@ -304,6 +304,10 @@ struct ppcg_kernel_var {
  * block_ids contains the list of block identifiers for this kernel.
  * thread_ids contains the list of thread identifiers for this kernel.
  *
+ * tile_len is the number of tile dimensions and
+ * n_parallel is the number of initial parallel loops among those
+ * tile dimensions.
+ *
  * the first n_block elements of block_dim represent the effective size
  * of the block.
  *
@@ -333,6 +337,9 @@ struct ppcg_kernel {
 
 	isl_id_list *block_ids;
 	isl_id_list *thread_ids;
+
+	int tile_len;
+	int n_parallel;
 
 	int n_block;
 	int block_dim[3];

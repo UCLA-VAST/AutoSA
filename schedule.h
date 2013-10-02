@@ -33,11 +33,6 @@ struct gpu_stmt {
 	isl_id *id;
 	struct pet_stmt *stmt;
 
-	/* Number of tile dimensions. */
-	int tile_len;
-	/* Number of initial parallel loops among tile dimensions. */
-	int n_parallel;
-
 	/* Linked list of accesses. */
 	struct gpu_stmt_access *accesses;
 };
