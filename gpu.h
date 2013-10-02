@@ -129,6 +129,99 @@ struct gpu_prog {
 	struct gpu_array_info *array;
 };
 
+struct gpu_gen {
+	isl_ctx *ctx;
+	struct ppcg_options *options;
+
+	/* Callback for printing of AST in appropriate format. */
+	__isl_give isl_printer *(*print)(__isl_take isl_printer *p,
+		struct gpu_prog *prog, __isl_keep isl_ast_node *tree,
+		struct gpu_types *types, void *user);
+	void *print_user;
+
+	struct gpu_prog *prog;
+	/* The generated AST. */
+	isl_ast_node *tree;
+
+	/* The sequence of types for which a definition has been printed. */
+	struct gpu_types types;
+
+	/* User specified tile, grid and block sizes for each kernel */
+	isl_union_map *sizes;
+
+	/* Effectively used tile, grid and block sizes for each kernel */
+	isl_union_map *used_sizes;
+
+	/* Identifier of current kernel. */
+	int kernel_id;
+	/* Pointer to the current kernel. */
+	struct ppcg_kernel *kernel;
+	/* Does the computed schedule exhibit any parallelism? */
+	int any_parallelism;
+
+	/* First tile dimension. */
+	int tile_first;
+	/* Number of tile dimensions. */
+	int tile_len;
+	/* Number of initial parallel loops among tile dimensions. */
+	int n_parallel;
+
+	/* Number of dimensions determining shared memory. */
+	int shared_len;
+
+	/* Number of rows in the untiled schedule. */
+	int untiled_len;
+	/* Number of rows in the tiled schedule. */
+	int tiled_len;
+	/* Number of rows in schedule after tiling/wrapping over threads. */
+	int thread_tiled_len;
+
+	/* Global untiled schedule. */
+	isl_union_map *sched;
+	/* Local (per kernel launch) tiled schedule. */
+	isl_union_map *tiled_sched;
+	/* Local schedule per shared memory tile loop iteration. */
+	isl_union_map *local_sched;
+
+	/* Local tiled schedule projected onto the shared tile loops and
+	 * the loops that will be wrapped over the threads,
+	 * with all shared tile loops parametrized.
+	 */
+	isl_union_map *shared_sched;
+	/* Projects out the loops that will be wrapped over the threads
+	 * from shared_sched.
+	 */
+	isl_union_map *shared_proj;
+
+	/* A map that takes the range of shared_sched as input,
+	 * wraps the appropriate loops over the threads and then projects
+	 * out these loops.
+	 */
+	isl_map *privatization;
+
+	/* The array reference group corresponding to copy_sched. */
+	struct gpu_array_ref_group *copy_group;
+
+	/* Is any array in the current kernel marked force_private? */
+	int any_force_private;
+
+	/* First loop to unroll (or -1 if none) in the current part of the
+	 * schedule.
+	 */
+	int first_unroll;
+
+	int n_grid;
+	int n_block;
+	/* Note: in the input file, the sizes of the grid and the blocks
+	 * are specified in the order x, y, z, but internally, the sizes
+	 * are stored in reverse order, so that the last element always
+	 * refers to the x dimension.
+	 */
+	int grid_dim[2];
+	int block_dim[3];
+	int *tile_size;
+};
+
 enum ppcg_kernel_access_type {
 	ppcg_access_global,
 	ppcg_access_shared,
