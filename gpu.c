@@ -3812,6 +3812,22 @@ static __isl_give isl_union_set *accessed_by_domain(
 	return arrays;
 }
 
+/* Return the number of outer band members of the band node "node"
+ * that are marked coincident.
+ */
+static int n_outer_coincidence(__isl_keep isl_schedule_node *node)
+{
+	int i, n;
+
+	n = isl_schedule_node_band_n_member(node);
+
+	for (i = 0; i < n; ++i)
+		if (!isl_schedule_node_band_member_get_coincident(node, i))
+			break;
+
+	return i;
+}
+
 /* Mark all dimensions in the current band node atomic.
  */
 static __isl_give isl_schedule_node *atomic(__isl_take isl_schedule_node *node)
@@ -3982,10 +3998,7 @@ static __isl_give isl_schedule_node *band_select_outer_band(struct gpu_gen *gen,
 	int n = isl_schedule_node_band_n_member(node);
 	int n_parallel;
 
-	for (n_parallel = 0; n_parallel < n; ++n_parallel)
-		if (!isl_schedule_node_band_member_get_coincident(node,
-								n_parallel))
-			break;
+	n_parallel = n_outer_coincidence(node);
 
 	if (!isl_schedule_node_band_get_permutable(node) || n_parallel == 0) {
 		node = isl_schedule_node_child(node, 0);
