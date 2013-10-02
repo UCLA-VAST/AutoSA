@@ -62,6 +62,7 @@ struct gpu_array_bound {
  * of the computed schedule.
  */
 struct gpu_array_tile {
+	isl_ctx *ctx;
 	int n;
 	struct gpu_array_bound *bound;
 	isl_multi_aff *tiling;
@@ -285,6 +286,7 @@ static struct gpu_array_tile *create_tile(isl_ctx *ctx, int n_index)
 
 	tile->n = n_index;
 
+	tile->ctx = ctx;
 	tile->bound = isl_alloc_array(ctx, struct gpu_array_bound, n_index);
 	assert(tile->bound);
 
@@ -2296,12 +2298,15 @@ static void set_last_shared(struct gpu_gen *gen,
 /* Compute the size of the tile specified by "tile"
  * in number of elements and return the result.
  */
-static __isl_give isl_val *tile_size(isl_ctx *ctx, struct gpu_array_tile *tile)
+static __isl_give isl_val *tile_size(struct gpu_array_tile *tile)
 {
 	int i;
 	isl_val *size;
 
-	size = isl_val_one(ctx);
+	if (!tile)
+		return NULL;
+
+	size = isl_val_one(tile->ctx);
 
 	for (i = 0; i < tile->n; ++i)
 		size = isl_val_mul(size, isl_val_copy(tile->bound[i].size));
@@ -2344,7 +2349,7 @@ static void check_shared_memory_bound(struct gpu_gen *gen)
 			if (!group->shared_tile)
 				continue;
 
-			size = tile_size(gen->ctx, group->shared_tile);
+			size = tile_size(group->shared_tile);
 			size = isl_val_mul_ui(size, array->size);
 
 			if (isl_val_le(size, left)) {
@@ -2918,15 +2923,15 @@ static int group_last_shared_overlapping_writes(struct gpu_gen *gen, int n,
 /* Is the size of the tile specified by "tile" smaller than the sum of
  * the sizes of the tiles specified by "tile1" and "tile2"?
  */
-static int smaller_tile(isl_ctx *ctx, struct gpu_array_tile *tile,
+static int smaller_tile(struct gpu_array_tile *tile,
 	struct gpu_array_tile *tile1, struct gpu_array_tile *tile2)
 {
 	int smaller;
 	isl_val *size, *size1, *size2;
 
-	size = tile_size(ctx, tile);
-	size1 = tile_size(ctx, tile1);
-	size2 = tile_size(ctx, tile2);
+	size = tile_size(tile);
+	size1 = tile_size(tile1);
+	size2 = tile_size(tile2);
 
 	size = isl_val_sub(size, size1);
 	size = isl_val_sub(size, size2);
@@ -2983,7 +2988,7 @@ static int group_common_shared_memory_tile(struct gpu_gen *gen,
 				return -1;
 			}
 			if (!group->shared_tile ||
-			    !smaller_tile(ctx, group->shared_tile,
+			    !smaller_tile(group->shared_tile,
 					groups[i]->shared_tile,
 					groups[j]->shared_tile)) {
 				free_array_ref_group(group);
