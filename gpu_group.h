@@ -1,6 +1,7 @@
 #ifndef GPU_GROUP_H
 #define GPU_GROUP_H
 
+#include <isl/schedule_node.h>
 #include "gpu.h"
 
 /* A group of array references in a kernel that should be handled together.
@@ -25,7 +26,7 @@ struct gpu_array_ref_group {
 	/* The following fields are use during the construction of the groups.
 	 * access is the combined access relation relative to the shared
 	 * memory tiling.  In particular, the domain of the map corresponds
-	 * to the first shared_len dimensions of the computed schedule.
+	 * to the first shared_schedule_dim dimensions of the kernel schedule.
 	 * write is set if any access in the group is a write.
 	 * exact_write is set if all writes are definite writes.
 	 * slice is set if there is at least one access in the group
@@ -49,7 +50,8 @@ struct gpu_array_ref_group {
 	struct gpu_stmt_access **refs;
 };
 
-int gpu_group_references(struct gpu_gen *gen);
+int gpu_group_references(struct ppcg_kernel *kernel,
+	__isl_keep isl_schedule_node *node);
 
 __isl_give isl_printer *gpu_array_ref_group_print_name(
 	struct gpu_array_ref_group *group, __isl_take isl_printer *p);

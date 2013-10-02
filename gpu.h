@@ -183,14 +183,12 @@ struct gpu_gen {
 	/* Number of rows in schedule after tiling/wrapping over threads. */
 	int thread_tiled_len;
 
-	/* A schedule tree corresponding to the host code. */
-	isl_schedule *host_schedule;
+	/* A schedule tree corresponding to both the host and device code. */
+	isl_schedule *schedule;
 	/* Global untiled schedule. */
 	isl_union_map *sched;
 	/* Local (per kernel launch) tiled schedule. */
 	isl_union_map *tiled_sched;
-	/* Local schedule per shared memory tile loop iteration. */
-	isl_union_map *local_sched;
 
 	/* Local tiled schedule projected onto the shared tile loops and
 	 * the loops that will be wrapped over the threads,
@@ -201,15 +199,6 @@ struct gpu_gen {
 	 * from shared_sched.
 	 */
 	isl_union_map *shared_proj;
-
-	/* A map that takes the range of shared_sched as input,
-	 * wraps the appropriate loops over the threads and then projects
-	 * out these loops.
-	 */
-	isl_map *privatization;
-
-	/* The array reference group corresponding to copy_sched. */
-	struct gpu_array_ref_group *copy_group;
 
 	/* First loop to unroll (or -1 if none) in the current part of the
 	 * schedule.
@@ -340,6 +329,11 @@ struct ppcg_kernel_var {
  * that encode the mapping to thread identifiers, where the thread identifiers
  * are represented by "n_block" parameters with as names the elements
  * of "thread_ids".
+ *
+ * shared_schedule corresponds to the schedule dimensions of
+ * the (tiled) schedule for this kernel that have been taken into account
+ * for computing private/shared memory tiles.
+ * shared_schedule_dim is the dimension of this schedule.
  */
 struct ppcg_kernel {
 	isl_ctx *ctx;
@@ -380,6 +374,8 @@ struct ppcg_kernel {
 
 	isl_union_set *block_filter;
 	isl_union_set *thread_filter;
+	isl_union_pw_multi_aff *shared_schedule;
+	int shared_schedule_dim;
 
 	isl_ast_node *tree;
 };

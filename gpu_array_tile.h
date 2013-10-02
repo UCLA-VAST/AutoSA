@@ -9,7 +9,7 @@
  * if shift != NULL.
  * If so, they express that current index is such that if you add shift,
  * then the result is always a multiple of stride.
- * Let D represent the initial shared_len dimensions of the computed schedule.
+ * Let D represent the initial group->depth dimensions of the computed schedule.
  * The spaces of "lb" and "shift" are of the form
  *
  *	D -> [b]
@@ -36,7 +36,7 @@ struct gpu_array_bound {
  *
  *	{ [D[i] -> A[a]] -> T[(a + shift(i))/stride - lb(i)] }
  *
- * where D represents the initial shared_len dimensions
+ * where D represents the initial group->depth dimensions
  * of the computed schedule.
  */
 struct gpu_array_tile {
