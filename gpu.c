@@ -3157,11 +3157,14 @@ static __isl_give isl_schedule_node *unroll(__isl_take isl_schedule_node *node)
  * may have a different mapping from between shared memory elements and
  * threads, such that synchronization is required after the core.
  * "node" is assumed to point to the kernel node.
+ *
+ * If the shared and the thread mark point to the same node, then make
+ * sure the synchronization is inserted outside of the shared mark.
  */
 static __isl_give isl_schedule_node *add_sync(struct ppcg_kernel *kernel,
 	__isl_take isl_schedule_node *node)
 {
-	int kernel_depth;
+	int depth;
 	int need_sync;
 
 	need_sync = any_global_or_shared_sync_writes(kernel);
@@ -3170,12 +3173,13 @@ static __isl_give isl_schedule_node *add_sync(struct ppcg_kernel *kernel,
 	if (!need_sync)
 		return node;
 
-	kernel_depth = isl_schedule_node_get_schedule_depth(node);
-
 	node = gpu_tree_move_down_to_thread(node, kernel->core);
-	if (kernel_depth == isl_schedule_node_get_schedule_depth(node))
-		return gpu_tree_move_up_to_kernel(node);
+	depth = isl_schedule_node_get_schedule_depth(node);
+	node = gpu_tree_move_up_to_kernel(node);
+	if (depth == isl_schedule_node_get_schedule_depth(node))
+		return node;
 
+	node = gpu_tree_move_down_to_depth(node, depth, kernel->core);
 	node = gpu_tree_ensure_following_sync(node, kernel);
 
 	node = gpu_tree_move_up_to_kernel(node);
@@ -3770,7 +3774,10 @@ static __isl_give isl_schedule_node *group_statements(
  * The band that "node" points to is the band that needs to be mapped
  * to block identifiers.  The band that needs to be mapped to thread
  * identifiers should be marked by a "thread" mark by the caller.
- * This mark is removed by this function.
+ * The linear branch between the current node and the "thread" mark
+ * may also have a "shared" mark.  If present, the mapping to shared
+ * memory is computed at that point.
+ * Both marks are removed by this function.
  * If "scale" is set, then the band that "node" points to is scaled
  * by "sizes".
  *
@@ -3835,6 +3842,10 @@ static __isl_give isl_schedule_node *create_kernel(struct gpu_gen *gen,
 	isl_set *host_domain;
 	isl_union_set *domain, *expanded;
 	int single_statement;
+
+	node = gpu_tree_insert_shared_before_thread(node);
+	if (!node)
+		return NULL;
 
 	kernel = isl_calloc_type(gen->ctx, struct ppcg_kernel);
 	kernel = ppcg_kernel_create_local_arrays(kernel, gen->prog);
@@ -3951,6 +3962,9 @@ static __isl_give isl_schedule_node *create_kernel(struct gpu_gen *gen,
 
 	node = add_sync(kernel, node);
 	node = add_copies(kernel, node);
+
+	node = gpu_tree_move_down_to_shared(node, kernel->core);
+	node = isl_schedule_node_delete(node);
 
 	node = gpu_tree_move_down_to_thread(node, kernel->core);
 	node = isl_schedule_node_delete(node);

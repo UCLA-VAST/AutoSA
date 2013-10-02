@@ -447,7 +447,6 @@ static int can_tile(__isl_keep isl_map *access, struct gpu_array_tile *tile)
  * the schedule depth at which the copying to/from private memory
  * is computed.  The copy operation may then later be hoisted to
  * a higher level.
- * Currently, shared_depth is equal to thread_depth.
  * n_thread is the number of schedule dimensions in the band that
  * is mapped to threads.
  * privatization lives in the range of thread_sched (i.e., it is
@@ -1620,6 +1619,7 @@ static __isl_give isl_union_map *prefix_with_equalities(
 
 /* Group references of all arrays in "kernel".
  * "node" points to the kernel mark.
+ * The mapping to shared memory in computed at the "shared" mark.
  *
  * We first extract all required schedule information into
  * a gpu_group_data structure and then consider each array
@@ -1641,14 +1641,18 @@ int gpu_group_references(struct ppcg_kernel *kernel,
 	data.host_sched = isl_schedule_node_get_prefix_schedule_relation(node);
 
 	node = isl_schedule_node_copy(node);
-	node = gpu_tree_move_down_to_thread(node, kernel->core);
+	node = gpu_tree_move_down_to_shared(node, kernel->core);
 	data.shared_depth = isl_schedule_node_get_schedule_depth(node);
 	data.shared_sched = prefix_with_equalities(node);
 
+	node = gpu_tree_move_down_to_thread(node, kernel->core);
 	node = isl_schedule_node_child(node, 0);
 	data.thread_depth = isl_schedule_node_get_schedule_depth(node);
 	data.n_thread = isl_schedule_node_band_n_member(node);
-	data.copy_sched = isl_union_map_copy(data.shared_sched);
+	if (data.thread_depth == data.shared_depth)
+		data.copy_sched = isl_union_map_copy(data.shared_sched);
+	else
+		data.copy_sched = prefix_with_equalities(node);
 	data.thread_sched = isl_union_map_copy(data.copy_sched);
 	data.thread_sched = isl_union_map_flat_range_product(data.thread_sched,
 		isl_schedule_node_band_get_partial_schedule_union_map(node));
@@ -1657,8 +1661,12 @@ int gpu_group_references(struct ppcg_kernel *kernel,
 	contraction = isl_union_pw_multi_aff_copy(kernel->contraction);
 	data.host_sched = expand(data.host_sched, contraction);
 	data.shared_sched = expand(data.shared_sched, contraction);
-	isl_union_map_free(data.copy_sched);
-	data.copy_sched = isl_union_map_copy(data.shared_sched);
+	if (data.thread_depth == data.shared_depth) {
+		isl_union_map_free(data.copy_sched);
+		data.copy_sched = isl_union_map_copy(data.shared_sched);
+	} else {
+		data.copy_sched = expand(data.copy_sched, contraction);
+	}
 	data.thread_sched = expand(data.thread_sched, contraction);
 	isl_union_pw_multi_aff_free(contraction);
 
