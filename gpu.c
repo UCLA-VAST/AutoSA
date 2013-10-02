@@ -4000,7 +4000,8 @@ static __isl_give isl_schedule_node *insert_empty_permutable_band(
  *
  * Tile "node" using user specified tile sizes, after splitting the band
  * if the number of specified tile sizes is smaller than the dimension
- * of the band.
+ * of the band.  Mark the point band of this tiling as the band that
+ * needs to be mapped to threads.
  * Create a kernel representing the domain instances that reach "node" and
  * replace the band node with a mark node pointing to the kernel.
  */
@@ -4011,6 +4012,7 @@ static __isl_give isl_schedule_node *mark_outer_permutable(
 	int scale;
 	int tile_len;
 	int *tile_size;
+	isl_id *id;
 	isl_multi_val *sizes;
 
 	if (isl_schedule_node_get_type(node) == isl_schedule_node_leaf)
@@ -4024,6 +4026,10 @@ static __isl_give isl_schedule_node *mark_outer_permutable(
 		node = isl_schedule_node_band_split(node, tile_len);
 	sizes = construct_band_tiles_sizes(node, tile_size);
 	node = tile_band(node, isl_multi_val_copy(sizes));
+	node = isl_schedule_node_child(node, 0);
+	id = isl_id_alloc(gen->ctx, "thread", NULL);
+	node = isl_schedule_node_insert_mark(node, id);
+	node = isl_schedule_node_parent(node);
 
 	scale = gen->options->scale_tile_loops;
 	node = create_kernel(gen, node, scale, sizes);
