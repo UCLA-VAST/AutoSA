@@ -551,7 +551,8 @@ static int populate_array_references(struct gpu_array_info *array,
 		map = isl_map_detect_equalities(map);
 
 		group = isl_calloc_type(ctx, struct gpu_array_ref_group);
-		assert(group);
+		if (!group)
+			return -1;
 		group->array = array;
 		group->access = map;
 		group->write = access->write;
