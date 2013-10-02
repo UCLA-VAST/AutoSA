@@ -1889,11 +1889,6 @@ static void localize_bounds(struct gpu_gen *gen, struct ppcg_kernel *kernel,
 	int i, j;
 	isl_set *context;
 
-	kernel->array = isl_calloc_array(gen->ctx,
-			    struct gpu_local_array_info, gen->prog->n_array);
-	assert(kernel->array);
-	kernel->n_array = gen->prog->n_array;
-
 	context = isl_set_copy(host_domain);
 	context = isl_set_params(context);
 
@@ -1924,6 +1919,25 @@ static void localize_bounds(struct gpu_gen *gen, struct ppcg_kernel *kernel,
 		kernel->array[i].bound = local;
 	}
 	isl_set_free(context);
+}
+
+/* Create the array of gpu_local_array_info structures "array"
+ * inside "kernel".  The number of elements in this array is
+ * the same as the number of arrays in "prog".
+ */
+static struct ppcg_kernel *ppcg_kernel_create_local_arrays(
+	struct ppcg_kernel *kernel, struct gpu_prog *prog)
+{
+	isl_ctx *ctx;
+
+	ctx = isl_set_get_ctx(prog->context);
+	kernel->array = isl_calloc_array(ctx,
+			    struct gpu_local_array_info, prog->n_array);
+	if (!kernel->array)
+		return ppcg_kernel_free(kernel);
+	kernel->n_array = prog->n_array;
+
+	return kernel;
 }
 
 /* Find the element in gen->stmt that has the given "id".
@@ -3543,6 +3557,7 @@ static __isl_give isl_ast_node *create_host_leaf(
 					    isl_union_map_copy(local_sched));
 
 	kernel = gen->kernel = isl_calloc_type(gen->ctx, struct ppcg_kernel);
+	kernel = ppcg_kernel_create_local_arrays(kernel, gen->prog);
 	if (!kernel)
 		goto error;
 	kernel->block_ids = ppcg_scop_generate_names(gen->prog->scop,
