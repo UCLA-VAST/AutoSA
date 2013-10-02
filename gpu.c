@@ -3959,13 +3959,16 @@ static __isl_give isl_multi_aff *parameter_vector(__isl_take isl_space *space,
  * parameters called "names", to the partial schedule
  * of "node" modulo the integers in "size".
  * The number of elements in the array "size" should be equal
- * to the number of members of the band node "node" and
  * to the number of elements in "names".
+ * The number of members of the band node "node" should be smaller
+ * than or equal to this number.  If it is smaller, then the first
+ * elements of "names" are equated to zero.
  */
 static __isl_give isl_union_set *set_schedule_modulo(
 	__isl_keep isl_schedule_node *node, __isl_keep isl_id_list *names,
 	int *size)
 {
+	int n, n_zero;
 	isl_space *space;
 	isl_multi_aff *ma;
 	isl_multi_union_pw_aff *mupa, *mupa2;
@@ -3974,17 +3977,28 @@ static __isl_give isl_union_set *set_schedule_modulo(
 
 	if (!node)
 		return NULL;
-	if (isl_schedule_node_band_n_member(node) == 0)
+	n = isl_id_list_n_id(names);
+	if (n == 0)
 		return isl_schedule_node_get_universe_domain(node);
+	n_zero = n - isl_schedule_node_band_n_member(node);
 
 	mupa = isl_schedule_node_band_get_partial_schedule(node);
-	mv = construct_band_tiles_sizes(node, size);
+	mv = construct_band_tiles_sizes(node, size + n_zero);
 	mupa = isl_multi_union_pw_aff_mod_multi_val(mupa, mv);
 
 	space = isl_multi_union_pw_aff_get_space(mupa);
-	ma = parameter_vector(space, names);
+	space = isl_space_params(space);
+	space = isl_space_set_from_params(space);
+	space = isl_space_add_dims(space, isl_dim_set, n_zero);
+	ma = isl_multi_aff_zero(space);
 
 	domain = isl_schedule_node_get_universe_domain(node);
+	mupa2 = isl_multi_union_pw_aff_multi_aff_on_domain(
+						isl_union_set_copy(domain), ma);
+	mupa = isl_multi_union_pw_aff_range_product(mupa2, mupa);
+
+	space = isl_multi_union_pw_aff_get_space(mupa);
+	ma = parameter_vector(space, names);
 
 	mupa2 = isl_multi_union_pw_aff_multi_aff_on_domain(domain, ma);
 	mupa = isl_multi_union_pw_aff_sub(mupa, mupa2);
