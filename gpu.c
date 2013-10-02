@@ -3071,8 +3071,7 @@ static __isl_give isl_union_map *wrapped_reference_to_access(
 
 /* Given an access relation "access" from "group", remove those reads
  * if ("read" is 1) or writes (if "read" is 0) that are only needed to
- * communicate data within the same iteration of the last_shared dimension
- * of the group.
+ * communicate data within the same iteration of "sched".
  *
  * If the access is a read then it is either an element of
  *
@@ -3109,8 +3108,7 @@ static __isl_give isl_union_map *wrapped_reference_to_access(
  *	[[D -> R] -> [D' -> R']]
  *
  * of pairs of domain iterations accessing the reference group
- * and references in the group that are scheduled to the same iteration
- * of the last_shared dimension.
+ * and references in the group that are coscheduled by "sched".
  *
  * If this relation does not intersect the dataflow dependences,
  * then there is nothing we can possibly remove, unless the dataflow
@@ -3142,26 +3140,20 @@ static __isl_give isl_union_map *wrapped_reference_to_access(
  */
 static __isl_give isl_union_map *remove_local_accesses(struct gpu_gen *gen,
 	struct gpu_array_ref_group *group, __isl_take isl_union_map *access,
-	int read)
+	__isl_take isl_union_map *sched, int read)
 {
 	int empty;
 	isl_union_pw_multi_aff *tagger;
 	isl_union_set *domain;
-	isl_space *space;
-	isl_union_map *sched, *local, *tagged, *external;
+	isl_union_map *local, *tagged, *external;
 	isl_union_set *tag_set;
-	isl_map *proj;
 
-	if (isl_union_map_is_empty(access))
+	if (isl_union_map_is_empty(access)) {
+		isl_union_map_free(sched);
 		return access;
+	}
 
 	tagged = group_tagged_access_relation(group);
-
-	sched = isl_union_map_copy(gen->sched);
-
-	space = isl_union_map_get_space(sched);
-	proj = projection(space, gen->untiled_len, group->last_shared + 1);
-	sched = isl_union_map_apply_range(sched, isl_union_map_from_map(proj));
 
 	tagger = isl_union_pw_multi_aff_copy(gen->prog->scop->tagger);
 	domain = isl_union_map_domain(isl_union_map_copy(tagged));
@@ -3200,6 +3192,35 @@ static __isl_give isl_union_map *remove_local_accesses(struct gpu_gen *gen,
 	access = isl_union_map_intersect(access, external);
 
 	return access;
+}
+
+/* Given an access relation "access" from "group", remove those reads
+ * if ("read" is 1) or writes (if "read" is 0) that are only needed to
+ * communicate data within the same iteration of the last_shared dimension
+ * of the group.
+ *
+ * We extract a schedule that picks out the iteration of the last_shared
+ * dimension of the group (and outer dimensions) and
+ * call remove_local_accesses.
+ */
+static __isl_give isl_union_map *remove_local_accesses_group(
+	struct gpu_gen *gen, struct gpu_array_ref_group *group,
+	__isl_take isl_union_map *access, int read)
+{
+	isl_union_map *sched;
+	isl_space *space;
+	isl_map *proj;
+
+	if (isl_union_map_is_empty(access))
+		return access;
+
+	sched = isl_union_map_copy(gen->sched);
+
+	space = isl_union_map_get_space(sched);
+	proj = projection(space, gen->untiled_len, group->last_shared + 1);
+	sched = isl_union_map_apply_range(sched, isl_union_map_from_map(proj));
+
+	return remove_local_accesses(gen, group, access, sched, read);
 }
 
 /* Given the AST context schedule "schedule" and the mapping from
@@ -3277,7 +3298,7 @@ static __isl_give isl_union_map *add_group_schedule(struct gpu_gen *gen,
 	isl_id *id;
 
 	access = gpu_array_ref_group_access_relation(group, read, !read);
-	access = remove_local_accesses(gen, group, access, read);
+	access = remove_local_accesses_group(gen, group, access, read);
 	access = isl_union_map_range_product(isl_union_map_copy(shared_sched),
 						access);
 
