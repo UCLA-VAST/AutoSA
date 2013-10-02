@@ -644,7 +644,8 @@ static struct gpu_array_ref_group *join_groups(
 
 	ctx = isl_map_get_ctx(group1->access);
 	group = isl_calloc_type(ctx, struct gpu_array_ref_group);
-	assert(group);
+	if (!group)
+		return NULL;
 	group->array = group1->array;
 	group->access = isl_map_union(isl_map_copy(group1->access),
 					isl_map_copy(group2->access));
@@ -654,7 +655,8 @@ static struct gpu_array_ref_group *join_groups(
 	group->n_ref = group1->n_ref + group2->n_ref;
 	group->refs = isl_alloc_array(ctx, struct gpu_stmt_access *,
 					group->n_ref);
-	assert(group->refs);
+	if (!group->refs)
+		return gpu_array_ref_group_free(group);
 	for (i = 0; i < group1->n_ref; ++i)
 		group->refs[i] = group1->refs[i];
 	for (i = 0; i < group2->n_ref; ++i)
@@ -830,6 +832,8 @@ static int compute_group_bounds_core(struct gpu_gen *gen,
 static int compute_group_bounds(struct gpu_gen *gen,
 	struct gpu_array_ref_group *group)
 {
+	if (!group)
+		return -1;
 	if (compute_group_bounds_core(gen, group) < 0)
 		return -1;
 	set_last_shared(gen, group);
@@ -867,6 +871,8 @@ static int group_writes(struct gpu_gen *gen,
 			groups[n - 1] = NULL;
 			n--;
 
+			if (!groups[i])
+				return -1;
 			if (compute_bounds &&
 			    compute_group_bounds(gen, groups[i]) < 0)
 				return -1;
