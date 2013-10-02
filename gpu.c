@@ -2295,20 +2295,45 @@ static int has_any_permutable_node(__isl_keep isl_schedule *schedule)
 	return any_permutable;
 }
 
-/* Information about the outermost tilable bands in the forest of bands.
- *
- * prefix is the (padded) schedule leading up to the outermost tilable bands.
- *
- * tile_first is the number of schedule dimensions in prefix.
- *
- * suffix is the schedule of the outermost tilable bands and their descendants.
+/* Is "node" a leaf or can it be tiled and then mapped to
+ * block and thread identifiers?
  */
-struct band_info {
-	struct gpu_gen *gen;
-	int tile_first;
-	isl_union_map *prefix;
-	isl_union_map *suffix;
-};
+static int is_leaf_or_tilable(__isl_keep isl_schedule_node *node)
+{
+	if (isl_schedule_node_get_type(node) == isl_schedule_node_leaf)
+		return 1;
+	return is_permutable(node);
+}
+
+/* Is "node" the outermost node in its branch that can be tiled
+ * and then mapped to block and thread identifiers?
+ * If there are no such nodes in the branch and if "node" is a leaf,
+ * then it is accepted too.
+ */
+static int is_outer_tilable(__isl_keep isl_schedule_node *node)
+{
+	int tilable;
+	isl_schedule_node *ancestor;
+
+	tilable = is_leaf_or_tilable(node);
+	if (tilable < 0)
+		return -1;
+	if (!tilable)
+		return 0;
+
+	tilable = 0;
+	ancestor = isl_schedule_node_copy(node);
+	while (isl_schedule_node_has_parent(ancestor)) {
+		ancestor = isl_schedule_node_parent(ancestor);
+
+		tilable = is_permutable(ancestor);
+		if (tilable < 0 || tilable)
+			break;
+	}
+
+	isl_schedule_node_free(ancestor);
+	return tilable < 0 ? -1 : !tilable;
+}
 
 /* Construct an isl_multi_val for use as tile sizes for tiling "node"
  * from the elements in "tile_size".
@@ -3433,7 +3458,9 @@ static __isl_give isl_schedule_node *insert_empty_permutable_band(
 	return node;
 }
 
-/* Mark "node" as outer permutable.
+/* If "node" is the outermost permutable band that can be mapped to block and
+ * thread identifiers in its branch (or a leaf with no such outer bands),
+ * then mark the band as such, attaching a ppcg_kernel to the mark.
  *
  * If "node" originally points to a leaf, then insert a zero-dimensional
  * permutable band such that we can assume that "node" always
@@ -3447,13 +3474,21 @@ static __isl_give isl_schedule_node *insert_empty_permutable_band(
  * insert a mark node pointing to the ppcg_kernel before the band node.
  */
 static __isl_give isl_schedule_node *mark_outer_permutable(
-	struct gpu_gen *gen, __isl_take isl_schedule_node *node)
+	__isl_take isl_schedule_node *node, void *user)
 {
+	struct gpu_gen *gen = user;
+	int outer;
 	int scale;
 	int tile_len;
 	int *tile_size;
 	isl_id *id;
 	isl_multi_val *sizes;
+
+	outer = is_outer_tilable(node);
+	if (outer < 0)
+		return isl_schedule_node_free(node);
+	if (!outer)
+		return node;
 
 	if (isl_schedule_node_get_type(node) == isl_schedule_node_leaf)
 		node = insert_empty_permutable_band(node);
@@ -3479,201 +3514,23 @@ static __isl_give isl_schedule_node *mark_outer_permutable(
 	return node;
 }
 
-static __isl_give isl_schedule_node *select_outer_band(struct gpu_gen *gen,
-	__isl_take isl_schedule_node *node, int pos, struct band_info *info);
-
-/* Check if this band node is tilable and has any parallel loops.  If so,
- * take it as the outermost tilable band.  If not, continue looking for the
- * outermost tilable band in the children of the current band.
- * Return a pointer to the same node in a tree where all outermost tilable
- * bands in the current subtree have been replaced by mark nodes
- * containing a pointer to a ppcg_kernel object.
+/* Insert "kernel" marks that point to a ppcg_kernel structure
+ * in front of all outermost tilable band that (by construction)
+ * have at least one parallel loop.
  */
-static __isl_give isl_schedule_node *band_select_outer_band(struct gpu_gen *gen,
-	__isl_take isl_schedule_node *node, int pos, struct band_info *info)
-{
-	int n = isl_schedule_node_band_n_member(node);
-	int n_parallel;
-
-	n_parallel = n_outer_coincidence(node);
-
-	if (!isl_schedule_node_band_get_permutable(node) || n_parallel == 0) {
-		node = isl_schedule_node_child(node, 0);
-		node = select_outer_band(gen, node, pos + n, info);
-		return isl_schedule_node_parent(node);
-	}
-
-	info->gen = gen;
-	info->tile_first = pos;
-	info->prefix = isl_schedule_node_get_prefix_schedule_union_map(node);
-	info->suffix = isl_schedule_node_get_subtree_schedule_union_map(node);
-
-	node = mark_outer_permutable(gen, node);
-
-	return node;
-}
-
-/* Extend "umap" with coordinates with fixed value "val"
- * to a total length of "dst_len", assuming the original dimension is "src_len".
- */
-static __isl_give isl_union_map *extend_range(
-	__isl_take isl_union_map *umap, int src_len, int dst_len, int val)
-{
-	isl_space *dim;
-	isl_map *map;
-	int i;
-
-	dim = isl_union_map_get_space(umap);
-	map = isl_map_reverse(projection(dim, dst_len, src_len));
-	for (i = src_len; i < dst_len; ++i)
-		map = isl_map_fix_si(map, isl_dim_out, i, val);
-
-	umap = isl_union_map_apply_range(umap, isl_union_map_from_map(map));
-
-	return umap;
-}
-
-/* Select the outermost bands in the elements of the sequence or set
- * node "node", align their prefix schedules and combine the resulting
- * prefix and suffix schedules into a single pair of prefix and
- * suffix schedules for the entire list.
- * Return a pointer to the same node in a tree where all outermost tilable
- * bands in the current subtree have been replaced by mark nodes
- * containing a pointer to a ppcg_kernel object.
- */
-static __isl_give isl_schedule_node *list_select_outer_band(
-	struct gpu_gen *gen, __isl_take isl_schedule_node *node, int pos,
-	struct band_info *list_info)
-{
-	int i;
-	int n = isl_schedule_node_n_children(node);
-	isl_ctx *ctx = isl_schedule_node_get_ctx(node);
-	struct band_info *info;
-	int max_tile_first;
-	isl_union_map *prefix;
-	isl_union_map *suffix;
-
-	assert(n >= 1);
-	info = isl_calloc_array(ctx, struct band_info, n);
-	assert(info);
-
-	max_tile_first = 0;
-	for (i = 0; i < n; ++i) {
-		node = isl_schedule_node_child(node, i);
-		node = select_outer_band(gen, node, pos, &info[i]);
-		if (info[i].tile_first > max_tile_first)
-			max_tile_first = info[i].tile_first;
-		node = isl_schedule_node_parent(node);
-	}
-
-	for (i = 0; i < n; ++i) {
-		if (info[i].tile_first == max_tile_first)
-			continue;
-		info[i].prefix = extend_range(info[i].prefix,
-					info[i].tile_first, max_tile_first, 0);
-		info[i].tile_first = max_tile_first;
-	}
-
-	prefix = info[0].prefix;
-	suffix = info[0].suffix;
-
-	for (i = 1; i < n; ++i) {
-		prefix = isl_union_map_union(prefix, info[i].prefix);
-		suffix = isl_union_map_union(suffix, info[i].suffix);
-	}
-
-	list_info->tile_first = info[0].tile_first;
-	list_info->prefix = prefix;
-	list_info->suffix = suffix;
-
-	free(info);
-	return node;
-}
-
-/* If we reach a leaf node, then we have not found any outer tilable
- * band with parallel loops, so consider the leaf node as the outermost
- * tilable band.
- * Return a pointer to a mark node containing a pointer
- * to a ppcg_kernel object inserted at the original leaf node.
- */
-static __isl_give isl_schedule_node *leaf_select_outer_band(struct gpu_gen *gen,
-	__isl_take isl_schedule_node *node, int pos, struct band_info *info)
-{
-	info->gen = gen;
-	info->tile_first = pos;
-	info->prefix = isl_schedule_node_get_prefix_schedule_union_map(node);
-	info->suffix = isl_schedule_node_get_subtree_schedule_union_map(node);
-
-	node = mark_outer_permutable(gen, node);
-
-	return node;
-}
-
-/* Select the outermost tilable band in the subtree that "node" points to and
- * return a pointer to the same node in a tree where all outermost tilable
- * bands in the current subtree have been replaced by mark nodes
- * containing a pointer to a ppcg_kernel object.
- */
-static __isl_give isl_schedule_node *select_outer_band(struct gpu_gen *gen,
-	__isl_take isl_schedule_node *node, int pos, struct band_info *info)
-{
-	enum isl_schedule_node_type type;
-
-	type = isl_schedule_node_get_type(node);
-	switch (type) {
-	case isl_schedule_node_domain:
-	case isl_schedule_node_filter:
-		node = isl_schedule_node_child(node, 0);
-		node = select_outer_band(gen, node, pos, info);
-		return isl_schedule_node_parent(node);
-	case isl_schedule_node_leaf:
-		return leaf_select_outer_band(gen, node, pos, info);
-	case isl_schedule_node_band:
-		return band_select_outer_band(gen, node, pos, info);
-	case isl_schedule_node_set:
-	case isl_schedule_node_sequence:
-		return list_select_outer_band(gen, node, pos, info);
-	default:
-		isl_die(isl_schedule_node_get_ctx(node),
-			isl_error_unsupported, "unhandled schedule node type",
-			node = node);
-	case isl_schedule_node_error:
-		info->prefix = NULL;
-		info->suffix = NULL;
-		break;
-	}
-
-	return isl_schedule_node_free(node);
-}
-
-/* Select the outermost tilable band that (by construction)
- * has at least one parallel loop.
- * The starting position of the aligned band is stored in the pair
- * gen->tile_first.
- * The sizes and number of parallel loops may be different in different
- * parts of the band forest and are therefore stored in the gpu_stmts.
- *
- * Return the complete schedule, with the tilable bands aligned
- * at gen->tile_first and padded with zero, if needed.
- * Store a schedule tree corresponding to the outer gen->tile_first
- * dimensions, with mark nodes containing pointers to ppcg_kernel objects,
- * in gen->schedule.
- */
-static __isl_give isl_union_map *select_outer_tilable_band(struct gpu_gen *gen,
-	__isl_keep isl_schedule *schedule)
+static __isl_give isl_schedule *mark_kernels(struct gpu_gen *gen,
+	__isl_take isl_schedule *schedule)
 {
 	isl_schedule_node *node;
-	struct band_info info;
 
 	node = isl_schedule_get_root(schedule);
-	node = select_outer_band(gen, node, 0, &info);
-	gen->schedule = isl_schedule_node_get_schedule(node);
+	isl_schedule_free(schedule);
+	node = isl_schedule_node_child(node, 0);
+	node = isl_schedule_node_map_descendant(node,
+						&mark_outer_permutable, gen);
+	schedule = isl_schedule_node_get_schedule(node);
 	isl_schedule_node_free(node);
-
-	gen->tile_first = info.tile_first;
-	info.suffix = align_range(info.suffix);
-
-	return isl_union_map_flat_range_product(info.prefix, info.suffix);
+	return schedule;
 }
 
 /* Compute an appropriate schedule based on the accesses in
@@ -3717,7 +3574,6 @@ static __isl_give isl_schedule *compute_schedule(struct gpu_gen *gen)
 	isl_union_set *domain;
 	isl_union_map *dep_raw, *dep;
 	isl_union_map *validity, *proximity, *coincidence;
-	isl_union_map *sched;
 	isl_schedule_constraints *sc;
 	isl_schedule *schedule;
 
@@ -3759,9 +3615,7 @@ static __isl_give isl_schedule *compute_schedule(struct gpu_gen *gen)
 	if (gen->options->debug->dump_schedule)
 		isl_schedule_dump(schedule);
 
-	sched = select_outer_tilable_band(gen, schedule);
-
-	isl_union_map_free(sched);
+	gen->schedule = mark_kernels(gen, isl_schedule_copy(schedule));
 
 	return schedule;
 }

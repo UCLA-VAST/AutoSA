@@ -166,9 +166,6 @@ struct gpu_gen {
 	/* Pointer to the current kernel. */
 	struct ppcg_kernel *kernel;
 
-	/* First tile dimension. */
-	int tile_first;
-
 	/* A schedule tree corresponding to both the host and device code. */
 	isl_schedule *schedule;
 };
