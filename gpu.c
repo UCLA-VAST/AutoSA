@@ -302,13 +302,15 @@ static struct gpu_array_tile *create_tile(isl_ctx *ctx, int n_index)
 	struct gpu_array_tile *tile;
 
 	tile = isl_calloc_type(ctx, struct gpu_array_tile);
-	assert(tile);
-
-	tile->n = n_index;
+	if (!tile)
+		return NULL;
 
 	tile->ctx = ctx;
 	tile->bound = isl_alloc_array(ctx, struct gpu_array_bound, n_index);
-	assert(tile->bound);
+	if (!tile->bound)
+		return free_tile(tile);
+
+	tile->n = n_index;
 
 	for (i = 0; i < n_index; ++i) {
 		tile->bound[i].size = NULL;
@@ -2781,6 +2783,7 @@ static int compute_group_bounds_core(struct gpu_gen *gen,
 
 	if (use_shared && (!no_reuse || !coalesced)) {
 		group->shared_tile = create_tile(ctx, group->array->n_index);
+		assert(group->shared_tile);
 		if (!can_tile(group->access, group->shared_tile))
 			group->shared_tile = free_tile(group->shared_tile);
 	}
@@ -2801,6 +2804,7 @@ static int compute_group_bounds_core(struct gpu_gen *gen,
 	}
 
 	group->private_tile = create_tile(gen->ctx, n_index);
+	assert(group->private_tile);
 	acc = isl_map_apply_domain(acc, isl_map_copy(gen->privatization));
 	if (!can_tile(acc, group->private_tile))
 		group->private_tile = free_tile(group->private_tile);
