@@ -1907,7 +1907,7 @@ static __isl_give isl_pw_aff *set_universally_zero(__isl_take isl_pw_aff *pa)
  * function.  Since the access function cannot actually access anything,
  * there is no harm in printing the array sizes as zero.
  */
-static void localize_bounds(struct gpu_gen *gen, struct ppcg_kernel *kernel,
+static void localize_bounds(struct ppcg_kernel *kernel,
 	__isl_keep isl_set *host_domain)
 {
 	int i, j;
@@ -1925,7 +1925,7 @@ static void localize_bounds(struct gpu_gen *gen, struct ppcg_kernel *kernel,
 			continue;
 
 		n_index = local->array->n_index;
-		bound = isl_pw_aff_list_alloc(gen->ctx, n_index);
+		bound = isl_pw_aff_list_alloc(kernel->ctx, n_index);
 
 		for (j = 0; j < n_index; ++j) {
 			isl_pw_aff *pwaff;
@@ -3594,7 +3594,7 @@ static __isl_give isl_ast_node *create_host_leaf(
 		schedule = isl_union_map_free(schedule);
 	host_domain = isl_set_from_union_set(isl_union_map_range(
 						isl_union_map_copy(schedule)));
-	localize_bounds(gen, kernel, host_domain);
+	localize_bounds(kernel, host_domain);
 
 	gen->local_sched = interchange_for_unroll(gen, gen->local_sched);
 	check_shared_memory_bound(gen->kernel);
