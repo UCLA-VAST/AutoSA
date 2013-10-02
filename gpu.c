@@ -560,34 +560,31 @@ static void read_tile_sizes(struct gpu_gen *gen)
 
 /* Extract user specified "block" sizes from the "sizes" command line option,
  * after filling in some potentially useful defaults.
- * Add the effectively used sizes to gen->used_sizes.
  */
-static void read_block_sizes(struct gpu_gen *gen)
+static void read_block_sizes(struct ppcg_kernel *kernel,
+	__isl_keep isl_union_map *sizes)
 {
-	int n;
 	isl_set *size;
 
-	n = gen->kernel->n_parallel;
-	gen->n_block = (n <= 3) ? n : 3;
-	switch (gen->n_block) {
+	if (kernel->n_block > 3)
+		kernel->n_block = 3;
+	switch (kernel->n_block) {
 	case 1:
-		gen->block_dim[0] = 512;
+		kernel->block_dim[0] = 512;
 		break;
 	case 2:
-		gen->block_dim[0] = 32;
-		gen->block_dim[1] = 16;
+		kernel->block_dim[0] = 32;
+		kernel->block_dim[1] = 16;
 		break;
 	default:
-		gen->block_dim[0] = 32;
-		gen->block_dim[1] = 4;
-		gen->block_dim[2] = 4;
+		kernel->block_dim[0] = 32;
+		kernel->block_dim[1] = 4;
+		kernel->block_dim[2] = 4;
 		break;
 	}
 
-	size = extract_sizes(gen->sizes, "block", gen->kernel->id);
-	read_sizes_from_set(size, gen->block_dim, &gen->n_block);
-	set_used_sizes(gen, "block", gen->kernel->id,
-			gen->block_dim, gen->n_block);
+	size = extract_sizes(sizes, "block", kernel->id);
+	read_sizes_from_set(size, kernel->block_dim, &kernel->n_block);
 }
 
 /* Extract user specified "grid" sizes from the "sizes" command line option,
@@ -623,8 +620,10 @@ static void read_sizes(struct gpu_gen *gen)
 	struct ppcg_kernel *kernel = gen->kernel;
 
 	read_tile_sizes(gen);
-	read_block_sizes(gen);
+	read_block_sizes(kernel, gen->sizes);
 	read_grid_sizes(kernel, gen->sizes);
+	set_used_sizes(gen, "block", kernel->id,
+					    kernel->block_dim, kernel->n_block);
 	set_used_sizes(gen, "grid", kernel->id,
 					    kernel->grid_dim, kernel->n_grid);
 }
@@ -836,18 +835,18 @@ static __isl_give isl_union_map *thread_tile_schedule(struct gpu_gen *gen,
 
 	if (gen->options->wrap)
 		tiling = wrap(isl_space_copy(dim), gen->tiled_len,
-				gen->shared_len, gen->n_block, gen->block_dim);
+			gen->shared_len, kernel->n_block, kernel->block_dim);
 	else
 		tiling = tile(isl_space_copy(dim), gen->tiled_len,
-				gen->shared_len, gen->n_block, gen->block_dim);
-	gen->thread_tiled_len = gen->tiled_len + gen->n_block;
+			gen->shared_len, kernel->n_block, kernel->block_dim);
+	gen->thread_tiled_len = gen->tiled_len + kernel->n_block;
 
 	sched = isl_union_map_apply_range(sched,
 					     isl_union_map_from_map(tiling));
 
 	par = parametrization(dim, gen->thread_tiled_len,
 		gen->tile_first + kernel->tile_len +
-		kernel->n_grid + gen->n_block, kernel->thread_ids);
+		kernel->n_grid + kernel->n_block, kernel->thread_ids);
 	sched = isl_union_map_intersect_range(sched,
 						isl_union_set_from_set(par));
 
@@ -910,7 +909,7 @@ static __isl_give isl_union_map *scale_tile_loops(struct gpu_gen *gen,
 }
 
 /* If we are not performing "wrapping" and if the user asked for it,
- * scale the thread tile loops (P1T) of "sched" by gen->block_dim[i].
+ * scale the thread tile loops (P1T) of "sched" by kernel->block_dim[i].
  */
 static __isl_give isl_union_map *scale_thread_tile_loops(struct gpu_gen *gen,
 	__isl_take isl_union_map *sched)
@@ -936,8 +935,8 @@ static __isl_give isl_union_map *scale_thread_tile_loops(struct gpu_gen *gen,
 		int f = 1;
 
 		if (i >= gen->shared_len &&
-		    i < gen->shared_len + gen->n_block)
-			f = gen->block_dim[i - gen->shared_len];
+		    i < gen->shared_len + gen->kernel->n_block)
+			f = gen->kernel->block_dim[i - gen->shared_len];
 
 		c = isl_equality_alloc(isl_local_space_copy(ls));
 		c = isl_constraint_set_coefficient_si(c, isl_dim_in, i, f);
@@ -1401,7 +1400,7 @@ static __isl_give isl_union_map *interchange_for_unroll(struct gpu_gen *gen,
 	int perm[gen->thread_tiled_len];
 	isl_space *dim;
 	isl_map *permute;
-	int len = gen->shared_len + kernel->n_parallel + gen->n_block;
+	int len = gen->shared_len + kernel->n_parallel + kernel->n_block;
 
 	gen->first_unroll = -1;
 
@@ -1484,17 +1483,19 @@ static __isl_give isl_map *compute_privatization(struct gpu_gen *gen)
 	dim = isl_union_map_get_space(gen->shared_sched);
 
 	if (gen->options->wrap)
-		tiling = wrap(isl_space_copy(dim), gen->shared_len + gen->n_block,
-				gen->shared_len, gen->n_block, gen->block_dim);
+		tiling = wrap(isl_space_copy(dim),
+			gen->shared_len + kernel->n_block,
+			gen->shared_len, kernel->n_block, kernel->block_dim);
 	else
-		tiling = tile(isl_space_copy(dim), gen->shared_len + gen->n_block,
-				gen->shared_len, gen->n_block, gen->block_dim);
+		tiling = tile(isl_space_copy(dim),
+			gen->shared_len + kernel->n_block,
+			gen->shared_len, kernel->n_block, kernel->block_dim);
 
 	priv = tiling;
 
-	par = parametrization(dim, gen->shared_len + 2 * gen->n_block,
+	par = parametrization(dim, gen->shared_len + 2 * kernel->n_block,
 		gen->tile_first + kernel->tile_len +
-		kernel->n_grid + gen->n_block, kernel->thread_ids);
+		kernel->n_grid + kernel->n_block, kernel->thread_ids);
 
 	priv = isl_map_align_params(priv, isl_set_get_space(par));
 	priv = isl_map_intersect_range(priv, par);
@@ -1502,7 +1503,7 @@ static __isl_give isl_map *compute_privatization(struct gpu_gen *gen)
 	dim = isl_map_get_space(priv);
 	dim = isl_space_drop_dims(dim, isl_dim_in, 0, isl_space_dim(dim, isl_dim_in));
 	dim = isl_space_drop_dims(dim, isl_dim_out, 0, isl_space_dim(dim, isl_dim_out));
-	proj = projection(dim, gen->shared_len + 2 * gen->n_block,
+	proj = projection(dim, gen->shared_len + 2 * kernel->n_block,
 			  gen->shared_len);
 
 	priv = isl_map_apply_range(priv, proj);
@@ -1592,11 +1593,13 @@ static void compute_shared_sched(struct gpu_gen *gen)
 	sched = isl_union_map_copy(gen->tiled_sched);
 
 	dim = isl_union_map_get_space(sched);
-	proj = projection(dim, gen->tiled_len, gen->shared_len + gen->n_block);
+	proj = projection(dim, gen->tiled_len,
+				gen->shared_len + gen->kernel->n_block);
 	sched = isl_union_map_apply_range(sched, isl_union_map_from_map(proj));
 
 	dim = isl_union_map_get_space(sched);
-	proj = projection(dim, gen->shared_len + gen->n_block, gen->shared_len);
+	proj = projection(dim, gen->shared_len + gen->kernel->n_block,
+			gen->shared_len);
 
 	gen->shared_sched = sched;
 	gen->shared_proj = isl_union_map_from_map(proj);
@@ -1714,8 +1717,8 @@ static void extract_fixed_size(__isl_take isl_set *set, int *size)
  * in read_block_sizes() and applied in thread_tile_schedule(),
  * may be too large for the given code in the sense that
  * it may contain threads that don't need to execute anything.
- * We therefore don't store this block size in kernel->block_dim,
- * but instead the smallest block size that ensures that all threads
+ * We therefore update this block size in kernel->block_dim
+ * to the smallest block size that ensures that all threads
  * that actually execute code are included in the block.
  *
  * The current implementation eliminates all parameters, ensuring
@@ -1733,9 +1736,8 @@ static void extract_block_size(struct gpu_gen *gen, struct ppcg_kernel *kernel)
 
 	block = isl_union_map_params(isl_union_map_copy(gen->local_sched));
 	block = isl_set_from_params(block);
-	block = isl_set_add_dims(block, isl_dim_set, gen->n_block);
-	kernel->n_block = gen->n_block;
-	for (i = 0; i < gen->n_block; ++i) {
+	block = isl_set_add_dims(block, isl_dim_set, kernel->n_block);
+	for (i = 0; i < kernel->n_block; ++i) {
 		int pos;
 		isl_id *id;
 
@@ -3567,7 +3569,7 @@ static __isl_give isl_ast_node *create_host_leaf(
 	kernel->block_ids = ppcg_scop_generate_names(gen->prog->scop,
 						kernel->n_grid, "b");
 	kernel->thread_ids = ppcg_scop_generate_names(gen->prog->scop,
-						gen->n_block, "t");
+						kernel->n_block, "t");
 
 	gen->tiled_sched = tile_schedule(gen, local_sched);
 	gen->tiled_sched = parametrize_tiled_schedule(gen, gen->tiled_sched);
@@ -3874,6 +3876,7 @@ static __isl_give isl_schedule_node *create_kernel(struct gpu_gen *gen,
 	kernel->tile_len = isl_schedule_node_band_n_member(node);
 	kernel->n_parallel = n_outer_coincidence(node);
 	kernel->n_grid = kernel->n_parallel;
+	kernel->n_block = kernel->n_parallel;
 	kernel->id = gen->kernel_id++;
 
 	node = atomic_ancestors(node);

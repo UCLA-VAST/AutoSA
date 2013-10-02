@@ -216,8 +216,6 @@ struct gpu_gen {
 	 */
 	int first_unroll;
 
-	int n_block;
-	int block_dim[3];
 	int *tile_size;
 };
 
@@ -299,8 +297,8 @@ struct ppcg_kernel_var {
  *
  * the first n_grid elements of grid_dim represent the specified size
  * of the grid.
- * the first n_block elements of block_dim represent the effective size
- * of the block.
+ * the first n_block elements of block_dim represent the specified or
+ * effective size of the block.
  * Note that in the input file, the sizes of the grid and the blocks
  * are specified in the order x, y, z, but internally, the sizes
  * are stored in reverse order, so that the last element always

@@ -417,7 +417,7 @@ static int access_is_coalesced(struct gpu_gen *gen,
 
 	dim = isl_map_get_space(access_map);
 	dim = isl_space_domain(dim);
-	next_thread_x = next(dim, gen->shared_len + gen->n_block - 1);
+	next_thread_x = next(dim, gen->shared_len + gen->kernel->n_block - 1);
 
 	dim = isl_map_get_space(access_map);
 	dim = isl_space_range(dim);
@@ -449,7 +449,8 @@ static int access_is_bijective(struct gpu_gen *gen, __isl_keep isl_map *access)
 	access = isl_map_copy(access);
 	space = isl_space_params(isl_map_get_space(access));
 	ids = ppcg_scop_generate_names(gen->prog->scop, gen->shared_len, "s");
-	par = parametrization(space, gen->shared_len + gen->n_block, 0, ids);
+	par = parametrization(space, gen->shared_len + gen->kernel->n_block,
+				0, ids);
 	isl_id_list_free(ids);
 	access = isl_map_intersect_domain(access, par);
 	res = isl_map_is_bijective(access);
@@ -765,7 +766,8 @@ static int compute_group_bounds_core(struct gpu_gen *gen,
 	int no_reuse, coalesced;
 	isl_map *acc;
 	int force_private = group->local_array->force_private;
-	int use_shared = gen->options->use_shared_memory && gen->n_block > 0;
+	int use_shared = gen->options->use_shared_memory &&
+				gen->kernel->n_block > 0;
 	int use_private = force_private || gen->options->use_private_memory;
 	int r = 0;
 
