@@ -211,9 +211,6 @@ struct gpu_gen {
 	/* The array reference group corresponding to copy_sched. */
 	struct gpu_array_ref_group *copy_group;
 
-	/* Is any array in the current kernel marked force_private? */
-	int any_force_private;
-
 	/* First loop to unroll (or -1 if none) in the current part of the
 	 * schedule.
 	 */
@@ -321,6 +318,8 @@ struct ppcg_kernel_var {
  * array contains information about each array that is local
  * to the current kernel.  If an array is not used in a kernel,
  * then the corresponding entry does not contain any information.
+ *
+ * any_force_private is set if any array in the kernel is marked force_private
  */
 struct ppcg_kernel {
 	isl_ctx *ctx;
@@ -346,6 +345,8 @@ struct ppcg_kernel {
 
 	int n_var;
 	struct ppcg_kernel_var *var;
+
+	int any_force_private;
 
 	isl_ast_node *tree;
 };

@@ -1126,7 +1126,7 @@ static void check_scalar_live_ranges(struct gpu_gen *gen)
 	isl_union_set *domain;
 	isl_union_map *same_host_iteration;
 
-	gen->any_force_private = 0;
+	gen->kernel->any_force_private = 0;
 
 	if (!gen->options->live_range_reordering)
 		return;
@@ -1158,7 +1158,7 @@ static void check_scalar_live_ranges(struct gpu_gen *gen)
 				    isl_union_map_copy(same_host_iteration));
 		if (!isl_union_map_is_empty(order)) {
 			local->force_private = 1;
-			gen->any_force_private = 1;
+			gen->kernel->any_force_private = 1;
 		}
 		isl_union_map_free(order);
 	}

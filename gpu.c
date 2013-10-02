@@ -1432,7 +1432,7 @@ static __isl_give isl_union_map *interchange_for_unroll(struct gpu_gen *gen,
 		if (unroll[i])
 			return sched;
 
-	if (gen->any_force_private) {
+	if (kernel->any_force_private) {
 		remove_private_tiles(gen);
 		return sched;
 	}
