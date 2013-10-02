@@ -1181,36 +1181,28 @@ static int group_array_references(struct gpu_gen *gen,
 
 /* For each scalar in the input program, check if there are any
  * order dependences active inside the current kernel, within
- * the same iteration of the host schedule.
+ * the same iteration of "host_schedule".
  * If so, mark the scalar as force_private so that it will be
  * mapped to a register.
  */
-static void check_scalar_live_ranges(struct gpu_gen *gen)
+static void check_scalar_live_ranges_in_host(struct ppcg_kernel *kernel,
+	__isl_take isl_union_map *host_schedule)
 {
 	int i;
-	isl_map *proj;
 	isl_union_map *sched;
 	isl_union_set *domain;
 	isl_union_map *same_host_iteration;
 
-	gen->kernel->any_force_private = 0;
+	kernel->any_force_private = 0;
 
-	if (!gen->options->live_range_reordering)
-		return;
-
-	sched = gen->shared_sched;
-	sched = isl_union_map_universe(isl_union_map_copy(sched));
+	sched = isl_union_map_universe(isl_union_map_copy(host_schedule));
 	domain = isl_union_map_domain(sched);
 
-	sched = isl_union_map_copy(gen->sched);
-	proj = projection(isl_union_map_get_space(sched),
-			    gen->untiled_len, gen->tile_first);
-	sched = isl_union_map_apply_range(sched, isl_union_map_from_map(proj));
-	same_host_iteration = isl_union_map_apply_range(sched,
-			    isl_union_map_reverse(isl_union_map_copy(sched)));
+	same_host_iteration = isl_union_map_apply_range(host_schedule,
+		    isl_union_map_reverse(isl_union_map_copy(host_schedule)));
 
-	for (i = 0; i < gen->kernel->n_array; ++i) {
-		struct gpu_local_array_info *local = &gen->kernel->array[i];
+	for (i = 0; i < kernel->n_array; ++i) {
+		struct gpu_local_array_info *local = &kernel->array[i];
 		isl_union_map *order;
 
 		local->force_private = 0;
@@ -1225,13 +1217,35 @@ static void check_scalar_live_ranges(struct gpu_gen *gen)
 				    isl_union_map_copy(same_host_iteration));
 		if (!isl_union_map_is_empty(order)) {
 			local->force_private = 1;
-			gen->kernel->any_force_private = 1;
+			kernel->any_force_private = 1;
 		}
 		isl_union_map_free(order);
 	}
 
 	isl_union_map_free(same_host_iteration);
 	isl_union_set_free(domain);
+}
+
+/* For each scalar in the input program, check if there are any
+ * order dependences active inside the current kernel, within
+ * the same iteration of the host schedule.
+ * If so, mark the scalar as force_private so that it will be
+ * mapped to a register.
+ */
+static void check_scalar_live_ranges(struct gpu_gen *gen)
+{
+	isl_map *proj;
+	isl_union_map *sched;
+
+	if (!gen->options->live_range_reordering)
+		return;
+
+	sched = isl_union_map_copy(gen->sched);
+	proj = projection(isl_union_map_get_space(sched),
+			    gen->untiled_len, gen->tile_first);
+	sched = isl_union_map_apply_range(sched, isl_union_map_from_map(proj));
+
+	check_scalar_live_ranges_in_host(gen->kernel, sched);
 }
 
 /* Group references of all arrays in the current kernel.
