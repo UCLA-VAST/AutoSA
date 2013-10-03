@@ -1515,8 +1515,8 @@ static __isl_give isl_map *compute_privatization(struct gpu_gen *gen)
 
 /* If max_shared_memory is not set to infinity (-1), then make
  * sure that the total amount of shared memory required by the
- * array reference groups mapped to shared memory is no larger
- * than this maximum.
+ * array reference groups mapped to shared memory by "kernel"
+ * is no larger than this maximum.
  *
  * We apply a greedy approach and discard (keep in global memory)
  * those groups that would result in a total memory size that
@@ -1526,18 +1526,19 @@ static __isl_give isl_map *compute_privatization(struct gpu_gen *gen)
  * affect the decision on whether to place a reference group
  * in private, shared or global memory.
  */
-static void check_shared_memory_bound(struct gpu_gen *gen)
+static void check_shared_memory_bound(struct ppcg_kernel *kernel)
 {
 	int i, j;
 	isl_val *left, *size;
 
-	if (gen->options->max_shared_memory < 0)
+	if (kernel->options->max_shared_memory < 0)
 		return;
 
-	left = isl_val_int_from_si(gen->ctx, gen->options->max_shared_memory);
+	left = isl_val_int_from_si(kernel->ctx,
+				    kernel->options->max_shared_memory);
 
-	for (i = 0; i < gen->kernel->n_array; ++i) {
-		struct gpu_local_array_info *local = &gen->kernel->array[i];
+	for (i = 0; i < kernel->n_array; ++i) {
+		struct gpu_local_array_info *local = &kernel->array[i];
 
 		for (j = 0; j < local->n_group; ++j) {
 			struct gpu_array_ref_group *group;
@@ -3596,7 +3597,7 @@ static __isl_give isl_ast_node *create_host_leaf(
 	localize_bounds(gen, kernel, host_domain);
 
 	gen->local_sched = interchange_for_unroll(gen, gen->local_sched);
-	check_shared_memory_bound(gen);
+	check_shared_memory_bound(gen->kernel);
 	compute_group_tilings(gen);
 
 	kernel->tree = generate_kernel(gen, build, host_domain,
