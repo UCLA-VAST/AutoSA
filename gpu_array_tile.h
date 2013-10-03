@@ -24,6 +24,9 @@ struct gpu_array_bound {
 
 /* A tile of an array.
  *
+ * requires_unroll is set if the schedule dimensions that are mapped
+ * to threads need to be unrolled for this (private) tile to be used.
+ *
  * n is the dimension of the array.
  * bound is an array of size "n" representing the lower bound
  *	and size for each index.
@@ -38,6 +41,7 @@ struct gpu_array_bound {
  */
 struct gpu_array_tile {
 	isl_ctx *ctx;
+	int requires_unroll;
 	int n;
 	struct gpu_array_bound *bound;
 	isl_multi_aff *tiling;

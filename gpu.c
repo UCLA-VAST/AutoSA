@@ -1371,8 +1371,8 @@ static void remove_private_tiles(struct gpu_gen *gen)
 }
 
 /* Find all loops involved in any of the index expressions for any of
- * the private accesses, move them innermost and then mark them as
- * requiring unrolling by setting gen->first_unroll.
+ * the private accesses that require unrolling, move them innermost
+ * and then mark them as requiring unrolling by setting gen->first_unroll.
  * The loops involved should all be parallel because of the checks
  * we performed in check_private_group_access.  Moving them innermost
  * is therefore a valid transformation.
@@ -1416,8 +1416,11 @@ static __isl_give isl_union_map *interchange_for_unroll(struct gpu_gen *gen,
 			isl_union_map *access;
 			isl_map *acc;
 			isl_pw_multi_aff *pma;
+			struct gpu_array_ref_group *group = array->groups[j];
 
 			if (!array->groups[j]->private_tile)
+				continue;
+			if (!gpu_array_ref_group_requires_unroll(group))
 				continue;
 
 			access = gpu_array_ref_group_access_relation(

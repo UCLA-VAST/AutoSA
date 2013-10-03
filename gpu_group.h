@@ -51,6 +51,7 @@ __isl_give isl_printer *gpu_array_ref_group_print_name(
 void gpu_array_ref_group_compute_tiling(struct gpu_array_ref_group *group);
 __isl_give isl_union_map *gpu_array_ref_group_access_relation(
 	struct gpu_array_ref_group *group, int read, int write);
+int gpu_array_ref_group_requires_unroll(struct gpu_array_ref_group *group);
 struct gpu_array_tile *gpu_array_ref_group_tile(
 	struct gpu_array_ref_group *group);
 struct gpu_array_ref_group *gpu_array_ref_group_free(

@@ -65,6 +65,20 @@ struct gpu_array_tile *gpu_array_ref_group_tile(
 	return NULL;
 }
 
+/* Does the tile associated to "group" require unrolling of the schedule
+ * dimensions mapped to threads?
+ * Note that this can only happen for private tiles.
+ */
+int gpu_array_ref_group_requires_unroll(struct gpu_array_ref_group *group)
+{
+	struct gpu_array_tile *tile;
+
+	tile = gpu_array_ref_group_tile(group);
+	if (!tile)
+		return 0;
+	return tile->requires_unroll;
+}
+
 /* Given a constraint
  *
  *		a(p,i) + j = g f(e)
@@ -718,6 +732,35 @@ static void report_no_reuse_and_coalesced(struct ppcg_kernel *kernel,
 	isl_printer_free(p);
 }
 
+/* Given an access relation in terms of the gen->shared_len initial
+ * dimensions of the computed schedule and the thread identifiers
+ * (as parameters), check if the use of the corresponding private tile
+ * requires unrolling.
+ *
+ * If we are creating a private tile because we are forced to,
+ * then no unrolling is required.
+ * Otherwise we check if "access" is bijective and unrolling
+ * is required if it is not.  Note that the access relation
+ * has already been determined to be bijective before the introduction
+ * of the thread identifiers and the removal of the schedule dimensions
+ * that are mapped to these threads.  If the access relation is no longer
+ * bijective, then this means that more than one value of one of those
+ * schedule dimensions is mapped to the same thread and therefore
+ * unrolling is required.
+ */
+static int check_requires_unroll(struct gpu_gen *gen,
+	__isl_keep isl_map *access, int force_private)
+{
+	int bijective;
+
+	if (force_private)
+		return 0;
+	bijective = access_is_bijective(gen, access);
+	if (bijective < 0)
+		return -1;
+	return !bijective;
+}
+
 /* Compute the private and/or shared memory tiles for the array
  * reference group "group" of array "array".
  * Return 0 on success and -1 on error.
@@ -784,6 +827,7 @@ static int compute_group_bounds_core(struct gpu_gen *gen,
 				gen->kernel->n_block > 0;
 	int use_private = force_private || gen->options->use_private_memory;
 	int r = 0;
+	int requires_unroll;
 
 	if (!use_shared && !use_private)
 		return 0;
@@ -836,6 +880,8 @@ static int compute_group_bounds_core(struct gpu_gen *gen,
 		return -1;
 	}
 	acc = isl_map_apply_domain(acc, isl_map_copy(gen->privatization));
+	requires_unroll = check_requires_unroll(gen, acc, force_private);
+	group->private_tile->requires_unroll = requires_unroll;
 	if (!can_tile(acc, group->private_tile))
 		group->private_tile = gpu_array_tile_free(group->private_tile);
 
