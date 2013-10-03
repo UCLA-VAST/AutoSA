@@ -449,7 +449,7 @@ static int access_is_coalesced(struct gpu_gen *gen,
 	return coalesced;
 }
 
-/* Given an access relation in terms of the first gen->shared_len + gen->n_block
+/* Given an access relation in terms of at least gen->shared_len initial
  * dimensions of the computed schedule, check if it is bijective for
  * fixed values of the first gen->shared_len dimensions.
  * We perform this check by equating these dimensions to parameters.
@@ -457,6 +457,7 @@ static int access_is_coalesced(struct gpu_gen *gen,
 static int access_is_bijective(struct gpu_gen *gen, __isl_keep isl_map *access)
 {
 	int res;
+	int dim;
 	isl_set *par;
 	isl_space *space;
 	isl_id_list *ids;
@@ -464,8 +465,8 @@ static int access_is_bijective(struct gpu_gen *gen, __isl_keep isl_map *access)
 	access = isl_map_copy(access);
 	space = isl_space_params(isl_map_get_space(access));
 	ids = ppcg_scop_generate_names(gen->prog->scop, gen->shared_len, "s");
-	par = parametrization(space, gen->shared_len + gen->kernel->n_block,
-				0, ids);
+	dim = isl_map_dim(access, isl_dim_in);
+	par = parametrization(space, dim, 0, ids);
 	isl_id_list_free(ids);
 	access = isl_map_intersect_domain(access, par);
 	res = isl_map_is_bijective(access);
