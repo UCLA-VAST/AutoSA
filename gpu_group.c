@@ -50,6 +50,21 @@ __isl_give isl_union_map *gpu_array_ref_group_access_relation(
 	return access;
 }
 
+/* Return the effective gpu_array_tile associated to "group" or
+ * NULL if there is no such gpu_array_tile.
+ * If we have computed both a private and a shared tile, then
+ * the private tile is used.
+ */
+struct gpu_array_tile *gpu_array_ref_group_tile(
+	struct gpu_array_ref_group *group)
+{
+	if (group->private_tile)
+		return group->private_tile;
+	if (group->shared_tile)
+		return group->shared_tile;
+	return NULL;
+}
+
 /* Given a constraint
  *
  *		a(p,i) + j = g f(e)
@@ -505,9 +520,7 @@ static void set_last_shared(struct gpu_gen *gen,
 
 	group->last_shared = gen->shared_len - 1;
 
-	tile = group->private_tile;
-	if (!tile)
-		tile = group->shared_tile;
+	tile = gpu_array_ref_group_tile(group);
 	if (!tile)
 		return;
 
