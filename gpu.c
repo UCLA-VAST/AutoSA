@@ -1348,42 +1348,12 @@ static __isl_give isl_map *permutation(__isl_take isl_space *dim,
 	return isl_map_from_basic_map(bmap);
 }
 
-/* Remove the private tiles from all array reference groups,
- * except for the groups of arrays that are marked force_private.
- */
-static void remove_private_tiles(struct gpu_gen *gen)
-{
-	int i, j;
-
-	for (i = 0; i < gen->kernel->n_array; ++i) {
-		struct gpu_local_array_info *local = &gen->kernel->array[i];
-
-		if (local->force_private)
-			continue;
-
-		for (j = 0; j < local->n_group; ++j) {
-			struct gpu_array_ref_group *group = local->groups[j];
-
-			group->private_tile =
-				    gpu_array_tile_free(group->private_tile);
-		}
-	}
-}
-
 /* Find all loops involved in any of the index expressions for any of
  * the private accesses that require unrolling, move them innermost
  * and then mark them as requiring unrolling by setting gen->first_unroll.
  * The loops involved should all be parallel because of the checks
  * we performed in check_private_group_access.  Moving them innermost
  * is therefore a valid transformation.
- *
- * If any of the arrays are marked force_private, however, then
- * those loops may not be parallel with respect to the marked arrays.
- * If any of the loops would have to be moved innermost for the
- * (non forced) private accesses and if there are any force_private
- * arrays, then we revert the decision to map the selected arrays
- * to private memory.  An alternative solution would be to expand
- * the force_private arrays.
  *
  * Loops up to gen->shared_len are generated before the mapping to
  * threads is applied.  They should therefore be ignored.
@@ -1447,11 +1417,6 @@ static __isl_give isl_union_map *interchange_for_unroll(struct gpu_gen *gen,
 	for (i = len; i < gen->thread_tiled_len; ++i)
 		if (unroll[i])
 			return sched;
-
-	if (kernel->any_force_private) {
-		remove_private_tiles(gen);
-		return sched;
-	}
 
 	j = 0;
 	for (i = 0; i < gen->shared_len; ++i)

@@ -807,6 +807,13 @@ static int check_requires_unroll(struct gpu_gen *gen,
  * Combining the injectivity of the first test with the single-valuedness
  * of the second test, we simply test for bijectivity.
  *
+ * If the use of the private tile requires unrolling, but some
+ * of the other arrays are forcibly mapped to private memory,
+ * then we do not allow the use of this private tile since
+ * we cannot move the schedule dimensions that need to be unrolled down
+ * without performing some kind of expansion on those arrays
+ * that are forcibly mapped to private memory.
+ *
  * If the array is marked force_private, then we bypass all checks
  * and assume we can (and should) use registers.
  *
@@ -874,13 +881,19 @@ static int compute_group_bounds_core(struct gpu_gen *gen,
 		return 0;
 	}
 
+	acc = isl_map_apply_domain(acc, isl_map_copy(gen->privatization));
+	requires_unroll = check_requires_unroll(gen, acc, force_private);
+	if (requires_unroll < 0 ||
+	    (requires_unroll && gen->kernel->any_force_private)) {
+		isl_map_free(acc);
+		return requires_unroll < 0 ? -1 : 0;
+	}
+
 	group->private_tile = gpu_array_tile_create(gen->ctx, n_index);
 	if (!group->private_tile) {
 		isl_map_free(acc);
 		return -1;
 	}
-	acc = isl_map_apply_domain(acc, isl_map_copy(gen->privatization));
-	requires_unroll = check_requires_unroll(gen, acc, force_private);
 	group->private_tile->requires_unroll = requires_unroll;
 	if (!can_tile(acc, group->private_tile))
 		group->private_tile = gpu_array_tile_free(group->private_tile);
