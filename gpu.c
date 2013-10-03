@@ -3548,6 +3548,7 @@ static __isl_give isl_ast_node *create_host_leaf(
 	gen->local_sched = thread_tile_schedule(gen, gen->local_sched);
 	gen->local_sched = scale_thread_tile_loops(gen, gen->local_sched);
 
+	kernel->ctx = gen->ctx;
 	kernel->id = gen->kernel_id++;
 	kernel->context = isl_union_map_params(isl_union_map_copy(schedule));
 	kernel->grid_size = extract_grid_size(gen, kernel);

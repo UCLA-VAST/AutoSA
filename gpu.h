@@ -314,6 +314,8 @@ struct ppcg_kernel_var {
  * then the corresponding entry does not contain any information.
  */
 struct ppcg_kernel {
+	isl_ctx *ctx;
+
 	int id;
 
 	isl_id_list *block_ids;
