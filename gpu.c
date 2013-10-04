@@ -4118,6 +4118,10 @@ static __isl_give isl_schedule_node *group_statements(
  * The context node needs to be inserted after the effective block size
  * has been determined such that the bounds on the thread identifiers
  * would reflect the effective block size.
+ * Insert a filter node inside the context node mapping the statement
+ * instances to block identifiers.  In particular, the block identifiers
+ * are equated to the partial schedule of band that was marked for mapping
+ * to blocks modulo the grid size.
  *
  * Store a pointer to the created ppcg_kernel in gen->kernel.
  *
@@ -4198,6 +4202,9 @@ static __isl_give isl_schedule_node *create_kernel(struct gpu_gen *gen,
 	node = gpu_tree_move_up_to_kernel(node);
 	node = isl_schedule_node_child(node, 0);
 	node = insert_context(kernel, node);
+	node = isl_schedule_node_child(node, 0);
+	node = isl_schedule_node_insert_filter(node,
+				    isl_union_set_copy(kernel->block_filter));
 
 	node = gpu_tree_move_up_to_kernel(node);
 
