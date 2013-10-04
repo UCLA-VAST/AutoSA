@@ -1566,14 +1566,14 @@ static void check_shared_memory_bound(struct ppcg_kernel *kernel)
 	isl_val_free(left);
 }
 
-/* Compute a tiling for all the array reference groups.
+/* Compute a tiling for all the array reference groups in "kernel".
  */
-static void compute_group_tilings(struct gpu_gen *gen)
+static void compute_group_tilings(struct ppcg_kernel *kernel)
 {
 	int i, j;
 
-	for (i = 0; i < gen->kernel->n_array; ++i) {
-		struct gpu_local_array_info *array = &gen->kernel->array[i];
+	for (i = 0; i < kernel->n_array; ++i) {
+		struct gpu_local_array_info *array = &kernel->array[i];
 
 		for (j = 0; j < array->n_group; ++j)
 			gpu_array_ref_group_compute_tiling(array->groups[j]);
@@ -3598,7 +3598,7 @@ static __isl_give isl_ast_node *create_host_leaf(
 
 	gen->local_sched = interchange_for_unroll(gen, gen->local_sched);
 	check_shared_memory_bound(gen->kernel);
-	compute_group_tilings(gen);
+	compute_group_tilings(gen->kernel);
 
 	kernel->tree = generate_kernel(gen, build, host_domain,
 					kernel->grid_size);
