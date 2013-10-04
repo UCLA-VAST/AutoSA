@@ -1306,10 +1306,6 @@ __isl_give isl_set *add_bounded_parameters(__isl_take isl_set *set,
 {
 	int i, len;
 	unsigned nparam;
-	isl_space *dim;
-	isl_basic_set *bset;
-	isl_constraint *c;
-	isl_local_space *ls;
 
 	len = isl_id_list_n_id(ids);
 	nparam = isl_set_dim(set, isl_dim_param);
@@ -1320,28 +1316,12 @@ __isl_give isl_set *add_bounded_parameters(__isl_take isl_set *set,
 
 		id = isl_id_list_get_id(ids, i);
 		set = isl_set_set_dim_id(set, isl_dim_param, nparam + i, id);
+		set = isl_set_lower_bound_si(set, isl_dim_param, nparam + i, 0);
+		set = isl_set_upper_bound_si(set, isl_dim_param,
+					    nparam + i, size[i] - 1);
 	}
 
-	dim = isl_set_get_space(set);
-	bset = isl_basic_set_universe(isl_space_copy(dim));
-	ls = isl_local_space_from_space(dim);
-
-	for (i = 0; i < len; ++i) {
-		c = isl_inequality_alloc(isl_local_space_copy(ls));
-		c = isl_constraint_set_coefficient_si(c, isl_dim_param,
-							nparam + i, 1);
-		bset = isl_basic_set_add_constraint(bset, c);
-	
-		c = isl_inequality_alloc(isl_local_space_copy(ls));
-		c = isl_constraint_set_coefficient_si(c, isl_dim_param,
-							nparam + i, -1);
-		c = isl_constraint_set_constant_si(c, size[i] - 1);
-		bset = isl_basic_set_add_constraint(bset, c);
-	}
-
-	isl_local_space_free(ls);
-
-	return isl_set_intersect(set, isl_set_from_basic_set(bset));
+	return set;
 }
 
 /* Add "len" parameters p[i] with identifiers "ids" and intersect "set"
