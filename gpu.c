@@ -1751,13 +1751,12 @@ static void extract_block_size(struct gpu_gen *gen, struct ppcg_kernel *kernel)
 	extract_fixed_size(block, kernel->block_dim);
 }
 
-void ppcg_kernel_free(void *user)
+struct ppcg_kernel *ppcg_kernel_free(struct ppcg_kernel *kernel)
 {
-	struct ppcg_kernel *kernel = user;
 	int i;
 
 	if (!kernel)
-		return;
+		return NULL;
 
 	isl_id_list_free(kernel->block_ids);
 	isl_id_list_free(kernel->thread_ids);
@@ -1778,6 +1777,17 @@ void ppcg_kernel_free(void *user)
 	free(kernel->var);
 
 	free(kernel);
+
+	return NULL;
+}
+
+/* Wrapper around ppcg_kernel_free for use as a isl_id_set_free_user callback.
+ */
+static void ppcg_kernel_free_wrap(void *user)
+{
+	struct ppcg_kernel *kernel = user;
+
+	ppcg_kernel_free(kernel);
 }
 
 static void create_kernel_var(isl_ctx *ctx, struct gpu_array_ref_group *group,
@@ -3479,7 +3489,7 @@ static __isl_give isl_ast_node *construct_launch(
 	ctx = isl_ast_build_get_ctx(build);
 
 	id = isl_id_alloc(ctx, NULL, kernel);
-	id = isl_id_set_free_user(id, &ppcg_kernel_free);
+	id = isl_id_set_free_user(id, &ppcg_kernel_free_wrap);
 
 	domain = isl_union_map_range(schedule);
 	set = isl_set_from_union_set(domain);
