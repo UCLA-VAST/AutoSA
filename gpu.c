@@ -1645,7 +1645,7 @@ static __isl_give isl_multi_pw_aff *extract_size(__isl_take isl_set *set,
 /* Compute the effective grid size as a list of the sizes in each dimension.
  *
  * The grid size specified by the user or set by default
- * in read_grid_sizes() and applied in tile_schedule(),
+ * in read_grid_sizes() and applied by the block filter,
  * may be too large for the given code in the sense that
  * it may contain blocks that don't need to execute anything.
  * We therefore don't return this grid size, but instead the
@@ -1653,20 +1653,23 @@ static __isl_give isl_multi_pw_aff *extract_size(__isl_take isl_set *set,
  * execute code are included in the grid.
  *
  * We first extract a description of the grid, i.e., the possible values
- * of the block ids, from gen->tiled_sched.
- * The block ids are parameters in gen->tiled_sched.
+ * of the block ids, from the domain elements in "domain" and
+ * kernel->block_filter.
+ * The block ids are parameters in kernel->block_filter.
  * We simply need to change them into set dimensions.
  *
  * Then, for each block dimension, we compute the maximal value of the block id
  * and add one.
  */
-static __isl_give isl_multi_pw_aff *extract_grid_size(struct gpu_gen *gen,
-	struct ppcg_kernel *kernel)
+static __isl_give isl_multi_pw_aff *extract_grid_size(
+	struct ppcg_kernel *kernel, __isl_take isl_union_set *domain)
 {
 	int i;
 	isl_set *grid;
 
-	grid = isl_union_map_params(isl_union_map_copy(gen->tiled_sched));
+	domain = isl_union_set_intersect(domain,
+				    isl_union_set_copy(kernel->block_filter));
+	grid = isl_union_set_params(domain);
 	grid = isl_set_from_params(grid);
 	grid = isl_set_add_dims(grid, isl_dim_set, kernel->n_grid);
 	for (i = 0; i < kernel->n_grid; ++i) {
@@ -3580,7 +3583,6 @@ static __isl_give isl_ast_node *create_host_leaf(
 	gen->local_sched = thread_tile_schedule(gen, gen->local_sched);
 	gen->local_sched = scale_thread_tile_loops(gen, gen->local_sched);
 
-	kernel->grid_size = extract_grid_size(gen, kernel);
 	extract_block_size(gen, kernel);
 	kernel->space = isl_ast_build_get_schedule_space(build);
 
@@ -4072,7 +4074,8 @@ static __isl_give isl_schedule_node *create_kernel(struct gpu_gen *gen,
 	kernel->options = gen->options;
 	kernel->context = extract_context(node, gen->prog);
 	kernel->core = isl_union_set_universe(isl_union_set_copy(domain));
-	kernel->arrays = accessed_by_domain(domain, gen->prog);
+	kernel->arrays = accessed_by_domain(isl_union_set_copy(domain),
+						gen->prog);
 	kernel->tile_len = isl_schedule_node_band_n_member(node);
 	kernel->n_parallel = n_outer_coincidence(node);
 	kernel->n_grid = kernel->n_parallel;
@@ -4101,6 +4104,7 @@ static __isl_give isl_schedule_node *create_kernel(struct gpu_gen *gen,
 						kernel->n_grid, "b");
 	kernel->block_filter = set_schedule_modulo(node, kernel->block_ids,
 						kernel->grid_dim);
+	kernel->grid_size = extract_grid_size(kernel, domain);
 	if (scale)
 		node = scale_band(node, isl_multi_val_copy(sizes));
 
