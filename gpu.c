@@ -3977,6 +3977,31 @@ static __isl_give isl_union_set *set_schedule_modulo(
 	return isl_multi_union_pw_aff_zero_union_set(mupa);
 }
 
+/* Insert a context node at "node" introducing the block and thread
+ * identifiers along with their bounds, which are stored in kernel->grid_size
+ * and kernel->block_dim.
+ * Note that the bounds on the block identifiers may implicitly impose
+ * constraints on the parameters.  A guard needs to be inserted
+ * in the schedule tree to ensure that those bounds hold at "node".
+ * This guard is inserted in insert_guard.
+ */
+static __isl_give isl_schedule_node *insert_context(struct ppcg_kernel *kernel,
+	__isl_take isl_schedule_node *node)
+{
+	isl_set *context;
+
+	context = isl_set_universe(isl_set_get_space(kernel->context));
+
+	context = add_bounded_parameters_dynamic(context,
+					kernel->grid_size, kernel->block_ids);
+	context = add_bounded_parameters(context,
+					kernel->block_dim, kernel->thread_ids);
+
+	node = isl_schedule_node_insert_context(node, context);
+
+	return node;
+}
+
 /* Insert a guard that eliminates kernel launches where the kernel
  * obviously does not have any work to do.
  *
@@ -4087,6 +4112,13 @@ static __isl_give isl_schedule_node *group_statements(
  * Insert a guard node governing the kernel node to ensure that
  * no kernels with zero blocks are launched.
  *
+ * Temporarily adjust the schedule tree underneath the kernel mark as follows.
+ * Insert a context node describing the block and thread
+ * identifiers inside the kernel mark.
+ * The context node needs to be inserted after the effective block size
+ * has been determined such that the bounds on the thread identifiers
+ * would reflect the effective block size.
+ *
  * Store a pointer to the created ppcg_kernel in gen->kernel.
  *
  * We keep a copy of the isl_id that points to the kernel to ensure
@@ -4162,6 +4194,10 @@ static __isl_give isl_schedule_node *create_kernel(struct gpu_gen *gen,
 	kernel->thread_filter = set_schedule_modulo(node, kernel->thread_ids,
 						kernel->block_dim);
 	extract_block_size(kernel, domain);
+
+	node = gpu_tree_move_up_to_kernel(node);
+	node = isl_schedule_node_child(node, 0);
+	node = insert_context(kernel, node);
 
 	node = gpu_tree_move_up_to_kernel(node);
 
