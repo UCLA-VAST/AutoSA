@@ -1771,6 +1771,7 @@ struct ppcg_kernel *ppcg_kernel_free(struct ppcg_kernel *kernel)
 	isl_union_set_free(kernel->arrays);
 	isl_space_free(kernel->space);
 	isl_ast_node_free(kernel->tree);
+	isl_union_set_free(kernel->block_filter);
 
 	for (i = 0; i < kernel->n_array; ++i) {
 		struct gpu_local_array_info *array = &kernel->array[i];
@@ -3568,8 +3569,6 @@ static __isl_give isl_ast_node *create_host_leaf(
 	local_sched = isl_union_map_copy(gen->sched);
 	local_sched = isl_union_map_intersect_domain(local_sched, domain);
 
-	kernel->block_ids = ppcg_scop_generate_names(gen->prog->scop,
-						kernel->n_grid, "b");
 	kernel->thread_ids = ppcg_scop_generate_names(gen->prog->scop,
 						kernel->n_block, "t");
 
@@ -3843,6 +3842,138 @@ static int n_outer_coincidence(__isl_keep isl_schedule_node *node)
 	return i;
 }
 
+/* If the band node "node" has more than "n" members, then split off
+ * the first "n" of them.
+ */
+static __isl_give isl_schedule_node *split_band(
+	__isl_take isl_schedule_node *node, int n)
+{
+	int dim;
+
+	dim = isl_schedule_node_band_n_member(node);
+	if (n < dim)
+		node = isl_schedule_node_band_split(node, n);
+
+	return node;
+}
+
+/* Scale a band node that may have been split by split_band.
+ * "sizes" are the scaling factors for the original node.
+ * "node" either points to the original band node, or the outer
+ * of the two pieces after splitting.
+ *
+ * If the number of elements in "node" is smaller than the number of
+ * elements in "sizes", then some splitting has occurred and we split
+ * "sizes" in the same way.
+ */
+static __isl_give isl_schedule_node *scale_band(
+	__isl_take isl_schedule_node *node, __isl_take isl_multi_val *sizes)
+{
+	int n, dim;
+
+	n = isl_multi_val_dim(sizes, isl_dim_set);
+	dim = isl_schedule_node_band_n_member(node);
+	if (n > dim) {
+		isl_multi_val *sizes2;
+
+		sizes2 = isl_multi_val_copy(sizes);
+		sizes = isl_multi_val_drop_dims(sizes,
+						isl_dim_set, dim, n - dim);
+		sizes2 = isl_multi_val_drop_dims(sizes2, isl_dim_set, 0, dim);
+		node = isl_schedule_node_child(node, 0);
+		node = isl_schedule_node_band_scale(node, sizes2);
+		node = isl_schedule_node_parent(node);
+	}
+
+	return isl_schedule_node_band_scale(node, sizes);
+}
+
+/* Return an isl_multi_aff, with as elements the parameters in "space"
+ * that have the names specified by the elements in "names".
+ * If (some of) these parameters do not already appear in "space",
+ * then they are added first.
+ */
+static __isl_give isl_multi_aff *parameter_vector(__isl_take isl_space *space,
+	__isl_keep isl_id_list *names)
+{
+	int i, n;
+	isl_local_space *ls;
+	isl_multi_aff *ma;
+
+	if (!names)
+		space = isl_space_free(space);
+
+	n = isl_id_list_n_id(names);
+	for (i = 0; i < n; ++i) {
+		int pos;
+		isl_id *id;
+
+		id = isl_id_list_get_id(names, i);
+		pos = isl_space_find_dim_by_id(space, isl_dim_param, id);
+		if (pos >= 0) {
+			isl_id_free(id);
+			continue;
+		}
+		pos = isl_space_dim(space, isl_dim_param);
+		space = isl_space_add_dims(space, isl_dim_param, 1);
+		space = isl_space_set_dim_id(space, isl_dim_param, pos, id);
+	}
+	ma = isl_multi_aff_zero(isl_space_copy(space));
+	ls = isl_local_space_from_space(isl_space_domain(space));
+	for (i = 0; i < n; ++i) {
+		int pos;
+		isl_id *id;
+		isl_aff *aff;
+
+		id = isl_id_list_get_id(names, i);
+		pos = isl_space_find_dim_by_id(space, isl_dim_param, id);
+		isl_id_free(id);
+		aff = isl_aff_var_on_domain(isl_local_space_copy(ls),
+					    isl_dim_param, pos);
+		ma = isl_multi_aff_set_aff(ma, i, aff);
+	}
+	isl_local_space_free(ls);
+
+	return ma;
+}
+
+/* Return constraints on the domain elements that equate a sequence of
+ * parameters called "names", to the partial schedule
+ * of "node" modulo the integers in "size".
+ * The number of elements in the array "size" should be equal
+ * to the number of members of the band node "node" and
+ * to the number of elements in "names".
+ */
+static __isl_give isl_union_set *set_schedule_modulo(
+	__isl_keep isl_schedule_node *node, __isl_keep isl_id_list *names,
+	int *size)
+{
+	isl_space *space;
+	isl_multi_aff *ma;
+	isl_multi_union_pw_aff *mupa, *mupa2;
+	isl_multi_val *mv;
+	isl_union_set *domain;
+
+	if (!node)
+		return NULL;
+	if (isl_schedule_node_band_n_member(node) == 0)
+		return isl_schedule_node_get_universe_domain(node);
+
+	mupa = isl_schedule_node_band_get_partial_schedule(node);
+	mv = construct_band_tiles_sizes(node, size);
+	mupa = isl_multi_union_pw_aff_mod_multi_val(mupa, mv);
+
+	space = isl_multi_union_pw_aff_get_space(mupa);
+	ma = parameter_vector(space, names);
+
+	domain = isl_schedule_node_get_universe_domain(node);
+
+	mupa2 = isl_multi_union_pw_aff_multi_aff_on_domain(domain, ma);
+	mupa = isl_multi_union_pw_aff_sub(mupa, mupa2);
+
+	return isl_multi_union_pw_aff_zero_union_set(mupa);
+}
+
 /* Mark all dimensions in the current band node atomic.
  */
 static __isl_give isl_schedule_node *atomic(__isl_take isl_schedule_node *node)
@@ -3965,9 +4096,13 @@ static __isl_give isl_schedule_node *create_kernel(struct gpu_gen *gen,
 		node = group_statements(node, kernel->id);
 
 	node = isl_schedule_node_child(node, 0);
+	node = split_band(node, kernel->n_grid);
+	kernel->block_ids = ppcg_scop_generate_names(gen->prog->scop,
+						kernel->n_grid, "b");
+	kernel->block_filter = set_schedule_modulo(node, kernel->block_ids,
+						kernel->grid_dim);
 	if (scale)
-		node = isl_schedule_node_band_scale(node,
-						    isl_multi_val_copy(sizes));
+		node = scale_band(node, isl_multi_val_copy(sizes));
 
 	node = isl_schedule_node_cut(node);
 	node = isl_schedule_node_parent(node);

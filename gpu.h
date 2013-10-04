@@ -325,6 +325,11 @@ struct ppcg_kernel_var {
  * then the corresponding entry does not contain any information.
  *
  * any_force_private is set if any array in the kernel is marked force_private
+ *
+ * block_filter contains constraints on the domain elements in the kernel
+ * that encode the mapping to block identifiers, where the block identifiers
+ * are represented by "n_grid" parameters with as names the elements
+ * of "block_ids".
  */
 struct ppcg_kernel {
 	isl_ctx *ctx;
@@ -359,6 +364,8 @@ struct ppcg_kernel {
 	struct ppcg_kernel_var *var;
 
 	int any_force_private;
+
+	isl_union_set *block_filter;
 
 	isl_ast_node *tree;
 };
