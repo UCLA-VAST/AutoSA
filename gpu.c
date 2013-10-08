@@ -3551,6 +3551,7 @@ static __isl_give isl_ast_node *create_host_leaf(
 	isl_union_set *domain;
 	int i;
 
+	isl_options_set_ast_build_group_coscheduled(gen->ctx, 1);
 	schedule = isl_ast_build_get_schedule(build);
 
 	kernel = gen->kernel;
@@ -3596,6 +3597,8 @@ static __isl_give isl_ast_node *create_host_leaf(
 	isl_set_free(host_domain);
 
 	node = construct_launch(build, schedule, isl_id_copy(gen->kernel_mark));
+
+	isl_options_set_ast_build_group_coscheduled(gen->ctx, 0);
 
 	return node;
 error:
@@ -3661,7 +3664,6 @@ static __isl_give isl_ast_node *generate_host_code(struct gpu_gen *gen)
 	isl_schedule *schedule;
 	isl_id_list *iterators;
 
-	isl_options_set_ast_build_group_coscheduled(gen->ctx, 1);
 	build = isl_ast_build_from_context(isl_set_copy(gen->prog->context));
 	iterators = ppcg_scop_generate_names(gen->prog->scop,
 						gen->tile_first, "h");
