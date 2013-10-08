@@ -161,7 +161,9 @@ struct gpu_gen {
 	/* Effectively used tile, grid and block sizes for each kernel */
 	isl_union_map *used_sizes;
 
-	/* Identifier of current kernel. */
+	/* Pointer to current ppcg_kernel. */
+	isl_id *kernel_mark;
+	/* Identifier of the next kernel. */
 	int kernel_id;
 	/* Pointer to the current kernel. */
 	struct ppcg_kernel *kernel;

@@ -542,15 +542,16 @@ static void read_tile_sizes(struct gpu_gen *gen)
 {
 	int n;
 	isl_set *size;
+	struct ppcg_kernel *kernel = gen->kernel;
 
 	gen->tile_size = isl_alloc_array(gen->ctx, int, gen->tile_len);
 	assert(gen->tile_size);
 	for (n = 0; n < gen->tile_len; ++n)
 		gen->tile_size[n] = gen->options->tile_size;
 
-	size = extract_sizes(gen->sizes, "tile", gen->kernel_id);
+	size = extract_sizes(gen->sizes, "tile", kernel->id);
 	read_sizes_from_set(size, gen->tile_size, &gen->tile_len);
-	set_used_sizes(gen, "tile", gen->kernel_id,
+	set_used_sizes(gen, "tile", kernel->id,
 			gen->tile_size, gen->tile_len);
 
 	if (gen->n_parallel > gen->tile_len)
@@ -583,9 +584,9 @@ static void read_block_sizes(struct gpu_gen *gen)
 		break;
 	}
 
-	size = extract_sizes(gen->sizes, "block", gen->kernel_id);
+	size = extract_sizes(gen->sizes, "block", gen->kernel->id);
 	read_sizes_from_set(size, gen->block_dim, &gen->n_block);
-	set_used_sizes(gen, "block", gen->kernel_id,
+	set_used_sizes(gen, "block", gen->kernel->id,
 			gen->block_dim, gen->n_block);
 }
 
@@ -609,9 +610,10 @@ static void read_grid_sizes(struct gpu_gen *gen)
 		break;
 	}
 
-	size = extract_sizes(gen->sizes, "grid", gen->kernel_id);
+	size = extract_sizes(gen->sizes, "grid", gen->kernel->id);
 	read_sizes_from_set(size, gen->grid_dim, &gen->n_grid);
-	set_used_sizes(gen, "grid", gen->kernel_id, gen->grid_dim, gen->n_grid);
+	set_used_sizes(gen, "grid", gen->kernel->id,
+					    gen->grid_dim, gen->n_grid);
 }
 
 /* Extract user specified sizes from the "sizes" command line option
@@ -3496,6 +3498,8 @@ static __isl_give isl_ast_node *attach_id(__isl_take isl_ast_node *node,
 
 /* Construct an AST node for performing a kernel launch and attach
  * the information about the kernel to that node.
+ * "kernel_id" has name "kernel" and contains a pointer
+ * to the ppcg_kernel structure.
  *
  * The kernel AST has been constructed in the context of the range
  * of "schedule".  In particular, the grid size has been computed
@@ -3512,9 +3516,8 @@ static __isl_give isl_ast_node *attach_id(__isl_take isl_ast_node *node,
  */
 static __isl_give isl_ast_node *construct_launch(
 	__isl_take isl_ast_build *build, __isl_take isl_union_map *schedule,
-	__isl_take struct ppcg_kernel *kernel)
+	__isl_take isl_id *kernel_id)
 {
-	isl_id *id;
 	isl_ctx *ctx;
 	isl_union_set *domain;
 	isl_set *set;
@@ -3523,9 +3526,6 @@ static __isl_give isl_ast_node *construct_launch(
 
 	ctx = isl_ast_build_get_ctx(build);
 
-	id = isl_id_alloc(ctx, NULL, kernel);
-	id = isl_id_set_free_user(id, &ppcg_kernel_free_wrap);
-
 	domain = isl_union_map_range(schedule);
 	set = isl_set_from_union_set(domain);
 	map = isl_map_from_domain(set);
@@ -3533,7 +3533,7 @@ static __isl_give isl_ast_node *construct_launch(
 	map = isl_map_set_tuple_name(map, isl_dim_in, "kernel");
 	schedule = isl_union_map_from_map(map);
 
-	build = isl_ast_build_set_at_each_domain(build, &attach_id, id);
+	build = isl_ast_build_set_at_each_domain(build, &attach_id, kernel_id);
 	node = isl_ast_build_node_from_schedule_map(build, schedule);
 	isl_ast_build_free(build);
 
@@ -3546,8 +3546,12 @@ static __isl_give isl_ast_node *construct_launch(
  * and the associated kernel.
  *
  * The necessary information for printing the kernel launch is
- * stored in a struct ppcg_kernel and attached to the leaf node
- * created to represent the launch.
+ * stored in the struct ppcg_kernel that was created in create_kernel and
+ * attached to an outer mark node in the schedule tree.
+ * Note that this assumes that a kernel is only launched once.
+ * The kernel pointer itself is stored in gen->kernel by before_mark,
+ * while the isl_id containing this pointer is stored in gen->kernel_mark.
+ * The latter is attached to the leaf AST node created to represent the launch.
  */
 static __isl_give isl_ast_node *create_host_leaf(
 	__isl_take isl_ast_build *build, void *user)
@@ -3565,6 +3569,10 @@ static __isl_give isl_ast_node *create_host_leaf(
 
 	schedule = isl_ast_build_get_schedule(build);
 
+	kernel = gen->kernel;
+	if (!kernel)
+		goto error;
+
 	isl_union_map_foreach_map(schedule, &extract_tile_len, gen);
 	read_sizes(gen);
 
@@ -3577,10 +3585,6 @@ static __isl_give isl_ast_node *create_host_leaf(
 	access = isl_union_map_apply_domain(access,
 					    isl_union_map_copy(local_sched));
 
-	kernel = gen->kernel = isl_calloc_type(gen->ctx, struct ppcg_kernel);
-	kernel = ppcg_kernel_create_local_arrays(kernel, gen->prog);
-	if (!kernel)
-		goto error;
 	kernel->block_ids = ppcg_scop_generate_names(gen->prog->scop,
 						gen->n_grid, "b");
 	kernel->thread_ids = ppcg_scop_generate_names(gen->prog->scop,
@@ -3594,9 +3598,6 @@ static __isl_give isl_ast_node *create_host_leaf(
 	gen->local_sched = thread_tile_schedule(gen, gen->local_sched);
 	gen->local_sched = scale_thread_tile_loops(gen, gen->local_sched);
 
-	kernel->ctx = gen->ctx;
-	kernel->options = gen->options;
-	kernel->id = gen->kernel_id++;
 	kernel->context = isl_union_map_params(isl_union_map_copy(schedule));
 	kernel->grid_size = extract_grid_size(gen, kernel);
 	extract_block_size(gen, kernel);
@@ -3629,7 +3630,7 @@ static __isl_give isl_ast_node *create_host_leaf(
 	isl_set_free(host_domain);
 	free(gen->tile_size);
 
-	node = construct_launch(build, schedule, kernel);
+	node = construct_launch(build, schedule, isl_id_copy(gen->kernel_mark));
 
 	return node;
 error:
@@ -3637,10 +3638,56 @@ error:
 	return NULL;
 }
 
+/* This function is called before the AST generator starts traversing
+ * the schedule subtree of a node with mark "mark".
+ *
+ * If the mark is called "kernel", store the mark itself in gen->kernel_mark
+ * and the kernel pointer in gen->kernel for use in create_host_leaf.
+ */
+static int before_mark(__isl_keep isl_id *mark,
+	__isl_keep isl_ast_build *build, void *user)
+{
+	struct gpu_gen *gen = user;
+
+	if (!mark)
+		return -1;
+	if (!strcmp(isl_id_get_name(mark), "kernel")) {
+		gen->kernel_mark = isl_id_copy(mark);
+		gen->kernel = isl_id_get_user(mark);
+	}
+	return 0;
+}
+
+/* This function is called after the AST generator has finished traversing
+ * the schedule subtree of a mark node.  "node" points to the corresponding
+ * mark AST node.
+ *
+ * If the mark is called "kernel", then clear kernel and gen->kernel_mark.
+ */
+static __isl_give isl_ast_node *after_mark(__isl_take isl_ast_node *node,
+        __isl_keep isl_ast_build *build, void *user)
+{
+	struct gpu_gen *gen = user;
+	isl_id *id;
+
+	id = isl_ast_node_mark_get_id(node);
+	if (!id)
+		return isl_ast_node_free(node);
+	if (!strcmp(isl_id_get_name(id), "kernel") && gen->kernel) {
+		gen->kernel_mark = isl_id_free(gen->kernel_mark);
+		gen->kernel = NULL;
+	}
+
+	isl_id_free(id);
+	return node;
+}
+
 /* Use isl to generate host code from gen->host_schedule, which corresponds to
  * the outer gen->tile_first loops of the global schedule in gen->sched.
  * Within each iteration of this partial schedule, i.e., for each kernel
  * launch, create_host_leaf takes care of generating the kernel code.
+ * The ppcg_kernel objects are stored in mark nodes in the schedule
+ * tree and are extracted in before_mark.
  */
 static __isl_give isl_ast_node *generate_host_code(struct gpu_gen *gen)
 {
@@ -3655,6 +3702,8 @@ static __isl_give isl_ast_node *generate_host_code(struct gpu_gen *gen)
 						gen->tile_first, "h");
 	build = isl_ast_build_set_iterators(build, iterators);
 	build = isl_ast_build_set_create_leaf(build, &create_host_leaf, gen);
+	build = isl_ast_build_set_before_each_mark(build, &before_mark, gen);
+	build = isl_ast_build_set_after_each_mark(build, &after_mark, gen);
 	schedule = isl_schedule_copy(gen->host_schedule);
 	tree = isl_ast_build_node_from_schedule(build, schedule);
 	isl_ast_build_free(build);
@@ -3749,37 +3798,74 @@ static __isl_give isl_schedule_node *atomic_ancestors(
 	return node;
 }
 
-/* If the domain elements that reach "node" live in more than one space,
- * then group the domain elements into a single space, named kernelX,
- * with X the kernel sequence number.
- * Note that these groups may be scheduled in a different
- * order so that the name of the group may not match the name of
- * the corresponding kernel.
- * Also, mark all outer band nodes as atomic to ensure each kernel is only
- * scheduled once.
+/* Group the domain elements into a single space, named kernelX,
+ * with X the kernel sequence number "kernel_id".
  */
-static __isl_give isl_schedule_node *group_statements(struct gpu_gen *gen,
-	__isl_take isl_schedule_node *node)
+static __isl_give isl_schedule_node *group_statements(
+	__isl_take isl_schedule_node *node, int kernel_id)
 {
 	char buffer[20];
 	isl_id *id;
+
+	if (!node)
+		return NULL;
+
+	snprintf(buffer, sizeof(buffer), "kernel%d", kernel_id);
+	id = isl_id_alloc(isl_schedule_node_get_ctx(node), buffer, NULL);
+	return isl_schedule_node_group(node, id);
+}
+
+/* Create a ppcg_kernel representing the domain instances that reach "node"
+ * and replace the subtree at "node" by a mark node pointing
+ * to the ppcg_kernel.
+ * Mark all outer band nodes as atomic to ensure each kernel is only
+ * scheduled once.
+ * If the domain elements that reach "node" live in more than one space,
+ * then group the domain elements into a single space, named kernelX,
+ * with X the kernel sequence number.
+ *
+ * We keep a copy of the isl_id that points to the kernel to ensure
+ * that the kernel does not get destroyed if the schedule node
+ * is freed due to some error condition.
+ */
+static __isl_give isl_schedule_node *create_kernel(struct gpu_gen *gen,
+	__isl_take isl_schedule_node *node)
+{
+	struct ppcg_kernel *kernel;
+	isl_id *id;
 	isl_union_set *domain;
 	int single_statement;
+
+	kernel = isl_calloc_type(gen->ctx, struct ppcg_kernel);
+	kernel = ppcg_kernel_create_local_arrays(kernel, gen->prog);
+	if (!kernel)
+		return isl_schedule_node_free(node);
 
 	domain = isl_schedule_node_get_universe_domain(node);
 	single_statement = isl_union_set_n_set(domain) == 1;
 	isl_union_set_free(domain);
 
+	kernel->ctx = gen->ctx;
+	kernel->options = gen->options;
+	kernel->id = gen->kernel_id++;
+
 	node = atomic_ancestors(node);
 
-	if (single_statement)
-		return node;
+	id = isl_id_alloc(gen->ctx, "kernel", kernel);
+	id = isl_id_set_free_user(id, &ppcg_kernel_free_wrap);
+	node = isl_schedule_node_insert_mark(node, isl_id_copy(id));
 
-	snprintf(buffer, sizeof(buffer), "kernel%d", gen->kernel_id++);
-	id = isl_id_alloc(gen->ctx, buffer, NULL);
-	node = isl_schedule_node_group(node, id);
+	if (!single_statement)
+		node = group_statements(node, kernel->id);
+
+	node = isl_schedule_node_child(node, 0);
+	node = isl_schedule_node_cut(node);
 	node = isl_schedule_node_parent(node);
 
+	if (!single_statement)
+		node = isl_schedule_node_parent(node);
+
+	isl_id_free(id);
 	return node;
 }
 
@@ -3790,7 +3876,8 @@ static __isl_give isl_schedule_node *select_outer_band(struct gpu_gen *gen,
  * take it as the outermost tilable band.  If not, continue looking for the
  * outermost tilable band in the children of the current band.
  * Return a pointer to the same node in a tree where all outermost tilable
- * bands in the current subtree have been removed.
+ * bands in the current subtree have been replaced by mark nodes
+ * containing a pointer to a ppcg_kernel object.
  */
 static __isl_give isl_schedule_node *band_select_outer_band(struct gpu_gen *gen,
 	__isl_take isl_schedule_node *node, int pos, struct band_info *info)
@@ -3818,8 +3905,7 @@ static __isl_give isl_schedule_node *band_select_outer_band(struct gpu_gen *gen,
 	info->suffix = isl_schedule_node_get_subtree_schedule_union_map(node);
 	isl_union_map_foreach_map(info->prefix, &set_stmt_tile_len, info);
 
-	node = isl_schedule_node_cut(node);
-	node = group_statements(gen, node);
+	node = create_kernel(gen, node);
 
 	return node;
 }
@@ -3849,7 +3935,8 @@ static __isl_give isl_union_map *extend_range(
  * prefix and suffix schedules into a single pair of prefix and
  * suffix schedules for the entire list.
  * Return a pointer to the same node in a tree where all outermost tilable
- * bands in the current subtree have been removed.
+ * bands in the current subtree have been replaced by mark nodes
+ * containing a pointer to a ppcg_kernel object.
  */
 static __isl_give isl_schedule_node *list_select_outer_band(
 	struct gpu_gen *gen, __isl_take isl_schedule_node *node, int pos,
@@ -3904,7 +3991,8 @@ static __isl_give isl_schedule_node *list_select_outer_band(
 /* If we reach a leaf node, then we have not found any outer tilable
  * band with parallel loops, so consider the leaf node as the outermost
  * tilable band.
- * Return a pointer to the leaf node.
+ * Return a pointer to a mark node containing a pointer
+ * to a ppcg_kernel object inserted at the original leaf node.
  */
 static __isl_give isl_schedule_node *leaf_select_outer_band(struct gpu_gen *gen,
 	__isl_take isl_schedule_node *node, int pos, struct band_info *info)
@@ -3916,14 +4004,15 @@ static __isl_give isl_schedule_node *leaf_select_outer_band(struct gpu_gen *gen,
 	info->suffix = isl_schedule_node_get_subtree_schedule_union_map(node);
 	isl_union_map_foreach_map(info->prefix, &set_stmt_tile_len, info);
 
-	node = group_statements(gen, node);
+	node = create_kernel(gen, node);
 
 	return node;
 }
 
 /* Select the outermost tilable band in the subtree that "node" points to and
  * return a pointer to the same node in a tree where all outermost tilable
- * bands in the current subtree have been removed.
+ * bands in the current subtree have been replaced by mark nodes
+ * containing a pointer to a ppcg_kernel object.
  */
 static __isl_give isl_schedule_node *select_outer_band(struct gpu_gen *gen,
 	__isl_take isl_schedule_node *node, int pos, struct band_info *info)
@@ -3967,29 +4056,22 @@ static __isl_give isl_schedule_node *select_outer_band(struct gpu_gen *gen,
  * Return the complete schedule, with the tilable bands aligned
  * at gen->tile_first and padded with zero, if needed.
  * Store a schedule tree corresponding to the outer gen->tile_first
- * dimensions in gen->host_schedule.
- *
- * We keep a copy of gen->kernel_id, since we will be temporarily
- * updating it inside group_statements.
+ * dimensions, with mark nodes containing pointers to ppcg_kernel objects,
+ * in gen->host_schedule.
  */
 static __isl_give isl_union_map *select_outer_tilable_band(struct gpu_gen *gen,
 	__isl_keep isl_schedule *schedule)
 {
 	isl_schedule_node *node;
 	struct band_info info;
-	int kernel_id;
 
 	gen->n_parallel = 0;
 	gen->tile_len = -1;
-
-	kernel_id = gen->kernel_id;
 
 	node = isl_schedule_get_root(schedule);
 	node = select_outer_band(gen, node, 0, &info);
 	gen->host_schedule = isl_schedule_node_get_schedule(node);
 	isl_schedule_node_free(node);
-
-	gen->kernel_id = kernel_id;
 
 	gen->tile_first = info.tile_first;
 	info.suffix = align_range(info.suffix);
