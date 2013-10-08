@@ -3565,7 +3565,6 @@ static __isl_give isl_ast_node *create_host_leaf(
 	isl_set *host_domain;
 	isl_union_map *schedule;
 	isl_union_map *local_sched;
-	isl_union_map *access;
 	isl_union_set *domain;
 	int i;
 
@@ -3582,10 +3581,6 @@ static __isl_give isl_ast_node *create_host_leaf(
 
 	local_sched = isl_union_map_copy(gen->sched);
 	local_sched = isl_union_map_intersect_domain(local_sched, domain);
-	access = isl_union_map_union(isl_union_map_copy(gen->prog->read),
-				     isl_union_map_copy(gen->prog->may_write));
-	access = isl_union_map_apply_domain(access,
-					    isl_union_map_copy(local_sched));
 
 	kernel->block_ids = ppcg_scop_generate_names(gen->prog->scop,
 						gen->n_grid, "b");
@@ -3602,9 +3597,6 @@ static __isl_give isl_ast_node *create_host_leaf(
 
 	kernel->grid_size = extract_grid_size(gen, kernel);
 	extract_block_size(gen, kernel);
-	kernel->arrays = isl_union_map_range(access);
-	kernel->arrays = isl_union_set_apply(kernel->arrays,
-				isl_union_map_copy(gen->prog->to_outer));
 	kernel->space = isl_ast_build_get_schedule_space(build);
 
 	compute_shared_sched(gen);
@@ -3783,6 +3775,25 @@ static __isl_give isl_set *extract_context(__isl_keep isl_schedule_node *node,
 	return context;
 }
 
+/* Return the set of outer array elements accessed by
+ * by the statement instance in "domain" in "prog".
+ */
+static __isl_give isl_union_set *accessed_by_domain(
+	__isl_take isl_union_set *domain, struct gpu_prog *prog)
+{
+	isl_union_map *access;
+	isl_union_set *arrays;
+
+	access = isl_union_map_union(isl_union_map_copy(prog->read),
+				     isl_union_map_copy(prog->may_write));
+	access = isl_union_map_intersect_domain(access, domain);
+	arrays = isl_union_map_range(access);
+	arrays = isl_union_set_apply(arrays,
+				isl_union_map_copy(prog->to_outer));
+
+	return arrays;
+}
+
 /* Mark all dimensions in the current band node atomic.
  */
 static __isl_give isl_schedule_node *atomic(__isl_take isl_schedule_node *node)
@@ -3864,13 +3875,13 @@ static __isl_give isl_schedule_node *create_kernel(struct gpu_gen *gen,
 	if (!kernel)
 		return isl_schedule_node_free(node);
 
-	domain = isl_schedule_node_get_universe_domain(node);
+	domain = isl_schedule_node_get_domain(node);
 	single_statement = isl_union_set_n_set(domain) == 1;
-	isl_union_set_free(domain);
 
 	kernel->ctx = gen->ctx;
 	kernel->options = gen->options;
 	kernel->context = extract_context(node, gen->prog);
+	kernel->arrays = accessed_by_domain(domain, gen->prog);
 	kernel->id = gen->kernel_id++;
 
 	node = atomic_ancestors(node);
