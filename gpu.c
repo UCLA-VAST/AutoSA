@@ -2239,6 +2239,62 @@ __isl_give isl_union_map *extract_sizes_from_str(isl_ctx *ctx, const char *str)
 	return isl_union_map_read_from_str(ctx, str);
 }
 
+/* Can "node" be tiled and then mapped to block and thread identifiers?
+ * That is, is it permutable with at least one coincident dimension?
+ */
+static int is_permutable(__isl_keep isl_schedule_node *node)
+{
+	if (!node)
+		return -1;
+
+	if (isl_schedule_node_get_type(node) != isl_schedule_node_band)
+		return 0;
+	if (!isl_schedule_node_band_get_permutable(node))
+		return 0;
+	if (isl_schedule_node_band_n_member(node) < 1)
+		return 0;
+	if (!isl_schedule_node_band_member_get_coincident(node, 0))
+		return 0;
+
+	return 1;
+}
+
+/* A isl_schedule_foreach_schedule_node callback
+ * for setting *any_permutable and aborting the search
+ * if "node" is a permutable band with coincident dimensions.
+ * Otherwise, continue searching.
+ */
+static int set_permutable(__isl_keep isl_schedule_node *node, void *user)
+{
+	int *any_permutable = user;
+	int permutable;
+
+	permutable = is_permutable(node);
+	if (permutable < 0)
+		return -1;
+	if (!permutable)
+		return 1;
+
+	*any_permutable = 1;
+
+	return -1;
+}
+
+/* Does "schedule" contain any permutable band with at least one coincident
+ * member?
+ */
+static int has_any_permutable_node(__isl_keep isl_schedule *schedule)
+{
+	int any_permutable = 0;
+
+	if (isl_schedule_foreach_schedule_node(schedule, &set_permutable,
+						&any_permutable) < 0 &&
+	    !any_permutable)
+		return -1;
+
+	return any_permutable;
+}
+
 /* Information about the outermost tilable bands in the forest of bands.
  *
  * prefix is the (padded) schedule leading up to the outermost tilable bands.
@@ -3447,7 +3503,6 @@ static __isl_give isl_schedule_node *band_select_outer_band(struct gpu_gen *gen,
 		return isl_schedule_node_parent(node);
 	}
 
-	gen->any_parallelism = 1;
 	info->gen = gen;
 	info->tile_first = pos;
 	info->prefix = isl_schedule_node_get_prefix_schedule_union_map(node);
@@ -3628,6 +3683,9 @@ static __isl_give isl_union_map *select_outer_tilable_band(struct gpu_gen *gen,
  * a schedule that has a parallel loop in each tilable band.
  * Finally, we select the outermost tilable band.
  *
+ * Return the schedule computed by isl (before selecting
+ * the outer tilable bands).
+ *
  * If live range reordering is allowed, then we need to make sure
  * that live ranges on arrays are not run in parallel since doing
  * so would require array expansion.  We therefore add the array
@@ -3654,7 +3712,7 @@ static __isl_give isl_union_map *select_outer_tilable_band(struct gpu_gen *gen,
  * as there should be no flow or external false dependence on local
  * variables that can be filtered out.
  */
-static void compute_schedule(struct gpu_gen *gen)
+static __isl_give isl_schedule *compute_schedule(struct gpu_gen *gen)
 {
 	isl_union_set *domain;
 	isl_union_map *dep_raw, *dep;
@@ -3705,7 +3763,7 @@ static void compute_schedule(struct gpu_gen *gen)
 
 	isl_union_map_free(sched);
 
-	isl_schedule_free(schedule);
+	return schedule;
 }
 
 /* Compute the sets of outer array elements that need to be copied in and out.
@@ -4056,6 +4114,8 @@ static __isl_give isl_printer *generate(__isl_take isl_printer *p,
 	struct gpu_prog *prog;
 	isl_ctx *ctx;
 	isl_set *context, *guard;
+	isl_schedule *schedule;
+	int any_permutable;
 
 	if (!scop)
 		return isl_printer_free(p);
@@ -4070,13 +4130,16 @@ static __isl_give isl_printer *generate(__isl_take isl_printer *p,
 	prog->context = isl_set_intersect(prog->context, isl_set_copy(guard));
 
 	gen->prog = prog;
-	gen->any_parallelism = 0;
-	compute_schedule(gen);
+	schedule = compute_schedule(gen);
 
-	if (!gen->any_parallelism) {
+	any_permutable = has_any_permutable_node(schedule);
+	if (any_permutable < 0 || !any_permutable) {
 		isl_set_free(context);
 		isl_set_free(guard);
-		p = print_cpu(p, scop, options);
+		if (any_permutable < 0)
+			p = isl_printer_free(p);
+		else
+			p = print_cpu(p, scop, options);
 	} else {
 		compute_copy_in_and_out(gen);
 		gen->tree = generate_code(gen);
@@ -4085,6 +4148,7 @@ static __isl_give isl_printer *generate(__isl_take isl_printer *p,
 		isl_ast_node_free(gen->tree);
 	}
 
+	isl_schedule_free(schedule);
 	isl_schedule_free(gen->schedule);
 
 	gpu_prog_free(prog);

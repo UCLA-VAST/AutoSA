@@ -165,8 +165,6 @@ struct gpu_gen {
 	int kernel_id;
 	/* Pointer to the current kernel. */
 	struct ppcg_kernel *kernel;
-	/* Does the computed schedule exhibit any parallelism? */
-	int any_parallelism;
 
 	/* First tile dimension. */
 	int tile_first;
