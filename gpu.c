@@ -3711,6 +3711,36 @@ static int set_stmt_tile_len(__isl_take isl_map *map, void *user)
 	return 0;
 }
 
+/* If the domain elements that reach "node" live in more than one space,
+ * then group the domain elements into a single space, named kernelX,
+ * with X the kernel sequence number.
+ * Note that these groups may be scheduled several times or in a different
+ * order so that the name of the group may not match the name of
+ * the corresponding kernel.
+ */
+static __isl_give isl_schedule_node *group_statements(struct gpu_gen *gen,
+	__isl_take isl_schedule_node *node)
+{
+	char buffer[20];
+	isl_id *id;
+	isl_union_set *domain;
+	int single_statement;
+
+	domain = isl_schedule_node_get_universe_domain(node);
+	single_statement = isl_union_set_n_set(domain) == 1;
+	isl_union_set_free(domain);
+
+	if (single_statement)
+		return node;
+
+	snprintf(buffer, sizeof(buffer), "kernel%d", gen->kernel_id++);
+	id = isl_id_alloc(gen->ctx, buffer, NULL);
+	node = isl_schedule_node_group(node, id);
+	node = isl_schedule_node_parent(node);
+
+	return node;
+}
+
 static __isl_give isl_schedule_node *select_outer_band(struct gpu_gen *gen,
 	__isl_take isl_schedule_node *node, int pos, struct band_info *info);
 
@@ -3747,6 +3777,7 @@ static __isl_give isl_schedule_node *band_select_outer_band(struct gpu_gen *gen,
 	isl_union_map_foreach_map(info->prefix, &set_stmt_tile_len, info);
 
 	node = isl_schedule_node_cut(node);
+	node = group_statements(gen, node);
 
 	return node;
 }
@@ -3843,6 +3874,8 @@ static __isl_give isl_schedule_node *leaf_select_outer_band(struct gpu_gen *gen,
 	info->suffix = isl_schedule_node_get_subtree_schedule_union_map(node);
 	isl_union_map_foreach_map(info->prefix, &set_stmt_tile_len, info);
 
+	node = group_statements(gen, node);
+
 	return node;
 }
 
@@ -3893,20 +3926,28 @@ static __isl_give isl_schedule_node *select_outer_band(struct gpu_gen *gen,
  * at gen->tile_first and padded with zero, if needed.
  * Store a schedule tree corresponding to the outer gen->tile_first
  * dimensions in gen->host_schedule.
+ *
+ * We keep a copy of gen->kernel_id, since we will be temporarily
+ * updating it inside group_statements.
  */
 static __isl_give isl_union_map *select_outer_tilable_band(struct gpu_gen *gen,
 	__isl_keep isl_schedule *schedule)
 {
 	isl_schedule_node *node;
 	struct band_info info;
+	int kernel_id;
 
 	gen->n_parallel = 0;
 	gen->tile_len = -1;
+
+	kernel_id = gen->kernel_id;
 
 	node = isl_schedule_get_root(schedule);
 	node = select_outer_band(gen, node, 0, &info);
 	gen->host_schedule = isl_schedule_node_get_schedule(node);
 	isl_schedule_node_free(node);
+
+	gen->kernel_id = kernel_id;
 
 	gen->tile_first = info.tile_first;
 	info.suffix = align_range(info.suffix);
