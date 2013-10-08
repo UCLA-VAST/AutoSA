@@ -3711,12 +3711,52 @@ static int set_stmt_tile_len(__isl_take isl_map *map, void *user)
 	return 0;
 }
 
+/* Mark all dimensions in the current band node atomic.
+ */
+static __isl_give isl_schedule_node *atomic(__isl_take isl_schedule_node *node)
+{
+	int i, n;
+
+	n = isl_schedule_node_band_n_member(node);
+	for (i = 0; i < n; ++i)
+		node = isl_schedule_node_band_member_set_ast_loop_type(node, i,
+							isl_ast_loop_atomic);
+
+	return node;
+}
+
+/* Mark "node" atomic, if it is a band node.
+ * Do the same for all ancestors.
+ * Return a pointer to "node" (in the updated schedule tree).
+ */
+static __isl_give isl_schedule_node *atomic_ancestors(
+	__isl_take isl_schedule_node *node)
+{
+	int pos;
+
+	if (!node)
+		return NULL;
+	if (!isl_schedule_node_has_parent(node))
+		return node;
+
+	pos = isl_schedule_node_get_child_position(node);
+	node = isl_schedule_node_parent(node);
+	if (isl_schedule_node_get_type(node) == isl_schedule_node_band)
+		node = atomic(node);
+	node = atomic_ancestors(node);
+	node = isl_schedule_node_child(node, pos);
+
+	return node;
+}
+
 /* If the domain elements that reach "node" live in more than one space,
  * then group the domain elements into a single space, named kernelX,
  * with X the kernel sequence number.
- * Note that these groups may be scheduled several times or in a different
+ * Note that these groups may be scheduled in a different
  * order so that the name of the group may not match the name of
  * the corresponding kernel.
+ * Also, mark all outer band nodes as atomic to ensure each kernel is only
+ * scheduled once.
  */
 static __isl_give isl_schedule_node *group_statements(struct gpu_gen *gen,
 	__isl_take isl_schedule_node *node)
@@ -3729,6 +3769,8 @@ static __isl_give isl_schedule_node *group_statements(struct gpu_gen *gen,
 	domain = isl_schedule_node_get_universe_domain(node);
 	single_statement = isl_union_set_n_set(domain) == 1;
 	isl_union_set_free(domain);
+
+	node = atomic_ancestors(node);
 
 	if (single_statement)
 		return node;
