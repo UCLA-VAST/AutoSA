@@ -284,6 +284,8 @@ struct ppcg_kernel_var {
 
 /* Representation of a kernel.
  *
+ * prog describes the original code from which the kernel is extracted.
+ *
  * id is the sequence number of the kernel.
  *
  * block_ids contains the list of block identifiers for this kernel.
@@ -342,6 +344,8 @@ struct ppcg_kernel_var {
 struct ppcg_kernel {
 	isl_ctx *ctx;
 	struct ppcg_options *options;
+
+	struct gpu_prog *prog;
 
 	int id;
 

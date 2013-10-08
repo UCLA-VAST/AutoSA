@@ -4181,6 +4181,7 @@ static __isl_give isl_schedule_node *create_kernel(struct gpu_gen *gen,
 	single_statement = isl_union_set_n_set(domain) == 1;
 
 	kernel->ctx = gen->ctx;
+	kernel->prog = gen->prog;
 	kernel->options = gen->options;
 	kernel->context = extract_context(node, gen->prog);
 	kernel->core = isl_union_set_universe(isl_union_set_copy(domain));
