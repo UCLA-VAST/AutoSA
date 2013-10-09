@@ -1775,6 +1775,7 @@ struct ppcg_kernel *ppcg_kernel_free(struct ppcg_kernel *kernel)
 	isl_space_free(kernel->space);
 	isl_ast_node_free(kernel->tree);
 	isl_union_set_free(kernel->block_filter);
+	isl_union_set_free(kernel->thread_filter);
 
 	for (i = 0; i < kernel->n_array; ++i) {
 		struct gpu_local_array_info *array = &kernel->array[i];
@@ -3572,9 +3573,6 @@ static __isl_give isl_ast_node *create_host_leaf(
 	local_sched = isl_union_map_copy(gen->sched);
 	local_sched = isl_union_map_intersect_domain(local_sched, domain);
 
-	kernel->thread_ids = ppcg_scop_generate_names(gen->prog->scop,
-						kernel->n_block, "t");
-
 	gen->tiled_sched = tile_schedule(gen, local_sched);
 	gen->tiled_sched = parametrize_tiled_schedule(gen, gen->tiled_sched);
 	gen->tiled_sched = scale_tile_loops(gen, gen->tiled_sched);
@@ -4107,7 +4105,17 @@ static __isl_give isl_schedule_node *create_kernel(struct gpu_gen *gen,
 	kernel->grid_size = extract_grid_size(kernel, domain);
 	if (scale)
 		node = scale_band(node, isl_multi_val_copy(sizes));
+	node = gpu_tree_move_down_to_thread(node, kernel->core);
+	node = isl_schedule_node_child(node, 0);
+	node = split_band(node, kernel->n_block);
+	kernel->thread_ids = ppcg_scop_generate_names(gen->prog->scop,
+						kernel->n_block, "t");
+	kernel->thread_filter = set_schedule_modulo(node, kernel->thread_ids,
+						kernel->block_dim);
 
+	node = gpu_tree_move_up_to_kernel(node);
+
+	node = isl_schedule_node_child(node, 0);
 	node = isl_schedule_node_cut(node);
 	node = isl_schedule_node_parent(node);
 

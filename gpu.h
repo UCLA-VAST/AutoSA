@@ -330,6 +330,11 @@ struct ppcg_kernel_var {
  * that encode the mapping to block identifiers, where the block identifiers
  * are represented by "n_grid" parameters with as names the elements
  * of "block_ids".
+ *
+ * thread_filter contains constraints on the domain elements in the kernel
+ * that encode the mapping to thread identifiers, where the thread identifiers
+ * are represented by "n_block" parameters with as names the elements
+ * of "thread_ids".
  */
 struct ppcg_kernel {
 	isl_ctx *ctx;
@@ -366,6 +371,7 @@ struct ppcg_kernel {
 	int any_force_private;
 
 	isl_union_set *block_filter;
+	isl_union_set *thread_filter;
 
 	isl_ast_node *tree;
 };
