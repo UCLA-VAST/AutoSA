@@ -2233,7 +2233,8 @@ static __isl_give isl_map *next(__isl_take isl_space *domain_dim, int pos)
  * wrapped over the last thread index results in incrementing
  * the last array index.
  *
- * This function is only called for access relations without reuse.
+ * This function is only called for access relations without reuse and
+ * kernels with at least one block dimension.
  */
 static int access_is_coalesced(struct gpu_gen *gen,
 	__isl_keep isl_union_map *access)
@@ -2830,7 +2831,7 @@ static int compute_group_bounds_core(struct gpu_gen *gen,
 	int no_reuse;
 	isl_map *acc;
 	int force_private = group->array->force_private;
-	int use_shared = gen->options->use_shared_memory;
+	int use_shared = gen->options->use_shared_memory && gen->n_block > 0;
 	int use_private = force_private || gen->options->use_private_memory;
 
 	if (!use_shared && !use_private)
