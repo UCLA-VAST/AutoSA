@@ -1719,27 +1719,31 @@ static void extract_fixed_size(__isl_take isl_set *set, int *size)
  * and store the sizes in kernel->block_dim.
  *
  * The block size specified by the user or set by default
- * in read_block_sizes() and applied in thread_tile_schedule(),
+ * in read_block_sizes() and applied by the thread filter,
  * may be too large for the given code in the sense that
  * it may contain threads that don't need to execute anything.
  * We therefore update this block size in kernel->block_dim
  * to the smallest block size that ensures that all threads
  * that actually execute code are included in the block.
  *
+ * The possible values of the thread ids is obtained from
+ * the domain elements "domain" and kernel->thread_filter.
  * The current implementation eliminates all parameters, ensuring
  * that the size is a fixed constant in each dimension.
  * In principle we could also compute parametric sizes.
  * We would have to make sure to project out all b%d and t%d parameters,
  * however.
  */
-static void extract_block_size(struct gpu_gen *gen, struct ppcg_kernel *kernel)
+static void extract_block_size(struct ppcg_kernel *kernel,
+	__isl_take isl_union_set *domain)
 {
 	int i;
 	int nparam;
 	isl_set *block;
-	isl_multi_pw_aff *mpa;
 
-	block = isl_union_map_params(isl_union_map_copy(gen->local_sched));
+	domain = isl_union_set_intersect(domain,
+				    isl_union_set_copy(kernel->thread_filter));
+	block = isl_union_set_params(domain);
 	block = isl_set_from_params(block);
 	block = isl_set_add_dims(block, isl_dim_set, kernel->n_block);
 	for (i = 0; i < kernel->n_block; ++i) {
@@ -3581,7 +3585,6 @@ static __isl_give isl_ast_node *create_host_leaf(
 	gen->local_sched = thread_tile_schedule(gen, gen->local_sched);
 	gen->local_sched = scale_thread_tile_loops(gen, gen->local_sched);
 
-	extract_block_size(gen, kernel);
 	kernel->space = isl_ast_build_get_schedule_space(build);
 
 	compute_shared_sched(gen);
@@ -4102,7 +4105,8 @@ static __isl_give isl_schedule_node *create_kernel(struct gpu_gen *gen,
 						kernel->n_grid, "b");
 	kernel->block_filter = set_schedule_modulo(node, kernel->block_ids,
 						kernel->grid_dim);
-	kernel->grid_size = extract_grid_size(kernel, domain);
+	kernel->grid_size = extract_grid_size(kernel,
+						isl_union_set_copy(domain));
 	if (scale)
 		node = scale_band(node, isl_multi_val_copy(sizes));
 	node = gpu_tree_move_down_to_thread(node, kernel->core);
@@ -4112,6 +4116,7 @@ static __isl_give isl_schedule_node *create_kernel(struct gpu_gen *gen,
 						kernel->n_block, "t");
 	kernel->thread_filter = set_schedule_modulo(node, kernel->thread_ids,
 						kernel->block_dim);
+	extract_block_size(kernel, domain);
 
 	node = gpu_tree_move_up_to_kernel(node);
 
