@@ -1227,6 +1227,22 @@ static void set_array_groups(struct gpu_local_array_info *array,
 		groups[i]->nr = i;
 }
 
+/* Combine all groups in "groups" into a single group and return
+ * the new number of groups (1 or 0 if there were no groups to start with).
+ */
+static int join_all_groups(int n, struct gpu_array_ref_group **groups)
+{
+	int i;
+
+	for (i = n - 1; i > 0; --i) {
+		groups[0] = join_groups_and_free(groups[0], groups[i]);
+		groups[i] = NULL;
+		n--;
+	}
+
+	return n;
+}
+
 /* Group array references that should be considered together when
  * deciding whether to access them from private, shared or global memory.
  * Return -1 on error.
@@ -1242,8 +1258,9 @@ static void set_array_groups(struct gpu_local_array_info *array,
  * combination of the two also admits a shared memory tile, we merge
  * the two groups.
  *
- * If the array contains structures, then there is no need to compute
- * reference groups since we do not map such arrays to private or shared
+ * If the array contains structures, then we compute a single
+ * reference group without trying to find any tiles
+ * since we do not map such arrays to private or shared
  * memory.
  */
 static int group_array_references(struct ppcg_kernel *kernel,
@@ -1254,15 +1271,18 @@ static int group_array_references(struct ppcg_kernel *kernel,
 	isl_ctx *ctx = isl_union_map_get_ctx(data->shared_sched);
 	struct gpu_array_ref_group **groups;
 
-	if (local->array->has_compound_element)
-		return 0;
-
 	groups = isl_calloc_array(ctx, struct gpu_array_ref_group *,
 					local->array->n_ref);
 	if (!groups)
 		return -1;
 
 	n = populate_array_references(local, groups, data);
+
+	if (local->array->has_compound_element) {
+		n = join_all_groups(n, groups);
+		set_array_groups(local, n, groups);
+		return 0;
+	}
 
 	n = group_overlapping_writes(kernel, n, groups, data);
 

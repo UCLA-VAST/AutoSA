@@ -58,9 +58,6 @@ struct gpu_array_info {
  *
  * "array" points to the corresponding array in the gpu_prog.
  * The "n_group" "groups" are the reference groups associated to the array.
- * If the outer array represented by the gpu_local_array_info
- * contains structures, then the references are not
- * collected and the reference groups are not computed.
  * If "force_private" is set, then the array (in practice a scalar)
  * must be mapped to a register.
  * For each index i with 0 <= i < n_index,

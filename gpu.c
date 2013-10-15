@@ -1246,8 +1246,7 @@ static __isl_give isl_pw_aff *set_universally_zero(__isl_take isl_pw_aff *pa)
  *
  * We only need these localized bounds for arrays that are accessed
  * by the current kernel.  If we have found at least one reference group
- * then the array is accessed by the kernel.  If the array has compound
- * elements then we skipped the construction of array reference groups.
+ * then the array is accessed by the kernel.
  *
  * The resulting sizes may be functions that are nowhere defined
  * in case the access function cannot possibly access anything inside
@@ -1269,7 +1268,7 @@ static void localize_bounds(struct ppcg_kernel *kernel,
 		isl_pw_aff_list *bound;
 		int n_index;
 
-		if (local->n_group == 0 && !local->array->has_compound_element)
+		if (local->n_group == 0)
 			continue;
 
 		n_index = local->array->n_index;
