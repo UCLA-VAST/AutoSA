@@ -461,14 +461,23 @@ static int extract_array_info(__isl_take isl_set *array, void *user)
 	info->read_only_scalar = is_read_only_scalar(info, prog);
 
 	extent = compute_extent(pa, array);
+	info->extent = extent;
 	for (i = 0; i < n_index; ++i) {
 		isl_set *dom;
 		isl_local_space *ls;
 		isl_aff *one;
 		isl_pw_aff *bound;
 
-		bound = isl_set_dim_max(isl_set_copy(extent), i);
-		assert(bound);
+		dom = isl_set_copy(extent);
+		dom = isl_set_project_out(dom, isl_dim_set, i + 1,
+					    n_index - (i + 1));
+		dom = isl_set_project_out(dom, isl_dim_set, 0, i);
+		if (!isl_set_dim_has_upper_bound(dom, isl_dim_set, 0)) {
+			fprintf(stderr, "unable to determine extent of '%s' "
+				"in dimension %d\n", info->name, i);
+			dom = isl_set_free(dom);
+		}
+		bound = isl_set_dim_max(dom, 0);
 		dom = isl_pw_aff_domain(isl_pw_aff_copy(bound));
 		ls = isl_local_space_from_space(isl_set_get_space(dom));
 		one = isl_aff_zero_on_domain(ls);
@@ -480,7 +489,6 @@ static int extract_array_info(__isl_take isl_set *array, void *user)
 		if (!isl_pw_aff_is_cst(bound))
 			info->linearize = 1;
 	}
-	info->extent = extent;
 
 	collect_references(prog, info);
 
