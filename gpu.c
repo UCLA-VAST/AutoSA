@@ -2225,6 +2225,8 @@ static __isl_give isl_ast_node *generate_code(struct gpu_gen *gen,
 	build = isl_ast_build_set_at_each_domain(build, &at_domain, gen);
 	build = isl_ast_build_set_before_each_mark(build, &before_mark, gen);
 	build = isl_ast_build_set_after_each_mark(build, &after_mark, gen);
+	if (gen->prog->scop->options->debug->dump_final_schedule)
+		isl_schedule_dump(schedule);
 	tree = isl_ast_build_node_from_schedule(build, schedule);
 	isl_ast_build_free(build);
 

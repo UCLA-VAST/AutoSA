@@ -520,6 +520,8 @@ __isl_give isl_printer *print_cpu(__isl_take isl_printer *p,
 		p = ppcg_start_block(p);
 		p = ppcg_print_hidden_declarations(p, ps);
 	}
+	if (options->debug->dump_final_schedule)
+		isl_schedule_dump(ps->schedule);
 	p = print_scop(ps, p, options);
 	if (hidden)
 		p = ppcg_end_block(p);
