@@ -1875,6 +1875,17 @@ static __isl_give isl_ast_node *create_sync_leaf(
 	return isl_ast_node_set_annotation(node, id);
 }
 
+/* Internal data structure for at_domain.
+ *
+ * "prog" represents the entire scop.
+ * "kernel" points to the kernel to which the current schedule node
+ * belongs.  It is set by before_mark and reset by after_mark.
+ */
+struct ppcg_at_domain_data {
+	struct gpu_prog *prog;
+	struct ppcg_kernel *kernel;
+};
+
 /* This function is called for each instance of a user statement
  * in the kernel.  This may be one of the original user statements
  * or a statement introduced by PPCG.
@@ -1891,7 +1902,7 @@ static __isl_give isl_ast_node *create_sync_leaf(
 static __isl_give isl_ast_node *at_domain(__isl_take isl_ast_node *node,
 	__isl_keep isl_ast_build *build, void *user)
 {
-	struct gpu_gen *gen = (struct gpu_gen *) user;
+	struct ppcg_at_domain_data *data = user;
 	isl_ast_expr *expr, *arg;
 	isl_id *id;
 	int is_sync;
@@ -1909,29 +1920,29 @@ static __isl_give isl_ast_node *at_domain(__isl_take isl_ast_node *node,
 	if (!p) {
 		struct gpu_stmt *gpu_stmt;
 
-		gpu_stmt = find_stmt(gen->prog, id);
+		gpu_stmt = find_stmt(data->prog, id);
 		isl_id_free(id);
 		if (!gpu_stmt)
-			isl_die(gen->ctx, isl_error_internal,
+			isl_die(data->prog->ctx, isl_error_internal,
 				"statement not found",
 				return isl_ast_node_free(node));
 
-		return create_domain_leaf(gen->kernel, node, build, gpu_stmt);
+		return create_domain_leaf(data->kernel, node, build, gpu_stmt);
 	}
 
-	is_sync = gpu_tree_id_is_sync(id, gen->kernel);
+	is_sync = gpu_tree_id_is_sync(id, data->kernel);
 	isl_id_free(id);
 	if (is_sync < 0)
 		return isl_ast_node_free(node);
 	if (!strcmp(name, "read") || !strcmp(name, "write")) {
 		struct gpu_array_ref_group *group = p;
-		return create_access_leaf(gen->kernel, group, node, build);
+		return create_access_leaf(data->kernel, group, node, build);
 	}
 	if (!is_sync)
-		isl_die(gen->ctx, isl_error_internal,
+		isl_die(data->prog->ctx, isl_error_internal,
 			"unknown statement type",
 			return isl_ast_node_free(node));
-	return create_sync_leaf(gen->kernel, node, build);
+	return create_sync_leaf(data->kernel, node, build);
 }
 
 /* Given a set of wrapped references "ref", return the corresponding
@@ -2128,18 +2139,18 @@ static __isl_give isl_union_map *remove_local_accesses_group(
 /* This function is called before the AST generator starts traversing
  * the schedule subtree of a node with mark "mark".
  *
- * If the mark is called "kernel", store the kernel pointer in gen->kernel
+ * If the mark is called "kernel", store the kernel pointer in data->kernel
  * for use in at_domain.
  */
 static int before_mark(__isl_keep isl_id *mark,
 	__isl_keep isl_ast_build *build, void *user)
 {
-	struct gpu_gen *gen = user;
+	struct ppcg_at_domain_data *data = user;
 
 	if (!mark)
 		return -1;
 	if (!strcmp(isl_id_get_name(mark), "kernel"))
-		gen->kernel = isl_id_get_user(mark);
+		data->kernel = isl_id_get_user(mark);
 	return 0;
 }
 
@@ -2152,7 +2163,7 @@ static int before_mark(__isl_keep isl_id *mark,
  * The original "node" is stored inside the kernel object so that
  * it can be used to print the device code.
  * Note that this assumes that a kernel is only launched once.
- * Also clear the kernel field of gen.
+ * Also clear data->kernel.
  */
 static __isl_give isl_ast_node *after_mark(__isl_take isl_ast_node *node,
         __isl_keep isl_ast_build *build, void *user)
@@ -2162,18 +2173,18 @@ static __isl_give isl_ast_node *after_mark(__isl_take isl_ast_node *node,
 	isl_ast_expr *expr;
 	isl_ast_expr_list *list;
 	struct ppcg_kernel *kernel;
-	struct gpu_gen *gen = user;
+	struct ppcg_at_domain_data *data = user;
 
 	ctx = isl_ast_node_get_ctx(node);
 	id = isl_ast_node_mark_get_id(node);
 	if (!id)
 		return isl_ast_node_free(node);
-	if (strcmp(isl_id_get_name(id), "kernel") || !gen->kernel) {
+	if (strcmp(isl_id_get_name(id), "kernel") || !data->kernel) {
 		isl_id_free(id);
 		return node;
 	}
-	kernel = gen->kernel;
-	gen->kernel = NULL;
+	kernel = data->kernel;
+	data->kernel = NULL;
 	kernel->space = isl_ast_build_get_schedule_space(build);
 	kernel->tree = isl_ast_node_mark_get_node(node);
 	isl_ast_node_free(node);
@@ -2212,10 +2223,14 @@ static int update_depth(__isl_keep isl_schedule_node *node, void *user)
 static __isl_give isl_ast_node *generate_code(struct gpu_gen *gen,
 	__isl_take isl_schedule *schedule)
 {
+	struct ppcg_at_domain_data data;
 	isl_ast_build *build;
 	isl_ast_node *tree;
 	isl_id_list *iterators;
 	int depth;
+
+	data.prog = gen->prog;
+	data.kernel = NULL;
 
 	depth = 0;
 	if (isl_schedule_foreach_schedule_node(schedule, &update_depth,
@@ -2224,9 +2239,9 @@ static __isl_give isl_ast_node *generate_code(struct gpu_gen *gen,
 	build = isl_ast_build_alloc(gen->prog->ctx);
 	iterators = ppcg_scop_generate_names(gen->prog->scop, depth, "c");
 	build = isl_ast_build_set_iterators(build, iterators);
-	build = isl_ast_build_set_at_each_domain(build, &at_domain, gen);
-	build = isl_ast_build_set_before_each_mark(build, &before_mark, gen);
-	build = isl_ast_build_set_after_each_mark(build, &after_mark, gen);
+	build = isl_ast_build_set_at_each_domain(build, &at_domain, &data);
+	build = isl_ast_build_set_before_each_mark(build, &before_mark, &data);
+	build = isl_ast_build_set_after_each_mark(build, &after_mark, &data);
 	if (gen->prog->scop->options->debug->dump_final_schedule)
 		isl_schedule_dump(schedule);
 	tree = isl_ast_build_node_from_schedule(build, schedule);

@@ -163,8 +163,6 @@ struct gpu_gen {
 
 	/* Identifier of the next kernel. */
 	int kernel_id;
-	/* Pointer to the current kernel. */
-	struct ppcg_kernel *kernel;
 };
 
 enum ppcg_kernel_access_type {
