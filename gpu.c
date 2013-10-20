@@ -1377,6 +1377,7 @@ static int find_array_index(struct ppcg_kernel *kernel, const char *name)
 /* Internal data structure for the index and AST expression transformation
  * callbacks for pet_stmt_build_ast_exprs.
  *
+ * "kernel" is the kernel for which are computing AST expressions.
  * "accesses" is the list of gpu_stmt_access in the statement.
  * "iterator_map" expresses the statement iterators in terms of
  * the AST loop iterators.
@@ -1391,7 +1392,7 @@ static int find_array_index(struct ppcg_kernel *kernel, const char *name)
  * to the current kernel.
  */
 struct ppcg_transform_data {
-	struct gpu_gen *gen;
+	struct ppcg_kernel *kernel;
 	struct gpu_stmt_access *accesses;
 	isl_pw_multi_aff *iterator_map;
 	isl_pw_multi_aff *sched2shared;
@@ -1504,13 +1505,13 @@ static __isl_give isl_multi_pw_aff *transform_index(
 		return index;
 
 	name = get_outer_array_name(access->access);
-	i = find_array_index(data->gen->kernel, name);
+	i = find_array_index(data->kernel, name);
 	if (i < 0)
 		isl_die(isl_multi_pw_aff_get_ctx(index), isl_error_internal,
 			"cannot find array",
 			return isl_multi_pw_aff_free(index));
-	data->array = &data->gen->prog->array[i];
-	data->local_array = &data->gen->kernel->array[i];
+	data->local_array = &data->kernel->array[i];
+	data->array = data->local_array->array;
 
 	group = find_ref_group(data->local_array, access);
 	if (!group) {
@@ -1757,7 +1758,7 @@ static __isl_give isl_ast_node *create_domain_leaf(struct gpu_gen *gen,
 	stmt->type = ppcg_kernel_domain;
 	stmt->u.d.stmt = gpu_stmt;
 
-	data.gen = gen;
+	data.kernel = gen->kernel;
 	data.accesses = stmt->u.d.stmt->accesses;
 	data.iterator_map = iterator_map;
 	data.sched2shared = sched2shared;
