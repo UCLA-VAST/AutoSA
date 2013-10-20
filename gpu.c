@@ -1723,7 +1723,7 @@ static __isl_give isl_ast_expr *transform_expr(__isl_take isl_ast_expr *expr,
 }
 
 /* This function is called for each instance of a user statement
- * in the kernel, identified by "gpu_stmt".
+ * in the kernel "kernel", identified by "gpu_stmt".
  *
  * We attach a struct ppcg_kernel_stmt to the "node", containing
  * a computed AST expression for each access.
@@ -1733,9 +1733,9 @@ static __isl_give isl_ast_expr *transform_expr(__isl_take isl_ast_expr *expr,
  * which expresses the outer shared_schedule_dim dimensions of
  * the kernel schedule computed by PPCG in terms of the generated loops.
  */
-static __isl_give isl_ast_node *create_domain_leaf(struct gpu_gen *gen,
-	__isl_take isl_ast_node *node, __isl_keep isl_ast_build *build,
-	struct gpu_stmt *gpu_stmt)
+static __isl_give isl_ast_node *create_domain_leaf(
+	struct ppcg_kernel *kernel, __isl_take isl_ast_node *node,
+	__isl_keep isl_ast_build *build, struct gpu_stmt *gpu_stmt)
 {
 	struct ppcg_transform_data data;
 	struct ppcg_kernel_stmt *stmt;
@@ -1745,20 +1745,20 @@ static __isl_give isl_ast_node *create_domain_leaf(struct gpu_gen *gen,
 	isl_pw_multi_aff *iterator_map;
 	isl_union_map *schedule;
 
-	stmt = isl_calloc_type(gen->ctx, struct ppcg_kernel_stmt);
+	stmt = isl_calloc_type(kernel->ctx, struct ppcg_kernel_stmt);
 	if (!stmt)
 		return isl_ast_node_free(node);
 
 	schedule = isl_ast_build_get_schedule(build);
 	map = isl_map_reverse(isl_map_from_union_map(schedule));
 	iterator_map = isl_pw_multi_aff_from_map(map);
-	sched2shared = compute_sched_to_shared(gen->kernel,
+	sched2shared = compute_sched_to_shared(kernel,
 					isl_pw_multi_aff_copy(iterator_map));
 
 	stmt->type = ppcg_kernel_domain;
 	stmt->u.d.stmt = gpu_stmt;
 
-	data.kernel = gen->kernel;
+	data.kernel = kernel;
 	data.accesses = stmt->u.d.stmt->accesses;
 	data.iterator_map = iterator_map;
 	data.sched2shared = sched2shared;
@@ -1769,7 +1769,7 @@ static __isl_give isl_ast_node *create_domain_leaf(struct gpu_gen *gen,
 	isl_pw_multi_aff_free(iterator_map);
 	isl_pw_multi_aff_free(sched2shared);
 
-	id = isl_id_alloc(gen->ctx, NULL, stmt);
+	id = isl_id_alloc(kernel->ctx, NULL, stmt);
 	id = isl_id_set_free_user(id, &ppcg_kernel_stmt_free);
 	return isl_ast_node_set_annotation(node, id);
 }
@@ -1916,7 +1916,7 @@ static __isl_give isl_ast_node *at_domain(__isl_take isl_ast_node *node,
 				"statement not found",
 				return isl_ast_node_free(node));
 
-		return create_domain_leaf(gen, node, build, gpu_stmt);
+		return create_domain_leaf(gen->kernel, node, build, gpu_stmt);
 	}
 
 	is_sync = gpu_tree_id_is_sync(id, gen->kernel);
