@@ -2413,6 +2413,7 @@ static __isl_give isl_ast_node *at_each_domain(__isl_take isl_ast_node *node,
 {
 	struct ppcg_transform_data data;
 	struct gpu_gen *gen = (struct gpu_gen *) user;
+	struct gpu_stmt *gpu_stmt;
 	struct ppcg_kernel_stmt *stmt;
 	isl_id *id;
 	isl_pw_multi_aff *sched2shared;
@@ -2421,13 +2422,20 @@ static __isl_give isl_ast_node *at_each_domain(__isl_take isl_ast_node *node,
 	isl_ast_expr *expr, *arg;
 	isl_union_map *schedule;
 
-	stmt = isl_calloc_type(gen->ctx, struct ppcg_kernel_stmt);
-	if (!stmt)
-		return isl_ast_node_free(node);
-
 	expr = isl_ast_node_user_get_expr(node);
 	arg = isl_ast_expr_get_op_arg(expr, 0);
 	id = isl_ast_expr_get_id(arg);
+	gpu_stmt = find_stmt(gen->prog, id);
+	isl_id_free(id);
+	isl_ast_expr_free(arg);
+	isl_ast_expr_free(expr);
+	if (!gpu_stmt)
+		isl_die(gen->ctx, isl_error_internal,
+			"statement not found", return isl_ast_node_free(node));
+
+	stmt = isl_calloc_type(gen->ctx, struct ppcg_kernel_stmt);
+	if (!stmt)
+		return isl_ast_node_free(node);
 
 	schedule = isl_ast_build_get_schedule(build);
 	map = isl_map_reverse(isl_map_from_union_map(schedule));
@@ -2436,10 +2444,7 @@ static __isl_give isl_ast_node *at_each_domain(__isl_take isl_ast_node *node,
 					isl_pw_multi_aff_copy(iterator_map));
 
 	stmt->type = ppcg_kernel_domain;
-	stmt->u.d.stmt = find_stmt(gen->prog, id);
-	if (!stmt->u.d.stmt)
-		isl_die(gen->ctx, isl_error_internal,
-			"statement not found", goto error);
+	stmt->u.d.stmt = gpu_stmt;
 
 	data.gen = gen;
 	data.accesses = stmt->u.d.stmt->accesses;
@@ -2449,21 +2454,12 @@ static __isl_give isl_ast_node *at_each_domain(__isl_take isl_ast_node *node,
 					    build, &transform_index, &data,
 					    &transform_expr, &data);
 
-	isl_id_free(id);
 	isl_pw_multi_aff_free(iterator_map);
 	isl_pw_multi_aff_free(sched2shared);
-	isl_ast_expr_free(arg);
-	isl_ast_expr_free(expr);
 
 	id = isl_id_alloc(gen->ctx, NULL, stmt);
 	id = isl_id_set_free_user(id, &ppcg_kernel_stmt_free);
 	return isl_ast_node_set_annotation(node, id);
-error:
-	isl_id_free(id);
-	isl_pw_multi_aff_free(iterator_map);
-	ppcg_kernel_stmt_free(stmt);
-	isl_pw_multi_aff_free(sched2shared);
-	return isl_ast_node_free(node);
 }
 
 /* This function is called when code has been generated for the shared
