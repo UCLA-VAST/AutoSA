@@ -1859,18 +1859,18 @@ static __isl_give isl_ast_node *create_access_leaf(struct ppcg_kernel *kernel,
  * attach it to the node "node" representing the synchronization.
  */
 static __isl_give isl_ast_node *create_sync_leaf(
-	struct gpu_gen *gen, __isl_take isl_ast_node *node,
+	struct ppcg_kernel *kernel, __isl_take isl_ast_node *node,
 	__isl_keep isl_ast_build *build)
 {
 	struct ppcg_kernel_stmt *stmt;
 	isl_id *id;
 
-	stmt = isl_calloc_type(gen->ctx, struct ppcg_kernel_stmt);
+	stmt = isl_calloc_type(kernel->ctx, struct ppcg_kernel_stmt);
 	if (!stmt)
 		return isl_ast_node_free(node);
 
 	stmt->type = ppcg_kernel_sync;
-	id = isl_id_alloc(gen->ctx, NULL, stmt);
+	id = isl_id_alloc(kernel->ctx, NULL, stmt);
 	id = isl_id_set_free_user(id, &ppcg_kernel_stmt_free);
 	return isl_ast_node_set_annotation(node, id);
 }
@@ -1931,7 +1931,7 @@ static __isl_give isl_ast_node *at_domain(__isl_take isl_ast_node *node,
 		isl_die(gen->ctx, isl_error_internal,
 			"unknown statement type",
 			return isl_ast_node_free(node));
-	return create_sync_leaf(gen, node, build);
+	return create_sync_leaf(gen->kernel, node, build);
 }
 
 /* Given a set of wrapped references "ref", return the corresponding
