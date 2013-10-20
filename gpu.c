@@ -1807,7 +1807,7 @@ static __isl_give isl_ast_node *create_domain_leaf(
  * and store the corresponding expressions in stmt->index and stmt->local_index,
  * where stmt points to the ppcg_kernel_stmt that is attached to the node.
  */
-static __isl_give isl_ast_node *create_access_leaf(struct gpu_gen *gen,
+static __isl_give isl_ast_node *create_access_leaf(struct ppcg_kernel *kernel,
 	struct gpu_array_ref_group *group, __isl_take isl_ast_node *node,
 	__isl_keep isl_ast_build *build)
 {
@@ -1820,7 +1820,7 @@ static __isl_give isl_ast_node *create_access_leaf(struct gpu_gen *gen,
 	isl_pw_multi_aff *pma, *pma2;
 	const char *type;
 
-	stmt = isl_calloc_type(gen->ctx, struct ppcg_kernel_stmt);
+	stmt = isl_calloc_type(kernel->ctx, struct ppcg_kernel_stmt);
 	if (!stmt)
 		return isl_ast_node_free(node);
 
@@ -1850,7 +1850,7 @@ static __isl_give isl_ast_node *create_access_leaf(struct gpu_gen *gen,
 	stmt->u.c.local_array = group->local_array;
 	stmt->type = ppcg_kernel_copy;
 
-	id = isl_id_alloc(gen->ctx, NULL, stmt);
+	id = isl_id_alloc(kernel->ctx, NULL, stmt);
 	id = isl_id_set_free_user(id, &ppcg_kernel_stmt_free);
 	return isl_ast_node_set_annotation(node, id);
 }
@@ -1925,7 +1925,7 @@ static __isl_give isl_ast_node *at_domain(__isl_take isl_ast_node *node,
 		return isl_ast_node_free(node);
 	if (!strcmp(name, "read") || !strcmp(name, "write")) {
 		struct gpu_array_ref_group *group = p;
-		return create_access_leaf(gen, group, node, build);
+		return create_access_leaf(gen->kernel, group, node, build);
 	}
 	if (!is_sync)
 		isl_die(gen->ctx, isl_error_internal,
