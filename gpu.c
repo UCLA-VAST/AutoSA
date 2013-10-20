@@ -1381,12 +1381,14 @@ static int find_array_index(struct ppcg_kernel *kernel, const char *name)
 /* Internal data structure for the index and AST expression transformation
  * callbacks for pet_stmt_build_ast_exprs.
  *
- * "kernel" is the kernel for which are computing AST expressions.
+ * "kernel" is the kernel for which are computing AST expressions and
+ * may be NULL if we are not inside a kernel.
  * "accesses" is the list of gpu_stmt_access in the statement.
  * "iterator_map" expresses the statement iterators in terms of
  * the AST loop iterators.
  * "sched2shared" expresses the outer shared_schedule_dim dimensions of
- * the kernel schedule in terms of the AST loop iterators.
+ * the kernel schedule in terms of the AST loop iterators and
+ * may be NULL if we are not inside a kernel.
  *
  * The following fields are set in transform_index and used in transform_expr.
  * "array" is the array that is being accessed.
@@ -1448,7 +1450,9 @@ static struct gpu_array_ref_group *find_ref_group(
  *
  * We first reformulate "index" in terms of the AST loop iterators.
  * Then we check if we are accessing the global array or
- * a shared/private copy.  In the former case, we simply return
+ * a shared/private copy.  In particular, if we are not inside a kernel
+ * then we must be accessing a global array.
+ * In the former case, we simply return
  * the updated index.  If "index" is an affine expression rather
  * than an array access, then we also return the updated index here.
  *
@@ -1501,6 +1505,9 @@ static __isl_give isl_multi_pw_aff *transform_index(
 
 	iterator_map = isl_pw_multi_aff_copy(data->iterator_map);
 	index = isl_multi_pw_aff_pullback_pw_multi_aff(index, iterator_map);
+
+	if (!data->kernel)
+		return index;
 
 	access = find_access(data->accesses, ref_id);
 	if (!access)
@@ -1728,6 +1735,7 @@ static __isl_give isl_ast_expr *transform_expr(__isl_take isl_ast_expr *expr,
 
 /* This function is called for each instance of a user statement
  * in the kernel "kernel", identified by "gpu_stmt".
+ * "kernel" may be NULL if we are not inside a kernel.
  *
  * We attach a struct ppcg_kernel_stmt to the "node", containing
  * a computed AST expression for each access.
@@ -1743,21 +1751,29 @@ static __isl_give isl_ast_node *create_domain_leaf(
 {
 	struct ppcg_transform_data data;
 	struct ppcg_kernel_stmt *stmt;
+	isl_ctx *ctx;
 	isl_id *id;
 	isl_pw_multi_aff *sched2shared;
 	isl_map *map;
 	isl_pw_multi_aff *iterator_map;
 	isl_union_map *schedule;
 
-	stmt = isl_calloc_type(kernel->ctx, struct ppcg_kernel_stmt);
+	if (!node)
+		return NULL;
+	ctx = isl_ast_node_get_ctx(node);
+
+	stmt = isl_calloc_type(ctx, struct ppcg_kernel_stmt);
 	if (!stmt)
 		return isl_ast_node_free(node);
 
 	schedule = isl_ast_build_get_schedule(build);
 	map = isl_map_reverse(isl_map_from_union_map(schedule));
 	iterator_map = isl_pw_multi_aff_from_map(map);
-	sched2shared = compute_sched_to_shared(kernel,
+	if (kernel)
+		sched2shared = compute_sched_to_shared(kernel,
 					isl_pw_multi_aff_copy(iterator_map));
+	else
+		sched2shared = NULL;
 
 	stmt->type = ppcg_kernel_domain;
 	stmt->u.d.stmt = gpu_stmt;
@@ -1773,7 +1789,7 @@ static __isl_give isl_ast_node *create_domain_leaf(
 	isl_pw_multi_aff_free(iterator_map);
 	isl_pw_multi_aff_free(sched2shared);
 
-	id = isl_id_alloc(kernel->ctx, NULL, stmt);
+	id = isl_id_alloc(ctx, NULL, stmt);
 	id = isl_id_set_free_user(id, &ppcg_kernel_stmt_free);
 	return isl_ast_node_set_annotation(node, id);
 }
@@ -1884,6 +1900,7 @@ static __isl_give isl_ast_node *create_sync_leaf(
  * "prog" represents the entire scop.
  * "kernel" points to the kernel to which the current schedule node
  * belongs.  It is set by before_mark and reset by after_mark.
+ * It may be NULL if we are outside any kernel.
  */
 struct ppcg_at_domain_data {
 	struct gpu_prog *prog;
