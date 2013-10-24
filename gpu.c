@@ -1738,7 +1738,8 @@ static __isl_give isl_ast_expr *transform_expr(__isl_take isl_ast_expr *expr,
  * "kernel" may be NULL if we are not inside a kernel.
  *
  * We attach a struct ppcg_kernel_stmt to the "node", containing
- * a computed AST expression for each access.
+ * a computed AST expression for each access, through an annotation
+ * with name "user".
  * These AST expressions are computed from iterator_map,
  * which expresses the domain
  * elements in terms of the generated loops, and sched2shared,
@@ -1789,7 +1790,7 @@ static __isl_give isl_ast_node *create_domain_leaf(
 	isl_pw_multi_aff_free(iterator_map);
 	isl_pw_multi_aff_free(sched2shared);
 
-	id = isl_id_alloc(ctx, NULL, stmt);
+	id = isl_id_alloc(ctx, "user", stmt);
 	id = isl_id_set_free_user(id, &ppcg_kernel_stmt_free);
 	return isl_ast_node_set_annotation(node, id);
 }
@@ -3776,6 +3777,113 @@ static __isl_give isl_schedule_node *mark_outer_permutable(
 	return node;
 }
 
+/* Does the subtree rooted at "node" have any suitably permutable band nodes?
+ * That is, does it have any nodes that are permutable and that
+ * have a least one coincident dimension?
+ */
+static int subtree_has_permutable_bands(__isl_keep isl_schedule_node *node)
+{
+	int any_parallelism = 0;
+
+	if (isl_schedule_node_foreach_descendant(node, &set_permutable,
+						&any_parallelism) < 0 &&
+	    !any_parallelism)
+		return -1;
+
+	return any_parallelism;
+}
+
+/* Mark all variables that are accessed by the statement instances in "domain"
+ * and that are local to "prog" as requiring a declaration in the host code.
+ */
+static int declare_accessed_local_variables(struct gpu_prog *prog,
+	__isl_keep isl_union_set *domain)
+{
+	isl_union_set *arrays;
+	int i;
+
+	if (!ppcg_scop_any_hidden_declarations(prog->scop))
+		return 0;
+	arrays = accessed_by_domain(isl_union_set_copy(domain), prog);
+
+	for (i = 0; i < prog->n_array; ++i) {
+		isl_space *space;
+		isl_set *set;
+		int empty;
+
+		if (!prog->array[i].local)
+			continue;
+		space = isl_set_get_space(prog->array[i].extent);
+		set = isl_union_set_extract_set(arrays, space);
+		empty = isl_set_plain_is_empty(set);
+		isl_set_free(set);
+		if (empty < 0)
+			goto error;
+		if (!empty)
+			prog->array[i].declare_local = 1;
+	}
+
+	isl_union_set_free(arrays);
+	return 0;
+error:
+	isl_union_set_free(arrays);
+	return -1;
+}
+
+/* If "node" points to a set node, then separate its children
+ * into subtrees that have suitably permutable bands and
+ * those that do not.
+ * Adjust the schedule tree in order to execute the second group
+ * after the first group and return a pointer to the first group,
+ * assuming there are any such subtrees.
+ * Mark all local variables in "prog" that are accessed by
+ * the second group as requiring a declaration on the host.
+ */
+static __isl_give isl_schedule_node *isolate_permutable_subtrees(
+	__isl_take isl_schedule_node *node, struct gpu_prog *prog)
+{
+	isl_space *space;
+	isl_union_set *filter;
+	int i, n;
+
+	if (!node)
+		return NULL;
+	if (isl_schedule_node_get_type(node) != isl_schedule_node_set)
+		return node;
+
+	n = isl_schedule_node_n_children(node);
+	if (n < 0)
+		return isl_schedule_node_free(node);
+
+	node = isl_schedule_node_child(node, 0);
+	filter = isl_schedule_node_filter_get_filter(node);
+	node = isl_schedule_node_parent(node);
+	space = isl_union_set_get_space(filter);
+	isl_union_set_free(filter);
+	filter = isl_union_set_empty(space);
+
+	for (i = 0; i < n; ++i) {
+		int parallelism;
+
+		node = isl_schedule_node_child(node, i);
+		parallelism = subtree_has_permutable_bands(node);
+		if (parallelism < 0) {
+			node = isl_schedule_node_free(node);
+		} else if (!parallelism) {
+			isl_union_set *filter_i;
+			filter_i = isl_schedule_node_filter_get_filter(node);
+			filter = isl_union_set_union(filter, filter_i);
+		}
+		node = isl_schedule_node_parent(node);
+	}
+
+	if (declare_accessed_local_variables(prog, filter) < 0)
+		node = isl_schedule_node_free(node);
+	node = isl_schedule_node_order_after(node, filter);
+
+	return node;
+}
+
 /* Replace any reference to an array element in the range of "copy"
  * by a reference to all array elements (defined by the extent of the array).
  */
@@ -4611,6 +4719,10 @@ static __isl_give isl_schedule_node *add_to_from_device(
  * In particular, insert a context node, create kernels for
  * each outermost tilable band and introduce node for copying array
  * in and out of the device.
+ * If the child of the initial root points to a set node,
+ * then children of this node that do not contain any tilable bands
+ * are separated from the other children and are not mapped to
+ * the device.
  */
 static __isl_give isl_schedule *map_to_device(struct gpu_gen *gen,
 	__isl_take isl_schedule *schedule)
@@ -4629,6 +4741,7 @@ static __isl_give isl_schedule *map_to_device(struct gpu_gen *gen,
 	node = isl_schedule_node_child(node, 0);
 	if (isl_schedule_node_get_type(node) == isl_schedule_node_context)
 		node = isl_schedule_node_child(node, 0);
+	node = isolate_permutable_subtrees(node, gen->prog);
 	domain = isl_schedule_node_get_domain(node);
 	prefix = isl_schedule_node_get_prefix_schedule_union_map(node);
 	node = mark_kernels(gen, node);

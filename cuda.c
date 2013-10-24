@@ -529,11 +529,12 @@ struct print_host_user_data {
 
 /* Print the user statement of the host code to "p".
  *
- * The host code only contains kernel launches and statements
- * that copy data to/from the device.
- * The kernel launches have an associated annotation, while
- * the data copy statements do not.
+ * The host code may contain original user statements, kernel launches and
+ * statements that copy data to/from the device.
+ * The original user statements and the kernel launches have
+ * an associated annotation, while the data copy statements do not.
  * The latter are handled by print_to_from_device.
+ * The annotation on the user statements is called "user".
  *
  * In case of a kernel launch, print a block of statements that
  * defines the grid and the block and then launches the kernel.
@@ -543,7 +544,9 @@ static __isl_give isl_printer *print_host_user(__isl_take isl_printer *p,
 	__isl_keep isl_ast_node *node, void *user)
 {
 	isl_id *id;
+	int is_user;
 	struct ppcg_kernel *kernel;
+	struct ppcg_kernel_stmt *stmt;
 	struct print_host_user_data *data;
 
 	isl_ast_print_options_free(print_options);
@@ -554,8 +557,13 @@ static __isl_give isl_printer *print_host_user(__isl_take isl_printer *p,
 	if (!id)
 		return print_to_from_device(p, node, data->prog);
 
-	kernel = isl_id_get_user(id);
+	is_user = !strcmp(isl_id_get_name(id), "user");
+	kernel = is_user ? NULL : isl_id_get_user(id);
+	stmt = is_user ? isl_id_get_user(id) : NULL;
 	isl_id_free(id);
+
+	if (is_user)
+		return ppcg_kernel_print_domain(p, stmt);
 
 	p = isl_printer_start_line(p);
 	p = isl_printer_print_str(p, "{");
