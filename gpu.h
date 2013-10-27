@@ -171,37 +171,13 @@ struct gpu_gen {
 	/* First tile dimension. */
 	int tile_first;
 
-	/* Number of dimensions determining shared memory. */
-	int shared_len;
-
 	/* Number of rows in the untiled schedule. */
 	int untiled_len;
-	/* Number of rows in the tiled schedule. */
-	int tiled_len;
-	/* Number of rows in schedule after tiling/wrapping over threads. */
-	int thread_tiled_len;
 
 	/* A schedule tree corresponding to both the host and device code. */
 	isl_schedule *schedule;
 	/* Global untiled schedule. */
 	isl_union_map *sched;
-	/* Local (per kernel launch) tiled schedule. */
-	isl_union_map *tiled_sched;
-
-	/* Local tiled schedule projected onto the shared tile loops and
-	 * the loops that will be wrapped over the threads,
-	 * with all shared tile loops parametrized.
-	 */
-	isl_union_map *shared_sched;
-	/* Projects out the loops that will be wrapped over the threads
-	 * from shared_sched.
-	 */
-	isl_union_map *shared_proj;
-
-	/* First loop to unroll (or -1 if none) in the current part of the
-	 * schedule.
-	 */
-	int first_unroll;
 };
 
 enum ppcg_kernel_access_type {
