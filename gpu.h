@@ -173,8 +173,6 @@ struct gpu_gen {
 
 	/* A schedule tree corresponding to both the host and device code. */
 	isl_schedule *schedule;
-	/* Global untiled schedule. */
-	isl_union_map *sched;
 };
 
 enum ppcg_kernel_access_type {

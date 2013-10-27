@@ -3660,7 +3660,7 @@ static void compute_schedule(struct gpu_gen *gen)
 	isl_schedule *schedule;
 
 	domain = isl_union_set_copy(gen->prog->scop->domain);
-	sc = isl_schedule_constraints_on_domain(isl_union_set_copy(domain));
+	sc = isl_schedule_constraints_on_domain(domain);
 	sc = isl_schedule_constraints_set_context(sc,
 				isl_set_copy(gen->prog->scop->context));
 	if (gen->options->live_range_reordering) {
@@ -3699,8 +3699,7 @@ static void compute_schedule(struct gpu_gen *gen)
 
 	sched = select_outer_tilable_band(gen, schedule);
 
-	sched = isl_union_map_intersect_domain(sched, domain);
-	gen->sched = sched;
+	isl_union_map_free(sched);
 
 	isl_schedule_free(schedule);
 }
@@ -4082,7 +4081,6 @@ static __isl_give isl_printer *generate(__isl_take isl_printer *p,
 		isl_ast_node_free(gen->tree);
 	}
 
-	isl_union_map_free(gen->sched);
 	isl_schedule_free(gen->schedule);
 
 	gpu_prog_free(prog);
