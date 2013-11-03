@@ -17,6 +17,8 @@ struct ppcg_options {
 	int scale_tile_loops;
 	int wrap;
 
+	/* Assume all parameters are non-negative. */
+	int non_negative_parameters;
 	char *ctx;
 	char *sizes;
 

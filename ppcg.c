@@ -813,6 +813,11 @@ static struct ppcg_scop *ppcg_scop_from_pet_scop(struct pet_scop *scop,
 	ps->end = pet_loc_get_end(scop->loc);
 	ps->context = isl_set_copy(scop->context);
 	ps->context = set_intersect_str(ps->context, options->ctx);
+	if (options->non_negative_parameters) {
+		isl_space *space = isl_set_get_space(ps->context);
+		isl_set *nn = isl_set_nat_universe(space);
+		ps->context = isl_set_intersect(ps->context, nn);
+	}
 	ps->domain = collect_non_kill_domains(scop);
 	ps->call = collect_call_domains(scop);
 	ps->tagged_reads = pet_scop_collect_tagged_may_reads(scop);
