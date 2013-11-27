@@ -57,6 +57,9 @@ struct ppcg_options {
 	/* Allow live range to be reordered. */
 	int live_range_reordering;
 
+	/* Allow hybrid tiling whenever a suitable input pattern is found. */
+	int hybrid;
+
 	/* Options to pass to the OpenCL compiler.  */
 	char *opencl_compiler_options;
 	/* Prefer GPU device over CPU. */

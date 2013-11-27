@@ -118,6 +118,9 @@ ISL_ARG_BOOL(struct ppcg_options, live_range_reordering, 0,
 	"live-range-reordering", 1,
 	"allow successive live ranges on the same memory element "
 	"to be reordered")
+ISL_ARG_BOOL(struct ppcg_options, hybrid, 0, "hybrid", 0,
+	"apply hybrid tiling whenever a suitable input pattern is found "
+	"(GPU targets)")
 ISL_ARG_GROUP("opencl", &ppcg_opencl_options_args, "OpenCL options")
 ISL_ARG_STR(struct ppcg_options, save_schedule_file, 0, "save-schedule",
 	"file", NULL, "save isl computed schedule to <file>")

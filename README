@@ -82,6 +82,11 @@ spaces.  The sizes are specified outermost to innermost.
 The dimension of the "tile" space indicates the (maximal) number of loop
 dimensions to tile.  The elements of the single integer tuple
 specify the tile sizes in each dimension.
+In case of hybrid tiling, the first element is half the size of
+the tile in the time (sequential) dimension.  The second element
+specifies the number of elements in the base of the hexagon.
+The remaining elements specify the tile sizes in the remaining space
+dimensions.
 
 The dimension of the "grid" space indicates the (maximal) number of block
 dimensions in the grid.  The elements of the single integer tuple

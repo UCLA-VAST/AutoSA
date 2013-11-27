@@ -40,11 +40,15 @@ ppcg_SOURCES = \
 	gpu_array_tile.h \
 	gpu_group.c \
 	gpu_group.h \
+	gpu_hybrid.c \
+	gpu_hybrid.h \
 	gpu_print.c \
 	gpu_print.h \
 	gpu_tree.c \
 	gpu_tree.h \
 	grouping.c \
+	hybrid.c \
+	hybrid.h \
 	schedule.c \
 	schedule.h \
 	ppcg_options.c \
