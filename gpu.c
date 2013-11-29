@@ -3817,7 +3817,7 @@ static __isl_give isl_schedule_node *group_statements(
  * that the kernel does not get destroyed if the schedule node
  * is freed due to some error condition.
  */
-static __isl_give isl_schedule_node *create_kernel(struct gpu_gen *gen,
+__isl_give isl_schedule_node *gpu_create_kernel(struct gpu_gen *gen,
 	__isl_take isl_schedule_node *node, int scale,
 	__isl_keep isl_multi_val *sizes)
 {
@@ -4047,7 +4047,7 @@ static __isl_give isl_schedule_node *mark_outer_permutable(
 	node = isl_schedule_node_parent(node);
 
 	scale = gen->options->scale_tile_loops;
-	node = create_kernel(gen, node, scale, sizes);
+	node = gpu_create_kernel(gen, node, scale, sizes);
 	isl_multi_val_free(sizes);
 	free(tile_size);
 

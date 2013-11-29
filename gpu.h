@@ -321,7 +321,7 @@ struct ppcg_kernel_var {
  * core contains the spaces of the statement domains that form
  * the core computation of the kernel.  It is used to navigate
  * the tree during the construction of the device part of the schedule
- * tree in create_kernel.
+ * tree in gpu_create_kernel.
  *
  * expanded_domain contains the original statement instances,
  * i.e., those that appear in the domains of access relations,
@@ -427,5 +427,9 @@ int generate_gpu(isl_ctx *ctx, const char *input, FILE *out,
 	__isl_give isl_printer *(*print)(__isl_take isl_printer *p,
 		struct gpu_prog *prog, __isl_keep isl_ast_node *tree,
 		struct gpu_types *types, void *user), void *user);
+
+__isl_give isl_schedule_node *gpu_create_kernel(struct gpu_gen *gen,
+	__isl_take isl_schedule_node *node, int scale,
+	__isl_keep isl_multi_val *sizes);
 
 #endif
