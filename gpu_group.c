@@ -1036,8 +1036,7 @@ static int group_common_shared_memory_tile(struct gpu_gen *gen,
 
 /* Set array->n_group and array->groups to n and groups.
  *
- * Additionally, set the "nr" field of each group
- * and the "group" field of each reference in each group.
+ * Additionally, set the "nr" field of each group.
  */
 static void set_array_groups(struct gpu_local_array_info *array,
 	int n, struct gpu_array_ref_group **groups)
@@ -1047,12 +1046,8 @@ static void set_array_groups(struct gpu_local_array_info *array,
 	array->n_group = n;
 	array->groups = groups;
 
-	for (i = 0; i < n; ++i) {
+	for (i = 0; i < n; ++i)
 		groups[i]->nr = i;
-
-		for (j = 0; j < groups[i]->n_ref; ++j)
-			groups[i]->refs[j]->group = i;
-	}
 }
 
 /* Group array references that should be considered together when

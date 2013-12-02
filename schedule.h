@@ -17,11 +17,6 @@ struct gpu_stmt_access {
 	/* The number of index expressions specified in the access. */
 	int n_index;
 
-	/* Index of the array reference group this reference belong to.
-	 * -1 if no reference groups have been computed for the array.
-	 */
-	int group;
-
 	/* May access relation */
 	isl_map *access;
 	/* May access relation with as domain a mapping from iteration domain

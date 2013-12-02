@@ -2129,6 +2129,26 @@ static const char *get_outer_array_name(__isl_keep isl_map *access)
 	return name;
 }
 
+/* Return a pointer to the gpu_array_ref_group in "local"
+ * that contains the reference "access".
+ * Return NULL if no such group can be found.
+ */
+static struct gpu_array_ref_group *find_ref_group(
+	struct gpu_local_array_info *local, struct gpu_stmt_access *access)
+{
+	int i, j;
+
+	for (i = 0; i < local->n_group; ++i) {
+		struct gpu_array_ref_group *group = local->groups[i];
+
+		for (j = 0; j < group->n_ref; ++j)
+			if (group->refs[j] == access)
+				return group;
+	}
+
+	return NULL;
+}
+
 /* Index transformation callback for pet_stmt_build_ast_exprs.
  *
  * "index" expresses the array indices in terms of statement iterators
@@ -2200,12 +2220,12 @@ static __isl_give isl_multi_pw_aff *transform_index(
 	data->array = &data->gen->prog->array[i];
 	data->local_array = &data->gen->kernel->array[i];
 
-	if (access->group < 0) {
+	group = find_ref_group(data->local_array, access);
+	if (!group) {
 		data->global = 1;
 		return index;
 	}
 
-	group = data->local_array->groups[access->group];
 	tile = group->private_tile;
 	if (!tile)
 		tile = group->shared_tile;
@@ -4317,7 +4337,6 @@ static int extract_access(__isl_keep pet_expr *expr, void *user)
 	access->n_index = isl_multi_pw_aff_dim(index, isl_dim_out);
 	isl_multi_pw_aff_free(index);
 	access->ref_id = pet_expr_access_get_ref_id(expr);
-	access->group = -1;
 	access->tagged_access = extract_single_tagged_access(tagged, expr);
 	access->access = isl_map_copy(access->tagged_access);
 	access->access = isl_map_domain_factor_domain(access->access);
