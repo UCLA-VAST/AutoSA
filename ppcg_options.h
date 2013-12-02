@@ -60,6 +60,9 @@ struct ppcg_options {
 	/* Allow hybrid tiling whenever a suitable input pattern is found. */
 	int hybrid;
 
+	/* Unroll the code for copying to/from shared memory. */
+	int unroll_copy_shared;
+
 	/* Options to pass to the OpenCL compiler.  */
 	char *opencl_compiler_options;
 	/* Prefer GPU device over CPU. */

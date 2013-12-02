@@ -3437,6 +3437,9 @@ static __isl_give isl_schedule_node *add_copies_group_private(
  * by the group.  In the case of read from a non-scalar, this set
  * is replaced by the entire shared memory tile.
  *
+ * If the "unroll_copy_shared" option is set, then the AST generator
+ * is instructed to unroll the copying code.
+ *
  * A filter is inserted on type[D -> A] to map the copy instances
  * to the threads.  In particular, the thread identifiers are
  * equated to the position inside the shared memory tile (T)
@@ -3531,6 +3534,8 @@ static __isl_give isl_schedule_node *add_copies_group_shared(
 	graft = isl_schedule_node_child(graft, 0);
 
 	graft = isl_schedule_node_insert_partial_schedule(graft, mupa);
+	if (kernel->options->unroll_copy_shared)
+		graft = ppcg_set_schedule_node_type(graft, isl_ast_loop_unroll);
 
 	if (tile->n > kernel->n_block && kernel->n_block > 0) {
 		graft = isl_schedule_node_band_split(graft,
