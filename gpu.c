@@ -30,22 +30,14 @@
 #include "ppcg_options.h"
 #include "print.h"
 
-/* The fields stride, shift and shift_map only contain valid information
+/* The fields stride and shift only contain valid information
  * if shift != NULL.
  * If so, they express that current index is such that if you add shift,
  * then the result is always a multiple of stride.
- * shift_map contains the mapping
- *
- *	i -> (i + shift)/stride
- *
  * Let D represent the initial shared_len dimensions of the computed schedule.
  * The spaces of "lb" and "shift" are of the form
  *
  *	D -> [b]
- *
- * "shift_map" is of the form
- *
- *	[D -> i] -> [D -> (i + shift(D))/stride]
  */
 struct gpu_array_bound {
 	isl_val *size;
@@ -53,7 +45,6 @@ struct gpu_array_bound {
 
 	isl_val *stride;
 	isl_aff *shift;
-	isl_basic_map *shift_map;
 };
 
 /* A tile of an array.
@@ -302,7 +293,6 @@ static struct gpu_array_tile *create_tile(isl_ctx *ctx, int n_index)
 		tile->bound[i].lb = NULL;
 		tile->bound[i].stride = NULL;
 		tile->bound[i].shift = NULL;
-		tile->bound[i].shift_map = NULL;
 	}
 
 	return tile;
@@ -320,7 +310,6 @@ static void *free_tile(struct gpu_array_tile *tile)
 		isl_val_free(tile->bound[j].stride);
 		isl_aff_free(tile->bound[j].lb);
 		isl_aff_free(tile->bound[j].shift);
-		isl_basic_map_free(tile->bound[j].shift_map);
 	}
 	free(tile->bound);
 	isl_multi_aff_free(tile->tiling);
@@ -1953,7 +1942,7 @@ static int check_stride_constraint(__isl_take isl_constraint *c, void *user)
  *	D -> s(D)
  *
  * with s(D) equal to a(p) above.
- * The mapping recorded in bound->shift_map is of the form
+ * Next, we construct a mapping of the form
  *
  *	[D -> i] -> [D -> (i + S(D))/g]
  *
@@ -2013,8 +2002,7 @@ static __isl_give isl_basic_map *check_stride(struct gpu_array_bound *bound,
 	scale = isl_basic_map_from_aff(aff);
 	scale = isl_basic_map_product(id, scale);
 
-	bound->shift_map = isl_basic_map_apply_range(shift, scale);
-	bmap = isl_basic_map_copy(bound->shift_map);
+	bmap = isl_basic_map_apply_range(shift, scale);
 	bset = isl_basic_set_apply(isl_basic_map_wrap(bounds), bmap);
 	bounds = isl_basic_set_unwrap(bset);
 
