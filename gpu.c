@@ -4078,7 +4078,8 @@ static __isl_give isl_schedule_node *try_hybrid_tile(struct gpu_gen *gen,
  * Tile "node" using user specified tile sizes, after splitting the band
  * if the number of specified tile sizes is smaller than the dimension
  * of the band.  Mark the point band of this tiling as the band that
- * needs to be mapped to threads.
+ * needs to be mapped to threads and instruct the AST generator to unroll
+ * the band if the "unroll_gpu_tile" option is set.
  * Create a kernel representing the domain instances that reach "node" and
  * insert a mark node pointing to the ppcg_kernel before the band node.
  */
@@ -4120,6 +4121,8 @@ static __isl_give isl_schedule_node *mark_outer_permutable(
 	sizes = construct_band_tiles_sizes(node, tile_size);
 	node = tile_band(node, isl_multi_val_copy(sizes));
 	node = isl_schedule_node_child(node, 0);
+	if (gen->options->unroll_gpu_tile)
+		node = ppcg_set_schedule_node_type(node, isl_ast_loop_unroll);
 	id = isl_id_alloc(gen->ctx, "thread", NULL);
 	node = isl_schedule_node_insert_mark(node, id);
 	node = isl_schedule_node_parent(node);

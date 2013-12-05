@@ -18,6 +18,7 @@
 #include "hybrid.h"
 #include "gpu_hybrid.h"
 #include "gpu_tree.h"
+#include "schedule.h"
 #include "util.h"
 
 /* Have all domain elements been filtered out before reaching
@@ -54,6 +55,8 @@ static isl_bool has_empty_domain(__isl_keep isl_schedule_node *node)
  * The C band is first shifted to start at zero.
  * Then the appropriate markers are introduced and a kernel is
  * created for the tree rooted at CT.
+ * If the "unroll_gpu_tile" option is set, then the AST generator
+ * is instructed to unroll the P and C bands.
  */
 static __isl_give isl_schedule_node *update_phase(
 	__isl_take isl_schedule_node *node, void *user)
@@ -84,9 +87,13 @@ static __isl_give isl_schedule_node *update_phase(
 	node = isl_schedule_node_child(node, 0);
 	node = isl_schedule_node_child(node, 0);
 	node = ppcg_ht_phase_shift_space_point(phase, node);
+	if (gen->options->unroll_gpu_tile)
+		node = ppcg_set_schedule_node_type(node, isl_ast_loop_unroll);
 	id = isl_id_alloc(ctx, "thread", NULL);
 	node = isl_schedule_node_insert_mark(node, id);
 	node = isl_schedule_node_parent(node);
+	if (gen->options->unroll_gpu_tile)
+		node = ppcg_set_schedule_node_type(node, isl_ast_loop_unroll);
 	id = isl_id_alloc(ctx, "shared", NULL);
 	node = isl_schedule_node_insert_mark(node, id);
 	node = isl_schedule_node_parent(node);

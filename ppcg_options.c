@@ -123,6 +123,8 @@ ISL_ARG_BOOL(struct ppcg_options, hybrid, 0, "hybrid", 0,
 	"(GPU targets)")
 ISL_ARG_BOOL(struct ppcg_options, unroll_copy_shared, 0, "unroll-copy-shared",
 	0, "unroll code for copying to/from shared memory")
+ISL_ARG_BOOL(struct ppcg_options, unroll_gpu_tile, 0, "unroll-gpu-tile", 0,
+	"unroll code inside tile on GPU targets")
 ISL_ARG_GROUP("opencl", &ppcg_opencl_options_args, "OpenCL options")
 ISL_ARG_STR(struct ppcg_options, save_schedule_file, 0, "save-schedule",
 	"file", NULL, "save isl computed schedule to <file>")
