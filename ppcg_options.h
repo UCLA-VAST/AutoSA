@@ -33,6 +33,9 @@ struct ppcg_options {
 	int tile;
 	int tile_size;
 
+	/* Isolate full tiles from partial tiles. */
+	int isolate_full_tiles;
+
 	/* Take advantage of private memory. */
 	int use_private_memory;
 

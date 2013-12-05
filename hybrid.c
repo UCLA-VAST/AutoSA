@@ -1693,12 +1693,198 @@ error:
 	return NULL;
 }
 
+/* Construct a mapping from the elements of the original pair of bands
+ * to which tiling was applied that belong to a tile of "phase"
+ * to that tile, preserving the values for the outer bands.
+ *
+ * The mapping is of the form
+ *
+ *	[[outer] -> [P -> C]] -> [[outer] -> [tile]]
+ *
+ * where tile is defined by a concatenation of the time_tile and
+ * the space_tile.
+ */
+static __isl_give isl_map *construct_tile_map(__isl_keep ppcg_ht_phase *phase)
+{
+	int depth;
+	isl_space *space;
+	isl_multi_aff *ma;
+	isl_multi_aff *tiling;
+	isl_map *el2tile;
+
+	depth = isl_schedule_node_get_schedule_depth(
+						phase->tiling->input_node);
+	space = isl_aff_get_space(phase->time_tile);
+	space = isl_space_params(space);
+	space = isl_space_set_from_params(space);
+	space = isl_space_add_dims(space, isl_dim_set, depth);
+	space = isl_space_map_from_set(space);
+	ma = isl_multi_aff_identity(space);
+
+	tiling = isl_multi_aff_flat_range_product(
+		isl_multi_aff_from_aff(isl_aff_copy(phase->time_tile)),
+		isl_multi_aff_copy(phase->space_tile));
+	el2tile = isl_map_from_multi_aff(tiling);
+	el2tile = isl_map_intersect_domain(el2tile,
+						isl_set_copy(phase->domain));
+	el2tile = isl_map_product(isl_map_from_multi_aff(ma), el2tile);
+
+	return el2tile;
+}
+
+/* Return a description of the full tiles of "phase" at the point
+ * in the original schedule tree where the tiling was applied.
+ *
+ * First construct a mapping from the input schedule dimensions
+ * up to an including the original pair of bands to which hybrid tiling
+ * was applied to schedule dimensions in which this original pair
+ * has been replaced by the tiles.
+ * This mapping is of the form
+ *
+ *	[[outer] -> [P -> C]] -> [[outer] -> [tile]]
+ *
+ * Apply this mapping to the set of all values for the input
+ * schedule dimensions and then apply its inverse.
+ * The result is the set of values for the input schedule dimensions
+ * that would map to any of the tiles.  Subtracting from this set
+ * the set of values that are actually executed produces the set
+ * of values that belong to a tile but that are not executed.
+ * Mapping these back to the tiles produces a description of
+ * the partial tiles.  Subtracting these from the set of all tiles
+ * produces a description of the full tiles in the form
+ *
+ *	[[outer] -> [tile]]
+ */
+static __isl_give isl_set *compute_full_tile(__isl_keep ppcg_ht_phase *phase)
+{
+	isl_schedule_node *node;
+	isl_union_set *domain;
+	isl_union_map *prefix, *schedule;
+	isl_set *all, *partial, *all_el;
+	isl_map *tile2el, *el2tile;
+	isl_multi_union_pw_aff *mupa;
+
+	el2tile = construct_tile_map(phase);
+	tile2el = isl_map_reverse(isl_map_copy(el2tile));
+
+	node = phase->tiling->input_node;
+	prefix = isl_schedule_node_get_prefix_schedule_union_map(node);
+	domain = isl_schedule_node_get_domain(node);
+	mupa = isl_multi_union_pw_aff_copy(phase->tiling->input_schedule);
+	schedule = isl_union_map_from_multi_union_pw_aff(mupa);
+	schedule = isl_union_map_range_product(prefix, schedule);
+	all_el = isl_set_from_union_set(isl_union_set_apply(domain, schedule));
+	all_el = isl_set_coalesce(all_el);
+
+	all = isl_set_apply(isl_set_copy(all_el), isl_map_copy(el2tile));
+
+	partial = isl_set_copy(all);
+	partial = isl_set_apply(partial, tile2el);
+	partial = isl_set_subtract(partial, all_el);
+	partial = isl_set_apply(partial, el2tile);
+
+	return isl_set_subtract(all, partial);
+}
+
+/* Copy the AST loop types of the non-isolated part to those
+ * of the isolated part.
+ */
+static __isl_give isl_schedule_node *set_isolate_loop_type(
+	__isl_take isl_schedule_node *node)
+{
+	int i, n;
+
+	n = isl_schedule_node_band_n_member(node);
+	for (i = 0; i < n; ++i) {
+		enum isl_ast_loop_type type;
+
+		type = isl_schedule_node_band_member_get_ast_loop_type(node, i);
+		node = isl_schedule_node_band_member_set_isolate_ast_loop_type(
+								node, i, type);
+	}
+
+	return node;
+}
+
+/* If options->isolate_full_tiles is set, then mark the full tiles
+ * in "node" for isolation.  The full tiles are derived from "phase".
+ * "node" may point to a part of the tiling, e.g., the space tiling.
+ *
+ * The full tiles are originally computed in the form
+ *
+ *	[[outer] -> [tile]]
+ *
+ * However, the band that "node" points to may only contain
+ * subset of the tile dimensions.
+ * The description above is therefore treated as
+ *
+ *	[[outer] -> [before; this; after]]
+ *
+ * before is of size "pos"; this is of size "dim"; and
+ * after is of size "out - pos - dim".
+ * The after part is first project out.  Then the range is split
+ * into a before and this part and finally the before part is moved
+ * to the domain, resulting in
+ *
+ *	[[outer; before] -> [this]]
+ *
+ * This description is then used as the isolate option.
+ *
+ * The AST loop type for the isolated part is set to be the same
+ * as that of the non-isolated part.
+ */
+static __isl_give isl_schedule_node *ppcg_ht_phase_isolate_full_tile_node(
+	__isl_keep ppcg_ht_phase *phase, __isl_take isl_schedule_node *node,
+	struct ppcg_options *options)
+{
+	int in, out, pos, depth, dim;
+	isl_space *space;
+	isl_multi_aff *ma1, *ma2;
+	isl_set *tile;
+	isl_map *map;
+	isl_set *set;
+	isl_union_set *opt;
+
+	if (!options->isolate_full_tiles)
+		return node;
+
+	depth = isl_schedule_node_get_schedule_depth(node);
+	dim = isl_schedule_node_band_n_member(node);
+
+	tile = compute_full_tile(phase);
+	map = isl_set_unwrap(tile);
+	in = isl_map_dim(map, isl_dim_in);
+	out = isl_map_dim(map, isl_dim_out);
+	pos = depth - in;
+	map = isl_map_project_out(map, isl_dim_out, pos + dim,
+				out - (pos + dim));
+	space = isl_space_range(isl_map_get_space(map));
+	ma1 = isl_multi_aff_project_out_map(isl_space_copy(space),
+					   isl_dim_set, pos, dim);
+	ma2 = isl_multi_aff_project_out_map(space, isl_dim_set, 0, pos);
+	ma1 = isl_multi_aff_range_product(ma1, ma2);
+	map = isl_map_apply_range(map, isl_map_from_multi_aff(ma1));
+	map = isl_map_uncurry(map);
+	map = isl_map_flatten_domain(map);
+	set = isl_map_wrap(map);
+	set = isl_set_set_tuple_name(set, "isolate");
+
+	opt = isl_schedule_node_band_get_ast_build_options(node);
+	opt = isl_union_set_add_set(opt, set);
+	node = isl_schedule_node_band_set_ast_build_options(node, opt);
+	node = set_isolate_loop_type(node);
+
+	return node;
+}
+
 /* Insert a band node for performing the space tiling for "phase" at "node".
  * In particular, insert a band node with partial schedule
  *
  *	[P[t] -> C[s]] -> C[floor((s + space_shift)/space_size)]
  *
  * pulled back over the input schedule.
+ * "options" determines whether full tiles should be separated
+ * from partial tiles.
  *
  * The first tile dimension iterates over the hexagons in the same
  * phase, which are independent by construction.  The first dimension
@@ -1707,7 +1893,8 @@ error:
  * because separation is usually not desirable on tile loops.
  */
 static __isl_give isl_schedule_node *insert_space_tiling(
-	__isl_keep ppcg_ht_phase *phase, __isl_take isl_schedule_node *node)
+	__isl_keep ppcg_ht_phase *phase, __isl_take isl_schedule_node *node,
+	struct ppcg_options *options)
 {
 	isl_multi_aff *space_tile;
 	isl_multi_union_pw_aff *mupa;
@@ -1720,6 +1907,7 @@ static __isl_give isl_schedule_node *insert_space_tiling(
 	mupa = isl_multi_union_pw_aff_apply_multi_aff(mupa, space_tile);
 	node = isl_schedule_node_insert_partial_schedule(node, mupa);
 	node = ppcg_set_schedule_node_type(node, isl_ast_loop_atomic);
+	node = ppcg_ht_phase_isolate_full_tile_node(phase, node, options);
 	node = isl_schedule_node_band_member_set_coincident(node, 0, 1);
 
 	return node;
@@ -1860,6 +2048,8 @@ static isl_stat check_width(__isl_keep ppcg_ht_bounds *bounds,
  * to make further changes.
  * The space of "sizes" should be the product of the spaces
  * of the schedules of the pair of parent and child nodes.
+ * "options" determines whether full tiles should be separated
+ * from partial tiles.
  *
  * In particular, given an input of the form
  *
@@ -1891,7 +2081,7 @@ static isl_stat check_width(__isl_keep ppcg_ht_bounds *bounds,
  */
 __isl_give isl_schedule_node *ppcg_ht_bounds_insert_tiling(
 	__isl_take ppcg_ht_bounds *bounds, __isl_take isl_multi_val *sizes,
-	__isl_take isl_schedule_node *node)
+	__isl_take isl_schedule_node *node, struct ppcg_options *options)
 {
 	isl_ctx *ctx;
 	isl_union_set *phase0;
@@ -1939,12 +2129,12 @@ __isl_give isl_schedule_node *ppcg_ht_bounds_insert_tiling(
 	node = isl_schedule_node_insert_sequence(node, phases);
 	node = isl_schedule_node_child(node, 0);
 	node = isl_schedule_node_child(node, 0);
-	node = insert_space_tiling(phase_0, node);
+	node = insert_space_tiling(phase_0, node, options);
 	node = insert_phase(node, phase_0);
 	node = isl_schedule_node_parent(node);
 	node = isl_schedule_node_next_sibling(node);
 	node = isl_schedule_node_child(node, 0);
-	node = insert_space_tiling(phase_1, node);
+	node = insert_space_tiling(phase_1, node, options);
 	node = insert_phase(node, phase_1);
 	node = isl_schedule_node_parent(node);
 	node = isl_schedule_node_parent(node);

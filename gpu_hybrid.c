@@ -132,7 +132,7 @@ __isl_give isl_schedule_node *gpu_hybrid_tile(struct gpu_gen *gen,
 	space = isl_space_product(space, space2);
 	mv = ppcg_multi_val_from_int_list(space, tile_sizes);
 
-	node = ppcg_ht_bounds_insert_tiling(bounds, mv, node);
+	node = ppcg_ht_bounds_insert_tiling(bounds, mv, node, gen->options);
 
 	node = hybrid_tile_foreach_phase(node, &update_phase, gen);
 

@@ -23,7 +23,7 @@ isl_bool ppcg_ht_bounds_supports_sizes(__isl_keep ppcg_ht_bounds *bounds,
 	__isl_keep isl_multi_val *sizes);
 __isl_give isl_schedule_node *ppcg_ht_bounds_insert_tiling(
 	__isl_take ppcg_ht_bounds *bounds, __isl_take isl_multi_val *sizes,
-	__isl_take isl_schedule_node *node);
+	__isl_take isl_schedule_node *node, struct ppcg_options *options);
 __isl_null ppcg_ht_bounds *ppcg_ht_bounds_free(
 	__isl_take ppcg_ht_bounds *bounds);
 
