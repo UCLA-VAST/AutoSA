@@ -406,6 +406,7 @@ static int can_tile(__isl_keep isl_map *access, struct gpu_array_tile *tile)
  * privatization lives in the range of thread_sched (i.e., it is
  * of dimension thread_depth + n_thread) and encodes the mapping
  * to thread identifiers (as parameters).
+ * host_sched contains the kernel_depth dimensions of the host schedule.
  * shared_sched contains the first thread_depth dimensions of the
  * kernel schedule.
  * thread_sched contains the first (thread_depth + n_thread) dimensions
@@ -418,6 +419,7 @@ struct gpu_group_data {
 	int thread_depth;
 	int n_thread;
 	isl_set *privatization;
+	isl_union_map *host_sched;
 	isl_union_map *shared_sched;
 	isl_union_map *thread_sched;
 	isl_union_map *full_sched;
@@ -517,6 +519,34 @@ static int access_is_coalesced(struct gpu_group_data *data,
 	isl_map_free(map);
 
 	return coalesced;
+}
+
+/* Replace the host schedule dimensions in the access relation "access"
+ * by parameters, so that they are treated as fixed when checking for reuse
+ * (within a kernel) or whether two consecutive elements are accessed
+ * (within a kernel).
+ */
+static __isl_give isl_union_map *localize_access(struct gpu_group_data *data,
+	__isl_take isl_union_map *access)
+{
+	int n;
+	isl_space *space;
+	isl_set *param;
+	isl_union_map *umap;
+	isl_id_list *ids;
+
+	umap = isl_union_map_copy(data->host_sched);
+	space = isl_union_map_get_space(umap);
+	n = data->kernel_depth;
+	ids = ppcg_scop_generate_names(data->scop, n, "__ppcg_host_");
+	param = parametrization(space, n, 0, ids);
+	isl_id_list_free(ids);
+	umap = isl_union_map_intersect_range(umap,
+						isl_union_set_from_set(param));
+	access = isl_union_map_intersect_domain(access,
+						isl_union_map_domain(umap));
+
+	return access;
 }
 
 /* Given an access relation in terms of at least data->thread_depth initial
@@ -845,6 +875,7 @@ static int check_requires_unroll(struct gpu_group_data *data,
  *
  * We only try to compute a shared memory tile if there is any reuse
  * or if the access is not coalesced.
+ * Reuse and coalescing are checked within the given kernel.
  *
  * For computing a private memory tile, we also require that there is
  * some reuse.  Moreover, we require that the access is private
@@ -887,7 +918,7 @@ static int compute_group_bounds_core(struct ppcg_kernel *kernel,
 	struct gpu_array_ref_group *group, struct gpu_group_data *data)
 {
 	isl_ctx *ctx = isl_space_get_ctx(group->array->space);
-	isl_union_map *access;
+	isl_union_map *access, *local;
 	int n_index = group->array->n_index;
 	int no_reuse, coalesced;
 	isl_map *acc;
@@ -908,11 +939,13 @@ static int compute_group_bounds_core(struct ppcg_kernel *kernel,
 		return 0;
 
 	access = gpu_array_ref_group_access_relation(group, 1, 1);
-	no_reuse = isl_union_map_is_injective(access);
+	local = localize_access(data, isl_union_map_copy(access));
+	no_reuse = isl_union_map_is_injective(local);
 	if (no_reuse < 0)
 		r = -1;
 	if (use_shared && no_reuse)
-		coalesced = access_is_coalesced(data, access);
+		coalesced = access_is_coalesced(data, local);
+	isl_union_map_free(local);
 
 	if (r >= 0 && kernel->options->debug->verbose &&
 	    use_shared && no_reuse && coalesced)
@@ -1382,6 +1415,7 @@ int gpu_group_references(struct ppcg_kernel *kernel,
 	data.scop = kernel->prog->scop;
 
 	data.kernel_depth = isl_schedule_node_get_schedule_depth(node);
+	data.host_sched = isl_schedule_node_get_prefix_schedule_relation(node);
 
 	node = isl_schedule_node_copy(node);
 	node = gpu_tree_move_down_to_thread(node, kernel->core);
@@ -1411,6 +1445,7 @@ int gpu_group_references(struct ppcg_kernel *kernel,
 			break;
 	}
 
+	isl_union_map_free(data.host_sched);
 	isl_union_map_free(data.shared_sched);
 	isl_union_map_free(data.thread_sched);
 	isl_union_map_free(data.full_sched);
