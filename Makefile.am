@@ -48,6 +48,7 @@ ppcg_SOURCES = \
 
 TESTS = @extra_tests@
 EXTRA_TESTS = polybench_test.sh
+TEST_EXTENSIONS = .sh
 
 dist-hook:
 	echo @GIT_HEAD_VERSION@ > $(distdir)/GIT_HEAD_ID
