@@ -13,10 +13,3 @@ m4/ltsugar.m4
 m4/ltversion.m4
 m4/lt~obsolete.m4
 missing
-
-clan/autoconf/libtool.m4
-clan/autoconf/ltoptions.m4
-clan/autoconf/ltsugar.m4
-clan/autoconf/ltversion.m4
-clan/autoconf/lt~obsolete.m4
-clan/scoplib/scoplib-0.2.0/
