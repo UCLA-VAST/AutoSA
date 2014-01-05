@@ -132,7 +132,7 @@ static __isl_give isl_union_set *collect_non_kill_domains(struct pet_scop *scop)
  * Assign the value 1 to the integer that "user" points to and
  * abort the search since we have found what we were looking for.
  */
-static int set_has_call(struct pet_expr *expr, void *user)
+static int set_has_call(__isl_keep pet_expr *expr, void *user)
 {
 	int *has_call = user;
 
@@ -143,7 +143,7 @@ static int set_has_call(struct pet_expr *expr, void *user)
 
 /* Does "expr" contain any call expressions?
  */
-static int expr_has_call(struct pet_expr *expr)
+static int expr_has_call(__isl_keep pet_expr *expr)
 {
 	int has_call = 0;
 
