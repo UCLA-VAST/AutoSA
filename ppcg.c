@@ -78,20 +78,11 @@ int ppcg_extract_base_name(char *name, const char *input)
 	return len;
 }
 
-/* Is "stmt" a kill statement?
- */
-static int is_kill(struct pet_stmt *stmt)
-{
-	if (stmt->body->type != pet_expr_unary)
-		return 0;
-	return stmt->body->op == pet_op_kill;
-}
-
 /* Is "stmt" not a kill statement?
  */
 static int is_not_kill(struct pet_stmt *stmt)
 {
-	return !is_kill(stmt);
+	return !pet_stmt_is_kill(stmt);
 }
 
 /* Collect the iteration domains of the statements in "scop" that
