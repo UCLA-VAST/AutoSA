@@ -4729,7 +4729,7 @@ static __isl_give isl_union_map *remove_local_accesses(struct gpu_gen *gen,
 	int read)
 {
 	int empty;
-	isl_union_map *tagger;
+	isl_union_pw_multi_aff *tagger;
 	isl_union_set *domain;
 	isl_space *space;
 	isl_union_map *sched, *local, *tagged, *external;
@@ -4747,10 +4747,10 @@ static __isl_give isl_union_map *remove_local_accesses(struct gpu_gen *gen,
 	proj = projection(space, gen->untiled_len, group->last_shared + 1);
 	sched = isl_union_map_apply_range(sched, isl_union_map_from_map(proj));
 
-	tagger = isl_union_map_copy(gen->prog->scop->tagger);
+	tagger = isl_union_pw_multi_aff_copy(gen->prog->scop->tagger);
 	domain = isl_union_map_domain(isl_union_map_copy(tagged));
-	tagger = isl_union_map_intersect_range(tagger, domain);
-	sched = isl_union_map_apply_domain(sched, tagger);
+	tagger = isl_union_pw_multi_aff_intersect_domain(tagger, domain);
+	sched = isl_union_map_preimage_domain_union_pw_multi_aff(sched, tagger);
 
 	local = isl_union_map_apply_range(sched,
 			    isl_union_map_reverse(isl_union_map_copy(sched)));

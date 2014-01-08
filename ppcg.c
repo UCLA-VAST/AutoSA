@@ -307,29 +307,30 @@ static __isl_give isl_union_map *project_out_tags(
 	return isl_union_map_domain_factor_domain(umap);
 }
 
-/* Construct a relation from the iteration domains to tagged iteration
- * domains with as range the reference tags that appear
- * in any of the reads, writes or kills.
+/* Construct a function from tagged iteration domains to the corresponding
+ * untagged iteration domains with as range of the wrapped map in the domain
+ * the reference tags that appear in any of the reads, writes or kills.
  * Store the result in ps->tagger.
  *
  * For example, if the statement with iteration space S[i,j]
  * contains two array references R_1[] and R_2[], then ps->tagger will contain
  *
- *	{ S[i,j] -> [S[i,j] -> R_1[]]; S[i,j] -> [S[i,j] -> R_2[]] }
+ *	{ [S[i,j] -> R_1[]] -> S[i,j]; [S[i,j] -> R_2[]] -> S[i,j] }
  */
 static void compute_tagger(struct ppcg_scop *ps)
 {
-	isl_union_map *tagged, *tagger;
+	isl_union_map *tagged;
+	isl_union_pw_multi_aff *tagger;
 
 	tagged = isl_union_map_copy(ps->tagged_reads);
 	tagged = isl_union_map_union(tagged,
 				isl_union_map_copy(ps->tagged_may_writes));
 	tagged = isl_union_map_union(tagged,
 				isl_union_map_copy(ps->tagged_must_kills));
+	tagged = isl_union_map_universe(tagged);
+	tagged = isl_union_set_unwrap(isl_union_map_domain(tagged));
 
-	tagger = isl_union_map_universe(tagged);
-	tagger = isl_union_set_unwrap(isl_union_map_domain(tagger));
-	tagger = isl_union_map_reverse(isl_union_map_domain_map(tagger));
+	tagger = isl_union_map_domain_map_union_pw_multi_aff(tagged);
 
 	ps->tagger = tagger;
 }
@@ -345,7 +346,7 @@ static void compute_tagger(struct ppcg_scop *ps)
  */
 static void compute_live_out(struct ppcg_scop *ps)
 {
-	isl_union_map *tagger;
+	isl_union_pw_multi_aff *tagger;
 	isl_union_map *schedule;
 	isl_union_map *kills;
 	isl_union_map *exposed;
@@ -353,9 +354,10 @@ static void compute_live_out(struct ppcg_scop *ps)
 	isl_union_access_info *access;
 	isl_union_flow *flow;
 
-	tagger = isl_union_map_copy(ps->tagger);
+	tagger = isl_union_pw_multi_aff_copy(ps->tagger);
 	schedule = isl_schedule_get_map(ps->schedule);
-	schedule = isl_union_map_apply_domain(schedule, tagger);
+	schedule = isl_union_map_preimage_domain_union_pw_multi_aff(schedule,
+								    tagger);
 	kills = isl_union_map_union(isl_union_map_copy(ps->tagged_must_writes),
 				    isl_union_map_copy(ps->tagged_must_kills));
 	access = isl_union_access_info_from_sink(kills);
@@ -391,7 +393,7 @@ static void compute_live_out(struct ppcg_scop *ps)
  */
 static void compute_tagged_flow_dep(struct ppcg_scop *ps)
 {
-	isl_union_map *tagger;
+	isl_union_pw_multi_aff *tagger;
 	isl_union_map *schedule;
 	isl_union_map *live_in;
 	isl_union_access_info *access;
@@ -400,9 +402,10 @@ static void compute_tagged_flow_dep(struct ppcg_scop *ps)
 	isl_union_map *kills;
 	isl_union_map *tagged_flow;
 
-	tagger = isl_union_map_copy(ps->tagger);
+	tagger = isl_union_pw_multi_aff_copy(ps->tagger);
 	schedule = isl_schedule_get_map(ps->schedule);
-	schedule = isl_union_map_apply_domain(schedule, tagger);
+	schedule = isl_union_map_preimage_domain_union_pw_multi_aff(schedule,
+								    tagger);
 	kills = isl_union_map_copy(ps->tagged_must_kills);
 	must_source = isl_union_map_copy(ps->tagged_must_writes);
 	must_source = isl_union_map_union(must_source,
@@ -642,7 +645,7 @@ static void eliminate_dead_code(struct ppcg_scop *ps)
 {
 	isl_union_set *live;
 	isl_union_map *dep;
-	isl_union_map *tagger;
+	isl_union_pw_multi_aff *tagger;
 
 	live = isl_union_map_domain(isl_union_map_copy(ps->live_out));
 	if (!isl_union_set_is_empty(ps->call)) {
@@ -677,8 +680,8 @@ static void eliminate_dead_code(struct ppcg_scop *ps)
 						isl_union_set_copy(live));
 	ps->dep_flow = isl_union_map_intersect_range(ps->dep_flow,
 						isl_union_set_copy(live));
-	tagger = isl_union_map_copy(ps->tagger);
-	live = isl_union_set_apply(live, tagger);
+	tagger = isl_union_pw_multi_aff_copy(ps->tagger);
+	live = isl_union_set_preimage_union_pw_multi_aff(live, tagger);
 	ps->tagged_dep_flow = isl_union_map_intersect_range(ps->tagged_dep_flow,
 						live);
 }
@@ -726,7 +729,7 @@ static void *ppcg_scop_free(struct ppcg_scop *ps)
 	isl_union_map_free(ps->tagged_dep_order);
 	isl_union_map_free(ps->dep_order);
 	isl_schedule_free(ps->schedule);
-	isl_union_map_free(ps->tagger);
+	isl_union_pw_multi_aff_free(ps->tagger);
 	isl_union_map_free(ps->independence);
 	isl_id_to_ast_expr_free(ps->names);
 

@@ -40,7 +40,7 @@ int ppcg_extract_base_name(char *name, const char *input);
  * "tagged_must_kills" contains all definite kill accesses with
  *	a reference identifier in the domain.
  *
- * "tagger" maps iteration domains to the corresponding tagged
+ * "tagger" maps tagged iteration domains to the corresponding untagged
  *	iteration domain.
  *
  * "independence" is the union of all independence filters.
@@ -84,7 +84,7 @@ struct ppcg_scop {
 	isl_union_map *live_out;
 	isl_union_map *tagged_must_kills;
 
-	isl_union_map *tagger;
+	isl_union_pw_multi_aff *tagger;
 
 	isl_union_map *independence;
 
