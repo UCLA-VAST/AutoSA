@@ -354,8 +354,7 @@ static void compute_live_out(struct ppcg_scop *ps)
 
 	tagger = isl_union_map_copy(ps->tagger);
 	schedule = isl_union_map_copy(ps->schedule);
-	schedule = isl_union_map_apply_domain(schedule,
-					isl_union_map_copy(tagger));
+	schedule = isl_union_map_apply_domain(schedule, tagger);
 	empty = isl_union_map_empty(isl_union_set_get_space(ps->domain));
 	kills = isl_union_map_union(isl_union_map_copy(ps->tagged_must_writes),
 				    isl_union_map_copy(ps->tagged_must_kills));
@@ -365,8 +364,7 @@ static void compute_live_out(struct ppcg_scop *ps)
 	exposed = isl_union_map_copy(ps->tagged_may_writes);
 	exposed = isl_union_map_subtract_domain(exposed,
 				isl_union_map_domain(covering));
-	exposed = isl_union_map_apply_range(tagger, exposed);
-	ps->live_out = exposed;
+	ps->live_out = project_out_tags(exposed);
 }
 
 /* Compute the flow dependences and the live_in accesses and store
