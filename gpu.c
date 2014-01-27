@@ -5658,27 +5658,28 @@ static struct gpu_stmt_access **expr_extract_access(struct pet_expr *expr,
 	return next_access;
 }
 
-static struct gpu_stmt_access **expr_extract_accesses(struct pet_expr *expr,
-	struct gpu_stmt_access **next_access)
+/* Wrapper around expr_extract_access for use as a callback
+ * to pet_expr_foreach_access_expr.
+ */
+static int extract_access(struct pet_expr *expr, void *user)
 {
-	int i;
+	struct gpu_stmt_access ***next_access = user;
 
-	for (i = 0; i < expr->n_arg; ++i)
-		next_access = expr_extract_accesses(expr->args[i],
-							next_access);
+	*next_access = expr_extract_access(expr, *next_access);
 
-	if (expr->type == pet_expr_access)
-		next_access = expr_extract_access(expr, next_access);
-
-	return next_access;
+	return 0;
 }
 
+/* Construct a linked list of gpu_stmt_access objects,
+ * one for each access expression in the statement body.
+ */
 static void pet_stmt_extract_accesses(struct gpu_stmt *stmt)
 {
 	struct gpu_stmt_access **next_access = &stmt->accesses;
 
 	stmt->accesses = NULL;
-	expr_extract_accesses(stmt->stmt->body, next_access);
+	pet_expr_foreach_access_expr(stmt->stmt->body, &extract_access,
+					&next_access);
 }
 
 /* Return an array of gpu_stmt representing the statements in "scop".
