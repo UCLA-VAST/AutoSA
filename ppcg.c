@@ -154,11 +154,31 @@ static int expr_has_call(__isl_keep pet_expr *expr)
 	return has_call;
 }
 
+/* This function is a callback for pet_tree_foreach_expr.
+ * If "expr" contains any call (sub)expressions, then set *has_call
+ * and abort the search.
+ */
+static int check_call(__isl_keep pet_expr *expr, void *user)
+{
+	int *has_call = user;
+
+	if (expr_has_call(expr))
+		*has_call = 1;
+
+	return *has_call ? -1 : 0;
+}
+
 /* Does "stmt" contain any call expressions?
  */
 static int has_call(struct pet_stmt *stmt)
 {
-	return expr_has_call(stmt->body);
+	int has_call = 0;
+
+	if (pet_tree_foreach_expr(stmt->body, &check_call, &has_call) < 0 &&
+	    !has_call)
+		return -1;
+
+	return has_call;
 }
 
 /* Collect the iteration domains of the statements in "scop"

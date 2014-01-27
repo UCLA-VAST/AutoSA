@@ -5623,12 +5623,26 @@ static void compute_copy_in_and_out(struct gpu_gen *gen)
 	gen->prog->copy_in = copy_in;
 }
 
+/* Internal data structure for extract_access.
+ * "next_access" points to the end of a linked list that is extended
+ * by extract_access.
+ * "single_expression" is set if the access expressions belong to
+ * an expression statement (i.e., a statement without internal control).
+ */
+struct ppcg_extract_access_data {
+	struct gpu_stmt_access **next_access;
+	int single_expression;
+};
+
 /* Extract a gpu_stmt_access from "expr", append it to the list
- * that ends in **next_access and update the end of the list.
+ * that ends in *data->next_access and update the end of the list.
+ * If the access expression performs a write, then it is considered
+ * exact only if it appears in a single expression statement and
+ * if its may access relation is equal to its must access relation.
  */
 static int extract_access(__isl_keep pet_expr *expr, void *user)
 {
-	struct gpu_stmt_access ***next_access = user;
+	struct ppcg_extract_access_data *data = user;
 	isl_map *may;
 	struct gpu_stmt_access *access;
 	isl_ctx *ctx;
@@ -5644,6 +5658,8 @@ static int extract_access(__isl_keep pet_expr *expr, void *user)
 	access->tagged_access = pet_expr_access_get_tagged_may_access(expr);
 	if (!access->write) {
 		access->exact_write = 1;
+	} else if (!data->single_expression) {
+		access->exact_write = 0;
 	} else {
 		isl_map *must;
 		must = pet_expr_access_get_must_access(expr);
@@ -5653,8 +5669,8 @@ static int extract_access(__isl_keep pet_expr *expr, void *user)
 	access->ref_id = pet_expr_access_get_ref_id(expr);
 	access->group = -1;
 
-	**next_access = access;
-	*next_access = &(**next_access)->next;
+	*data->next_access = access;
+	data->next_access = &(*data->next_access)->next;
 
 	return 0;
 }
@@ -5664,11 +5680,13 @@ static int extract_access(__isl_keep pet_expr *expr, void *user)
  */
 static void pet_stmt_extract_accesses(struct gpu_stmt *stmt)
 {
-	struct gpu_stmt_access **next_access = &stmt->accesses;
+	struct ppcg_extract_access_data data;
 
 	stmt->accesses = NULL;
-	pet_expr_foreach_access_expr(stmt->stmt->body, &extract_access,
-					&next_access);
+	data.next_access = &stmt->accesses;
+	data.single_expression =
+		pet_tree_get_type(stmt->stmt->body) == pet_tree_expr;
+	pet_tree_foreach_access_expr(stmt->stmt->body, &extract_access, &data);
 }
 
 /* Return an array of gpu_stmt representing the statements in "scop".
