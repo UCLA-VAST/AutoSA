@@ -5629,19 +5629,28 @@ static void compute_copy_in_and_out(struct gpu_gen *gen)
 static struct gpu_stmt_access **expr_extract_access(struct pet_expr *expr,
 	struct gpu_stmt_access **next_access)
 {
+	isl_map *may;
 	struct gpu_stmt_access *access;
-	isl_ctx *ctx = isl_map_get_ctx(expr->acc.access);
+	isl_ctx *ctx;
 
+	may = pet_expr_access_get_may_access(expr);
+	ctx = isl_map_get_ctx(may);
 	access = isl_alloc_type(ctx, struct gpu_stmt_access);
 	assert(access);
 	access->next = NULL;
-	access->read = expr->acc.read;
-	access->write = expr->acc.write;
-	access->access = pet_expr_access_get_may_access(expr);
+	access->read = pet_expr_access_is_read(expr);
+	access->write = pet_expr_access_is_write(expr);
+	access->access = may;
 	access->tagged_access = pet_expr_access_get_tagged_may_access(expr);
-	access->exact_write = !expr->acc.write ||
-		isl_map_is_equal(expr->acc.access, access->access);
-	access->ref_id = isl_id_copy(expr->acc.ref_id);
+	if (!access->write) {
+		access->exact_write = 1;
+	} else {
+		isl_map *must;
+		must = pet_expr_access_get_must_access(expr);
+		access->exact_write = isl_map_is_equal(must, access->access);
+		isl_map_free(must);
+	}
+	access->ref_id = pet_expr_access_get_ref_id(expr);
 	access->group = -1;
 
 	*next_access = access;
