@@ -127,20 +127,31 @@ static __isl_give isl_union_set *collect_non_kill_domains(struct pet_scop *scop)
 	return collect_domains(scop, &is_not_kill);
 }
 
+/* This function is used as a callback to pet_expr_foreach_call_expr
+ * to detect if there is any call expression in the input expression.
+ * Assign the value 1 to the integer that "user" points to and
+ * abort the search since we have found what we were looking for.
+ */
+static int set_has_call(struct pet_expr *expr, void *user)
+{
+	int *has_call = user;
+
+	*has_call = 1;
+
+	return -1;
+}
+
 /* Does "expr" contain any call expressions?
  */
 static int expr_has_call(struct pet_expr *expr)
 {
-	int i;
+	int has_call = 0;
 
-	if (expr->type == pet_expr_call)
-		return 1;
+	if (pet_expr_foreach_call_expr(expr, &set_has_call, &has_call) < 0 &&
+	    !has_call)
+		return -1;
 
-	for (i = 0; i < expr->n_arg; ++i)
-		if (expr_has_call(expr->args[i]))
-			return 1;
-
-	return 0;
+	return has_call;
 }
 
 /* Does "stmt" contain any call expressions?
