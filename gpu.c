@@ -5459,7 +5459,7 @@ static int set_untiled_len(__isl_take isl_map *map, void *user)
  * reordering.  Instead, the external false dependences that enforce that reads
  * from potentially live-in data precede any later write and
  * that writes of potentially live-out data follow any other earlier write
- * are added to the validity constraints.
+ * are added to the validity and the coincidence constraints.
  * The false dependences are still added to the proximity constraints
  * for consistency with the case where live range reordering is not allowed.
  */
