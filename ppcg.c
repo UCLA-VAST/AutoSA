@@ -584,6 +584,7 @@ static void *ppcg_scop_free(struct ppcg_scop *ps)
 	isl_union_map_free(ps->dep_order);
 	isl_union_map_free(ps->schedule);
 	isl_union_map_free(ps->tagger);
+	isl_union_map_free(ps->independence);
 
 	free(ps);
 
@@ -598,6 +599,7 @@ static void *ppcg_scop_free(struct ppcg_scop *ps)
 static struct ppcg_scop *ppcg_scop_from_pet_scop(struct pet_scop *scop,
 	struct ppcg_options *options)
 {
+	int i;
 	isl_ctx *ctx;
 	struct ppcg_scop *ps;
 
@@ -631,6 +633,12 @@ static struct ppcg_scop *ppcg_scop_from_pet_scop(struct pet_scop *scop,
 	ps->arrays = scop->arrays;
 	ps->n_stmt = scop->n_stmt;
 	ps->stmts = scop->stmts;
+	ps->n_independence = scop->n_independence;
+	ps->independences = scop->independences;
+	ps->independence = isl_union_map_empty(isl_set_get_space(ps->context));
+	for (i = 0; i < ps->n_independence; ++i)
+		ps->independence = isl_union_map_union(ps->independence,
+			isl_union_map_copy(ps->independences[i]->filter));
 
 	compute_tagger(ps);
 	compute_dependences(ps);
@@ -638,7 +646,7 @@ static struct ppcg_scop *ppcg_scop_from_pet_scop(struct pet_scop *scop,
 
 	if (!ps->context || !ps->domain || !ps->call || !ps->reads ||
 	    !ps->may_writes || !ps->must_writes || !ps->tagged_must_kills ||
-	    !ps->schedule)
+	    !ps->schedule || !ps->independence)
 		return ppcg_scop_free(ps);
 
 	return ps;

@@ -40,6 +40,8 @@ int ppcg_extract_base_name(char *name, const char *input);
  * "tagger" maps iteration domains to the corresponding tagged
  *	iteration domain.
  *
+ * "independence" is the union of all independence filters.
+ *
  * "dep_flow" represents the potential flow dependences.
  * "tagged_dep_flow" is the same as "dep_flow", except that both domain and
  *	range are wrapped relations mapping an iteration domain to
@@ -55,8 +57,8 @@ int ppcg_extract_base_name(char *name, const char *input);
  *	set of anti and output dependences.
  * "schedule" represents the (original) schedule.
  *
- * "types", "arrays" and "stmts" are copies of the corresponding elements
- * of the original pet_scop.
+ * "types", "arrays", "stmts" and "independences"
+ * are copies of the corresponding elements of the original pet_scop.
  */
 struct ppcg_scop {
 	struct ppcg_options *options;
@@ -79,6 +81,8 @@ struct ppcg_scop {
 
 	isl_union_map *tagger;
 
+	isl_union_map *independence;
+
 	isl_union_map *dep_flow;
 	isl_union_map *tagged_dep_flow;
 	isl_union_map *dep_false;
@@ -93,6 +97,8 @@ struct ppcg_scop {
 	struct pet_array **arrays;
 	int n_stmt;
 	struct pet_stmt **stmts;
+	int n_independence;
+	struct pet_independence **independences;
 };
 
 int ppcg_transform(isl_ctx *ctx, const char *input, FILE *out,

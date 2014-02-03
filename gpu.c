@@ -546,6 +546,40 @@ static __isl_give isl_union_map *compute_to_inner(struct ppcg_scop *scop)
 	return to_inner;
 }
 
+/* Remove independence from the order constraints "order" on array "array".
+ * Since the pairs of iterations in the filter relation of an independence
+ * are guaranteed to be completely independent by the user, there is
+ * no need to ensure that live ranges are ordered along thong pairs.
+ * We make an exception for local variables, though, as the independence
+ * guarantee does not apply to those.
+ *
+ * The order constraints are used in two places.
+ * Those on scalars are used in check_scalar_live_ranges to check if
+ * we need to force the scalar to be private.  Any non-local scalar
+ * should not be forced scalar if it only appears in independent loops.
+ * Those on non-scalars are added to the coincidence constraints
+ * in compute_schedule because we do not support any array expansion.
+ * Accesses to non-local arrays should not prevent a loop from being
+ * considered coincident so we should indeed remove those constraints
+ * from the order constraints.
+ */
+static __isl_give isl_union_map *remove_independences(struct gpu_prog *prog,
+	struct gpu_array_info *array, __isl_take isl_union_map *order)
+{
+	int i;
+
+	for (i = 0; i < prog->scop->n_independence; ++i) {
+		struct pet_independence *pi = prog->scop->independences[i];
+		if (isl_union_set_contains(pi->local, array->space))
+			continue;
+
+		order = isl_union_map_subtract(order,
+						isl_union_map_copy(pi->filter));
+	}
+
+	return order;
+}
+
 /* For each array in "prog", store the (untagged) order dependences
  * derived from the array in array->dep_order.
  * In particular, consider all references that access the given array
@@ -587,6 +621,7 @@ void collect_order_dependences(struct gpu_prog *prog)
 		order = isl_union_map_intersect_domain(order, uset);
 		order = isl_union_map_zip(order);
 		order = isl_union_set_unwrap(isl_union_map_domain(order));
+		order = remove_independences(prog, array, order);
 		array->dep_order = order;
 
 		if (gpu_array_is_scalar(array))
@@ -5462,6 +5497,14 @@ static int set_untiled_len(__isl_take isl_map *map, void *user)
  * are added to the validity and the coincidence constraints.
  * The false dependences are still added to the proximity constraints
  * for consistency with the case where live range reordering is not allowed.
+ * The coincidence constraints then consist of flow dependences,
+ * exernal false dependences and array order dependences.
+ * The independences can be filtered out from the first two sets.
+ * They have already been filtered out from the array order dependences
+ * on a per array basis in collect_order_dependences.
+ * There is no need for a per array handling of the other two sets
+ * as there should be no flow or external false dependence on local
+ * variables that can be filtered out.
  */
 static void compute_schedule(struct gpu_gen *gen)
 {
@@ -5487,6 +5530,8 @@ static void compute_schedule(struct gpu_gen *gen)
 		proximity = isl_union_map_union(proximity,
 			    isl_union_map_copy(gen->prog->scop->dep_false));
 		coincidence = isl_union_map_copy(validity);
+		coincidence = isl_union_map_subtract(coincidence,
+			isl_union_map_copy(gen->prog->scop->independence));
 		coincidence = isl_union_map_union(coincidence,
 				isl_union_map_copy(gen->prog->array_order));
 	} else {
