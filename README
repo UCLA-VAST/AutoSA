@@ -160,6 +160,15 @@ we recommend that users either explicitly call the function sqrtf() or
 explicitly cast the argument to double in the input code.
 
 
+Additional variables in generated code
+
+The generated code may contain additional variables with names
+that match /^[bthsgc][0-d]+$/.  These variables may shadow or
+conflict with variables in the input program.  Until this issue
+has been resolved in PPCG, you should avoid such variable names
+in your input program.
+
+
 Citing PPCG
 
 If you use PPCG for your research, you are invited do cite
