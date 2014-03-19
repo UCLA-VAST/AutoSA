@@ -5624,11 +5624,11 @@ static void compute_copy_in_and_out(struct gpu_gen *gen)
 }
 
 /* Extract a gpu_stmt_access from "expr", append it to the list
- * that ends in *next_access and return the updated end of the list.
+ * that ends in **next_access and update the end of the list.
  */
-static struct gpu_stmt_access **expr_extract_access(__isl_keep pet_expr *expr,
-	struct gpu_stmt_access **next_access)
+static int extract_access(__isl_keep pet_expr *expr, void *user)
 {
+	struct gpu_stmt_access ***next_access = user;
 	isl_map *may;
 	struct gpu_stmt_access *access;
 	isl_ctx *ctx;
@@ -5653,19 +5653,8 @@ static struct gpu_stmt_access **expr_extract_access(__isl_keep pet_expr *expr,
 	access->ref_id = pet_expr_access_get_ref_id(expr);
 	access->group = -1;
 
-	*next_access = access;
-	next_access = &(*next_access)->next;
-	return next_access;
-}
-
-/* Wrapper around expr_extract_access for use as a callback
- * to pet_expr_foreach_access_expr.
- */
-static int extract_access(__isl_keep pet_expr *expr, void *user)
-{
-	struct gpu_stmt_access ***next_access = user;
-
-	*next_access = expr_extract_access(expr, *next_access);
+	**next_access = access;
+	*next_access = &(**next_access)->next;
 
 	return 0;
 }
