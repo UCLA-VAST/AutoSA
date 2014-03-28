@@ -3947,6 +3947,25 @@ static __isl_give isl_ast_expr *dereference(__isl_take isl_ast_expr *expr)
  *
  * If the base of "expr" is a member access, then the linearization needs
  * to be applied to the structure argument of this member access.
+ *
+ * In the base case, if "expr" has no arguments (other than the name of
+ * the array), then we are passing an entire array to a function.
+ * In this case, there is nothing to linearize.
+ * Note that at this point an expression with no arguments can
+ * only be an entire array because the scalar case and
+ * the case of single struct are handled by the caller.
+ *
+ * If the number of specified index expressions in "expr"
+ * is smaller than the dimension of the accessed array,
+ * then the missing i_j also do not appear in the linearized expression.
+ * Furthermore, since such an expression does not refer to a single
+ * element while the default linearized expression would refer to
+ * a single element, we return the expression
+ *
+ *	A + (..((i_0 * b_1 + i_1) ... ) * b_n]
+ *
+ * instead.  Note that because of the special case handling above,
+ * we can assume here that here that there is at least one index expression.
  */
 __isl_give isl_ast_expr *gpu_local_array_info_linearize_index(
 	struct gpu_local_array_info *array, __isl_take isl_ast_expr *expr)
@@ -3973,28 +3992,38 @@ __isl_give isl_ast_expr *gpu_local_array_info_linearize_index(
 	}
 	isl_ast_expr_free(arg0);
 
+	if (isl_ast_expr_get_op_n_arg(expr) == 1)
+		return expr;
+
 	ctx = isl_ast_expr_get_ctx(expr);
 	context = isl_set_universe(isl_space_params_alloc(ctx, 0));
 	build = isl_ast_build_from_context(context);
 
 	n = isl_ast_expr_get_op_n_arg(expr);
 	res = isl_ast_expr_get_op_arg(expr, 1);
-	for (i = 2; i < n; ++i) {
+	for (i = 1; i < array->n_index; ++i) {
 		isl_pw_aff *bound_i;
 		isl_ast_expr *expr_i;
 
-		bound_i = isl_pw_aff_list_get_pw_aff(array->bound, i - 1);
+		bound_i = isl_pw_aff_list_get_pw_aff(array->bound, i);
 		expr_i = isl_ast_build_expr_from_pw_aff(build, bound_i);
 		res = isl_ast_expr_mul(res, expr_i);
-		expr_i = isl_ast_expr_get_op_arg(expr, i);
+
+		if (i + 1 >= n)
+			continue;
+		expr_i = isl_ast_expr_get_op_arg(expr, i + 1);
 		res = isl_ast_expr_add(res, expr_i);
 	}
 
 	isl_ast_build_free(build);
 
-	list = isl_ast_expr_list_from_ast_expr(res);
-	res = isl_ast_expr_get_op_arg(expr, 0);
-	res = isl_ast_expr_access(res, list);
+	if (1 + array->n_index > n) {
+		res = isl_ast_expr_add(isl_ast_expr_get_op_arg(expr, 0), res);
+	} else {
+		list = isl_ast_expr_list_from_ast_expr(res);
+		res = isl_ast_expr_get_op_arg(expr, 0);
+		res = isl_ast_expr_access(res, list);
+	}
 
 	isl_ast_expr_free(expr);
 
