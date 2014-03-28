@@ -32,7 +32,13 @@ for i in $srcdir/tests/*.c; do
 	name="${name%.c}"
 	out_c="${OUTDIR}/$name.ppcg.c"
 	out="${OUTDIR}/$name.ppcg$EXEEXT"
-	./ppcg$EXEEXT --target=opencl --opencl-no-use-gpu $i -o "$out_c" || exit
+	options="--target=opencl --opencl-no-use-gpu"
+	functions="$srcdir/tests/${name}_opencl_functions.cl"
+	if test -f $functions; then
+		options="$options --opencl-include-file=$functions"
+		options="$options --opencl-compiler-options=-I."
+	fi
+	./ppcg$EXEEXT $options $i -o "$out_c" || exit
 	$CC $CFLAGS "$srcdir/ocl_utilities.c" -lOpenCL "$out_c" -o "$out" || \
 		exit
 	$out || exit
