@@ -95,10 +95,13 @@ struct gpu_array_ref_group {
 	 * to the first shared_len dimensions of the computed schedule.
 	 * write is set if any access in the group is a write.
 	 * exact_write is set if all writes are definite writes.
+	 * slice is set if there is at least one access in the group
+	 * that refers to more than one element
 	 */
 	isl_map *access;
 	int write;
 	int exact_write;
+	int slice;
 
 	/* The shared memory tile, NULL if none. */
 	struct gpu_array_tile *shared_tile;
@@ -2693,6 +2696,7 @@ static int populate_array_references(struct gpu_array_info *array,
 		group->access = map;
 		group->write = access->write;
 		group->exact_write = access->exact_write;
+		group->slice = access->n_index < array->n_index;
 		group->refs = &array->refs[i];
 		group->n_ref = 1;
 
@@ -2783,6 +2787,7 @@ static struct gpu_array_ref_group *join_groups(
 					isl_map_copy(group2->access));
 	group->write = group1->write || group2->write;
 	group->exact_write = group1->exact_write && group2->exact_write;
+	group->slice = group1->slice || group2->slice;
 	group->n_ref = group1->n_ref + group2->n_ref;
 	group->refs = isl_alloc_array(ctx, struct gpu_stmt_access *,
 					group->n_ref);
@@ -2816,6 +2821,12 @@ static struct gpu_array_ref_group *join_groups_and_free(
  *
  * If the array is a read-only scalar or if the user requested
  * not to use shared or private memory, then we do not need to do anything.
+ *
+ * If any reference in the reference group accesses more than one element,
+ * then we would have to make sure that the layout in shared memory
+ * is the same as that in global memory.  Since we do not handle this yet
+ * (and it may not even be possible), we refuse to map to private or
+ * shared memory in such cases.
  *
  * If the array group involves any may writes (that are not must writes),
  * then we would have to make sure that we load the data into shared/private
@@ -2874,6 +2885,8 @@ static int compute_group_bounds_core(struct gpu_gen *gen,
 	if (gpu_array_is_read_only_scalar(group->array))
 		return 0;
 	if (!force_private && !group->exact_write)
+		return 0;
+	if (group->slice)
 		return 0;
 
 	access = group_access_relation(group, 1, 1);
@@ -5765,6 +5778,7 @@ static int extract_access(__isl_keep pet_expr *expr, void *user)
 	isl_map *may;
 	struct gpu_stmt_access *access;
 	isl_ctx *ctx;
+	isl_multi_pw_aff *index;
 
 	may = pet_expr_access_get_may_access(expr);
 	ctx = isl_map_get_ctx(may);
@@ -5785,6 +5799,9 @@ static int extract_access(__isl_keep pet_expr *expr, void *user)
 		access->exact_write = isl_map_is_equal(must, access->access);
 		isl_map_free(must);
 	}
+	index = pet_expr_access_get_index(expr);
+	access->n_index = isl_multi_pw_aff_dim(index, isl_dim_out);
+	isl_multi_pw_aff_free(index);
 	access->ref_id = pet_expr_access_get_ref_id(expr);
 	access->group = -1;
 

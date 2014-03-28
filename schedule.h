@@ -12,6 +12,8 @@ struct gpu_stmt_access {
 	int write;
 	/* All writes are definite writes. */
 	int exact_write;
+	/* The number of index expressions specified in the access. */
+	int n_index;
 
 	/* Index of the array reference group this reference belong to.
 	 * -1 if no reference groups have been computed for the array.
