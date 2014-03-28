@@ -1365,8 +1365,12 @@ __isl_give isl_set *add_bounded_parameters(__isl_take isl_set *set,
 	return isl_set_intersect(set, isl_set_from_basic_set(bset));
 }
 
-/* Add "len" parameters p[i] called prefix%d,
- * with bounds to 0 <= p[i] < size[i].
+/* Add "len" parameters p[i] called prefix%d and intersect "set"
+ * with
+ *
+ *	{ : 0 <= p[i] < size[i] }
+ *
+ * or an overapproximation.
  */
 static __isl_give isl_set *add_bounded_parameters_dynamic(
 	__isl_take isl_set *set, __isl_keep isl_multi_pw_aff *size,
@@ -1399,6 +1403,7 @@ static __isl_give isl_set *add_bounded_parameters_dynamic(
 
 		size_i = isl_multi_pw_aff_get_pw_aff(size, i);
 		bound = isl_pw_aff_lt_set(isl_pw_aff_copy(param), size_i);
+		bound = isl_set_from_basic_set(isl_set_simple_hull(bound));
 		set = isl_set_intersect_params(set, bound);
 
 		zero = isl_pw_aff_zero_on_domain(isl_local_space_copy(ls));
