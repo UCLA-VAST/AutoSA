@@ -5726,43 +5726,47 @@ struct ppcg_extract_access_data {
  * If the access expression performs a write, then it is considered
  * exact only if it appears in a single expression statement and
  * if its may access relation is equal to its must access relation.
+ *
+ * The combined set of may accesses may be union if member accesses
+ * are involved, but the entire set is derived from a single reference and
+ * therefore from a single index expression.  These accesses therefore
+ * all map to the same outer array.
  */
 static int extract_access(__isl_keep pet_expr *expr, void *user)
 {
 	struct ppcg_extract_access_data *data = user;
-	isl_map *may, *tagged;
-	isl_union_map *umap;
+	isl_union_map *may, *tagged;
 	struct gpu_stmt_access *access;
 	isl_ctx *ctx;
 	isl_multi_pw_aff *index;
 
-	may = pet_expr_access_get_may_access(expr);
-	umap = isl_union_map_from_map(may);
-	umap = isl_union_map_apply_range(umap,
+	may = pet_expr_access_get_may_read(expr);
+	may = isl_union_map_union(may, pet_expr_access_get_may_write(expr));
+	may = isl_union_map_apply_range(may,
 					isl_union_map_copy(data->any_to_outer));
-	may = isl_map_from_union_map(umap);
-	ctx = isl_map_get_ctx(may);
+	ctx = isl_union_map_get_ctx(may);
 	access = isl_alloc_type(ctx, struct gpu_stmt_access);
 	assert(access);
 	access->next = NULL;
 	access->read = pet_expr_access_is_read(expr);
 	access->write = pet_expr_access_is_write(expr);
-	access->access = may;
-	tagged = pet_expr_access_get_tagged_may_access(expr);
-	umap = isl_union_map_from_map(tagged);
-	umap = isl_union_map_apply_range(umap,
+	tagged = pet_expr_access_get_tagged_may_read(expr);
+	tagged = isl_union_map_union(tagged,
+				pet_expr_access_get_tagged_may_write(expr));
+	tagged = isl_union_map_apply_range(tagged,
 					isl_union_map_copy(data->any_to_outer));
-	access->tagged_access = isl_map_from_union_map(umap);
+	access->tagged_access = isl_map_from_union_map(tagged);
 	if (!access->write) {
 		access->exact_write = 1;
 	} else if (!data->single_expression) {
 		access->exact_write = 0;
 	} else {
-		isl_map *must;
-		must = pet_expr_access_get_must_access(expr);
-		access->exact_write = isl_map_is_equal(must, access->access);
-		isl_map_free(must);
+		isl_union_map *must;
+		must = pet_expr_access_get_must_write(expr);
+		access->exact_write = isl_union_map_is_equal(must, may);
+		isl_union_map_free(must);
 	}
+	access->access = isl_map_from_union_map(may);
 	index = pet_expr_access_get_index(expr);
 	access->n_index = isl_multi_pw_aff_dim(index, isl_dim_out);
 	isl_multi_pw_aff_free(index);
