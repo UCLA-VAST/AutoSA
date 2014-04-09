@@ -9,6 +9,9 @@ AC_PROG_LIBTOOL
 PKG_PROG_PKG_CONFIG
 
 AX_CHECK_OPENCL
+if test $HAVE_OPENCL = yes; then
+	extra_tests="$extra_tests opencl_test.sh"
+fi
 
 AX_SUBMODULE(isl,build|bundled|system,bundled)
 AM_CONDITIONAL(BUNDLED_ISL, test $with_isl = bundled)
@@ -63,6 +66,7 @@ echo '#define GIT_HEAD_ID "'$GIT_HEAD_ID'"' > gitversion.h
 
 AC_CONFIG_FILES(Makefile)
 AC_CONFIG_FILES([polybench_test.sh], [chmod +x polybench_test.sh])
+AC_CONFIG_FILES([opencl_test.sh], [chmod +x opencl_test.sh])
 if test $with_isl = bundled; then
 	AC_CONFIG_SUBDIRS(isl)
 fi

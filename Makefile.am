@@ -49,7 +49,7 @@ ppcg_SOURCES = \
 	version.c
 
 TESTS = @extra_tests@
-EXTRA_TESTS = polybench_test.sh
+EXTRA_TESTS = opencl_test.sh polybench_test.sh
 TEST_EXTENSIONS = .sh
 
 EXTRA_DIST = ocl_utilities.c
