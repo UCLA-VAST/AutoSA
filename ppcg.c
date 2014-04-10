@@ -53,6 +53,20 @@ ISL_ARGS_END
 
 ISL_ARG_DEF(options, struct options, options_args)
 
+/* Return a pointer to the final path component of "filename" or
+ * to "filename" itself if it does not contain any components.
+ */
+const char *ppcg_base_name(const char *filename)
+{
+	const char *base;
+
+	base = strrchr(filename, '/');
+	if (base)
+		return ++base;
+	else
+		return filename;
+}
+
 /* Copy the base name of "input" to "name" and return its length.
  * "name" is not NULL terminated.
  *
@@ -65,11 +79,7 @@ int ppcg_extract_base_name(char *name, const char *input)
 	const char *ext;
 	int len;
 
-	base = strrchr(input, '/');
-	if (base)
-		base++;
-	else
-		base = input;
+	base = ppcg_base_name(input);
 	ext = strrchr(base, '.');
 	len = ext ? ext - base : strlen(base);
 

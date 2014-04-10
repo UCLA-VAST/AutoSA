@@ -8,6 +8,7 @@
 
 #include "ppcg_options.h"
 
+const char *ppcg_base_name(const char *filename);
 int ppcg_extract_base_name(char *name, const char *input);
 
 /* Representation of the scop for use inside PPCG.
