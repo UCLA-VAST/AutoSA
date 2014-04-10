@@ -44,12 +44,26 @@ struct opencl_info {
 	FILE *kernel_h;
 };
 
+/* Open the file called "name" for writing or print an error message.
+ */
+static FILE *open_or_croak(const char *name)
+{
+	FILE *file;
+
+	file = fopen(name, "w");
+	if (!file)
+		fprintf(stderr, "Failed to open \"%s\" for writing\n", name);
+	return file;
+}
+
 /* Open the host .c file and the kernel .h and .cl files for writing.
  * Their names are derived from info->output (or info->input if
  * the user did not specify an output file name).
  * Add the necessary includes to these files.
+ *
+ * Return 0 on success and -1 on failure.
  */
-static void opencl_open_files(struct opencl_info *info)
+static int opencl_open_files(struct opencl_info *info)
 {
 	char name[PATH_MAX];
 	int len;
@@ -61,20 +75,24 @@ static void opencl_open_files(struct opencl_info *info)
 		len = ext ? ext - info->output : strlen(info->output);
 		memcpy(name, info->output, len);
 
-		info->host_c = fopen(info->output, "w");
+		info->host_c = open_or_croak(info->output);
 	} else {
 		len = ppcg_extract_base_name(name, info->input);
 
 		strcpy(name + len, "_host.c");
-		info->host_c = fopen(name, "w");
+		info->host_c = open_or_croak(name);
 	}
 
 	memcpy(info->kernel_c_name, name, len);
 	strcpy(info->kernel_c_name + len, "_kernel.cl");
-	info->kernel_c = fopen(info->kernel_c_name, "w");
+	info->kernel_c = open_or_croak(info->kernel_c_name);
 
 	strcpy(name + len, "_kernel.h");
-	info->kernel_h = fopen(name, "w");
+	info->kernel_h = open_or_croak(name);
+
+	if (!info->host_c || !info->kernel_c || !info->host_c)
+		return -1;
+
 	fprintf(info->host_c, "#include <assert.h>\n");
 	fprintf(info->host_c, "#include <stdio.h>\n");
 	fprintf(info->host_c, "#include \"%s\"\n\n", name);
@@ -91,15 +109,20 @@ static void opencl_open_files(struct opencl_info *info)
 				"const char *opencl_options);\n");
 	fprintf(info->kernel_h,
 		"const char *opencl_error_string(cl_int error);\n");
+
+	return 0;
 }
 
 /* Close all output files.
  */
 static void opencl_close_files(struct opencl_info *info)
 {
-	fclose(info->kernel_c);
-	fclose(info->kernel_h);
-	fclose(info->host_c);
+	if (info->kernel_c)
+		fclose(info->kernel_c);
+	if (info->kernel_h)
+		fclose(info->kernel_h);
+	if (info->host_c)
+		fclose(info->host_c);
 }
 
 static __isl_give isl_printer *print_opencl_macros(__isl_take isl_printer *p)
@@ -1110,10 +1133,11 @@ int generate_opencl(isl_ctx *ctx, struct ppcg_options *options,
 	struct opencl_info opencl = { options, input, output };
 	int r;
 
-	opencl_open_files(&opencl);
+	r = opencl_open_files(&opencl);
 
-	r = generate_gpu(ctx, input, opencl.host_c, options,
-			&print_opencl, &opencl);
+	if (r >= 0)
+		r = generate_gpu(ctx, input, opencl.host_c, options,
+				&print_opencl, &opencl);
 
 	opencl_close_files(&opencl);
 
