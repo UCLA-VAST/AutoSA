@@ -95,7 +95,7 @@ static int opencl_open_files(struct opencl_info *info)
 
 	fprintf(info->host_c, "#include <assert.h>\n");
 	fprintf(info->host_c, "#include <stdio.h>\n");
-	fprintf(info->host_c, "#include \"%s\"\n\n", name);
+	fprintf(info->host_c, "#include \"%s\"\n\n", ppcg_base_name(name));
 	fprintf(info->kernel_h, "#if defined(__APPLE__)\n");
 	fprintf(info->kernel_h, "#include <OpenCL/opencl.h>\n");
 	fprintf(info->kernel_h, "#else\n");
