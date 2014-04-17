@@ -79,8 +79,8 @@ static __isl_give isl_printer *print_declarations(__isl_take isl_printer *p,
 	if (!scop)
 		return isl_printer_free(p);
 
-	for (i = 0; i < scop->n_array; ++i) {
-		struct pet_array *array = scop->arrays[i];
+	for (i = 0; i < scop->pet->n_array; ++i) {
+		struct pet_array *array = scop->pet->arrays[i];
 		const char *name;
 
 		if (!array->declared)

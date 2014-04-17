@@ -614,8 +614,8 @@ static __isl_give int any_double_elements(struct gpu_prog *prog)
 		if (strcmp(prog->array[i].type, "double") == 0)
 			return 1;
 
-	for (i = 0; i < prog->scop->n_type; ++i) {
-		struct pet_type *type = prog->scop->types[i];
+	for (i = 0; i < prog->scop->pet->n_type; ++i) {
+		struct pet_type *type = prog->scop->pet->types[i];
 
 		if (strstr(type->definition, "double"))
 			return 1;

@@ -637,18 +637,11 @@ static struct ppcg_scop *ppcg_scop_from_pet_scop(struct pet_scop *scop,
 	ps->must_writes = pet_scop_collect_must_writes(scop);
 	ps->tagged_must_kills = pet_scop_collect_tagged_must_kills(scop);
 	ps->schedule = pet_scop_collect_schedule(scop);
-	ps->n_type = scop->n_type;
-	ps->types = scop->types;
-	ps->n_array = scop->n_array;
-	ps->arrays = scop->arrays;
-	ps->n_stmt = scop->n_stmt;
-	ps->stmts = scop->stmts;
-	ps->n_independence = scop->n_independence;
-	ps->independences = scop->independences;
+	ps->pet = scop;
 	ps->independence = isl_union_map_empty(isl_set_get_space(ps->context));
-	for (i = 0; i < ps->n_independence; ++i)
+	for (i = 0; i < scop->n_independence; ++i)
 		ps->independence = isl_union_map_union(ps->independence,
-			isl_union_map_copy(ps->independences[i]->filter));
+			isl_union_map_copy(scop->independences[i]->filter));
 
 	compute_tagger(ps);
 	compute_dependences(ps);

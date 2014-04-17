@@ -225,7 +225,7 @@ __isl_give isl_printer *gpu_print_types(__isl_take isl_printer *p,
 	isl_ctx *ctx;
 	char **name;
 
-	n = prog->scop->n_type;
+	n = prog->scop->pet->n_type;
 
 	if (n == 0)
 		return p;
@@ -237,7 +237,7 @@ __isl_give isl_printer *gpu_print_types(__isl_take isl_printer *p,
 	types->name = name;
 
 	for (i = 0; i < n; ++i) {
-		struct pet_type *type = prog->scop->types[i];
+		struct pet_type *type = prog->scop->pet->types[i];
 
 		if (already_printed(types, type))
 			continue;

@@ -347,17 +347,17 @@ static struct pet_array *find_array(struct ppcg_scop *scop,
 
 	id = isl_set_get_tuple_id(accessed);
 
-	for (i = 0; i < scop->n_array; ++i) {
+	for (i = 0; i < scop->pet->n_array; ++i) {
 		isl_id *id_i;
 
-		id_i = isl_set_get_tuple_id(scop->arrays[i]->extent);
+		id_i = isl_set_get_tuple_id(scop->pet->arrays[i]->extent);
 		isl_id_free(id_i);
 		if (id == id_i)
 			break;
 	}
 	isl_id_free(id);
 
-	return i < scop->n_array ? scop->arrays[i] : NULL;
+	return i < scop->pet->n_array ? scop->pet->arrays[i] : NULL;
 }
 
 /* Compute and return the extent of "array", taking into account the set of
@@ -521,8 +521,8 @@ static __isl_give isl_union_map *compute_to_inner(struct ppcg_scop *scop)
 
 	to_inner = isl_union_map_empty(isl_set_get_space(scop->context));
 
-	for (i = 0; i < scop->n_array; ++i) {
-		struct pet_array *array = scop->arrays[i];
+	for (i = 0; i < scop->pet->n_array; ++i) {
+		struct pet_array *array = scop->pet->arrays[i];
 		isl_set *set;
 		isl_map *map;
 
@@ -574,8 +574,8 @@ static __isl_give isl_union_map *remove_independences(struct gpu_prog *prog,
 {
 	int i;
 
-	for (i = 0; i < prog->scop->n_independence; ++i) {
-		struct pet_independence *pi = prog->scop->independences[i];
+	for (i = 0; i < prog->scop->pet->n_independence; ++i) {
+		struct pet_independence *pi = prog->scop->pet->independences[i];
 		if (isl_union_set_contains(pi->local, array->space))
 			continue;
 
@@ -5833,15 +5833,15 @@ static struct gpu_stmt *extract_stmts(isl_ctx *ctx, struct ppcg_scop *scop,
 	int i;
 	struct gpu_stmt *stmts;
 
-	stmts = isl_calloc_array(ctx, struct gpu_stmt, scop->n_stmt);
+	stmts = isl_calloc_array(ctx, struct gpu_stmt, scop->pet->n_stmt);
 	if (!stmts)
 		return NULL;
 
-	for (i = 0; i < scop->n_stmt; ++i) {
+	for (i = 0; i < scop->pet->n_stmt; ++i) {
 		struct gpu_stmt *s = &stmts[i];
 
-		s->id = isl_set_get_tuple_id(scop->stmts[i]->domain);
-		s->stmt = scop->stmts[i];
+		s->id = isl_set_get_tuple_id(scop->pet->stmts[i]->domain);
+		s->stmt = scop->pet->stmts[i];
 		pet_stmt_extract_accesses(s);
 	}
 
@@ -6019,7 +6019,7 @@ struct gpu_prog *gpu_prog_alloc(isl_ctx *ctx, struct ppcg_scop *scop)
 	prog->ctx = ctx;
 	prog->scop = scop;
 	prog->context = isl_set_copy(scop->context);
-	prog->n_stmts = scop->n_stmt;
+	prog->n_stmts = scop->pet->n_stmt;
 	prog->stmts = extract_stmts(ctx, scop, prog->context);
 	prog->read = isl_union_map_copy(scop->reads);
 	prog->may_write = isl_union_map_copy(scop->may_writes);

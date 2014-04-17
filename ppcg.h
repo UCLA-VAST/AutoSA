@@ -58,8 +58,7 @@ int ppcg_extract_base_name(char *name, const char *input);
  *	set of anti and output dependences.
  * "schedule" represents the (original) schedule.
  *
- * "types", "arrays", "stmts" and "independences"
- * are copies of the corresponding elements of the original pet_scop.
+ * "pet" is the original pet_scop.
  */
 struct ppcg_scop {
 	struct ppcg_options *options;
@@ -92,14 +91,7 @@ struct ppcg_scop {
 	isl_union_map *tagged_dep_order;
 	isl_union_map *schedule;
 
-	int n_type;
-	struct pet_type **types;
-	int n_array;
-	struct pet_array **arrays;
-	int n_stmt;
-	struct pet_stmt **stmts;
-	int n_independence;
-	struct pet_independence **independences;
+	struct pet_scop *pet;
 };
 
 int ppcg_transform(isl_ctx *ctx, const char *input, FILE *out,

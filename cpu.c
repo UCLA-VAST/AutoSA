@@ -246,8 +246,8 @@ static struct pet_stmt *find_stmt(struct ppcg_scop *scop, __isl_keep isl_id *id)
 {
 	int i;
 
-	for (i = 0; i < scop->n_stmt; ++i) {
-		struct pet_stmt *stmt = scop->stmts[i];
+	for (i = 0; i < scop->pet->n_stmt; ++i) {
+		struct pet_stmt *stmt = scop->pet->stmts[i];
 		isl_id *id_i;
 
 		id_i = isl_set_get_tuple_id(stmt->domain);
@@ -471,8 +471,9 @@ static int any_hidden_declarations(struct ppcg_scop *scop)
 	if (!scop)
 		return 0;
 
-	for (i = 0; i < scop->n_array; ++i)
-		if (scop->arrays[i]->declared && !scop->arrays[i]->exposed)
+	for (i = 0; i < scop->pet->n_array; ++i)
+		if (scop->pet->arrays[i]->declared &&
+		    !scop->pet->arrays[i]->exposed)
 			return 1;
 
 	return 0;
