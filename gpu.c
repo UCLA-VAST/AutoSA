@@ -3583,6 +3583,7 @@ static void localize_bounds(struct gpu_gen *gen, struct ppcg_kernel *kernel,
 			local = isl_pw_aff_list_add(local, pwaff);
 		}
 
+		kernel->array[i].n_index = array->n_index;
 		kernel->array[i].bound = local;
 	}
 	isl_set_free(context);

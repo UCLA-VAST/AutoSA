@@ -56,8 +56,11 @@ struct gpu_array_info {
 	int force_private;
 };
 
-/* For each index i, array->bound[i] specialized to the current kernel. */
+/* For each index i with 0 <= i < n_index,
+ * bound[i] is equal to array->bound[i] specialized to the current kernel.
+ */
 struct gpu_local_array_info {
+	unsigned n_index;
 	isl_pw_aff_list *bound;
 };
 
