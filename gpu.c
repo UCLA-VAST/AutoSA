@@ -505,53 +505,6 @@ error:
 	return -1;
 }
 
-/* Compute a mapping from all outer arrays (of structs) in scop
- * to their innermost arrays.
- *
- * In particular, for each array of a primitive type, the result
- * contains the identity mapping on that array.
- * For each array involving member accesses, the result
- * contains a mapping from the elements of the outer array of structs
- * to all corresponding elements of the innermost nested arrays.
- */
-static __isl_give isl_union_map *compute_to_inner(struct ppcg_scop *scop)
-{
-	int i;
-	isl_union_map *to_inner;
-
-	to_inner = isl_union_map_empty(isl_set_get_space(scop->context));
-
-	for (i = 0; i < scop->pet->n_array; ++i) {
-		struct pet_array *array = scop->pet->arrays[i];
-		isl_set *set;
-		isl_map *map;
-
-		if (array->element_is_record)
-			continue;
-
-		set = isl_set_copy(array->extent);
-		map = isl_set_identity(isl_set_copy(set));
-
-		while (set && isl_set_is_wrapping(set)) {
-			isl_id *id;
-			isl_map *wrapped;
-
-			id = isl_set_get_tuple_id(set);
-			wrapped = isl_set_unwrap(set);
-			wrapped = isl_map_domain_map(wrapped);
-			wrapped = isl_map_set_tuple_id(wrapped, isl_dim_in, id);
-			map = isl_map_apply_domain(map, wrapped);
-			set = isl_map_domain(isl_map_copy(map));
-		}
-
-		map = isl_map_gist_domain(map, set);
-
-		to_inner = isl_union_map_add_map(to_inner, map);
-	}
-
-	return to_inner;
-}
-
 /* Remove independence from the order constraints "order" on array "array".
  * Since the pairs of iterations in the filter relation of an independence
  * are guaranteed to be completely independent by the user, there is
@@ -6024,7 +5977,7 @@ struct gpu_prog *gpu_prog_alloc(isl_ctx *ctx, struct ppcg_scop *scop)
 	prog->read = isl_union_map_copy(scop->reads);
 	prog->may_write = isl_union_map_copy(scop->may_writes);
 	prog->must_write = isl_union_map_copy(scop->must_writes);
-	prog->to_inner = compute_to_inner(scop);
+	prog->to_inner = pet_scop_compute_outer_to_inner(scop->pet);
 	prog->to_outer = isl_union_map_copy(prog->to_inner);
 	prog->to_outer = isl_union_map_reverse(prog->to_outer);
 
