@@ -4012,7 +4012,6 @@ static __isl_give isl_ast_node *at_each_domain(__isl_take isl_ast_node *node,
 	isl_ast_expr *expr, *arg;
 	isl_union_map *schedule;
 	int i, n;
-	struct gpu_stmt_access *access;
 
 	stmt = isl_calloc_type(gen->ctx, struct ppcg_kernel_stmt);
 	if (!stmt)
