@@ -5713,10 +5713,12 @@ static void compute_copy_in_and_out(struct gpu_gen *gen)
  * by extract_access.
  * "single_expression" is set if the access expressions belong to
  * an expression statement (i.e., a statement without internal control).
+ * "any_to_outer" maps all intermediate arrays to their outer arrays.
  */
 struct ppcg_extract_access_data {
 	struct gpu_stmt_access **next_access;
 	int single_expression;
+	isl_union_map *any_to_outer;
 };
 
 /* Extract a gpu_stmt_access from "expr", append it to the list
@@ -5728,12 +5730,17 @@ struct ppcg_extract_access_data {
 static int extract_access(__isl_keep pet_expr *expr, void *user)
 {
 	struct ppcg_extract_access_data *data = user;
-	isl_map *may;
+	isl_map *may, *tagged;
+	isl_union_map *umap;
 	struct gpu_stmt_access *access;
 	isl_ctx *ctx;
 	isl_multi_pw_aff *index;
 
 	may = pet_expr_access_get_may_access(expr);
+	umap = isl_union_map_from_map(may);
+	umap = isl_union_map_apply_range(umap,
+					isl_union_map_copy(data->any_to_outer));
+	may = isl_map_from_union_map(umap);
 	ctx = isl_map_get_ctx(may);
 	access = isl_alloc_type(ctx, struct gpu_stmt_access);
 	assert(access);
@@ -5741,7 +5748,11 @@ static int extract_access(__isl_keep pet_expr *expr, void *user)
 	access->read = pet_expr_access_is_read(expr);
 	access->write = pet_expr_access_is_write(expr);
 	access->access = may;
-	access->tagged_access = pet_expr_access_get_tagged_may_access(expr);
+	tagged = pet_expr_access_get_tagged_may_access(expr);
+	umap = isl_union_map_from_map(tagged);
+	umap = isl_union_map_apply_range(umap,
+					isl_union_map_copy(data->any_to_outer));
+	access->tagged_access = isl_map_from_union_map(umap);
 	if (!access->write) {
 		access->exact_write = 1;
 	} else if (!data->single_expression) {
@@ -5766,8 +5777,10 @@ static int extract_access(__isl_keep pet_expr *expr, void *user)
 
 /* Construct a linked list of gpu_stmt_access objects,
  * one for each access expression in the statement body.
+ * "any_to_outer" maps all intermediate arrays to their outer arrays.
  */
-static void pet_stmt_extract_accesses(struct gpu_stmt *stmt)
+static void pet_stmt_extract_accesses(struct gpu_stmt *stmt,
+	__isl_keep isl_union_map *any_to_outer)
 {
 	struct ppcg_extract_access_data data;
 
@@ -5775,13 +5788,14 @@ static void pet_stmt_extract_accesses(struct gpu_stmt *stmt)
 	data.next_access = &stmt->accesses;
 	data.single_expression =
 		pet_tree_get_type(stmt->stmt->body) == pet_tree_expr;
+	data.any_to_outer = any_to_outer;
 	pet_tree_foreach_access_expr(stmt->stmt->body, &extract_access, &data);
 }
 
 /* Return an array of gpu_stmt representing the statements in "scop".
  */
 static struct gpu_stmt *extract_stmts(isl_ctx *ctx, struct ppcg_scop *scop,
-	__isl_keep isl_set *context)
+	__isl_keep isl_set *context, __isl_keep isl_union_map *any_to_outer)
 {
 	int i;
 	struct gpu_stmt *stmts;
@@ -5795,7 +5809,7 @@ static struct gpu_stmt *extract_stmts(isl_ctx *ctx, struct ppcg_scop *scop,
 
 		s->id = isl_set_get_tuple_id(scop->pet->stmts[i]->domain);
 		s->stmt = scop->pet->stmts[i];
-		pet_stmt_extract_accesses(s);
+		pet_stmt_extract_accesses(s, any_to_outer);
 	}
 
 	return stmts;
@@ -5962,6 +5976,8 @@ int generate_gpu(isl_ctx *ctx, const char *input, FILE *out,
 struct gpu_prog *gpu_prog_alloc(isl_ctx *ctx, struct ppcg_scop *scop)
 {
 	struct gpu_prog *prog;
+	isl_space *space;
+	isl_map *id;
 
 	if (!scop)
 		return NULL;
@@ -5973,7 +5989,16 @@ struct gpu_prog *gpu_prog_alloc(isl_ctx *ctx, struct ppcg_scop *scop)
 	prog->scop = scop;
 	prog->context = isl_set_copy(scop->context);
 	prog->n_stmts = scop->pet->n_stmt;
-	prog->stmts = extract_stmts(ctx, scop, prog->context);
+	prog->any_to_outer = pet_scop_compute_outer_to_any(scop->pet);
+	prog->any_to_outer = isl_union_map_reverse(prog->any_to_outer);
+	space = isl_union_map_get_space(prog->any_to_outer);
+	space = isl_space_set_from_params(space);
+	space = isl_space_add_dims(space, isl_dim_set, 1);
+	space = isl_space_map_from_set(space);
+	id = isl_map_identity(space);
+	prog->any_to_outer = isl_union_map_add_map(prog->any_to_outer, id);
+	prog->stmts = extract_stmts(ctx, scop,
+					prog->context, prog->any_to_outer);
 	prog->read = isl_union_map_copy(scop->reads);
 	prog->may_write = isl_union_map_copy(scop->may_writes);
 	prog->must_write = isl_union_map_copy(scop->must_writes);
@@ -5996,6 +6021,7 @@ void *gpu_prog_free(struct gpu_prog *prog)
 		return NULL;
 	free_array_info(prog);
 	free_stmts(prog->stmts, prog->n_stmts);
+	isl_union_map_free(prog->any_to_outer);
 	isl_union_map_free(prog->to_outer);
 	isl_union_map_free(prog->to_inner);
 	isl_union_set_free(prog->copy_in);
