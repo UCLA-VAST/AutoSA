@@ -1114,6 +1114,7 @@ struct ppcg_kernel *ppcg_kernel_free(struct ppcg_kernel *kernel)
 	isl_union_set_free(kernel->block_filter);
 	isl_union_set_free(kernel->thread_filter);
 	isl_union_pw_multi_aff_free(kernel->shared_schedule);
+	isl_union_set_free(kernel->sync_writes);
 
 	for (i = 0; i < kernel->n_array; ++i) {
 		struct gpu_local_array_info *array = &kernel->array[i];
@@ -2336,6 +2337,94 @@ static int is_outer_tilable(__isl_keep isl_schedule_node *node)
 	return tilable < 0 ? -1 : !tilable;
 }
 
+/* Collect the references to all writes in "group".
+ * Each reference is represented by a universe set in a space
+ *
+ *	[S[i,j] -> R[]]
+ *
+ * with S[i,j] the statement instance space and R[] the array reference.
+ */
+static __isl_give isl_union_set *group_tagged_writes(
+	struct gpu_array_ref_group *group)
+{
+	int i;
+	isl_space *space;
+	isl_union_set *writes;
+
+	space = isl_map_get_space(group->access);
+	writes = isl_union_set_empty(space);
+	for (i = 0; i < group->n_ref; ++i) {
+		isl_space *space;
+		isl_set *writes_i;
+
+		if (!group->refs[i]->write)
+			continue;
+
+		space = isl_map_get_space(group->refs[i]->tagged_access);
+		space = isl_space_domain(space);
+		writes_i = isl_set_universe(space);
+		writes = isl_union_set_add_set(writes, writes_i);
+	}
+
+	return writes;
+}
+
+/* Collect the references to all writes in "kernel" that write directly
+ * to global memory, i.e., that are not mapped to private or shared memory.
+ * Each reference is represented by a universe set in a space
+ *
+ *	[S[i,j] -> R[]]
+ *
+ * with S[i,j] the statement instance space and R[] the array reference.
+ */
+static __isl_give isl_union_set *collect_global_tagged_writes(
+	struct ppcg_kernel *kernel)
+{
+	isl_union_set *writes;
+	int i, j;
+
+	writes = isl_union_set_empty(isl_union_set_get_space(kernel->arrays));
+
+	for (i = 0; i < kernel->n_array; ++i) {
+		struct gpu_local_array_info *array = &kernel->array[i];
+
+		for (j = 0; j < array->n_group; ++j) {
+			struct gpu_array_ref_group *group = array->groups[j];
+			isl_union_set *writes_ij;
+
+			if (!group->write)
+				continue;
+			if (group->private_tile || group->shared_tile)
+				continue;
+			writes_ij = group_tagged_writes(group);
+			writes = isl_union_set_union(writes, writes_ij);
+		}
+	}
+
+	return writes;
+}
+
+/* Are there any direct writes to global memory that require
+ * synchronization?
+ */
+static int any_global_sync_writes(struct ppcg_kernel *kernel)
+{
+	isl_union_set *writes;
+	int empty, disjoint;
+
+	empty = isl_union_set_is_empty(kernel->sync_writes);
+	if (empty < 0)
+		return -1;
+	if (empty)
+		return 0;
+
+	writes = collect_global_tagged_writes(kernel);
+	disjoint = isl_union_set_is_disjoint(kernel->sync_writes, writes);
+	isl_union_set_free(writes);
+
+	return disjoint < 0 ? -1 : !disjoint;
+}
+
 /* Construct an isl_multi_val for use as tile sizes for tiling "node"
  * from the elements in "tile_size".
  */
@@ -2743,41 +2832,24 @@ static __isl_give isl_schedule_node *unroll(__isl_take isl_schedule_node *node)
 	return node;
 }
 
-/* Is there any write in "kernel" that writes directly to global memory?
- * That is, is there any array reference group that involves a write and
- * that is not mapped to private or shared memory?
- */
-static int any_global_write(struct ppcg_kernel *kernel)
-{
-	int i, j;
-
-	for (i = 0; i < kernel->n_array; ++i) {
-		struct gpu_local_array_info *array = &kernel->array[i];
-
-		for (j = 0; j < array->n_group; ++j) {
-			struct gpu_array_ref_group *group = array->groups[j];
-
-			if (!group->write)
-				continue;
-			if (group->private_tile || group->shared_tile)
-				continue;
-			return 1;
-		}
-	}
-
-	return 0;
-}
-
 /* Insert a synchronization node in the schedule tree of "node"
  * after the core computation of "kernel" at the level of the band
  * that is mapped to threads, except if that level is equal to
- * that of the band that is mapped to blocks.
+ * that of the band that is mapped to blocks or if there are no writes
+ * to global memory in the core computation that require synchronization.
  * "node" is assumed to point to the kernel node.
  */
 static __isl_give isl_schedule_node *add_sync(struct ppcg_kernel *kernel,
 	__isl_take isl_schedule_node *node)
 {
 	int kernel_depth;
+	int need_sync;
+
+	need_sync = any_global_sync_writes(kernel);
+	if (need_sync < 0)
+		return isl_schedule_node_free(node);
+	if (!need_sync)
+		return node;
 
 	kernel_depth = isl_schedule_node_get_schedule_depth(node);
 
@@ -3227,6 +3299,85 @@ static __isl_give isl_schedule_node *atomic_ancestors(
 	return node;
 }
 
+/* Collect all write references that require synchronization.
+ * "node" is assumed to point to the kernel node.
+ * Each reference is represented by a universe set in a space
+ *
+ *	[S[i,j] -> R[]]
+ *
+ * with S[i,j] the statement instance space and R[] the array reference.
+ *
+ * This function should be called before block and thread filters are added.
+ *
+ * Synchronization is needed after a write if there is a subsequent read
+ * within the same block that may not be performed by the same thread.
+ * There should not be any dependences between different blocks,
+ * so we start with the flow dependences within the same kernel invocation
+ * and we subtract from these those dependences that are mapped
+ * to the same iteration of the bands where synchronization is inserted.
+ * We do not remove pairs of instances that are known to map to
+ * the same thread across different iterations of the intermediate
+ * bands because the read may be performed by a different thread
+ * than the one that needs the value if shared memory is involved.
+ *
+ * We also consider all pairs of possible writes that access the same
+ * memory location and that may be mapped to the same block but not
+ * to the same iteration of the intermediate bands.
+ * In theory, it would be possible for one thread to still be in
+ * a previous iteration of a loop in these bands.
+ * A write to global memory in this delayed thread could then overwrite
+ * a write from another thread that has already moved on to
+ * the next iteration.
+ *
+ * After computing the above writes paired off with reads or writes
+ * that depend on them, we project onto the domain writes.
+ * Sychronization is needed after writes to global memory
+ * through these references.
+ */
+static __isl_give isl_union_set *compute_sync_writes(
+	struct ppcg_kernel *kernel, __isl_keep isl_schedule_node *node)
+{
+	isl_union_map *local;
+	isl_union_map *may_writes, *shared_access;
+	isl_union_map *kernel_prefix, *thread_prefix;
+	isl_union_map *equal;
+	isl_union_set *wrap;
+	isl_union_set *domain;
+
+	domain = isl_schedule_node_get_universe_domain(node);
+	kernel_prefix = isl_schedule_node_get_prefix_schedule_union_map(node);
+	node = isl_schedule_node_copy(node);
+	node = gpu_tree_move_down_to_thread(node, kernel->core);
+	thread_prefix = isl_schedule_node_get_prefix_schedule_union_map(node);
+	isl_schedule_node_free(node);
+
+	may_writes = isl_union_map_copy(kernel->prog->scop->tagged_may_writes);
+	may_writes = isl_union_map_curry(may_writes);
+	may_writes = isl_union_map_intersect_domain(may_writes, domain);
+	may_writes = isl_union_map_uncurry(may_writes);
+	shared_access = isl_union_map_copy(may_writes);
+	shared_access = isl_union_map_apply_range(shared_access,
+					isl_union_map_reverse(may_writes));
+
+	local = isl_union_map_copy(kernel->prog->scop->tagged_dep_flow);
+	local = isl_union_map_union(local, shared_access);
+	local = isl_union_map_zip(local);
+
+	equal = isl_union_map_apply_range(kernel_prefix,
+		    isl_union_map_reverse(isl_union_map_copy(kernel_prefix)));
+	wrap = isl_union_map_wrap(equal);
+	local = isl_union_map_intersect_domain(local, wrap);
+	equal = isl_union_map_apply_range(thread_prefix,
+		    isl_union_map_reverse(isl_union_map_copy(thread_prefix)));
+	wrap = isl_union_map_wrap(equal);
+	local = isl_union_map_subtract_domain(local, wrap);
+
+	local = isl_union_map_zip(local);
+	local = isl_union_map_universe(local);
+
+	return isl_union_map_domain(local);
+}
+
 /* Group the domain elements into a single space, named kernelX,
  * with X the kernel sequence number "kernel_id".
  */
@@ -3338,6 +3489,8 @@ static __isl_give isl_schedule_node *create_kernel(struct gpu_gen *gen,
 	kernel->id = gen->kernel_id++;
 	read_grid_and_block_sizes(kernel, gen);
 
+	kernel->sync_writes = compute_sync_writes(kernel, node);
+
 	host_schedule = isl_schedule_node_get_prefix_schedule_union_map(node);
 	host_domain = isl_set_from_union_set(isl_union_map_range(
 								host_schedule));
@@ -3415,8 +3568,7 @@ static __isl_give isl_schedule_node *create_kernel(struct gpu_gen *gen,
 
 	node = gpu_tree_move_up_to_kernel(node);
 
-	if (any_global_write(kernel))
-		node = add_sync(kernel, node);
+	node = add_sync(kernel, node);
 	node = add_copies(kernel, node);
 
 	node = gpu_tree_move_down_to_thread(node, kernel->core);

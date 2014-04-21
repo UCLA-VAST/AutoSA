@@ -290,6 +290,10 @@ struct ppcg_kernel_var {
  * the (tiled) schedule for this kernel that have been taken into account
  * for computing private/shared memory tiles.
  * shared_schedule_dim is the dimension of this schedule.
+ *
+ * sync_writes contains write references that require synchronization.
+ * Each reference is represented by a universe set in a space [S[i,j] -> R[]]
+ * with S[i,j] the statement instance space and R[] the array reference.
  */
 struct ppcg_kernel {
 	isl_ctx *ctx;
@@ -328,6 +332,8 @@ struct ppcg_kernel {
 	isl_union_set *thread_filter;
 	isl_union_pw_multi_aff *shared_schedule;
 	int shared_schedule_dim;
+
+	isl_union_set *sync_writes;
 
 	isl_ast_node *tree;
 };
