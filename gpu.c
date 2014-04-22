@@ -2369,6 +2369,32 @@ static __isl_give isl_union_set *group_tagged_writes(
 	return writes;
 }
 
+/* Is there any write access in "group" that requires synchronization
+ * on a write to global memory?
+ * We currently take into account all writes that would require
+ * synchronization at the thread level depth, but if the copying
+ * for this group is performed at an outer level, then we do not
+ * actually need to take into account dependences at intermediate levels.
+ */
+static int any_sync_writes_in_group(struct ppcg_kernel *kernel,
+	struct gpu_array_ref_group *group)
+{
+	isl_union_set *writes;
+	int empty, disjoint;
+
+	empty = isl_union_set_is_empty(kernel->sync_writes);
+	if (empty < 0)
+		return -1;
+	if (empty)
+		return 0;
+
+	writes = group_tagged_writes(group);
+	disjoint = isl_union_set_is_disjoint(kernel->sync_writes, writes);
+	isl_union_set_free(writes);
+
+	return disjoint < 0 ? -1 : !disjoint;
+}
+
 /* Collect the references to all writes in "kernel" that write directly
  * to global memory, i.e., that are not mapped to private or shared memory.
  * Each reference is represented by a universe set in a space
@@ -2919,6 +2945,43 @@ static __isl_give isl_multi_aff *create_from_access(isl_ctx *ctx,
 	return isl_multi_aff_identity(space);
 }
 
+/* If any writes in "group" require synchronization, then make sure
+ * that there is a synchronization node for "kernel" after the node
+ * following "node" in a sequence.
+ *
+ * If "shared" is set and no synchronization is needed for
+ * the writes to global memory, then add synchronization before
+ * the kernel to protect shared memory from being overwritten
+ * by the next iteration of the core computation.
+ * No additional synchronization is needed to protect against
+ * the next copy into shared memory because each element of
+ * the shared memory tile is always copied by the same thread.
+ */
+static __isl_give isl_schedule_node *add_group_write_sync(
+	__isl_take isl_schedule_node *node, struct ppcg_kernel *kernel,
+	struct gpu_array_ref_group *group, int shared)
+{
+	int need_sync;
+
+	need_sync = any_sync_writes_in_group(kernel, group);
+	if (need_sync < 0)
+		return isl_schedule_node_free(node);
+	if (need_sync) {
+		node = isl_schedule_node_parent(node);
+		node = isl_schedule_node_next_sibling(node);
+		node = isl_schedule_node_child(node, 0);
+		node = gpu_tree_ensure_following_sync(node, kernel);
+	} else if (shared) {
+		node = isl_schedule_node_parent(node);
+		node = isl_schedule_node_parent(node);
+		node = gpu_tree_move_down_to_depth(node, group->depth,
+							kernel->core);
+		node = gpu_tree_move_left_to_sync(node, kernel);
+	}
+
+	return node;
+}
+
 /* Add copy statements to the schedule tree of "node"
  * for reading from global memory to private memory (if "read" is set) or
  * for writing back from private memory to global memory
@@ -3199,11 +3262,8 @@ static __isl_give isl_schedule_node *add_copies_group_shared(
 	} else {
 		node = gpu_tree_move_right_to_sync(node, kernel);
 		node = isl_schedule_node_graft_after(node, graft);
-		node = isl_schedule_node_parent(node);
-		node = isl_schedule_node_next_sibling(node);
-		node = isl_schedule_node_child(node, 0);
 		if (kernel_depth < group->depth)
-			node = gpu_tree_ensure_following_sync(node, kernel);
+			node = add_group_write_sync(node, kernel, group, 1);
 	}
 
 	node = gpu_tree_move_up_to_kernel(node);
