@@ -3087,12 +3087,8 @@ static __isl_give isl_schedule_node *add_copies_group_private(
 		node = isl_schedule_node_graft_before(node, graft);
 	else {
 		node = isl_schedule_node_graft_after(node, graft);
-		if (kernel_depth < group->depth) {
-			node = isl_schedule_node_parent(node);
-			node = isl_schedule_node_next_sibling(node);
-			node = isl_schedule_node_child(node, 0);
-			node = gpu_tree_ensure_following_sync(node, kernel);
-		}
+		if (kernel_depth < group->depth)
+			node = add_group_write_sync(node, kernel, group, 0);
 	}
 
 	node = gpu_tree_move_up_to_kernel(node);
