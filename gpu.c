@@ -3751,6 +3751,39 @@ static __isl_give isl_schedule_node *mark_outer_permutable(
 	return node;
 }
 
+/* Replace any reference to an array element in the range of "copy"
+ * by a reference to all array elements (defined by the extent of the array).
+ */
+static __isl_give isl_union_map *approximate_copy_out(
+	__isl_take isl_union_map *copy, struct gpu_prog *prog)
+{
+	int i;
+	isl_union_map *res;
+
+	res = isl_union_map_empty(isl_union_map_get_space(copy));
+
+	for (i = 0; i < prog->n_array; ++i) {
+		isl_space *space;
+		isl_set *set;
+		isl_union_map *copy_i;
+		isl_union_set *extent, *domain;
+
+		space = isl_space_copy(prog->array[i].space);
+		extent = isl_union_set_from_set(isl_set_universe(space));
+		copy_i = isl_union_map_copy(copy);
+		copy_i = isl_union_map_intersect_range(copy_i, extent);
+		set = isl_set_copy(prog->array[i].extent);
+		extent = isl_union_set_from_set(set);
+		domain = isl_union_map_domain(copy_i);
+		copy_i = isl_union_map_from_domain_and_range(domain, extent);
+		res = isl_union_map_union(res, copy_i);
+	}
+
+	isl_union_map_free(copy);
+
+	return res;
+}
+
 /* Insert "kernel" marks that point to a ppcg_kernel structure
  * in front of all outermost tilable band that (by construction)
  * have at least one parallel loop.
@@ -3909,24 +3942,402 @@ static __isl_give isl_schedule *get_schedule(struct gpu_gen *gen)
 	return schedule;
 }
 
-/* Compute the sets of outer array elements that need to be copied in and out.
+/* Return (the universe spaces of) the arrays that are declared
+ * inside the scop corresponding to "prog" and for which all
+ * potential writes inside the scop form a subset of "domain".
+ */
+static __isl_give isl_union_set *extract_local_accesses(struct gpu_prog *prog,
+	__isl_keep isl_union_set *domain)
+{
+	int i;
+	isl_union_set *local;
+
+	local = isl_union_set_empty(isl_union_set_get_space(domain));
+
+	for (i = 0; i < prog->n_array; ++i) {
+		isl_set *set;
+		isl_union_map *to_outer;
+		isl_union_map *may_write;
+		isl_union_set *write_domain;
+		isl_union_set *fields;
+		int subset;
+
+		if (!prog->array[i].local)
+			continue;
+
+		set = isl_set_universe(isl_space_copy(prog->array[i].space));
+		to_outer = isl_union_map_copy(prog->to_outer);
+		to_outer = isl_union_map_intersect_range(to_outer,
+				    isl_union_set_from_set(isl_set_copy(set)));
+		fields = isl_union_map_domain(to_outer);
+		may_write = isl_union_map_copy(prog->may_write);
+		may_write = isl_union_map_intersect_range(may_write, fields);
+		write_domain = isl_union_map_domain(may_write);
+		subset = isl_union_set_is_subset(write_domain, domain);
+		isl_union_set_free(write_domain);
+
+		if (subset < 0) {
+			isl_set_free(set);
+			return isl_union_set_free(local);
+		} else if (subset) {
+			local = isl_union_set_add_set(local, set);
+		} else {
+			isl_set_free(set);
+		}
+	}
+
+	return local;
+}
+
+/* Internal data structure for node_may_persist.
+ *
+ * "tagger" maps tagged iteration domains to the corresponding untagged
+ *	iteration domain.
+ *
+ * "may_persist_flow" is the set of all tagged dataflow dependences
+ * with those dependences removed that either precede or follow
+ * the kernel launch in a sequence.
+ * "inner_band_flow" is the set of all tagged dataflow dependences
+ * that are local to a given iteration of the outer band nodes
+ * with respect to the current node.
+ * "local_flow" is equal to "inner_band_flow", except that the domain
+ * and the range have been intersected with intermediate filters
+ * on children of sets or sequences.
+ */
+struct ppcg_may_persist_data {
+	isl_union_pw_multi_aff *tagger;
+
+	isl_union_map *local_flow;
+	isl_union_map *inner_band_flow;
+	isl_union_map *may_persist_flow;
+};
+
+/* Update the information in "data" based on the band ancestor "node".
+ *
+ * In particular, we restrict the dependences in data->local_flow
+ * to those dependence where the source and the sink occur in
+ * the same iteration of the given band node.
+ * We also update data->inner_band_flow to the new value of
+ * data->local_flow.
+ */
+static int update_may_persist_at_band(__isl_keep isl_schedule_node *node,
+	struct ppcg_may_persist_data *data)
+{
+	isl_multi_union_pw_aff *partial;
+	isl_union_pw_multi_aff *contraction;
+	isl_union_map *flow;
+
+	if (isl_schedule_node_band_n_member(node) == 0)
+		return 0;
+
+	partial = isl_schedule_node_band_get_partial_schedule(node);
+	contraction = isl_schedule_node_get_subtree_contraction(node);
+	partial = isl_multi_union_pw_aff_pullback_union_pw_multi_aff(partial,
+								contraction);
+	partial = isl_multi_union_pw_aff_pullback_union_pw_multi_aff(partial,
+				isl_union_pw_multi_aff_copy(data->tagger));
+
+	flow = data->local_flow;
+	flow = isl_union_map_eq_at_multi_union_pw_aff(flow, partial);
+	data->local_flow = flow;
+
+	isl_union_map_free(data->inner_band_flow);
+	data->inner_band_flow = isl_union_map_copy(data->local_flow);
+
+	return 0;
+}
+
+/* Given a set of local reaching domain elements "domain",
+ * expand them to the corresponding leaf domain elements using "contraction"
+ * and insert the array references tags using data->tagger.
+ */
+static __isl_give isl_union_set *expand_and_tag(
+	__isl_take isl_union_set *domain,
+	__isl_take isl_union_pw_multi_aff *contraction,
+	struct ppcg_may_persist_data *data)
+{
+	domain = isl_union_set_preimage_union_pw_multi_aff(domain,
+			    contraction);
+	domain = isl_union_set_preimage_union_pw_multi_aff(domain,
+			    isl_union_pw_multi_aff_copy(data->tagger));
+	return domain;
+}
+
+/* Given a filter node that is the child of a set or sequence node,
+ * restrict data->local_flow to refer only to those elements
+ * in the filter of the node.
+ * "contraction" maps the leaf domain elements of the schedule tree
+ * to the corresponding domain elements at (the parent of) "node".
+ */
+static int filter_flow(__isl_keep isl_schedule_node *node,
+	struct ppcg_may_persist_data *data,
+	__isl_take isl_union_pw_multi_aff *contraction)
+{
+	isl_union_set *filter;
+	isl_union_map *flow;
+
+	flow = data->local_flow;
+	filter = isl_schedule_node_filter_get_filter(node);
+	filter = expand_and_tag(filter, contraction, data);
+	flow = isl_union_map_intersect_domain(flow, isl_union_set_copy(filter));
+	flow = isl_union_map_intersect_range(flow, filter);
+	data->local_flow = flow;
+
+	return 0;
+}
+
+/* Given a filter node "node", collect the filters on all preceding siblings
+ * (which are also filter nodes), add them to "filters" and return the result.
+ */
+static __isl_give isl_union_set *add_previous_filters(
+	__isl_take isl_union_set *filters, __isl_keep isl_schedule_node *node)
+{
+	isl_schedule_node *sibling;
+
+	sibling = isl_schedule_node_copy(node);
+	while (sibling && isl_schedule_node_has_previous_sibling(sibling)) {
+		isl_union_set *filter;
+
+		sibling = isl_schedule_node_previous_sibling(sibling);
+		filter = isl_schedule_node_filter_get_filter(sibling);
+		filters = isl_union_set_union(filters, filter);
+	}
+	isl_schedule_node_free(sibling);
+	if (!sibling)
+		return isl_union_set_free(filters);
+
+	return filters;
+}
+
+/* Given a filter node "node", collect the filters on all following siblings
+ * (which are also filter nodes), add them to "filters" and return the result.
+ */
+static __isl_give isl_union_set *add_next_filters(
+	__isl_take isl_union_set *filters, __isl_keep isl_schedule_node *node)
+{
+	isl_schedule_node *sibling;
+
+	sibling = isl_schedule_node_copy(node);
+	while (sibling && isl_schedule_node_has_next_sibling(sibling)) {
+		isl_union_set *filter;
+
+		sibling = isl_schedule_node_next_sibling(sibling);
+		filter = isl_schedule_node_filter_get_filter(sibling);
+		filters = isl_union_set_union(filters, filter);
+	}
+	isl_schedule_node_free(sibling);
+	if (!sibling)
+		return isl_union_set_free(filters);
+
+	return filters;
+}
+
+/* Remove those flow dependences from data->may_persist_flow
+ * that flow between elements of "domain" within the same iteration
+ * of all outer band nodes.
+ * "contraction" maps the leaf domain elements of the schedule tree
+ * to the corresponding elements "domain".
+ */
+static void remove_external_flow(struct ppcg_may_persist_data *data,
+	__isl_take isl_union_set *domain,
+	__isl_keep isl_union_pw_multi_aff *contraction)
+{
+	isl_union_map *flow;
+
+	contraction = isl_union_pw_multi_aff_copy(contraction);
+	domain = expand_and_tag(domain, contraction, data);
+	flow = isl_union_map_copy(data->local_flow);
+	flow = isl_union_map_intersect_domain(flow, isl_union_set_copy(domain));
+	flow = isl_union_map_intersect_range(flow, domain);
+
+	data->may_persist_flow = isl_union_map_subtract(data->may_persist_flow,
+							flow);
+}
+
+/* Update the information in "data" based on the filter ancestor "node".
+ * We only need to modify anything if the filter is the child
+ * of a set or sequence node.
+ *
+ * In the case of a sequence, we remove the dependences between
+ * statement instances that are both executed either before or
+ * after the subtree that will be mapped to a kernel, within
+ * the same iteration of outer bands.
+ *
+ * In both cases, we restrict data->local_flow to the current child.
+ */
+static int update_may_persist_at_filter(__isl_keep isl_schedule_node *node,
+	struct ppcg_may_persist_data *data)
+{
+	enum isl_schedule_node_type type;
+	isl_schedule_node *parent;
+	isl_space *space;
+	isl_union_pw_multi_aff *contraction;
+	isl_union_set *before, *after, *filter;
+	isl_union_map *flow;
+
+	type = isl_schedule_node_get_parent_type(node);
+	if (type != isl_schedule_node_sequence && type != isl_schedule_node_set)
+		return 0;
+
+	parent = isl_schedule_node_copy(node);
+	parent = isl_schedule_node_parent(parent);
+	contraction = isl_schedule_node_get_subtree_contraction(parent);
+	isl_schedule_node_free(parent);
+
+	if (type == isl_schedule_node_set)
+		return filter_flow(node, data, contraction);
+
+	filter = isl_schedule_node_filter_get_filter(node);
+	space = isl_union_set_get_space(filter);
+	isl_union_set_free(filter);
+	before = isl_union_set_empty(space);
+	after = isl_union_set_copy(before);
+	before = add_previous_filters(before, node);
+	after = add_next_filters(after, node);
+
+	remove_external_flow(data, before, contraction);
+	remove_external_flow(data, after, contraction);
+
+	return filter_flow(node, data, contraction);
+}
+
+/* Update the information in "data" based on the ancestor "node".
+ */
+static int update_may_persist_at(__isl_keep isl_schedule_node *node, void *user)
+{
+	struct ppcg_may_persist_data *data = user;
+
+	switch (isl_schedule_node_get_type(node)) {
+	case isl_schedule_node_error:
+		return -1;
+	case isl_schedule_node_context:
+	case isl_schedule_node_domain:
+	case isl_schedule_node_expansion:
+	case isl_schedule_node_extension:
+	case isl_schedule_node_guard:
+	case isl_schedule_node_leaf:
+	case isl_schedule_node_mark:
+	case isl_schedule_node_sequence:
+	case isl_schedule_node_set:
+		break;
+	case isl_schedule_node_band:
+		if (update_may_persist_at_band(node, data) < 0)
+			return -1;
+		break;
+	case isl_schedule_node_filter:
+		if (update_may_persist_at_filter(node, data) < 0)
+			return -1;
+		break;
+	}
+
+	return 0;
+}
+
+/* Determine the set of array elements that may need to be perserved
+ * by a kernel constructed from the subtree at "node".
+ * This includes the set of array elements that may need to be preserved
+ * by the entire scop (prog->may_persist) and the elements for which
+ * there is a potential flow dependence that may cross a kernel launch.
+ *
+ * To determine the second set, we start from all flow dependences.
+ * From this set of dependences, we remove those that cannot possibly
+ * require data to be preserved by a kernel launch.
+ * In particular, we consider the following sets of dependences.
+ * - dependences of which the write occurs inside the kernel.
+ *   If the data is needed outside the kernel, then it will
+ *   be copied out immediately after the kernel launch, so there
+ *   is no need for any special care.
+ * - dependences of which the read occurs inside the kernel and the
+ *   corresponding write occurs inside the same iteration of the
+ *   outer band nodes.  This means that the data is needed in
+ *   the first kernel launch after the write, which is already
+ *   taken care of by the standard copy-in.  That is, the data
+ *   do not need to be preserved by any intermediate call to
+ *   the same kernel.
+ * - dependences of which the write and the read either both occur
+ *   before the kernel launch or both occur after the kernel launch,
+ *   within the same iteration of the outer band nodes with respect
+ *   to the sequence that determines the ordering of the dependence
+ *   and the kernel launch.  Such flow dependences cannot cross
+ *   any kernel launch.
+ *
+ * For the remaining (tagged) dependences, we take the domain
+ * (i.e., the tagged writes) and apply the tagged access relation
+ * to obtain the accessed data elements.
+ * These are then combined with the elements that may need to be
+ * preserved by the entire scop.
+ */
+static __isl_give isl_union_set *node_may_persist(
+	__isl_keep isl_schedule_node *node, struct gpu_prog *prog)
+{
+	struct ppcg_may_persist_data data;
+	isl_schedule_node *root;
+	isl_union_pw_multi_aff *contraction;
+	isl_union_set *domain;
+	isl_union_set *persist;
+	isl_union_map *flow, *local_flow;
+
+	data.tagger = prog->scop->tagger;
+
+	flow = isl_union_map_copy(prog->scop->tagged_dep_flow);
+	data.local_flow = isl_union_map_copy(flow);
+	data.inner_band_flow = isl_union_map_copy(flow);
+	data.may_persist_flow = flow;
+	if (isl_schedule_node_foreach_ancestor_top_down(node,
+					&update_may_persist_at, &data) < 0)
+		data.may_persist_flow =
+				    isl_union_map_free(data.may_persist_flow);
+	flow = data.may_persist_flow;
+	isl_union_map_free(data.local_flow);
+
+	domain = isl_schedule_node_get_domain(node);
+	contraction = isl_schedule_node_get_subtree_contraction(node);
+	domain = isl_union_set_preimage_union_pw_multi_aff(domain,
+				    contraction);
+	domain = isl_union_set_preimage_union_pw_multi_aff(domain,
+				    isl_union_pw_multi_aff_copy(data.tagger));
+	flow = isl_union_map_subtract_domain(flow, isl_union_set_copy(domain));
+	local_flow = data.inner_band_flow;
+	local_flow = isl_union_map_intersect_range(local_flow, domain);
+	flow = isl_union_map_subtract(flow, local_flow);
+
+	persist = isl_union_map_domain(flow);
+	persist = isl_union_set_apply(persist,
+			isl_union_map_copy(prog->scop->tagged_may_writes));
+	persist = isl_union_set_union(persist,
+			isl_union_set_copy(prog->may_persist));
+
+	return persist;
+}
+
+/* Compute the sets of outer array elements that need to be copied in and out
+ * before and after the subtree "node", which will be mapped
+ * to one or more kernels.
+ * "domain" contains the original reaching domain elements before
+ * the kernels were created, i.e., before the contraction that
+ * may have been performed in creating the kernels has been applied.
+ * "prefix" contains the prefix schedule at that point, in terms
+ * of the same original reaching domain elements.
  *
  * In particular, for each array that is possibly written anywhere in
- * "prog" and that is visible outside the corresponding scop,
+ * the subtree "node" and that may be used after "node"
+ * or that may be visible outside the corresponding scop,
  * we copy out its entire extent.
  *
- * Any array elements that is read without first being written needs
- * to be copied in. Furthermore, if there are any array elements that
- * are copied out, but that may not be written inside "prog", then
+ * Any array elements that is read without first being written inside
+ * the subtree "node" needs to be copied in.
+ * Furthermore, if there are any array elements that
+ * are copied out, but that may not be written inside "node, then
  * they also need to be copied in to ensure that the value after execution
  * is the same as the value before execution, at least for those array
- * elements that may have their values preserved by the scop.
+ * elements that may have their values preserved by the scop or that
+ * may be written before "node" and read after "node".
  * In case the array elements are structures, we need to take into
  * account that all members of the structures need to be written
- * by "prog" before we can avoid copying the data structure in.
+ * by "node" before we can avoid copying the data structure in.
  *
- * While computing the set of array elements that are copied out but
- * not necessarily written, we intersect both sets with the context.
+ * Note that the may_write relation is intersected with the domain,
+ * which has been intersected with the context.
  * This helps in those cases where the arrays are declared with a fixed size,
  * while the accesses are parametric and the context assigns a fixed value
  * to the parameters.
@@ -3935,98 +4346,82 @@ static __isl_give isl_schedule *get_schedule(struct gpu_gen *gen)
  * then there is no point in copying it in since it cannot have been
  * written prior to the scop.  Warn about the uninitialized read instead.
  */
-static void compute_copy_in_and_out(struct gpu_prog *prog)
+static void compute_copy_in_and_out(__isl_keep isl_schedule_node *node,
+	__isl_take isl_union_set *domain, __isl_take isl_union_map *prefix,
+	struct gpu_prog *prog)
 {
-	int i;
 	isl_union_set *local;
-	isl_union_set *may_write, *must_write;
-	isl_union_set *copy_in, *copy_out;
-	isl_union_set *not_written;
-	isl_union_map *uninitialized;
+	isl_union_set *to_device, *from_device, *may_persist;
+	isl_union_map *may_write, *must_write, *copy_out, *not_written;
+	isl_union_map *read, *copy_in;
+	isl_union_map *tagged;
 	isl_union_map *local_uninitialized;
 
-	must_write = isl_union_map_range(
-				isl_union_map_copy(prog->must_write));
-	must_write = isl_union_set_intersect_params(must_write,
-					    isl_set_copy(prog->context));
-	may_write = isl_union_map_range(
-				isl_union_map_copy(prog->may_write));
-	may_write = isl_union_set_intersect_params(may_write,
-					    isl_set_copy(prog->context));
-	may_write = isl_union_set_universe(may_write);
-	may_write = isl_union_set_apply(may_write,
-				    isl_union_map_copy(prog->to_outer));
-	copy_out = isl_union_set_empty(isl_union_set_get_space(may_write));
-	local = isl_union_set_copy(copy_out);
+	tagged = isl_union_map_copy(prog->scop->tagged_reads);
+	tagged = isl_union_map_union(tagged,
+			    isl_union_map_copy(prog->scop->tagged_may_writes));
 
-	for (i = 0; i < prog->n_array; ++i) {
-		isl_space *space;
-		isl_set *write_i;
-		int empty;
+	may_write = isl_union_map_copy(prog->may_write);
+	may_write = isl_union_map_intersect_domain(may_write,
+					isl_union_set_copy(domain));
+	may_write = remove_local_accesses(prog,
+					isl_union_map_copy(tagged), may_write,
+					isl_union_map_copy(prefix), 0);
+	may_write = isl_union_map_apply_range(may_write,
+					isl_union_map_copy(prog->to_outer));
+	may_write = isl_union_map_apply_domain(may_write,
+					isl_union_map_copy(prefix));
+	may_write = approximate_copy_out(may_write, prog);
+	copy_out = isl_union_map_copy(may_write);
+	may_write = isl_union_map_apply_range(may_write,
+					isl_union_map_copy(prog->to_inner));
+	must_write = isl_union_map_copy(prog->must_write);
+	must_write = isl_union_map_apply_domain(must_write,
+					isl_union_map_copy(prefix));
+	may_persist = node_may_persist(node, prog);
+	may_write = isl_union_map_intersect_range(may_write, may_persist);
+	not_written = isl_union_map_subtract(may_write, must_write);
 
-		space = isl_space_copy(prog->array[i].space);
-
-		if (prog->array[i].local) {
-			isl_set *set;
-
-			set = isl_set_universe(space);
-			local = isl_union_set_add_set(local, set);
-			continue;
-		}
-
-		write_i = isl_union_set_extract_set(may_write, space);
-		empty = isl_set_plain_is_empty(write_i);
-		isl_set_free(write_i);
-		if (empty)
-			continue;
-
-		write_i = isl_set_copy(prog->array[i].extent);
-		copy_out = isl_union_set_add_set(copy_out, write_i);
-	}
-	isl_union_set_free(may_write);
-
-	copy_out = isl_union_set_intersect_params(copy_out,
-					    isl_set_copy(prog->context));
-
-	prog->copy_out = isl_union_set_copy(copy_out);
-
-	copy_out = isl_union_set_apply(copy_out,
-				    isl_union_map_copy(prog->to_inner));
-	copy_out = isl_union_set_intersect(copy_out,
-				    isl_union_set_copy(prog->may_persist));
-	not_written = isl_union_set_subtract(copy_out, must_write);
-
-	uninitialized = isl_union_map_copy(prog->scop->live_in);
-	local_uninitialized = isl_union_map_copy(uninitialized);
-
+	local = extract_local_accesses(prog, domain);
+	read = isl_union_map_copy(prog->read);
+	read = isl_union_map_intersect_domain(read, domain);
+	read = remove_local_accesses(prog, tagged, read,
+					isl_union_map_copy(prefix), 1);
 	local = isl_union_set_apply(local, isl_union_map_copy(prog->to_inner));
+	local_uninitialized = isl_union_map_copy(prog->scop->live_in);
 	local_uninitialized = isl_union_map_intersect_range(local_uninitialized,
 							    local);
+	local_uninitialized = isl_union_map_intersect(local_uninitialized,
+						    isl_union_map_copy(read));
 	if (!isl_union_map_is_empty(local_uninitialized)) {
 		fprintf(stderr,
 			"possibly uninitialized reads (not copied in):\n");
 		isl_union_map_dump(local_uninitialized);
 	}
-	uninitialized = isl_union_map_subtract(uninitialized,
-						local_uninitialized);
-	copy_in = isl_union_map_range(uninitialized);
-	copy_in = isl_union_set_union(copy_in, not_written);
-	copy_in = isl_union_set_apply(copy_in,
+	read = isl_union_map_subtract(read, local_uninitialized);
+	read = isl_union_map_apply_domain(read, prefix);
+	copy_in = isl_union_map_union(read, not_written);
+	copy_in = isl_union_map_apply_range(copy_in,
 				    isl_union_map_copy(prog->to_outer));
 
-	prog->copy_in = copy_in;
+	prog->copy_out = isl_union_map_range(copy_out);
+	prog->copy_in = isl_union_map_range(copy_in);
 }
 
 /* Update "schedule" for mapping to a GPU device.
  *
- * In particular, insert a context node and create kernels for
+ * In particular, insert a context node, create kernels for
  * each outermost tilable band.
+ * Also compute the sets of outer array elements that need
+ * to be copied in and out.
  */
 static __isl_give isl_schedule *map_to_device(struct gpu_gen *gen,
 	__isl_take isl_schedule *schedule)
 {
 	isl_schedule_node *node;
 	isl_set *context;
+	isl_union_set *domain;
+	isl_union_map *prefix;
 
 	context = isl_set_copy(gen->prog->context);
 	context = isl_set_from_params(context);
@@ -4037,6 +4432,9 @@ static __isl_give isl_schedule *map_to_device(struct gpu_gen *gen,
 	node = isl_schedule_node_child(node, 0);
 	if (isl_schedule_node_get_type(node) == isl_schedule_node_context)
 		node = isl_schedule_node_child(node, 0);
+	domain = isl_schedule_node_get_domain(node);
+	prefix = isl_schedule_node_get_prefix_schedule_union_map(node);
+	compute_copy_in_and_out(node, domain, prefix, gen->prog);
 	node = mark_kernels(gen, node);
 	schedule = isl_schedule_node_get_schedule(node);
 	isl_schedule_node_free(node);
@@ -4313,7 +4711,6 @@ static __isl_give isl_printer *generate(__isl_take isl_printer *p,
 			p = print_cpu(p, scop, options);
 		isl_schedule_free(schedule);
 	} else {
-		compute_copy_in_and_out(prog);
 		schedule = map_to_device(gen, schedule);
 		gen->tree = generate_code(gen, schedule);
 		p = ppcg_print_exposed_declarations(p, prog->scop);
