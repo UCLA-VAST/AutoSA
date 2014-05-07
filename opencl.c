@@ -125,7 +125,7 @@ static void opencl_close_files(struct opencl_info *info)
 		fclose(info->host_c);
 }
 
-static __isl_give isl_printer *print_opencl_macros(__isl_take isl_printer *p)
+static __isl_give isl_printer *opencl_print_host_macros(__isl_take isl_printer *p)
 {
 	const char *macros =
 		"#define openclCheckReturn(ret) \\\n"
@@ -138,6 +138,8 @@ static __isl_give isl_printer *print_opencl_macros(__isl_take isl_printer *p)
 	p = isl_printer_start_line(p);
 	p = isl_printer_print_str(p, macros);
 	p = isl_printer_end_line(p);
+
+	p = isl_ast_op_type_print_macro(isl_ast_op_max, p);
 
 	return p;
 }
@@ -161,25 +163,14 @@ static __isl_give isl_printer *opencl_declare_device_arrays(
 	return p;
 }
 
-/* Internal data structure for allocate_device_array.
+/* Allocate a device array for array and copy the contents to the device
+ * if copy is set.
  *
- * array is the array that needs to be allocated.
- * copy is set if the contents of this array need to be copied to the device.
- */
-struct opencl_allocate_device_array_data {
-	struct gpu_array_info *array;
-	int copy;
-};
-
-/* Allocate a device array for data->array and copy the contents to the device
- * if data->copy is set.
+ * Ensure the device array can contain at least one element.
  */
 static __isl_give isl_printer *allocate_device_array(__isl_take isl_printer *p,
-	void *user)
+	struct gpu_array_info *array, int copy)
 {
-	struct opencl_allocate_device_array_data *data = user;
-	struct gpu_array_info *array = data->array;
-
 	p = ppcg_start_block(p);
 
 	p = isl_printer_start_line(p);
@@ -188,14 +179,18 @@ static __isl_give isl_printer *allocate_device_array(__isl_take isl_printer *p,
 	p = isl_printer_print_str(p, " = clCreateBuffer(context, ");
 	p = isl_printer_print_str(p, "CL_MEM_READ_WRITE");
 
-	if (!data->copy)
+	if (!copy)
 		p = isl_printer_print_str(p, ", ");
 	else
 		p = isl_printer_print_str(p, " | CL_MEM_COPY_HOST_PTR, ");
 
+	p = isl_printer_print_str(p, "max(sizeof(");
+	p = isl_printer_print_str(p, array->type);
+	p = isl_printer_print_str(p, "), ");
 	p = gpu_array_info_print_size(p, array);
+	p = isl_printer_print_str(p, ")");
 
-	if (!data->copy)
+	if (!copy)
 		p = isl_printer_print_str(p, ", NULL");
 	else if (gpu_array_is_scalar(array)) {
 		p = isl_printer_print_str(p, ", &");
@@ -217,8 +212,6 @@ static __isl_give isl_printer *allocate_device_array(__isl_take isl_printer *p,
 }
 
 /* Allocate device arrays and copy the contents of copy_in arrays into device.
- *
- * Only perform the allocation for arrays with strictly positive size.
  */
 static __isl_give isl_printer *opencl_allocate_device_arrays(
 	__isl_take isl_printer *p, struct gpu_prog *prog)
@@ -226,11 +219,9 @@ static __isl_give isl_printer *opencl_allocate_device_arrays(
 	int i, j;
 
 	for (i = 0; i < prog->n_array; ++i) {
-		struct opencl_allocate_device_array_data data;
 		struct gpu_array_info *array = &prog->array[i];
 		isl_space *space;
 		isl_set *read_i;
-		isl_set *guard;
 		int empty;
 
 		if (gpu_array_is_read_only_scalar(array))
@@ -241,11 +232,7 @@ static __isl_give isl_printer *opencl_allocate_device_arrays(
 		empty = isl_set_fast_is_empty(read_i);
 		isl_set_free(read_i);
 
-		guard = gpu_array_positive_size_guard(array);
-		data.array = array;
-		data.copy = !empty;
-		p = ppcg_print_guarded(p, guard, isl_set_copy(prog->context),
-					    &allocate_device_array, &data);
+		p = allocate_device_array(p, array, !empty);
 	}
 	p = isl_printer_start_line(p);
 	p = isl_printer_end_line(p);
@@ -1037,10 +1024,8 @@ static __isl_give isl_printer *opencl_release_cl_objects(
 /* Free the device array corresponding to "array"
  */
 static __isl_give isl_printer *release_device_array(__isl_take isl_printer *p,
-	void *user)
+	struct gpu_array_info *array)
 {
-	struct gpu_array_info *array = user;
-
 	p = isl_printer_start_line(p);
 	p = isl_printer_print_str(p, "openclCheckReturn("
 					"clReleaseMemObject(dev_");
@@ -1052,9 +1037,6 @@ static __isl_give isl_printer *release_device_array(__isl_take isl_printer *p,
 }
 
 /* Free the device arrays.
- *
- * Only free arrays with strictly positive size as those are the only ones
- * that have been allocated.
  */
 static __isl_give isl_printer *opencl_release_device_arrays(
 	__isl_take isl_printer *p, struct gpu_prog *prog)
@@ -1063,14 +1045,10 @@ static __isl_give isl_printer *opencl_release_device_arrays(
 
 	for (i = 0; i < prog->n_array; ++i) {
 		struct gpu_array_info *array = &prog->array[i];
-		isl_set *guard;
-
 		if (gpu_array_is_read_only_scalar(array))
 			continue;
 
-		guard = gpu_array_positive_size_guard(array);
-		p = ppcg_print_guarded(p, guard, isl_set_copy(prog->context),
-					    &release_device_array, array);
+		p = release_device_array(p, array);
 	}
 	return p;
 }
@@ -1097,7 +1075,7 @@ static __isl_give isl_printer *print_opencl(__isl_take isl_printer *p,
 
 	p = ppcg_start_block(p);
 
-	p = print_opencl_macros(p);
+	p = opencl_print_host_macros(p);
 
 	p = opencl_declare_device_arrays(p, prog);
 	p = opencl_setup(p, opencl->input, opencl);
