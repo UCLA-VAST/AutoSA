@@ -1985,9 +1985,13 @@ static __isl_give isl_union_map *wrapped_reference_to_access(
 	return isl_union_set_unwrap(ref);
 }
 
-/* Given an access relation "access" from "group", remove those reads
- * if ("read" is 1) or writes (if "read" is 0) that are only needed to
- * communicate data within the same iteration of "sched".
+/* Given an access relation "access" from one or more array reference groups,
+ * remove those reads if ("read" is 1) or writes (if "read" is 0)
+ * that are only needed to communicate data within
+ * the same iteration of "sched".
+ * "tagged" contains all tagged access relations to all
+ * the array reference groups accessed by "access" from statement
+ * instances scheduled by "sched".
  *
  * If the access is a read then it is either an element of
  *
@@ -2055,22 +2059,21 @@ static __isl_give isl_union_map *wrapped_reference_to_access(
  * the live out/in relation.
  */
 static __isl_give isl_union_map *remove_local_accesses(
-	struct gpu_prog *prog, struct gpu_array_ref_group *group,
+	struct gpu_prog *prog, __isl_take isl_union_map *tagged,
 	__isl_take isl_union_map *access, __isl_take isl_union_map *sched,
 	int read)
 {
 	int empty;
 	isl_union_pw_multi_aff *tagger;
 	isl_union_set *domain;
-	isl_union_map *local, *tagged, *external;
+	isl_union_map *local, *external;
 	isl_union_set *tag_set;
 
 	if (isl_union_map_is_empty(access)) {
 		isl_union_map_free(sched);
+		isl_union_map_free(tagged);
 		return access;
 	}
-
-	tagged = group_tagged_access_relation(group);
 
 	tagger = isl_union_pw_multi_aff_copy(prog->scop->tagger);
 	domain = isl_union_map_domain(isl_union_map_copy(tagged));
@@ -2126,14 +2129,15 @@ static __isl_give isl_union_map *remove_local_accesses_group(
 	__isl_take isl_union_map *access, __isl_keep isl_schedule_node *node,
 	int read)
 {
-	isl_union_map *sched;
+	isl_union_map *sched, *tagged;
 
 	if (isl_union_map_is_empty(access))
 		return access;
 
+	tagged = group_tagged_access_relation(group);
 	sched = isl_schedule_node_get_prefix_schedule_relation(node);
 
-	return remove_local_accesses(kernel->prog, group, access, sched, read);
+	return remove_local_accesses(kernel->prog, tagged, access, sched, read);
 }
 
 /* This function is called before the AST generator starts traversing
