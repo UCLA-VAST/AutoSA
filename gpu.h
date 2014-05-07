@@ -113,11 +113,6 @@ struct gpu_prog {
 	/* The set of inner array elements that may be preserved. */
 	isl_union_set *may_persist;
 
-	/* Set of outer array elements that need to be copied in. */
-	isl_union_set *copy_in;
-	/* Set of outer array elements that need to be copied out. */
-	isl_union_set *copy_out;
-
 	/* A mapping from all innermost arrays to their outer arrays. */
 	isl_union_map *to_outer;
 	/* A mapping from the outer arrays to all corresponding inner arrays. */

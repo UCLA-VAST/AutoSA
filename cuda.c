@@ -15,6 +15,7 @@
 #include "gpu.h"
 #include "gpu_print.h"
 #include "print.h"
+#include "util.h"
 
 static __isl_give isl_printer *print_cuda_macros(__isl_take isl_printer *p)
 {
@@ -153,33 +154,6 @@ static __isl_give isl_printer *copy_array_from_device(
 	p = isl_printer_print_str(p, ", cudaMemcpyDeviceToHost));");
 	p = isl_printer_end_line(p);
 
-	return p;
-}
-
-static __isl_give isl_printer *copy_arrays_to_device(__isl_take isl_printer *p,
-	struct gpu_prog *prog)
-{
-	int i;
-
-	for (i = 0; i < prog->n_array; ++i) {
-		isl_space *space;
-		isl_set *read_i;
-		int empty;
-
-		if (gpu_array_is_read_only_scalar(&prog->array[i]))
-			continue;
-
-		space = isl_space_copy(prog->array[i].space);
-		read_i = isl_union_set_extract_set(prog->copy_in, space);
-		empty = isl_set_plain_is_empty(read_i);
-		isl_set_free(read_i);
-		if (empty)
-			continue;
-
-		p = copy_array_to_device(p, &prog->array[i]);
-	}
-	p = isl_printer_start_line(p);
-	p = isl_printer_end_line(p);
 	return p;
 }
 
@@ -512,6 +486,42 @@ static void print_kernel(struct gpu_prog *prog, struct ppcg_kernel *kernel,
 	fprintf(cuda->kernel_c, "}\n");
 }
 
+/* Print a statement for copying an array to or from the device.
+ * The statement identifier is called "to_device_<array name>" or
+ * "from_device_<array name>" and its user pointer points
+ * to the gpu_array_info of the array that needs to be copied.
+ *
+ * Extract the array from the identifier and call
+ * copy_array_to_device or copy_array_from_device.
+ */
+static __isl_give isl_printer *print_to_from_device(__isl_take isl_printer *p,
+	__isl_keep isl_ast_node *node, struct gpu_prog *prog)
+{
+	isl_ast_expr *expr, *arg;
+	isl_id *id;
+	const char *name;
+	struct gpu_array_info *array;
+
+	expr = isl_ast_node_user_get_expr(node);
+	arg = isl_ast_expr_get_op_arg(expr, 0);
+	id = isl_ast_expr_get_id(arg);
+	name = isl_id_get_name(id);
+	array = isl_id_get_user(id);
+	isl_id_free(id);
+	isl_ast_expr_free(arg);
+	isl_ast_expr_free(expr);
+
+	if (!name)
+		array = NULL;
+	if (!array)
+		return isl_printer_free(p);
+
+	if (!prefixcmp(name, "to_device"))
+		return copy_array_to_device(p, array);
+	else
+		return copy_array_from_device(p, array);
+}
+
 struct print_host_user_data {
 	struct cuda_info *cuda;
 	struct gpu_prog *prog;
@@ -519,8 +529,14 @@ struct print_host_user_data {
 
 /* Print the user statement of the host code to "p".
  *
- * In particular, print a block of statements that defines the grid
- * and the block and then launches the kernel.
+ * The host code only contains kernel launches and statements
+ * that copy data to/from the device.
+ * The kernel launches have an associated annotation, while
+ * the data copy statements do not.
+ * The latter are handled by print_to_from_device.
+ *
+ * In case of a kernel launch, print a block of statements that
+ * defines the grid and the block and then launches the kernel.
  */
 static __isl_give isl_printer *print_host_user(__isl_take isl_printer *p,
 	__isl_take isl_ast_print_options *print_options,
@@ -530,11 +546,16 @@ static __isl_give isl_printer *print_host_user(__isl_take isl_printer *p,
 	struct ppcg_kernel *kernel;
 	struct print_host_user_data *data;
 
-	id = isl_ast_node_get_annotation(node);
-	kernel = isl_id_get_user(id);
-	isl_id_free(id);
+	isl_ast_print_options_free(print_options);
 
 	data = (struct print_host_user_data *) user;
+
+	id = isl_ast_node_get_annotation(node);
+	if (!id)
+		return print_to_from_device(p, node, data->prog);
+
+	kernel = isl_id_get_user(id);
+	isl_id_free(id);
 
 	p = isl_printer_start_line(p);
 	p = isl_printer_print_str(p, "{");
@@ -578,8 +599,6 @@ static __isl_give isl_printer *print_host_user(__isl_take isl_printer *p,
 
 	print_kernel(data->prog, kernel, data->cuda);
 
-	isl_ast_print_options_free(print_options);
-
 	return p;
 }
 
@@ -598,42 +617,6 @@ static __isl_give isl_printer *print_host_code(__isl_take isl_printer *p,
 	p = gpu_print_macros(p, tree);
 	p = isl_ast_node_print(tree, p, print_options);
 
-	return p;
-}
-
-/* For each array that needs to be copied out (based on prog->copy_out),
- * copy the contents back from the GPU to the host.
- *
- * If any element of a given array appears in prog->copy_out, then its
- * entire extent is in prog->copy_out.  The bounds on this extent have
- * been precomputed in extract_array_info and are used in
- * gpu_array_info_print_size.
- */
-static __isl_give isl_printer *copy_arrays_from_device(
-	__isl_take isl_printer *p, struct gpu_prog *prog)
-{
-	int i;
-	isl_union_set *copy_out;
-	copy_out = isl_union_set_copy(prog->copy_out);
-
-	for (i = 0; i < prog->n_array; ++i) {
-		isl_space *space;
-		isl_set *copy_out_i;
-		int empty;
-
-		space = isl_space_copy(prog->array[i].space);
-		copy_out_i = isl_union_set_extract_set(copy_out, space);
-		empty = isl_set_plain_is_empty(copy_out_i);
-		isl_set_free(copy_out_i);
-		if (empty)
-			continue;
-
-		p = copy_array_from_device(p, &prog->array[i]);
-	}
-
-	isl_union_set_free(copy_out);
-	p = isl_printer_start_line(p);
-	p = isl_printer_end_line(p);
 	return p;
 }
 
@@ -683,11 +666,9 @@ static __isl_give isl_printer *print_cuda(__isl_take isl_printer *p,
 
 	p = declare_device_arrays(p, prog);
 	p = allocate_device_arrays(p, prog);
-	p = copy_arrays_to_device(p, prog);
 
 	p = print_host_code(p, prog, tree, cuda);
 
-	p = copy_arrays_from_device(p, prog);
 	p = free_device_arrays(p, prog);
 
 	p = ppcg_end_block(p);

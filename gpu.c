@@ -32,6 +32,7 @@
 #include "schedule.h"
 #include "ppcg_options.h"
 #include "print.h"
+#include "util.h"
 
 struct gpu_array_info;
 
@@ -1901,6 +1902,8 @@ struct ppcg_at_domain_data {
  * (one with no user pointer), then we call create_domain_leaf.  Otherwise,
  * we check if it is a copy or synchronization statement and
  * call the appropriate functions.
+ * Statements that copy an array to/from the device do not need
+ * any further treatment.
  */
 static __isl_give isl_ast_node *at_domain(__isl_take isl_ast_node *node,
 	__isl_keep isl_ast_build *build, void *user)
@@ -1935,6 +1938,8 @@ static __isl_give isl_ast_node *at_domain(__isl_take isl_ast_node *node,
 
 	is_sync = gpu_tree_id_is_sync(id, data->kernel);
 	isl_id_free(id);
+	if (!prefixcmp(name, "to_device_") || !prefixcmp(name, "from_device_"))
+		return node;
 	if (is_sync < 0)
 		return isl_ast_node_free(node);
 	if (!strcmp(name, "read") || !strcmp(name, "write")) {
@@ -3945,6 +3950,163 @@ static __isl_give isl_schedule *get_schedule(struct gpu_gen *gen)
 	return schedule;
 }
 
+/* Construct the string "<a>_<b>".
+ */
+static char *concat(isl_ctx *ctx, const char *a, const char *b)
+{
+	isl_printer *p;
+	char *s;
+
+	p = isl_printer_to_str(ctx);
+	p = isl_printer_print_str(p, a);
+	p = isl_printer_print_str(p, "_");
+	p = isl_printer_print_str(p, b);
+	s = isl_printer_get_str(p);
+	isl_printer_free(p);
+
+	return s;
+}
+
+/* For each array in "prog" of which an element appears in "accessed" and
+ * that is not a read only scalar, create a zero-dimensional universe set
+ * of which the tuple id has name "<prefix>_<name of array>" and a user
+ * pointer pointing to the array (gpu_array_info).
+ *
+ * Return the list of these universe sets.
+ */
+static __isl_give isl_union_set_list *create_copy_filters(struct gpu_prog *prog,
+	const char *prefix, __isl_take isl_union_set *accessed)
+{
+	int i;
+	isl_ctx *ctx;
+	isl_union_set_list *filters;
+
+	ctx = prog->ctx;
+	filters = isl_union_set_list_alloc(ctx, 0);
+	for (i = 0; i < prog->n_array; ++i) {
+		struct gpu_array_info *array = &prog->array[i];
+		isl_space *space;
+		isl_set *accessed_i;
+		int empty;
+		char *name;
+		isl_id *id;
+		isl_union_set *uset;
+
+		if (gpu_array_is_read_only_scalar(array))
+			continue;
+
+		space = isl_space_copy(array->space);
+		accessed_i = isl_union_set_extract_set(accessed, space);
+		empty = isl_set_plain_is_empty(accessed_i);
+		isl_set_free(accessed_i);
+		if (empty < 0) {
+			filters = isl_union_set_list_free(filters);
+			break;
+		}
+		if (empty)
+			continue;
+
+		name = concat(ctx, prefix, array->name);
+		id = name ? isl_id_alloc(ctx, name, array) : NULL;
+		free(name);
+		space = isl_space_set_alloc(ctx, 0, 0);
+		space = isl_space_set_tuple_id(space, isl_dim_set, id);
+		uset = isl_union_set_from_set(isl_set_universe(space));
+
+		filters = isl_union_set_list_add(filters, uset);
+	}
+	isl_union_set_free(accessed);
+
+	return filters;
+}
+
+/* Make sure that code for the statements in "filters" that
+ * copy arrays to or from the device is only generated when
+ * the size of the corresponding array is positive.
+ * That is, add a set node underneath "graft" with "filters" as children
+ * and for each child add a guard that the selects the parameter
+ * values for which the corresponding array has a positive size.
+ * The array is available in the user pointer of the statement identifier.
+ * "depth" is the schedule depth of the position where "graft"
+ * will be added.
+ */
+static __isl_give isl_schedule_node *insert_positive_size_guards(
+	__isl_take isl_schedule_node *graft,
+	__isl_take isl_union_set_list *filters, int depth)
+{
+	int i, n;
+
+	graft = isl_schedule_node_child(graft, 0);
+	graft = isl_schedule_node_insert_set(graft, filters);
+	n = isl_schedule_node_n_children(graft);
+	for (i = 0; i < n; ++i) {
+		isl_union_set *filter;
+		isl_set *domain, *guard;
+		isl_id *id;
+		struct gpu_array_info *array;
+
+		graft = isl_schedule_node_child(graft, i);
+		filter = isl_schedule_node_filter_get_filter(graft);
+		domain = isl_set_from_union_set(filter);
+		id = isl_set_get_tuple_id(domain);
+		array = isl_id_get_user(id);
+		isl_id_free(id);
+		isl_set_free(domain);
+		guard = gpu_array_positive_size_guard(array);
+		guard = isl_set_from_params(guard);
+		guard = isl_set_add_dims(guard, isl_dim_set, depth);
+		graft = isl_schedule_node_child(graft, 0);
+		graft = isl_schedule_node_insert_guard(graft, guard);
+		graft = isl_schedule_node_parent(graft);
+		graft = isl_schedule_node_parent(graft);
+	}
+	graft = isl_schedule_node_parent(graft);
+
+	return graft;
+}
+
+/* Create a graft for copying arrays to or from the device,
+ * whenever the size of the array is strictly positive.
+ * Each statement is called "<prefix>_<name of array>" and
+ * the identifier has a user pointer pointing to the array.
+ * The graft will be added at the position specified by "node".
+ * "copy" contains the array elements that need to be copied.
+ * Only arrays of which some elements need to be copied
+ * will have a corresponding statement in the graph.
+ * Note though that each such statement will copy the entire array.
+ */
+static __isl_give isl_schedule_node *create_copy_device(struct gpu_prog *prog,
+	__isl_keep isl_schedule_node *node, const char *prefix,
+	__isl_take isl_union_set *copy)
+{
+	int depth;
+	isl_ctx *ctx;
+	isl_space *space;
+	isl_union_set *all, *domain;
+	isl_union_set_list *filters;
+	isl_union_map *extension;
+	isl_schedule_node *graft;
+
+	ctx = prog->ctx;
+	depth = isl_schedule_node_get_schedule_depth(node);
+	filters = create_copy_filters(prog, prefix, copy);
+	all = isl_union_set_list_union(isl_union_set_list_copy(filters));
+
+	space = depth < 0 ? NULL : isl_space_set_alloc(ctx, 0, depth);
+	domain = isl_union_set_from_set(isl_set_universe(space));
+	extension = isl_union_map_from_domain_and_range(domain, all);
+	graft = isl_schedule_node_from_extension(extension);
+
+	if (!filters)
+		return isl_schedule_node_free(graft);
+	if (isl_union_set_list_n_union_set(filters) == 0) {
+		isl_union_set_list_free(filters);
+		return graft;
+	}
+
+	return insert_positive_size_guards(graft, filters, depth);
+}
+
 /* Return (the universe spaces of) the arrays that are declared
  * inside the scop corresponding to "prog" and for which all
  * potential writes inside the scop form a subset of "domain".
@@ -4313,14 +4475,17 @@ static __isl_give isl_union_set *node_may_persist(
 	return persist;
 }
 
-/* Compute the sets of outer array elements that need to be copied in and out
- * before and after the subtree "node", which will be mapped
- * to one or more kernels.
+/* Add nodes for copying outer arrays in and out of the device
+ * before and after the subtree "node", which contains one or more kernels.
  * "domain" contains the original reaching domain elements before
  * the kernels were created, i.e., before the contraction that
  * may have been performed in creating the kernels has been applied.
  * "prefix" contains the prefix schedule at that point, in terms
  * of the same original reaching domain elements.
+ *
+ * We first compute the sets of outer array elements that need
+ * to be copied in and out and then graft in the nodes for
+ * performing this copying.
  *
  * In particular, for each array that is possibly written anywhere in
  * the subtree "node" and that may be used after "node"
@@ -4349,9 +4514,9 @@ static __isl_give isl_union_set *node_may_persist(
  * then there is no point in copying it in since it cannot have been
  * written prior to the scop.  Warn about the uninitialized read instead.
  */
-static void compute_copy_in_and_out(__isl_keep isl_schedule_node *node,
-	__isl_take isl_union_set *domain, __isl_take isl_union_map *prefix,
-	struct gpu_prog *prog)
+static __isl_give isl_schedule_node *add_to_from_device(
+	__isl_take isl_schedule_node *node, __isl_take isl_union_set *domain,
+	__isl_take isl_union_map *prefix, struct gpu_prog *prog)
 {
 	isl_union_set *local;
 	isl_union_set *to_device, *from_device, *may_persist;
@@ -4359,6 +4524,7 @@ static void compute_copy_in_and_out(__isl_keep isl_schedule_node *node,
 	isl_union_map *read, *copy_in;
 	isl_union_map *tagged;
 	isl_union_map *local_uninitialized;
+	isl_schedule_node *graft;
 
 	tagged = isl_union_map_copy(prog->scop->tagged_reads);
 	tagged = isl_union_map_union(tagged,
@@ -4407,16 +4573,21 @@ static void compute_copy_in_and_out(__isl_keep isl_schedule_node *node,
 	copy_in = isl_union_map_apply_range(copy_in,
 				    isl_union_map_copy(prog->to_outer));
 
-	prog->copy_out = isl_union_map_range(copy_out);
-	prog->copy_in = isl_union_map_range(copy_in);
+	graft = create_copy_device(prog, node, "to_device",
+						isl_union_map_range(copy_in));
+	node = isl_schedule_node_graft_before(node, graft);
+	graft = create_copy_device(prog, node, "from_device",
+						isl_union_map_range(copy_out));
+	node = isl_schedule_node_graft_after(node, graft);
+
+	return node;
 }
 
 /* Update "schedule" for mapping to a GPU device.
  *
  * In particular, insert a context node, create kernels for
- * each outermost tilable band.
- * Also compute the sets of outer array elements that need
- * to be copied in and out.
+ * each outermost tilable band and introduce node for copying array
+ * in and out of the device.
  */
 static __isl_give isl_schedule *map_to_device(struct gpu_gen *gen,
 	__isl_take isl_schedule *schedule)
@@ -4437,8 +4608,8 @@ static __isl_give isl_schedule *map_to_device(struct gpu_gen *gen,
 		node = isl_schedule_node_child(node, 0);
 	domain = isl_schedule_node_get_domain(node);
 	prefix = isl_schedule_node_get_prefix_schedule_union_map(node);
-	compute_copy_in_and_out(node, domain, prefix, gen->prog);
 	node = mark_kernels(gen, node);
+	node = add_to_from_device(node, domain, prefix, gen->prog);
 	schedule = isl_schedule_node_get_schedule(node);
 	isl_schedule_node_free(node);
 
@@ -4866,8 +5037,6 @@ void *gpu_prog_free(struct gpu_prog *prog)
 	isl_union_map_free(prog->any_to_outer);
 	isl_union_map_free(prog->to_outer);
 	isl_union_map_free(prog->to_inner);
-	isl_union_set_free(prog->copy_in);
-	isl_union_set_free(prog->copy_out);
 	isl_union_map_free(prog->read);
 	isl_union_map_free(prog->may_write);
 	isl_union_map_free(prog->must_write);
