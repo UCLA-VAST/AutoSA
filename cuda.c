@@ -577,12 +577,12 @@ static __isl_give isl_printer *copy_arrays_from_device(
 	copy_out = isl_union_set_copy(prog->copy_out);
 
 	for (i = 0; i < prog->n_array; ++i) {
-		isl_space *dim;
+		isl_space *space;
 		isl_set *copy_out_i;
 		int empty;
 
-		dim = isl_space_copy(prog->array[i].space);
-		copy_out_i = isl_union_set_extract_set(copy_out, dim);
+		space = isl_space_copy(prog->array[i].space);
+		copy_out_i = isl_union_set_extract_set(copy_out, space);
 		empty = isl_set_plain_is_empty(copy_out_i);
 		isl_set_free(copy_out_i);
 		if (empty)
