@@ -110,15 +110,15 @@ static __isl_give isl_printer *copy_arrays_to_device(__isl_take isl_printer *p,
 	int i;
 
 	for (i = 0; i < prog->n_array; ++i) {
-		isl_space *dim;
+		isl_space *space;
 		isl_set *read_i;
 		int empty;
 
 		if (gpu_array_is_read_only_scalar(&prog->array[i]))
 			continue;
 
-		dim = isl_space_copy(prog->array[i].space);
-		read_i = isl_union_set_extract_set(prog->copy_in, dim);
+		space = isl_space_copy(prog->array[i].space);
+		read_i = isl_union_set_extract_set(prog->copy_in, space);
 		empty = isl_set_plain_is_empty(read_i);
 		isl_set_free(read_i);
 		if (empty)
