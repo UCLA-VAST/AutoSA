@@ -131,7 +131,7 @@ static __isl_give isl_printer *print_opencl_macros(__isl_take isl_printer *p)
 		"#define openclCheckReturn(ret) \\\n"
 		"  if (ret != CL_SUCCESS) {\\\n"
 		"    fprintf(stderr, \"OpenCL error: %s\\n\", "
-		" opencl_error_string(ret)); \\\n"
+		"opencl_error_string(ret)); \\\n"
 		"    fflush(stderr); \\\n"
 		"    assert(ret == CL_SUCCESS);\\\n  }\n";
 
@@ -846,8 +846,8 @@ static __isl_give isl_printer *opencl_print_host_user(
 	else
 		p = isl_printer_print_int(p, 1);
 
-	p = isl_printer_print_str(p, ", NULL, global_work_size,"
-					"block_size,"
+	p = isl_printer_print_str(p, ", NULL, global_work_size, "
+					"block_size, "
 					"0, NULL, NULL));");
 	p = isl_printer_end_line(p);
 	p = isl_printer_start_line(p);
@@ -983,7 +983,7 @@ static __isl_give isl_printer *opencl_setup(__isl_take isl_printer *p,
 	p = isl_printer_print_str(p, ");");
 	p = isl_printer_end_line(p);
 	p = isl_printer_start_line(p);
-	p = isl_printer_print_str(p, "context = clCreateContext(NULL, 1,"
+	p = isl_printer_print_str(p, "context = clCreateContext(NULL, 1, "
 		"&device, NULL, NULL, &err);");
 	p = isl_printer_end_line(p);
 	p = isl_printer_start_line(p);
