@@ -52,6 +52,7 @@ ppcg_SOURCES = \
 	ppcg.h \
 	print.c \
 	print.h \
+	util.h \
 	version.c
 
 TESTS = @extra_tests@
