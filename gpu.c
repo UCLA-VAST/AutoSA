@@ -3904,6 +3904,50 @@ static __isl_give isl_schedule_node *create_kernel(struct gpu_gen *gen,
 	return node;
 }
 
+/* Insert a zero-dimensional permutable band at "node".
+ */
+static __isl_give isl_schedule_node *insert_empty_permutable_band(
+	__isl_take isl_schedule_node *node)
+{
+	isl_space *space;
+	isl_schedule *schedule;
+	isl_union_set *domain;
+	isl_multi_union_pw_aff *mupa;
+
+	schedule = isl_schedule_node_get_schedule(node);
+	domain = isl_schedule_get_domain(schedule);
+	space = isl_union_set_get_space(domain);
+	isl_union_set_free(domain);
+	isl_schedule_free(schedule);
+
+	space = isl_space_set_from_params(space);
+	mupa = isl_multi_union_pw_aff_zero(space);
+	node = isl_schedule_node_insert_partial_schedule(node, mupa);
+	node = isl_schedule_node_band_set_permutable(node, 1);
+
+	return node;
+}
+
+/* Mark "node" as outer permutable.
+ *
+ * If "node" originally points to a leaf, then insert a zero-dimensional
+ * permutable band such that we can assume that "node" always
+ * points to a band node.
+ *
+ * Create a kernel representing the domain instances that reach "node" and
+ * replace the band node with a mark node pointing to the kernel.
+ */
+static __isl_give isl_schedule_node *mark_outer_permutable(
+	struct gpu_gen *gen, __isl_take isl_schedule_node *node)
+{
+	if (isl_schedule_node_get_type(node) == isl_schedule_node_leaf)
+		node = insert_empty_permutable_band(node);
+
+	node = create_kernel(gen, node);
+
+	return node;
+}
+
 static __isl_give isl_schedule_node *select_outer_band(struct gpu_gen *gen,
 	__isl_take isl_schedule_node *node, int pos, struct band_info *info);
 
@@ -3940,7 +3984,7 @@ static __isl_give isl_schedule_node *band_select_outer_band(struct gpu_gen *gen,
 	info->suffix = isl_schedule_node_get_subtree_schedule_union_map(node);
 	isl_union_map_foreach_map(info->prefix, &set_stmt_tile_len, info);
 
-	node = create_kernel(gen, node);
+	node = mark_outer_permutable(gen, node);
 
 	return node;
 }
@@ -4039,7 +4083,7 @@ static __isl_give isl_schedule_node *leaf_select_outer_band(struct gpu_gen *gen,
 	info->suffix = isl_schedule_node_get_subtree_schedule_union_map(node);
 	isl_union_map_foreach_map(info->prefix, &set_stmt_tile_len, info);
 
-	node = create_kernel(gen, node);
+	node = mark_outer_permutable(gen, node);
 
 	return node;
 }
