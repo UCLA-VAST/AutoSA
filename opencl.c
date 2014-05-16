@@ -163,14 +163,31 @@ static __isl_give isl_printer *opencl_declare_device_arrays(
 	return p;
 }
 
+/* Given an array, check whether its positive size guard expression is
+ * trivial.
+ */
+static int is_array_positive_size_guard_trivial(struct gpu_array_info *array)
+{
+	isl_set *guard;
+	int is_trivial;
+
+	guard = gpu_array_positive_size_guard(array);
+	is_trivial = isl_set_plain_is_universe(guard);
+	isl_set_free(guard);
+	return is_trivial;
+}
+
 /* Allocate a device array for array and copy the contents to the device
  * if copy is set.
  *
- * Ensure the device array can contain at least one element.
+ * Emit a max-expression to ensure the device array can contain at least one
+ * element if the array's positive size guard expression is not trivial.
  */
 static __isl_give isl_printer *allocate_device_array(__isl_take isl_printer *p,
 	struct gpu_array_info *array, int copy)
 {
+	int need_lower_bound;
+
 	p = ppcg_start_block(p);
 
 	p = isl_printer_start_line(p);
@@ -184,11 +201,15 @@ static __isl_give isl_printer *allocate_device_array(__isl_take isl_printer *p,
 	else
 		p = isl_printer_print_str(p, " | CL_MEM_COPY_HOST_PTR, ");
 
-	p = isl_printer_print_str(p, "max(sizeof(");
-	p = isl_printer_print_str(p, array->type);
-	p = isl_printer_print_str(p, "), ");
+	need_lower_bound = !is_array_positive_size_guard_trivial(array);
+	if (need_lower_bound) {
+		p = isl_printer_print_str(p, "max(sizeof(");
+		p = isl_printer_print_str(p, array->type);
+		p = isl_printer_print_str(p, "), ");
+	}
 	p = gpu_array_info_print_size(p, array);
-	p = isl_printer_print_str(p, ")");
+	if (need_lower_bound)
+		p = isl_printer_print_str(p, ")");
 
 	if (!copy)
 		p = isl_printer_print_str(p, ", NULL");
