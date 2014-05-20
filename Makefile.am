@@ -52,7 +52,9 @@ TESTS = @extra_tests@
 EXTRA_TESTS = opencl_test.sh polybench_test.sh
 TEST_EXTENSIONS = .sh
 
-EXTRA_DIST = ocl_utilities.c
+EXTRA_DIST = \
+	ocl_utilities.c \
+	tests
 
 dist-hook:
 	echo @GIT_HEAD_VERSION@ > $(distdir)/GIT_HEAD_ID
