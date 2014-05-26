@@ -784,11 +784,10 @@ static __isl_give isl_printer *opencl_print_total_number_of_work_items_for_dim(
 	__isl_take isl_printer *p, struct ppcg_kernel *kernel, int i)
 {
 	int grid_dim, block_dim;
+	isl_pw_aff *bound_grid;
 
 	grid_dim = isl_multi_pw_aff_dim(kernel->grid_size, isl_dim_set);
 	block_dim = kernel->n_block;
-
-	isl_pw_aff *bound_grid;
 
 	if (i < min(grid_dim, block_dim)) {
 		bound_grid = isl_multi_pw_aff_get_pw_aff(kernel->grid_size, i);
