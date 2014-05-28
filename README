@@ -104,6 +104,8 @@ Since PPCG performs some scheduling, it can be difficult to predict
 what exactly will end up in a kernel.  If you want to specify
 tile, grid or block sizes, you may want to run PPCG first with the defaults,
 examine the kernels and then run PPCG again with the desired sizes.
+Instead of examining the kernels, you can also specify the option
+--dump-sizes on the first run to obtain the effectively used default sizes.
 
 
 Compiling the generated CUDA code with nvcc

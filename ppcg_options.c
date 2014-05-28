@@ -22,6 +22,9 @@ ISL_ARG_BOOL(struct ppcg_debug_options, dump_schedule_constraints, 0,
 	"dump-schedule-constraints", 0, "dump schedule constraints")
 ISL_ARG_BOOL(struct ppcg_debug_options, dump_schedule, 0,
 	"dump-schedule", 0, "dump isl computed schedule")
+ISL_ARG_BOOL(struct ppcg_debug_options, dump_sizes, 0,
+	"dump-sizes", 0,
+	"dump effectively used per kernel tile, grid and block sizes")
 ISL_ARGS_END
 
 ISL_ARGS_START(struct ppcg_options, ppcg_opencl_options_args)

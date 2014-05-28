@@ -131,8 +131,11 @@ struct gpu_gen {
 	/* The sequence of types for which a definition has been printed. */
 	struct gpu_types types;
 
-	/* tile, grid and block sizes for each kernel */
+	/* User specified tile, grid and block sizes for each kernel */
 	isl_union_map *sizes;
+
+	/* Effectively used tile, grid and block sizes for each kernel */
+	isl_union_map *used_sizes;
 
 	/* Identifier of current kernel. */
 	int kernel_id;
@@ -821,8 +824,38 @@ static void read_sizes_from_set(__isl_take isl_set *set, int *sizes, int *len)
 	isl_set_free(set);
 }
 
+/* Add the map { kernel[id] -> type[sizes] } to gen->used_sizes,
+ * if the option debug->dump_sizes is set.
+ */
+static void set_used_sizes(struct gpu_gen *gen, const char *type, int id,
+	int *sizes, int len)
+{
+	int i;
+	isl_space *space;
+	isl_map *map;
+
+	if (!gen->options->debug->dump_sizes)
+		return;
+
+	space = isl_union_map_get_space(gen->used_sizes);
+	space = isl_space_set_from_params(space);
+	space = isl_space_add_dims(space, isl_dim_set, 1);
+	space = isl_space_set_tuple_name(space, isl_dim_set, "kernel");
+	space = isl_space_from_domain(space);
+	space = isl_space_add_dims(space, isl_dim_out, len);
+	space = isl_space_set_tuple_name(space, isl_dim_out, type);
+
+	map = isl_map_universe(space);
+	map = isl_map_fix_si(map, isl_dim_in, 0, id);
+	for (i = 0; i < len; ++i)
+		map = isl_map_fix_si(map, isl_dim_out, i, sizes[i]);
+
+	gen->used_sizes = isl_union_map_add_map(gen->used_sizes, map);
+}
+
 /* Extract user specified "tile" sizes from the "sizes" command line option,
  * defaulting to option->tile_size in each dimension.
+ * Add the effectively used sizes to gen->used_sizes.
  */
 static void read_tile_sizes(struct gpu_gen *gen)
 {
@@ -836,6 +869,8 @@ static void read_tile_sizes(struct gpu_gen *gen)
 
 	size = extract_sizes(gen->sizes, "tile", gen->kernel_id);
 	read_sizes_from_set(size, gen->tile_size, &gen->tile_len);
+	set_used_sizes(gen, "tile", gen->kernel_id,
+			gen->tile_size, gen->tile_len);
 
 	if (gen->n_parallel > gen->tile_len)
 		gen->n_parallel = gen->tile_len;
@@ -843,6 +878,7 @@ static void read_tile_sizes(struct gpu_gen *gen)
 
 /* Extract user specified "block" sizes from the "sizes" command line option,
  * after filling in some potentially useful defaults.
+ * Add the effectively used sizes to gen->used_sizes.
  */
 static void read_block_sizes(struct gpu_gen *gen)
 {
@@ -868,10 +904,13 @@ static void read_block_sizes(struct gpu_gen *gen)
 
 	size = extract_sizes(gen->sizes, "block", gen->kernel_id);
 	read_sizes_from_set(size, gen->block_dim, &gen->n_block);
+	set_used_sizes(gen, "block", gen->kernel_id,
+			gen->block_dim, gen->n_block);
 }
 
 /* Extract user specified "grid" sizes from the "sizes" command line option,
  * after filling in some potentially useful defaults.
+ * Add the effectively used sizes to gen->used_sizes.
  */
 static void read_grid_sizes(struct gpu_gen *gen)
 {
@@ -891,6 +930,7 @@ static void read_grid_sizes(struct gpu_gen *gen)
 
 	size = extract_sizes(gen->sizes, "grid", gen->kernel_id);
 	read_sizes_from_set(size, gen->grid_dim, &gen->n_grid);
+	set_used_sizes(gen, "grid", gen->kernel_id, gen->grid_dim, gen->n_grid);
 }
 
 /* Extract user specified sizes from the "sizes" command line option
@@ -5899,7 +5939,17 @@ int generate_gpu(isl_ctx *ctx, const char *input, FILE *out,
 	gen.types.n = 0;
 	gen.types.name = NULL;
 
+	if (options->debug->dump_sizes) {
+		isl_space *space = isl_space_params_alloc(ctx, 0);
+		gen.used_sizes = isl_union_map_empty(space);
+	}
+
 	r = ppcg_transform(ctx, input, out, options, &generate_wrap, &gen);
+
+	if (options->debug->dump_sizes) {
+		isl_union_map_dump(gen.used_sizes);
+		isl_union_map_free(gen.used_sizes);
+	}
 
 	isl_union_map_free(gen.sizes);
 	for (i = 0; i < gen.types.n; ++i)
