@@ -3977,6 +3977,43 @@ static __isl_give isl_union_set *set_schedule_modulo(
 	return isl_multi_union_pw_aff_zero_union_set(mupa);
 }
 
+/* Insert a guard that eliminates kernel launches where the kernel
+ * obviously does not have any work to do.
+ *
+ * In particular, eliminate kernel launches where there are obviously
+ * zero blocks.
+ * Use the same block size constraints that are used to create the context
+ * to ensure that all constraints implicit in the constructed context
+ * are imposed by the guard.
+ *
+ * Additionally, add other constraints that are valid
+ * for each executed instance ("context"), as long as this does not result
+ * in a disjunction.
+ */
+static __isl_give isl_schedule_node *insert_guard(
+	__isl_take isl_schedule_node *node, __isl_keep isl_set *context,
+	__isl_keep isl_multi_pw_aff *size, struct ppcg_scop *scop)
+{
+	unsigned nparam, n;
+	isl_set *guard;
+	isl_id_list *ids;
+
+	guard = isl_set_copy(context);
+	guard = isl_set_compute_divs(guard);
+	guard = isl_set_from_basic_set(isl_set_simple_hull(guard));
+
+	nparam = isl_set_dim(guard, isl_dim_param);
+	n = isl_multi_pw_aff_dim(size, isl_dim_out);
+	ids = ppcg_scop_generate_names(scop, n, "__ppcg_tmp");
+	guard = add_bounded_parameters_dynamic(guard, size, ids);
+	isl_id_list_free(ids);
+	guard = isl_set_project_out(guard, isl_dim_param, nparam, n);
+
+	node = isl_schedule_node_insert_guard(node, guard);
+
+	return node;
+}
+
 /* Mark all dimensions in the current band node atomic.
  */
 static __isl_give isl_schedule_node *atomic(__isl_take isl_schedule_node *node)
@@ -4047,6 +4084,9 @@ static __isl_give isl_schedule_node *group_statements(
  * then group the domain elements into a single space, named kernelX,
  * with X the kernel sequence number.
  *
+ * Insert a guard node governing the kernel node to ensure that
+ * no kernels with zero blocks are launched.
+ *
  * Store a pointer to the created ppcg_kernel in gen->kernel.
  *
  * We keep a copy of the isl_id that points to the kernel to ensure
@@ -4109,6 +4149,11 @@ static __isl_give isl_schedule_node *create_kernel(struct gpu_gen *gen,
 						isl_union_set_copy(domain));
 	if (scale)
 		node = scale_band(node, isl_multi_val_copy(sizes));
+	node = isl_schedule_node_parent(node);
+	if (!single_statement)
+		node = isl_schedule_node_parent(node);
+	node = insert_guard(node, kernel->context, kernel->grid_size,
+				gen->prog->scop);
 	node = gpu_tree_move_down_to_thread(node, kernel->core);
 	node = isl_schedule_node_child(node, 0);
 	node = split_band(node, kernel->n_block);
@@ -4126,6 +4171,7 @@ static __isl_give isl_schedule_node *create_kernel(struct gpu_gen *gen,
 
 	if (!single_statement)
 		node = isl_schedule_node_parent(node);
+	node = isl_schedule_node_parent(node);
 
 	isl_id_free(id);
 	return node;
