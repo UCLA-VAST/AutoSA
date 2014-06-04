@@ -5671,7 +5671,7 @@ static void compute_copy_in_and_out(struct gpu_gen *gen)
 		}
 
 		write_i = isl_union_set_extract_set(may_write, space);
-		empty = isl_set_fast_is_empty(write_i);
+		empty = isl_set_plain_is_empty(write_i);
 		isl_set_free(write_i);
 		if (empty)
 			continue;

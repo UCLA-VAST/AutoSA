@@ -250,7 +250,7 @@ static __isl_give isl_printer *opencl_allocate_device_arrays(
 
 		space = isl_space_copy(array->space);
 		read_i = isl_union_set_extract_set(prog->copy_in, space);
-		empty = isl_set_fast_is_empty(read_i);
+		empty = isl_set_plain_is_empty(read_i);
 		isl_set_free(read_i);
 
 		p = allocate_device_array(p, array, !empty);
@@ -332,7 +332,7 @@ static __isl_give isl_printer *opencl_set_kernel_arguments(
 
 		space = isl_space_copy(prog->array[i].space);
 		arr = isl_union_set_extract_set(kernel->arrays, space);
-		empty = isl_set_fast_is_empty(arr);
+		empty = isl_set_plain_is_empty(arr);
 		isl_set_free(arr);
 		if (empty)
 			continue;
@@ -390,7 +390,7 @@ static __isl_give isl_printer *opencl_print_kernel_arguments(
 
 		space = isl_space_copy(prog->array[i].space);
 		arr = isl_union_set_extract_set(kernel->arrays, space);
-		empty = isl_set_fast_is_empty(arr);
+		empty = isl_set_plain_is_empty(arr);
 		isl_set_free(arr);
 		if (empty)
 			continue;
@@ -946,7 +946,7 @@ static __isl_give isl_printer *opencl_copy_arrays_from_device(
 
 		space = isl_space_copy(array->space);
 		copy_out_i = isl_union_set_extract_set(copy_out, space);
-		empty = isl_set_fast_is_empty(copy_out_i);
+		empty = isl_set_plain_is_empty(copy_out_i);
 		isl_set_free(copy_out_i);
 		if (empty)
 			continue;

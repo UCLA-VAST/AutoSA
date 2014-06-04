@@ -119,7 +119,7 @@ static __isl_give isl_printer *copy_arrays_to_device(__isl_take isl_printer *p,
 
 		dim = isl_space_copy(prog->array[i].space);
 		read_i = isl_union_set_extract_set(prog->copy_in, dim);
-		empty = isl_set_fast_is_empty(read_i);
+		empty = isl_set_plain_is_empty(read_i);
 		isl_set_free(read_i);
 		if (empty)
 			continue;
@@ -228,7 +228,7 @@ static __isl_give isl_printer *print_kernel_arguments(__isl_take isl_printer *p,
 
 		space = isl_space_copy(prog->array[i].space);
 		arr = isl_union_set_extract_set(kernel->arrays, space);
-		empty = isl_set_fast_is_empty(arr);
+		empty = isl_set_plain_is_empty(arr);
 		isl_set_free(arr);
 		if (empty)
 			continue;
@@ -579,7 +579,7 @@ static __isl_give isl_printer *copy_arrays_from_device(
 
 		dim = isl_space_copy(prog->array[i].space);
 		copy_out_i = isl_union_set_extract_set(copy_out, dim);
-		empty = isl_set_fast_is_empty(copy_out_i);
+		empty = isl_set_plain_is_empty(copy_out_i);
 		isl_set_free(copy_out_i);
 		if (empty)
 			continue;
