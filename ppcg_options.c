@@ -32,6 +32,9 @@ ISL_ARG_STR(struct ppcg_options, opencl_compiler_options, 0, "compiler-options",
 	"options", NULL, "options to pass to the OpenCL compiler")
 ISL_ARG_BOOL(struct ppcg_options, opencl_use_gpu, 0, "use-gpu", 1,
 	"use GPU device (if available)")
+ISL_ARG_STR_LIST(struct ppcg_options, opencl_n_include_file,
+	opencl_include_files, 0, "include-file", "filename",
+	"file to #include in generated OpenCL code")
 ISL_ARGS_END
 
 ISL_ARGS_START(struct ppcg_options, ppcg_options_args)

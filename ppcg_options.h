@@ -45,6 +45,10 @@ struct ppcg_options {
 	char *opencl_compiler_options;
 	/* Prefer GPU device over CPU. */
 	int opencl_use_gpu;
+	/* Number of files to include. */
+	int opencl_n_include_file;
+	/* Files to include. */
+	const char **opencl_include_files;
 };
 
 ISL_ARG_DECL(ppcg_debug_options, struct ppcg_debug_options,

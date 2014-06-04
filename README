@@ -139,6 +139,23 @@ We have experienced no such freezes when using AMD, ARM or Intel
 OpenCL libraries.
 
 
+Function calls
+
+Function calls inside the analyzed fragment are reproduced
+in the CUDA or OpenCL code, but for now it is left to the user
+to make sure that the functions that are being called are
+available from the generated kernels.
+
+In the case of OpenCL code, the --opencl-include-file option
+may be used to specify one or more files to be #include'd
+from the generated code.  These files may then contain
+the definitions of the functions being called from the
+program fragment.  If the pathnames of the included files
+are relative to the current directory, then you may need
+to additionally specify the --opencl-compiler-options=-I.
+to make sure that the files can be found by the OpenCL compiler.
+
+
 Processing PolyBench
 
 When processing a PolyBench/C 3.2 benchmark, you should always specify

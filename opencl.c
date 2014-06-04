@@ -59,13 +59,15 @@ static FILE *open_or_croak(const char *name)
 /* Open the host .c file and the kernel .h and .cl files for writing.
  * Their names are derived from info->output (or info->input if
  * the user did not specify an output file name).
- * Add the necessary includes to these files.
+ * Add the necessary includes to these files, including those specified
+ * by the user.
  *
  * Return 0 on success and -1 on failure.
  */
 static int opencl_open_files(struct opencl_info *info)
 {
 	char name[PATH_MAX];
+	int i;
 	int len;
 
 	if (info->output) {
@@ -109,6 +111,9 @@ static int opencl_open_files(struct opencl_info *info)
 				"const char *opencl_options);\n");
 	fprintf(info->kernel_h,
 		"const char *opencl_error_string(cl_int error);\n");
+	for (i = 0; i < info->options->opencl_n_include_file; ++i)
+		fprintf(info->kernel_c, "#include <%s>\n",
+			info->options->opencl_include_files[i]);
 
 	return 0;
 }
