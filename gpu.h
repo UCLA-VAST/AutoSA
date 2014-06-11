@@ -165,9 +165,6 @@ struct gpu_gen {
 	int kernel_id;
 	/* Pointer to the current kernel. */
 	struct ppcg_kernel *kernel;
-
-	/* A schedule tree corresponding to both the host and device code. */
-	isl_schedule *schedule;
 };
 
 enum ppcg_kernel_access_type {

@@ -2200,23 +2200,23 @@ static int update_depth(__isl_keep isl_schedule_node *node, void *user)
 }
 
 /* Use isl to generate code for both the host and the device
- * from gen->schedule.
+ * from "schedule".
  * The device code is marked by "kernel" mark nodes in the schedule tree,
  * containing a pointer to a ppcg_kernel object.
  * The returned AST only contains the AST for the host code.
  * The ASTs for the device code are embedded in ppcg_kernel objects
  * attached to the leaf nodes that call "kernel".
  */
-static __isl_give isl_ast_node *generate_code(struct gpu_gen *gen)
+static __isl_give isl_ast_node *generate_code(struct gpu_gen *gen,
+	__isl_take isl_schedule *schedule)
 {
 	isl_ast_build *build;
 	isl_ast_node *tree;
-	isl_schedule *schedule;
 	isl_id_list *iterators;
 	int depth;
 
 	depth = 0;
-	if (isl_schedule_foreach_schedule_node(gen->schedule, &update_depth,
+	if (isl_schedule_foreach_schedule_node(schedule, &update_depth,
 						&depth) < 0)
 		return NULL;
 	build = isl_ast_build_from_context(isl_set_copy(gen->prog->context));
@@ -2225,7 +2225,6 @@ static __isl_give isl_ast_node *generate_code(struct gpu_gen *gen)
 	build = isl_ast_build_set_at_each_domain(build, &at_domain, gen);
 	build = isl_ast_build_set_before_each_mark(build, &before_mark, gen);
 	build = isl_ast_build_set_after_each_mark(build, &after_mark, gen);
-	schedule = isl_schedule_copy(gen->schedule);
 	tree = isl_ast_build_node_from_schedule(build, schedule);
 	isl_ast_build_free(build);
 
@@ -3537,11 +3536,8 @@ static __isl_give isl_schedule *mark_kernels(struct gpu_gen *gen,
  * gen->read and gen->write.
  *
  * We use the dependences in gen->prog->scop to compute
- * a schedule that has a parallel loop in each tilable band.
- * Finally, we select the outermost tilable band.
- *
- * Return the schedule computed by isl (before selecting
- * the outer tilable bands).
+ * a schedule that has a parallel loop in each tilable band and
+ * return this schedule.
  *
  * If live range reordering is allowed, then we need to make sure
  * that live ranges on arrays are not run in parallel since doing
@@ -3614,8 +3610,6 @@ static __isl_give isl_schedule *compute_schedule(struct gpu_gen *gen)
 	schedule = isl_schedule_constraints_compute_schedule(sc);
 	if (gen->options->debug->dump_schedule)
 		isl_schedule_dump(schedule);
-
-	gen->schedule = mark_kernels(gen, isl_schedule_copy(schedule));
 
 	return schedule;
 }
@@ -3994,16 +3988,15 @@ static __isl_give isl_printer *generate(__isl_take isl_printer *p,
 			p = isl_printer_free(p);
 		else
 			p = print_cpu(p, scop, options);
+		isl_schedule_free(schedule);
 	} else {
 		compute_copy_in_and_out(gen);
-		gen->tree = generate_code(gen);
+		schedule = mark_kernels(gen, schedule);
+		gen->tree = generate_code(gen, schedule);
 		p = ppcg_print_exposed_declarations(p, prog->scop);
 		p = ppcg_print_guarded(p, guard, context, &print_gpu, gen);
 		isl_ast_node_free(gen->tree);
 	}
-
-	isl_schedule_free(schedule);
-	isl_schedule_free(gen->schedule);
 
 	gpu_prog_free(prog);
 
