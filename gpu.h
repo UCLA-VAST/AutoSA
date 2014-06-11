@@ -171,9 +171,6 @@ struct gpu_gen {
 	/* First tile dimension. */
 	int tile_first;
 
-	/* Number of rows in the untiled schedule. */
-	int untiled_len;
-
 	/* A schedule tree corresponding to both the host and device code. */
 	isl_schedule *schedule;
 	/* Global untiled schedule. */

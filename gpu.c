@@ -3617,20 +3617,6 @@ static __isl_give isl_union_map *select_outer_tilable_band(struct gpu_gen *gen,
 	return isl_union_map_flat_range_product(info.prefix, info.suffix);
 }
 
-/* Set gen->untiled_len to the number of scheduling dimensions
- * for the schedule of the first domain.
- * We assume here that this number is the same for all domains.
- */
-static int set_untiled_len(__isl_take isl_map *map, void *user)
-{
-	unsigned *untiled_len = user;
-
-	*untiled_len = isl_map_dim(map, isl_dim_out);
-
-	isl_map_free(map);
-	return -1;
-}
-
 /* Compute an appropriate schedule based on the accesses in
  * gen->read and gen->write.
  *
@@ -3713,7 +3699,6 @@ static void compute_schedule(struct gpu_gen *gen)
 
 	sched = select_outer_tilable_band(gen, schedule);
 
-	isl_union_map_foreach_map(sched, &set_untiled_len, &gen->untiled_len);
 	sched = isl_union_map_intersect_domain(sched, domain);
 	gen->sched = sched;
 
