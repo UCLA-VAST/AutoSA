@@ -3908,18 +3908,18 @@ static __isl_give isl_schedule *get_schedule(struct gpu_gen *gen)
 /* Compute the sets of outer array elements that need to be copied in and out.
  *
  * In particular, for each array that is possibly written anywhere in
- * gen->prog and that is visible outside the corresponding scop,
+ * "prog" and that is visible outside the corresponding scop,
  * we copy out its entire extent.
  *
  * Any array elements that is read without first being written needs
  * to be copied in. Furthermore, if there are any array elements that
- * are copied out, but that may not be written inside gen->prog, then
+ * are copied out, but that may not be written inside "prog", then
  * they also need to be copied in to ensure that the value after execution
  * is the same as the value before execution, at least for those array
  * elements that may have their values preserved by the scop.
  * In case the array elements are structures, we need to take into
  * account that all members of the structures need to be written
- * by gen->prog before we can avoid copying the data structure in.
+ * by "prog" before we can avoid copying the data structure in.
  *
  * While computing the set of array elements that are copied out but
  * not necessarily written, we intersect both sets with the context.
@@ -3931,7 +3931,7 @@ static __isl_give isl_schedule *get_schedule(struct gpu_gen *gen)
  * then there is no point in copying it in since it cannot have been
  * written prior to the scop.  Warn about the uninitialized read instead.
  */
-static void compute_copy_in_and_out(struct gpu_gen *gen)
+static void compute_copy_in_and_out(struct gpu_prog *prog)
 {
 	int i;
 	isl_union_set *local;
@@ -3942,27 +3942,27 @@ static void compute_copy_in_and_out(struct gpu_gen *gen)
 	isl_union_map *local_uninitialized;
 
 	must_write = isl_union_map_range(
-				isl_union_map_copy(gen->prog->must_write));
+				isl_union_map_copy(prog->must_write));
 	must_write = isl_union_set_intersect_params(must_write,
-					    isl_set_copy(gen->prog->context));
+					    isl_set_copy(prog->context));
 	may_write = isl_union_map_range(
-				isl_union_map_copy(gen->prog->may_write));
+				isl_union_map_copy(prog->may_write));
 	may_write = isl_union_set_intersect_params(may_write,
-					    isl_set_copy(gen->prog->context));
+					    isl_set_copy(prog->context));
 	may_write = isl_union_set_universe(may_write);
 	may_write = isl_union_set_apply(may_write,
-				    isl_union_map_copy(gen->prog->to_outer));
+				    isl_union_map_copy(prog->to_outer));
 	copy_out = isl_union_set_empty(isl_union_set_get_space(may_write));
 	local = isl_union_set_copy(copy_out);
 
-	for (i = 0; i < gen->prog->n_array; ++i) {
+	for (i = 0; i < prog->n_array; ++i) {
 		isl_space *space;
 		isl_set *write_i;
 		int empty;
 
-		space = isl_space_copy(gen->prog->array[i].space);
+		space = isl_space_copy(prog->array[i].space);
 
-		if (gen->prog->array[i].local) {
+		if (prog->array[i].local) {
 			isl_set *set;
 
 			set = isl_set_universe(space);
@@ -3976,27 +3976,26 @@ static void compute_copy_in_and_out(struct gpu_gen *gen)
 		if (empty)
 			continue;
 
-		write_i = isl_set_copy(gen->prog->array[i].extent);
+		write_i = isl_set_copy(prog->array[i].extent);
 		copy_out = isl_union_set_add_set(copy_out, write_i);
 	}
 	isl_union_set_free(may_write);
 
 	copy_out = isl_union_set_intersect_params(copy_out,
-					    isl_set_copy(gen->prog->context));
+					    isl_set_copy(prog->context));
 
-	gen->prog->copy_out = isl_union_set_copy(copy_out);
+	prog->copy_out = isl_union_set_copy(copy_out);
 
 	copy_out = isl_union_set_apply(copy_out,
-				    isl_union_map_copy(gen->prog->to_inner));
+				    isl_union_map_copy(prog->to_inner));
 	copy_out = isl_union_set_intersect(copy_out,
-				    isl_union_set_copy(gen->prog->may_persist));
+				    isl_union_set_copy(prog->may_persist));
 	not_written = isl_union_set_subtract(copy_out, must_write);
 
-	uninitialized = isl_union_map_copy(gen->prog->scop->live_in);
+	uninitialized = isl_union_map_copy(prog->scop->live_in);
 	local_uninitialized = isl_union_map_copy(uninitialized);
 
-	local = isl_union_set_apply(local,
-				    isl_union_map_copy(gen->prog->to_inner));
+	local = isl_union_set_apply(local, isl_union_map_copy(prog->to_inner));
 	local_uninitialized = isl_union_map_intersect_range(local_uninitialized,
 							    local);
 	if (!isl_union_map_is_empty(local_uninitialized)) {
@@ -4009,9 +4008,9 @@ static void compute_copy_in_and_out(struct gpu_gen *gen)
 	copy_in = isl_union_map_range(uninitialized);
 	copy_in = isl_union_set_union(copy_in, not_written);
 	copy_in = isl_union_set_apply(copy_in,
-				    isl_union_map_copy(gen->prog->to_outer));
+				    isl_union_map_copy(prog->to_outer));
 
-	gen->prog->copy_in = copy_in;
+	prog->copy_in = copy_in;
 }
 
 /* Update "schedule" for mapping to a GPU device.
@@ -4310,7 +4309,7 @@ static __isl_give isl_printer *generate(__isl_take isl_printer *p,
 			p = print_cpu(p, scop, options);
 		isl_schedule_free(schedule);
 	} else {
-		compute_copy_in_and_out(gen);
+		compute_copy_in_and_out(prog);
 		schedule = map_to_device(gen, schedule);
 		gen->tree = generate_code(gen, schedule);
 		p = ppcg_print_exposed_declarations(p, prog->scop);
