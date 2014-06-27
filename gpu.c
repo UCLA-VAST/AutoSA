@@ -2769,6 +2769,29 @@ static struct gpu_array_ref_group *join_groups_and_free(
 	return group;
 }
 
+/* Report that the array reference group with the given access relation
+ * is not mapped to shared memory in the given kernel because
+ * it does not exhibit any reuse and is considered to be coalesced.
+ */
+static void report_no_reuse_and_coalesced(struct ppcg_kernel *kernel,
+	__isl_keep isl_union_map *access)
+{
+	isl_ctx *ctx;
+	isl_printer *p;
+
+	ctx = isl_union_map_get_ctx(access);
+	p = isl_printer_to_file(ctx, stdout);
+	p = isl_printer_print_str(p, "Array reference group ");
+	p = isl_printer_print_union_map(p, access);
+	p = isl_printer_print_str(p,
+	    " not considered for mapping to shared memory in kernel");
+	p = isl_printer_print_int(p, kernel->id);
+	p = isl_printer_print_str(p,
+	    " because it exhibits no reuse and is considered to be coalesced");
+	p = isl_printer_end_line(p);
+	isl_printer_free(p);
+}
+
 /* Compute the private and/or shared memory tiles for the array
  * reference group "group" of array "array".
  * Return 0 on success and -1 on error.
@@ -2828,7 +2851,7 @@ static int compute_group_bounds_core(struct gpu_gen *gen,
 	isl_ctx *ctx = isl_space_get_ctx(group->array->space);
 	isl_union_map *access;
 	int n_index = group->array->n_index;
-	int no_reuse;
+	int no_reuse, coalesced;
 	isl_map *acc;
 	int force_private = group->array->force_private;
 	int use_shared = gen->options->use_shared_memory && gen->n_block > 0;
@@ -2845,8 +2868,13 @@ static int compute_group_bounds_core(struct gpu_gen *gen,
 
 	access = group_access_relation(group, 1, 1);
 	no_reuse = isl_union_map_is_injective(access);
+	if (use_shared && no_reuse)
+		coalesced = access_is_coalesced(gen, access);
 
-	if (use_shared && (!no_reuse || !access_is_coalesced(gen, access))) {
+	if (gen->options->debug->verbose && use_shared && no_reuse && coalesced)
+		report_no_reuse_and_coalesced(gen->kernel, access);
+
+	if (use_shared && (!no_reuse || !coalesced)) {
 		group->shared_tile = create_tile(ctx, group->array->n_index);
 		if (!can_tile(group->access, group->shared_tile))
 			group->shared_tile = free_tile(group->shared_tile);

@@ -664,6 +664,30 @@ struct ppcg_transform_data {
 	void *user;
 };
 
+/* Should we print the original code?
+ * That is, does "scop" involve any data dependent conditions or
+ * nested expressions that cannot be handled by pet_stmt_build_ast_exprs?
+ */
+static int print_original(struct pet_scop *scop, struct ppcg_options *options)
+{
+	if (!pet_scop_can_build_ast_exprs(scop)) {
+		if (options->debug->verbose)
+			fprintf(stdout, "Printing original code because "
+				"some index expressions cannot currently "
+				"be printed\n");
+		return 1;
+	}
+
+	if (pet_scop_has_data_dependent_conditions(scop)) {
+		if (options->debug->verbose)
+			fprintf(stdout, "Printing original code because "
+				"input involves data dependent conditions\n");
+		return 1;
+	}
+
+	return 0;
+}
+
 /* Callback for pet_transform_C_source that transforms
  * the given pet_scop to a ppcg_scop before calling the
  * ppcg_transform callback.
@@ -678,8 +702,7 @@ static __isl_give isl_printer *transform(__isl_take isl_printer *p,
 	struct ppcg_transform_data *data = user;
 	struct ppcg_scop *ps;
 
-	if (!pet_scop_can_build_ast_exprs(scop) ||
-	    pet_scop_has_data_dependent_conditions(scop)) {
+	if (print_original(scop, data->options)) {
 		p = pet_scop_print_original(scop, p);
 		pet_scop_free(scop);
 		return p;

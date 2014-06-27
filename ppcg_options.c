@@ -25,6 +25,7 @@ ISL_ARG_BOOL(struct ppcg_debug_options, dump_schedule, 0,
 ISL_ARG_BOOL(struct ppcg_debug_options, dump_sizes, 0,
 	"dump-sizes", 0,
 	"dump effectively used per kernel tile, grid and block sizes")
+ISL_ARG_BOOL(struct ppcg_debug_options, verbose, 'v', "verbose", 0, NULL)
 ISL_ARGS_END
 
 ISL_ARGS_START(struct ppcg_options, ppcg_opencl_options_args)
