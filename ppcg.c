@@ -750,7 +750,7 @@ static struct ppcg_scop *ppcg_scop_from_pet_scop(struct pet_scop *scop,
 	ps->tagged_must_writes = pet_scop_collect_tagged_must_writes(scop);
 	ps->must_writes = pet_scop_collect_must_writes(scop);
 	ps->tagged_must_kills = pet_scop_collect_tagged_must_kills(scop);
-	ps->schedule = pet_scop_collect_schedule(scop);
+	ps->schedule = isl_schedule_get_map(scop->schedule);
 	ps->pet = scop;
 	ps->independence = isl_union_map_empty(isl_set_get_space(ps->context));
 	for (i = 0; i < scop->n_independence; ++i)
