@@ -4091,7 +4091,7 @@ static __isl_give isl_ast_node *create_domain_leaf(
 	iterators = ppcg_scop_generate_names(gen->prog->scop, n, "c");
 	build = isl_ast_build_set_iterators(build, iterators);
 	build = isl_ast_build_set_at_each_domain(build, &at_each_domain, gen);
-	tree = isl_ast_build_ast_from_schedule(build, schedule);
+	tree = isl_ast_build_node_from_schedule_map(build, schedule);
 	isl_ast_build_free(build);
 
 	return tree;
@@ -4248,7 +4248,7 @@ static __isl_give isl_ast_node *copy_access(struct gpu_gen *gen,
 	iterators = ppcg_scop_generate_names(gen->prog->scop, n, "c");
 	build = isl_ast_build_set_iterators(build, iterators);
 	build = isl_ast_build_set_at_each_domain(build, &attach_copy_stmt, gen);
-	tree = isl_ast_build_ast_from_schedule(build,
+	tree = isl_ast_build_node_from_schedule_map(build,
 					    isl_union_map_from_map(schedule));
 	isl_ast_build_free(build);
 
@@ -5031,7 +5031,7 @@ static __isl_give isl_ast_node *generate_kernel(struct gpu_gen *gen,
 	iterators = ppcg_scop_generate_names(gen->prog->scop, sched_len, "g");
 	build = isl_ast_build_set_iterators(build, iterators);
 	build = isl_ast_build_set_create_leaf(build, &create_kernel_leaf, gen);
-	tree = isl_ast_build_ast_from_schedule(build, schedule);
+	tree = isl_ast_build_node_from_schedule_map(build, schedule);
 	isl_ast_build_free(build);
 
 	return tree;
@@ -5089,7 +5089,7 @@ static __isl_give isl_ast_node *construct_launch(
 	schedule = isl_union_map_from_map(map);
 
 	build = isl_ast_build_set_at_each_domain(build, &attach_id, id);
-	node = isl_ast_build_ast_from_schedule(build, schedule);
+	node = isl_ast_build_node_from_schedule_map(build, schedule);
 	isl_ast_build_free(build);
 
 	return node;
@@ -5215,7 +5215,7 @@ static __isl_give isl_ast_node *generate_host_code(struct gpu_gen *gen)
 						gen->tile_first, "h");
 	build = isl_ast_build_set_iterators(build, iterators);
 	build = isl_ast_build_set_create_leaf(build, &create_host_leaf, gen);
-	tree = isl_ast_build_ast_from_schedule(build, sched);
+	tree = isl_ast_build_node_from_schedule_map(build, sched);
 	isl_ast_build_free(build);
 
 	return tree;

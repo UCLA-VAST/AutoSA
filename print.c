@@ -172,7 +172,7 @@ __isl_give isl_printer *ppcg_print_guarded(__isl_take isl_printer *p,
 	guard = isl_set_from_params(guard);
 	schedule = isl_union_map_from_map(isl_map_from_domain(guard));
 	build = isl_ast_build_from_context(context);
-	tree = isl_ast_build_ast_from_schedule(build, schedule);
+	tree = isl_ast_build_node_from_schedule_map(build, schedule);
 	isl_ast_build_free(build);
 
 	options = isl_ast_print_options_alloc(ctx);

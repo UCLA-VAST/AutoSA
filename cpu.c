@@ -463,7 +463,7 @@ static __isl_give isl_printer *print_scop(struct ppcg_scop *scop,
 							&build_info);
 	}
 
-	tree = isl_ast_build_ast_from_schedule(build, schedule_map);
+	tree = isl_ast_build_node_from_schedule_map(build, schedule_map);
 	isl_ast_build_free(build);
 
 	print_options = isl_ast_print_options_alloc(ctx);
