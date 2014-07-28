@@ -162,6 +162,8 @@ When processing a PolyBench/C 3.2 benchmark, you should always specify
 -DPOLYBENCH_USE_C99_PROTO on the ppcg command line.  Otherwise, the source
 files are inconsistent, having fixed size arrays but parametrically
 bounded loops iterating over them.
+However, you should not specify this define when compiling
+the PPCG generated code using nvcc since CUDA does not support VLAs.
 
 
 CUDA and function overloading
