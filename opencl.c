@@ -212,7 +212,8 @@ static void opencl_close_files(struct opencl_info *info)
 		fclose(info->host_c);
 }
 
-static __isl_give isl_printer *opencl_print_host_macros(__isl_take isl_printer *p)
+static __isl_give isl_printer *opencl_print_host_macros(
+	__isl_take isl_printer *p)
 {
 	const char *macros =
 		"#define openclCheckReturn(ret) \\\n"
