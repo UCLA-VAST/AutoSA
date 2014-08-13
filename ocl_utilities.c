@@ -111,16 +111,48 @@ cl_device_id opencl_create_device(int use_gpu)
 	return dev;
 }
 
+/* Create an OpenCL program from a string and compile it.
+ */
+cl_program opencl_build_program_from_string(cl_context ctx, cl_device_id dev,
+	const char *program_source, size_t program_size,
+	const char *opencl_options)
+{
+	int err;
+	cl_program program;
+	char *program_log;
+	size_t log_size;
+
+	program = clCreateProgramWithSource(ctx, 1,
+			&program_source, &program_size, &err);
+	if (err < 0) {
+		fprintf(stderr, "Could not create the program\n");
+		exit(1);
+	}
+	err = clBuildProgram(program, 0, NULL, opencl_options, NULL, NULL);
+	if (err < 0) {
+		fprintf(stderr, "Could not build the program.\n");
+		clGetProgramBuildInfo(program, dev, CL_PROGRAM_BUILD_LOG, 0,
+				NULL, &log_size);
+		program_log = (char *) malloc(log_size + 1);
+		program_log[log_size] = '\0';
+		clGetProgramBuildInfo(program, dev, CL_PROGRAM_BUILD_LOG,
+				log_size + 1, program_log, NULL);
+		fprintf(stderr, "%s\n", program_log);
+		free(program_log);
+		exit(1);
+	}
+	return program;
+}
+
 /* Create an OpenCL program from a source file and compile it.
  */
-cl_program opencl_build_program(cl_context ctx, cl_device_id dev,
+cl_program opencl_build_program_from_file(cl_context ctx, cl_device_id dev,
 	const char* filename, const char* opencl_options)
 {
 	cl_program program;
 	FILE *program_file;
-	char *program_source, *program_log;
-	size_t program_size, log_size, read;
-	int err;
+	char *program_source;
+	size_t program_size, read;
 
 	program_file = fopen(filename, "r");
 	if (program_file == NULL) {
@@ -139,25 +171,9 @@ cl_program opencl_build_program(cl_context ctx, cl_device_id dev,
 	}
 	fclose(program_file);
 
-	program = clCreateProgramWithSource(ctx, 1,
-		(const char **)&program_source, &program_size, &err);
-	if (err < 0) {
-		fprintf(stderr, "Could not create the program\n");
-		exit(1);
-	}
+	program = opencl_build_program_from_string(ctx, dev, program_source,
+						program_size, opencl_options);
 	free(program_source);
-	err = clBuildProgram(program, 0, NULL, opencl_options, NULL, NULL);
-	if (err < 0) {
-		fprintf(stderr, "Could not build the program.\n");
-		clGetProgramBuildInfo(program, dev, CL_PROGRAM_BUILD_LOG, 0,
-				NULL, &log_size);
-		program_log = (char *) malloc(log_size + 1);
-		program_log[log_size] = '\0';
-		clGetProgramBuildInfo(program, dev, CL_PROGRAM_BUILD_LOG,
-				log_size + 1, program_log, NULL);
-		fprintf(stderr, "%s\n", program_log);
-		free(program_log);
-		exit(1);
-	}
+
 	return program;
 }

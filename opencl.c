@@ -108,7 +108,12 @@ static int opencl_open_files(struct opencl_info *info)
 	fprintf(info->kernel_h, "#endif\n\n");
 	fprintf(info->kernel_h, "cl_device_id opencl_create_device("
 				"int use_gpu);\n");
-	fprintf(info->kernel_h, "cl_program opencl_build_program("
+	fprintf(info->kernel_h, "cl_program opencl_build_program_from_string("
+				"cl_context ctx, "
+				"cl_device_id dev, const char *program_source, "
+				"size_t program_size, "
+				"const char *opencl_options);\n");
+	fprintf(info->kernel_h, "cl_program opencl_build_program_from_file("
 				"cl_context ctx, "
 				"cl_device_id dev, const char *filename, "
 				"const char *opencl_options);\n");
@@ -1035,7 +1040,7 @@ static __isl_give isl_printer *opencl_setup(__isl_take isl_printer *p,
 	p = isl_printer_end_line(p);
 
 	p = isl_printer_start_line(p);
-	p = isl_printer_print_str(p, "program = opencl_build_program("
+	p = isl_printer_print_str(p, "program = opencl_build_program_from_file("
 					"context, device, \"");
 	p = isl_printer_print_str(p, info->kernel_c_name);
 	p = isl_printer_print_str(p, "\", \"");
