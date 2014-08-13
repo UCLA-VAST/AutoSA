@@ -29,6 +29,7 @@
  * output is the user-specified output file name and may be NULL
  *	if not specified by the user.
  * kernel_c_name is the name of the kernel_c file.
+ * kprinter is an isl_printer for the kernel file.
  * host_c is the generated source file for the host code.  kernel_c is
  * the generated source file for the kernel.  kernel_h is the generated
  * header file for the kernel.
@@ -38,6 +39,8 @@ struct opencl_info {
 	const char *input;
 	const char *output;
 	char kernel_c_name[PATH_MAX];
+
+	isl_printer *kprinter;
 
 	FILE *host_c;
 	FILE *kernel_c;
@@ -111,19 +114,38 @@ static int opencl_open_files(struct opencl_info *info)
 				"const char *opencl_options);\n");
 	fprintf(info->kernel_h,
 		"const char *opencl_error_string(cl_int error);\n");
-	for (i = 0; i < info->options->opencl_n_include_file; ++i)
-		fprintf(info->kernel_c, "#include <%s>\n",
-			info->options->opencl_include_files[i]);
+	for (i = 0; i < info->options->opencl_n_include_file; ++i) {
+		info->kprinter = isl_printer_print_str(info->kprinter,
+					"#include <");
+		info->kprinter = isl_printer_print_str(info->kprinter,
+					info->options->opencl_include_files[i]);
+		info->kprinter = isl_printer_print_str(info->kprinter, ">\n");
+	}
 
 	return 0;
 }
 
-/* Close all output files.
+/* Write the code that we have accumulated in the kernel isl_printer to the
+ * kernel.cl file.
+ */
+static void opencl_write_kernel_file(struct opencl_info *opencl)
+{
+	char *raw = isl_printer_get_str(opencl->kprinter);
+
+	fprintf(opencl->kernel_c, "%s", raw);
+
+	free(raw);
+}
+
+/* Close all output files.  Write the kernel contents to the kernel file before
+ * closing it.
  */
 static void opencl_close_files(struct opencl_info *info)
 {
-	if (info->kernel_c)
+	if (info->kernel_c) {
+		opencl_write_kernel_file(info);
 		fclose(info->kernel_c);
+	}
 	if (info->kernel_h)
 		fclose(info->kernel_h);
 	if (info->host_c)
@@ -650,14 +672,12 @@ static __isl_give isl_printer *opencl_enable_double_support(
 	return p;
 }
 
-static void opencl_print_kernel(struct gpu_prog *prog,
-	struct ppcg_kernel *kernel, struct opencl_info *opencl)
+static __isl_give isl_printer *opencl_print_kernel(struct gpu_prog *prog,
+	struct ppcg_kernel *kernel, __isl_take isl_printer *p)
 {
 	isl_ctx *ctx = isl_ast_node_get_ctx(kernel->tree);
 	isl_ast_print_options *print_options;
-	isl_printer *p;
 
-	p = isl_printer_to_file(ctx, opencl->kernel_c);
 	print_options = isl_ast_print_options_alloc(ctx);
 	print_options = isl_ast_print_options_set_print_user(print_options,
 				&opencl_print_kernel_stmt, NULL);
@@ -676,7 +696,8 @@ static void opencl_print_kernel(struct gpu_prog *prog,
 	p = isl_printer_start_line(p);
 	p = isl_printer_print_str(p, "}");
 	p = isl_printer_end_line(p);
-	isl_printer_free(p);
+
+	return p;
 }
 
 struct print_host_user_data_opencl {
@@ -882,7 +903,8 @@ static __isl_give isl_printer *opencl_print_host_user(
 	p = isl_printer_start_line(p);
 	p = isl_printer_end_line(p);
 
-	opencl_print_kernel(data->prog, kernel, data->opencl);
+	data->opencl->kprinter = opencl_print_kernel(data->prog, kernel,
+						data->opencl->kprinter);
 
 	isl_ast_print_options_free(print_options);
 
@@ -1089,16 +1111,15 @@ static __isl_give isl_printer *print_opencl(__isl_take isl_printer *p,
 	struct gpu_types *types, void *user)
 {
 	struct opencl_info *opencl = user;
-	isl_printer *kernel;
 
-	kernel = isl_printer_to_file(isl_printer_get_ctx(p), opencl->kernel_c);
-	kernel = isl_printer_set_output_format(kernel, ISL_FORMAT_C);
+	opencl->kprinter = isl_printer_set_output_format(opencl->kprinter,
+							ISL_FORMAT_C);
 	if (any_double_elements(prog))
-		kernel = opencl_enable_double_support(kernel);
-	kernel = gpu_print_types(kernel, types, prog);
-	isl_printer_free(kernel);
+		opencl->kprinter = opencl_enable_double_support(
+							opencl->kprinter);
+	opencl->kprinter = gpu_print_types(opencl->kprinter, types, prog);
 
-	if (!kernel)
+	if (!opencl->kprinter)
 		return isl_printer_free(p);
 
 	p = ppcg_start_block(p);
@@ -1139,6 +1160,7 @@ int generate_opencl(isl_ctx *ctx, struct ppcg_options *options,
 	struct opencl_info opencl = { options, input, output };
 	int r;
 
+	opencl.kprinter = isl_printer_to_str(ctx);
 	r = opencl_open_files(&opencl);
 
 	if (r >= 0)
@@ -1146,6 +1168,7 @@ int generate_opencl(isl_ctx *ctx, struct ppcg_options *options,
 				&print_opencl, &opencl);
 
 	opencl_close_files(&opencl);
+	isl_printer_free(opencl.kprinter);
 
 	return r;
 }
