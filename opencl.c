@@ -672,6 +672,8 @@ static void opencl_print_kernel(struct gpu_prog *prog,
 	p = isl_printer_end_line(p);
 	p = gpu_print_macros(p, kernel->tree);
 	p = isl_ast_node_print(kernel->tree, p, print_options);
+	p = isl_printer_indent(p, -4);
+	p = isl_printer_start_line(p);
 	p = isl_printer_print_str(p, "}");
 	p = isl_printer_end_line(p);
 	isl_printer_free(p);
