@@ -138,6 +138,14 @@ corresponding CUDA code runs fine.
 We have experienced no such freezes when using AMD, ARM or Intel
 OpenCL libraries.
 
+By default, the compiled executable will need the _kernel.cl file at
+run time.  Alternatively, the option --opencl-embed-kernel-code may be
+given to place the kernel code in a string literal.  The kernel code is
+then compiled into the host binary, such that the _kernel.cl file is no
+longer needed at run time.  Any kernel include files, in particular
+those supplied using --opencl-include-file, will still be required at
+run time.
+
 
 Function calls
 

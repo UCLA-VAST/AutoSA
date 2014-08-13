@@ -26,23 +26,33 @@ else
 	OUTDIR=`mktemp -d $TMPDIR/ppcg.XXXXXXXXXX` || exit 1
 fi
 
-for i in $srcdir/tests/*.c; do
-	echo $i
-	name=`basename $i`
-	name="${name%.c}"
-	out_c="${OUTDIR}/$name.ppcg.c"
-	out="${OUTDIR}/$name.ppcg$EXEEXT"
-	options="--target=opencl --opencl-no-use-gpu"
-	functions="$srcdir/tests/${name}_opencl_functions.cl"
-	if test -f $functions; then
-		options="$options --opencl-include-file=$functions"
-		options="$options --opencl-compiler-options=-I."
-	fi
-	./ppcg$EXEEXT $options $i -o "$out_c" || exit
-	$CC $CFLAGS "$srcdir/ocl_utilities.c" -lOpenCL "$out_c" -o "$out" || \
-		exit
-	$out || exit
-done
+run_tests () {
+	subdir=$1
+	ppcg_options=$2
+
+	echo Test with PPCG options \'$ppcg_options\'
+	mkdir ${OUTDIR}/${subdir} || exit 1
+	for i in $srcdir/tests/*.c; do
+		echo $i
+		name=`basename $i`
+		name="${name%.c}"
+		out_c="${OUTDIR}/${subdir}/$name.ppcg.c"
+		out="${OUTDIR}/${subdir}/$name.ppcg$EXEEXT"
+		options="--target=opencl --opencl-no-use-gpu $ppcg_options"
+		functions="$srcdir/tests/${name}_opencl_functions.cl"
+		if test -f $functions; then
+			options="$options --opencl-include-file=$functions"
+			options="$options --opencl-compiler-options=-I."
+		fi
+		./ppcg$EXEEXT $options $i -o "$out_c" || exit
+		$CC $CFLAGS "$srcdir/ocl_utilities.c" -lOpenCL -I. "$out_c" \
+			-o "$out" || exit
+		$out || exit
+	done
+}
+
+run_tests default
+run_tests embed --opencl-embed-kernel-code
 
 if [ $keep = "no" ]; then
 	rm -r "${OUTDIR}"

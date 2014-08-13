@@ -101,6 +101,11 @@ static int opencl_open_files(struct opencl_info *info)
 	fprintf(info->host_c, "#include <assert.h>\n");
 	fprintf(info->host_c, "#include <stdio.h>\n");
 	fprintf(info->host_c, "#include \"%s\"\n\n", ppcg_base_name(name));
+	if (info->options->opencl_embed_kernel_code) {
+		fprintf(info->host_c, "#include \"%s\"\n\n",
+			info->kernel_c_name);
+	}
+
 	fprintf(info->kernel_h, "#if defined(__APPLE__)\n");
 	fprintf(info->kernel_h, "#include <OpenCL/opencl.h>\n");
 	fprintf(info->kernel_h, "#else\n");
@@ -130,14 +135,64 @@ static int opencl_open_files(struct opencl_info *info)
 	return 0;
 }
 
+/* Write text to a file and escape some special characters that would break a
+ * C string.
+ */
+static void opencl_print_escaped(const char *str, const char *end, FILE *file)
+{
+	const char *prev = str;
+
+	while ((str = strpbrk(prev, "\"\\")) && str < end) {
+		fwrite(prev, 1, str - prev, file);
+		fprintf(file, "\\%c", *str);
+		prev = str + 1;
+	}
+
+	if (*prev)
+		fwrite(prev, 1, end - prev, file);
+}
+
+/* Write text to a file as a C string literal.
+ *
+ * This function also prints any characters after the last newline, although
+ * normally the input string should end with a newline.
+ */
+static void opencl_print_as_c_string(const char *str, FILE *file)
+{
+	const char *prev = str;
+
+	while ((str = strchr(prev, '\n'))) {
+		fprintf(file, "\n\"");
+		opencl_print_escaped(prev, str, file);
+		fprintf(file, "\\n\"");
+
+		prev = str + 1;
+	}
+
+	if (*prev) {
+		fprintf(file, "\n\"");
+		opencl_print_escaped(prev, prev + strlen(prev), file);
+		fprintf(file, "\"");
+	}
+}
+
 /* Write the code that we have accumulated in the kernel isl_printer to the
- * kernel.cl file.
+ * kernel.cl file.  If the opencl_embed_kernel_code option has been set, print
+ * the code as a C string literal.  Start that string literal with an empty
+ * line, such that line numbers reported by the OpenCL C compiler match those
+ * of the kernel file.
  */
 static void opencl_write_kernel_file(struct opencl_info *opencl)
 {
 	char *raw = isl_printer_get_str(opencl->kprinter);
 
-	fprintf(opencl->kernel_c, "%s", raw);
+	if (opencl->options->opencl_embed_kernel_code) {
+		fprintf(opencl->kernel_c,
+			"static const char kernel_code[] = \"\\n\"");
+		opencl_print_as_c_string(raw, opencl->kernel_c);
+		fprintf(opencl->kernel_c, ";\n");
+	} else
+		fprintf(opencl->kernel_c, "%s", raw);
 
 	free(raw);
 }
@@ -1040,10 +1095,18 @@ static __isl_give isl_printer *opencl_setup(__isl_take isl_printer *p,
 	p = isl_printer_end_line(p);
 
 	p = isl_printer_start_line(p);
-	p = isl_printer_print_str(p, "program = opencl_build_program_from_file("
-					"context, device, \"");
-	p = isl_printer_print_str(p, info->kernel_c_name);
-	p = isl_printer_print_str(p, "\", \"");
+	p = isl_printer_print_str(p, "program = ");
+
+	if (info->options->opencl_embed_kernel_code) {
+		p = isl_printer_print_str(p, "opencl_build_program_from_string("
+						"context, device, kernel_code, "
+						"sizeof(kernel_code), \"");
+	} else {
+		p = isl_printer_print_str(p, "opencl_build_program_from_file("
+						"context, device, \"");
+		p = isl_printer_print_str(p, info->kernel_c_name);
+		p = isl_printer_print_str(p, "\", \"");
+	}
 
 	if (info->options->opencl_compiler_options)
 		p = isl_printer_print_str(p,

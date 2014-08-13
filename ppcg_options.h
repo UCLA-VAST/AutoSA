@@ -50,6 +50,8 @@ struct ppcg_options {
 	int opencl_n_include_file;
 	/* Files to include. */
 	const char **opencl_include_files;
+	/* Embed OpenCL kernel code in host code. */
+	int opencl_embed_kernel_code;
 };
 
 ISL_ARG_DECL(ppcg_debug_options, struct ppcg_debug_options,
