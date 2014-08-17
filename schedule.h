@@ -51,6 +51,8 @@ __isl_give isl_map *project_out(__isl_take isl_space *dim,
 	int len, int first, int n);
 __isl_give isl_map *projection(__isl_take isl_space *dim,
 	int src_len, int dst_len);
+__isl_give isl_set *parametrization(__isl_take isl_space *space,
+	int len, int first, __isl_keep isl_id_list *names);
 __isl_give isl_set *extend(__isl_take isl_set *set, int dst_len);
 __isl_give isl_union_map *align_range(__isl_take isl_union_map *umap);
 
