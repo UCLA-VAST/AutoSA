@@ -190,3 +190,19 @@ __isl_give isl_union_map *align_range(__isl_take isl_union_map *umap)
 	isl_union_map_free(umap);
 	return data.res;
 }
+
+/* Does "map" have an obviously fixed value at variable "pos" of "type"?
+ */
+int map_plain_is_fixed(isl_map *map, enum isl_dim_type type, unsigned pos)
+{
+	isl_val *v;
+	int fixed;
+
+	v = isl_map_plain_get_val_if_fixed(map, type, pos);
+	if (!v)
+		return -1;
+	fixed = isl_val_is_int(v);
+	isl_val_free(v);
+
+	return fixed;
+}

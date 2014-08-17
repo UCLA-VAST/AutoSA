@@ -1143,23 +1143,6 @@ static __isl_give isl_map *shift_access(struct gpu_array_ref_group *group)
 	return isl_map_from_multi_aff(tiling);
 }
 
-/* Does "map" have an obviously fixed value at variable "pos" of "type"?
- */
-static int map_plain_is_fixed(isl_map *map, enum isl_dim_type type,
-	unsigned pos)
-{
-	isl_val *v;
-	int fixed;
-
-	v = isl_map_plain_get_val_if_fixed(map, type, pos);
-	if (!v)
-		return -1;
-	fixed = isl_val_is_int(v);
-	isl_val_free(v);
-
-	return fixed;
-}
-
 /* Given a schedule that iterates over all elements in a piece of an array,
  * perform tiling/wrapping over the threads.
  *
