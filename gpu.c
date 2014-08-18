@@ -3637,8 +3637,8 @@ error:
 	return NULL;
 }
 
-/* Use isl to generate code for the outer gen->tile_first loops
- * of the global schedule in gen->sched, resulting in the host code.
+/* Use isl to generate host code from gen->host_schedule, which corresponds to
+ * the outer gen->tile_first loops of the global schedule in gen->sched.
  * Within each iteration of this partial schedule, i.e., for each kernel
  * launch, create_host_leaf takes care of generating the kernel code.
  */
@@ -3646,14 +3646,8 @@ static __isl_give isl_ast_node *generate_host_code(struct gpu_gen *gen)
 {
 	isl_ast_build *build;
 	isl_ast_node *tree;
-	isl_union_map *sched;
-	isl_map *proj;
+	isl_schedule *schedule;
 	isl_id_list *iterators;
-
-	sched = isl_union_map_copy(gen->sched);
-	proj = projection(isl_union_map_get_space(sched),
-			    gen->untiled_len, gen->tile_first);
-	sched = isl_union_map_apply_range(sched, isl_union_map_from_map(proj));
 
 	isl_options_set_ast_build_group_coscheduled(gen->ctx, 1);
 	build = isl_ast_build_from_context(isl_set_copy(gen->prog->context));
@@ -3661,7 +3655,8 @@ static __isl_give isl_ast_node *generate_host_code(struct gpu_gen *gen)
 						gen->tile_first, "h");
 	build = isl_ast_build_set_iterators(build, iterators);
 	build = isl_ast_build_set_create_leaf(build, &create_host_leaf, gen);
-	tree = isl_ast_build_node_from_schedule_map(build, sched);
+	schedule = isl_schedule_copy(gen->host_schedule);
+	tree = isl_ast_build_node_from_schedule(build, schedule);
 	isl_ast_build_free(build);
 
 	return tree;
@@ -3722,7 +3717,8 @@ static __isl_give isl_schedule_node *select_outer_band(struct gpu_gen *gen,
 /* Check if this band node is tilable and has any parallel loops.  If so,
  * take it as the outermost tilable band.  If not, continue looking for the
  * outermost tilable band in the children of the current band.
- * Return a pointer to the same node.
+ * Return a pointer to the same node in a tree where all outermost tilable
+ * bands in the current subtree have been removed.
  */
 static __isl_give isl_schedule_node *band_select_outer_band(struct gpu_gen *gen,
 	__isl_take isl_schedule_node *node, int pos, struct band_info *info)
@@ -3749,6 +3745,8 @@ static __isl_give isl_schedule_node *band_select_outer_band(struct gpu_gen *gen,
 	info->prefix = isl_schedule_node_get_prefix_schedule_union_map(node);
 	info->suffix = isl_schedule_node_get_subtree_schedule_union_map(node);
 	isl_union_map_foreach_map(info->prefix, &set_stmt_tile_len, info);
+
+	node = isl_schedule_node_cut(node);
 
 	return node;
 }
@@ -3840,7 +3838,8 @@ static void separate_bands(struct band_info *info, int n)
  * for tile_len and/or n_parallel.  Finally, combine the resulting
  * prefix and suffix schedules into a single pair of prefix and
  * suffix schedules for the entire list.
- * Return a pointer to the same node.
+ * Return a pointer to the same node in a tree where all outermost tilable
+ * bands in the current subtree have been removed.
  */
 static __isl_give isl_schedule_node *list_select_outer_band(
 	struct gpu_gen *gen, __isl_take isl_schedule_node *node, int pos,
@@ -3913,7 +3912,8 @@ static __isl_give isl_schedule_node *list_select_outer_band(
 
 /* Select the outermost bands in the elements of the set node "node".
  * If the schedule_separate_components is set, then separate all bands.
- * Return a pointer to the same node.
+ * Return a pointer to the same node in a tree where all outermost tilable
+ * bands in the current subtree have been removed.
  */
 static __isl_give isl_schedule_node *set_select_outer_band(
 	struct gpu_gen *gen, __isl_take isl_schedule_node *node, int pos,
@@ -3928,7 +3928,8 @@ static __isl_give isl_schedule_node *set_select_outer_band(
 
 /* Select the outermost bands in the elements of the sequence node "node",
  * separating all bands.
- * Return a pointer to the same node.
+ * Return a pointer to the same node in a tree where all outermost tilable
+ * bands in the current subtree have been removed.
  */
 static __isl_give isl_schedule_node *sequence_select_outer_band(
 	struct gpu_gen *gen, __isl_take isl_schedule_node *node, int pos,
@@ -3956,7 +3957,8 @@ static __isl_give isl_schedule_node *leaf_select_outer_band(struct gpu_gen *gen,
 }
 
 /* Select the outermost tilable band in the subtree that "node" points to and
- * return a pointer to the same node.
+ * return a pointer to the same node in a tree where all outermost tilable
+ * bands in the current subtree have been removed.
  */
 static __isl_give isl_schedule_node *select_outer_band(struct gpu_gen *gen,
 	__isl_take isl_schedule_node *node, int pos, struct band_info *info)
@@ -4000,6 +4002,8 @@ static __isl_give isl_schedule_node *select_outer_band(struct gpu_gen *gen,
  *
  * Return the complete schedule, with the tilable bands aligned
  * at gen->tile_first and padded with zero, if needed.
+ * Store a schedule tree corresponding to the outer gen->tile_first
+ * dimensions in gen->host_schedule.
  */
 static __isl_give isl_union_map *select_outer_tilable_band(struct gpu_gen *gen,
 	__isl_keep isl_schedule *schedule)
@@ -4012,6 +4016,7 @@ static __isl_give isl_union_map *select_outer_tilable_band(struct gpu_gen *gen,
 
 	node = isl_schedule_get_root(schedule);
 	node = select_outer_band(gen, node, 0, &info);
+	gen->host_schedule = isl_schedule_node_get_schedule(node);
 	isl_schedule_node_free(node);
 
 	gen->tile_first = info.tile_first;
@@ -4495,6 +4500,7 @@ static __isl_give isl_printer *generate(__isl_take isl_printer *p,
 	}
 
 	isl_union_map_free(gen->sched);
+	isl_schedule_free(gen->host_schedule);
 
 	gpu_prog_free(prog);
 

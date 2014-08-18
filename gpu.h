@@ -185,6 +185,8 @@ struct gpu_gen {
 	/* Number of rows in schedule after tiling/wrapping over threads. */
 	int thread_tiled_len;
 
+	/* A schedule tree corresponding to the host code. */
+	isl_schedule *host_schedule;
 	/* Global untiled schedule. */
 	isl_union_map *sched;
 	/* Local (per kernel launch) tiled schedule. */
