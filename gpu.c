@@ -536,26 +536,28 @@ static void set_used_sizes(struct gpu_gen *gen, const char *type, int id,
 
 /* Extract user specified "tile" sizes from the "sizes" command line option,
  * defaulting to option->tile_size in each dimension.
+ * *tile_len contains the maximum number of tile sizes needed.
+ * Update *tile_len to the number of specified tile sizes, if any, and
+ * return a pointer to the tile sizes (or NULL on error).
  * Add the effectively used sizes to gen->used_sizes.
  */
-static void read_tile_sizes(struct gpu_gen *gen)
+static int *read_tile_sizes(struct gpu_gen *gen, int *tile_len)
 {
 	int n;
+	int *tile_size;
 	isl_set *size;
-	struct ppcg_kernel *kernel = gen->kernel;
 
-	kernel->tile_size = isl_alloc_array(gen->ctx, int, kernel->tile_len);
-	assert(kernel->tile_size);
-	for (n = 0; n < kernel->tile_len; ++n)
-		kernel->tile_size[n] = kernel->options->tile_size;
+	tile_size = isl_alloc_array(gen->ctx, int, *tile_len);
+	if (!tile_size)
+		return NULL;
+	for (n = 0; n < *tile_len; ++n)
+		tile_size[n] = gen->options->tile_size;
 
-	size = extract_sizes(gen->sizes, "tile", kernel->id);
-	read_sizes_from_set(size, kernel->tile_size, &kernel->tile_len);
-	set_used_sizes(gen, "tile", kernel->id,
-			kernel->tile_size, kernel->tile_len);
+	size = extract_sizes(gen->sizes, "tile", gen->kernel_id);
+	read_sizes_from_set(size, tile_size, tile_len);
+	set_used_sizes(gen, "tile", gen->kernel_id, tile_size, *tile_len);
 
-	if (kernel->n_parallel > kernel->tile_len)
-		kernel->n_parallel = kernel->tile_len;
+	return tile_size;
 }
 
 /* Extract user specified "block" sizes from the "sizes" command line option,
@@ -3559,7 +3561,6 @@ static __isl_give isl_ast_node *create_host_leaf(
 	if (!kernel)
 		goto error;
 
-	read_tile_sizes(gen);
 	read_grid_and_block_sizes(gen);
 
 	domain = isl_union_map_domain(isl_union_map_copy(schedule));
@@ -3849,6 +3850,8 @@ static __isl_give isl_schedule_node *group_statements(
  * then group the domain elements into a single space, named kernelX,
  * with X the kernel sequence number.
  *
+ * Store a pointer to the created ppcg_kernel in gen->kernel.
+ *
  * We keep a copy of the isl_id that points to the kernel to ensure
  * that the kernel does not get destroyed if the schedule node
  * is freed due to some error condition.
@@ -3878,6 +3881,8 @@ static __isl_give isl_schedule_node *create_kernel(struct gpu_gen *gen,
 	kernel->n_grid = kernel->n_parallel;
 	kernel->n_block = kernel->n_parallel;
 	kernel->id = gen->kernel_id++;
+
+	gen->kernel = kernel;
 
 	node = atomic_ancestors(node);
 
@@ -3935,10 +3940,25 @@ static __isl_give isl_schedule_node *insert_empty_permutable_band(
 static __isl_give isl_schedule_node *mark_outer_permutable(
 	struct gpu_gen *gen, __isl_take isl_schedule_node *node)
 {
+	struct ppcg_kernel *kernel;
+	int tile_len;
+	int *tile_size;
+
 	if (isl_schedule_node_get_type(node) == isl_schedule_node_leaf)
 		node = insert_empty_permutable_band(node);
 
+	tile_len = isl_schedule_node_band_n_member(node);
+	tile_size = read_tile_sizes(gen, &tile_len);
+	if (!tile_size)
+		return isl_schedule_node_free(node);
 	node = create_kernel(gen, node);
+	if (!node)
+		return NULL;
+	kernel = gen->kernel;
+	kernel->tile_len = tile_len;
+	kernel->tile_size = tile_size;
+	if (kernel->n_parallel > kernel->tile_len)
+		kernel->n_parallel = kernel->tile_len;
 
 	return node;
 }
