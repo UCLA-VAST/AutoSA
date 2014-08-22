@@ -764,7 +764,7 @@ static int compute_group_bounds_core(struct gpu_gen *gen,
 	int n_index = group->array->n_index;
 	int no_reuse, coalesced;
 	isl_map *acc;
-	int force_private = group->array->force_private;
+	int force_private = group->local_array->force_private;
 	int use_shared = gen->options->use_shared_memory && gen->n_block > 0;
 	int use_private = force_private || gen->options->use_private_memory;
 	int r = 0;
@@ -1142,14 +1142,14 @@ static void check_scalar_live_ranges(struct gpu_gen *gen)
 	same_host_iteration = isl_union_map_apply_range(sched,
 			    isl_union_map_reverse(isl_union_map_copy(sched)));
 
-	for (i = 0; i < gen->prog->n_array; ++i) {
-		struct gpu_array_info *array = &gen->prog->array[i];
+	for (i = 0; i < gen->kernel->n_array; ++i) {
+		struct gpu_local_array_info *local = &gen->kernel->array[i];
 		isl_union_map *order;
 
-		array->force_private = 0;
-		if (array->n_index != 0)
+		local->force_private = 0;
+		if (local->array->n_index != 0)
 			continue;
-		order = isl_union_map_copy(array->dep_order);
+		order = isl_union_map_copy(local->array->dep_order);
 		order = isl_union_map_intersect_domain(order,
 						    isl_union_set_copy(domain));
 		order = isl_union_map_intersect_range(order,
@@ -1157,7 +1157,7 @@ static void check_scalar_live_ranges(struct gpu_gen *gen)
 		order = isl_union_map_intersect(order,
 				    isl_union_map_copy(same_host_iteration));
 		if (!isl_union_map_is_empty(order)) {
-			array->force_private = 1;
+			local->force_private = 1;
 			gen->any_force_private = 1;
 		}
 		isl_union_map_free(order);

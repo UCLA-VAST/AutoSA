@@ -1345,7 +1345,7 @@ static void remove_private_tiles(struct gpu_gen *gen)
 	for (i = 0; i < gen->kernel->n_array; ++i) {
 		struct gpu_local_array_info *local = &gen->kernel->array[i];
 
-		if (local->array->force_private)
+		if (local->force_private)
 			continue;
 
 		for (j = 0; j < local->n_group; ++j) {

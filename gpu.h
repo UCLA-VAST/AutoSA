@@ -49,8 +49,6 @@ struct gpu_array_info {
 	 * It is set to NULL otherwise.
 	 */
 	isl_union_map *dep_order;
-	/* Should the array (scalar) be forcibly mapped to a register? */
-	int force_private;
 };
 
 /* Represents an outer array accessed by a ppcg_kernel, localized
@@ -61,6 +59,8 @@ struct gpu_array_info {
  * If the outer array represented by the gpu_local_array_info
  * contains structures, then the references are not
  * collected and the reference groups are not computed.
+ * If "force_private" is set, then the array (in practice a scalar)
+ * must be mapped to a register.
  * For each index i with 0 <= i < n_index,
  * bound[i] is equal to array->bound[i] specialized to the current kernel.
  */
@@ -69,6 +69,8 @@ struct gpu_local_array_info {
 
 	int n_group;
 	struct gpu_array_ref_group **groups;
+
+	int force_private;
 
 	unsigned n_index;
 	isl_pw_aff_list *bound;
