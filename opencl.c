@@ -850,6 +850,68 @@ static __isl_give isl_printer *opencl_print_total_number_of_work_items_as_list(
 	return p;
 }
 
+/* Copy "array" back from the GPU to the host.
+ */
+static __isl_give isl_printer *copy_array_from_device(__isl_take isl_printer *p,
+	void *user)
+{
+	struct gpu_array_info *array = user;
+
+	p = isl_printer_start_line(p);
+	p = isl_printer_print_str(p, "openclCheckReturn("
+					"clEnqueueReadBuffer(queue,"
+					" dev_");
+	p = isl_printer_print_str(p, array->name);
+	p = isl_printer_print_str(p, ", CL_TRUE, 0, ");
+	p = gpu_array_info_print_size(p, array);
+
+	if (gpu_array_is_scalar(array))
+		p = isl_printer_print_str(p, ", &");
+	else
+		p = isl_printer_print_str(p, ", ");
+	p = isl_printer_print_str(p, array->name);
+	p = isl_printer_print_str(p, ", 0, NULL, NULL));");
+	p = isl_printer_end_line(p);
+
+	return p;
+}
+
+/* Copy copy_out arrays back from the GPU to the host.
+ *
+ * Only perform the copying for arrays with strictly positive size.
+ */
+static __isl_give isl_printer *opencl_copy_arrays_from_device(
+	__isl_take isl_printer *p, struct gpu_prog *prog)
+{
+	int i;
+	isl_union_set *copy_out;
+	copy_out = isl_union_set_copy(prog->copy_out);
+
+	for (i = 0; i < prog->n_array; ++i) {
+		struct gpu_array_info *array = &prog->array[i];
+		isl_space *space;
+		isl_set *copy_out_i;
+		isl_set *guard;
+		int empty;
+
+		space = isl_space_copy(array->space);
+		copy_out_i = isl_union_set_extract_set(copy_out, space);
+		empty = isl_set_plain_is_empty(copy_out_i);
+		isl_set_free(copy_out_i);
+		if (empty)
+			continue;
+
+		guard = gpu_array_positive_size_guard(array);
+		p = ppcg_print_guarded(p, guard, isl_set_copy(prog->context),
+					    &copy_array_from_device, array);
+	}
+
+	isl_union_set_free(copy_out);
+	p = isl_printer_start_line(p);
+	p = isl_printer_end_line(p);
+	return p;
+}
+
 /* Print the user statement of the host code to "p".
  *
  * In particular, print a block of statements that defines the grid
@@ -986,68 +1048,6 @@ static __isl_give isl_printer *opencl_print_host_code(
 	p = gpu_print_macros(p, tree);
 	p = isl_ast_node_print(tree, p, print_options);
 
-	return p;
-}
-
-/* Copy "array" back from the GPU to the host.
- */
-static __isl_give isl_printer *copy_array_from_device(__isl_take isl_printer *p,
-	void *user)
-{
-	struct gpu_array_info *array = user;
-
-	p = isl_printer_start_line(p);
-	p = isl_printer_print_str(p, "openclCheckReturn("
-					"clEnqueueReadBuffer(queue,"
-					" dev_");
-	p = isl_printer_print_str(p, array->name);
-	p = isl_printer_print_str(p, ", CL_TRUE, 0, ");
-	p = gpu_array_info_print_size(p, array);
-
-	if (gpu_array_is_scalar(array))
-		p = isl_printer_print_str(p, ", &");
-	else
-		p = isl_printer_print_str(p, ", ");
-	p = isl_printer_print_str(p, array->name);
-	p = isl_printer_print_str(p, ", 0, NULL, NULL));");
-	p = isl_printer_end_line(p);
-
-	return p;
-}
-
-/* Copy copy_out arrays back from the GPU to the host.
- *
- * Only perform the copying for arrays with strictly positive size.
- */
-static __isl_give isl_printer *opencl_copy_arrays_from_device(
-	__isl_take isl_printer *p, struct gpu_prog *prog)
-{
-	int i;
-	isl_union_set *copy_out;
-	copy_out = isl_union_set_copy(prog->copy_out);
-
-	for (i = 0; i < prog->n_array; ++i) {
-		struct gpu_array_info *array = &prog->array[i];
-		isl_space *space;
-		isl_set *copy_out_i;
-		isl_set *guard;
-		int empty;
-
-		space = isl_space_copy(array->space);
-		copy_out_i = isl_union_set_extract_set(copy_out, space);
-		empty = isl_set_plain_is_empty(copy_out_i);
-		isl_set_free(copy_out_i);
-		if (empty)
-			continue;
-
-		guard = gpu_array_positive_size_guard(array);
-		p = ppcg_print_guarded(p, guard, isl_set_copy(prog->context),
-					    &copy_array_from_device, array);
-	}
-
-	isl_union_set_free(copy_out);
-	p = isl_printer_start_line(p);
-	p = isl_printer_end_line(p);
 	return p;
 }
 
