@@ -3248,8 +3248,7 @@ static __isl_give isl_schedule_node *create_kernel(struct gpu_gen *gen,
 	kernel->arrays = accessed_by_domain(isl_union_set_copy(domain),
 						gen->prog);
 	kernel->tile_len = isl_schedule_node_band_n_member(node);
-	kernel->n_parallel = n_outer_coincidence(node);
-	kernel->n_grid = kernel->n_parallel;
+	kernel->n_grid = n_outer_coincidence(node);
 	node_thread = isl_schedule_node_copy(node);
 	node_thread = gpu_tree_move_down_to_thread(node_thread, kernel->core);
 	node_thread = isl_schedule_node_child(node_thread, 0);
