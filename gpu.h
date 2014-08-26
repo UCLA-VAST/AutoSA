@@ -254,9 +254,6 @@ struct ppcg_kernel_var {
  * block_ids contains the list of block identifiers for this kernel.
  * thread_ids contains the list of thread identifiers for this kernel.
  *
- * tile_len is the number of tile dimensions and
- * tile_size is an array of length tile_len containing the tile sizes.
- *
  * the first n_grid elements of grid_dim represent the specified size
  * of the grid.
  * the first n_block elements of block_dim represent the specified or
@@ -317,9 +314,6 @@ struct ppcg_kernel {
 
 	isl_id_list *block_ids;
 	isl_id_list *thread_ids;
-
-	int tile_len;
-	int *tile_size;
 
 	int n_grid;
 	int n_block;

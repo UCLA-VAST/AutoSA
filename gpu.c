@@ -1131,7 +1131,6 @@ struct ppcg_kernel *ppcg_kernel_free(struct ppcg_kernel *kernel)
 		isl_vec_free(kernel->var[i].size);
 	}
 	free(kernel->var);
-	free(kernel->tile_size);
 
 	free(kernel);
 
@@ -3214,8 +3213,6 @@ static __isl_give isl_schedule_node *group_statements(
  * remove the "thread" mark and create representations for the local
  * variables in the kernel.
  *
- * Store a pointer to the created ppcg_kernel in gen->kernel.
- *
  * We keep a copy of the isl_id that points to the kernel to ensure
  * that the kernel does not get destroyed if the schedule node
  * is freed due to some error condition.
@@ -3247,7 +3244,6 @@ static __isl_give isl_schedule_node *create_kernel(struct gpu_gen *gen,
 	kernel->core = isl_union_set_universe(isl_union_set_copy(domain));
 	kernel->arrays = accessed_by_domain(isl_union_set_copy(domain),
 						gen->prog);
-	kernel->tile_len = isl_schedule_node_band_n_member(node);
 	kernel->n_grid = n_outer_coincidence(node);
 	node_thread = isl_schedule_node_copy(node);
 	node_thread = gpu_tree_move_down_to_thread(node_thread, kernel->core);
@@ -3256,8 +3252,6 @@ static __isl_give isl_schedule_node *create_kernel(struct gpu_gen *gen,
 	isl_schedule_node_free(node_thread);
 	kernel->id = gen->kernel_id++;
 	read_grid_and_block_sizes(kernel, gen);
-
-	gen->kernel = kernel;
 
 	host_schedule = isl_schedule_node_get_prefix_schedule_union_map(node);
 	host_domain = isl_set_from_union_set(isl_union_map_range(
@@ -3395,7 +3389,6 @@ static __isl_give isl_schedule_node *insert_empty_permutable_band(
 static __isl_give isl_schedule_node *mark_outer_permutable(
 	struct gpu_gen *gen, __isl_take isl_schedule_node *node)
 {
-	struct ppcg_kernel *kernel;
 	int scale;
 	int tile_len;
 	int *tile_size;
@@ -3421,11 +3414,7 @@ static __isl_give isl_schedule_node *mark_outer_permutable(
 	scale = gen->options->scale_tile_loops;
 	node = create_kernel(gen, node, scale, sizes);
 	isl_multi_val_free(sizes);
-	if (!node)
-		return NULL;
-	kernel = gen->kernel;
-	kernel->tile_len = tile_len;
-	kernel->tile_size = tile_size;
+	free(tile_size);
 
 	return node;
 }
