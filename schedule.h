@@ -45,6 +45,5 @@ __isl_give isl_set *parametrization(__isl_take isl_space *space,
 	int len, int first, __isl_keep isl_id_list *names);
 __isl_give isl_set *extend(__isl_take isl_set *set, int dst_len);
 __isl_give isl_union_map *align_range(__isl_take isl_union_map *umap);
-int map_plain_is_fixed(isl_map *map, enum isl_dim_type type, unsigned pos);
 
 #endif
