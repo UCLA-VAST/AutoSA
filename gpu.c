@@ -187,12 +187,6 @@ struct gpu_gen {
 	 */
 	isl_map *privatization;
 
-	/* A map from the shared memory tile loops and the thread indices
-	 * (as parameters) to the set of accessed memory elements that
-	 * will be accessed through private copies.
-	 */
-	isl_union_map *private_access;
-
 	/* The schedule for the current private/shared access
 	 * (within print_private_access or print_shared_access).
 	 */
@@ -2345,52 +2339,6 @@ static void set_last_shared(struct gpu_gen *gen,
 		return;
 
 	group->last_shared = compute_tile_last_shared(gen, tile);
-}
-
-/* Compute a privatized copy of all access relations from reference groups that
- * are mapped to private memory and store the result in gen->privatization.
- *
- * Read-only scalars and arrays containing structures are not mapped
- * to private memory.
- */
-static void compute_private_access(struct gpu_gen *gen)
-{
-	int i, j;
-	isl_union_map *private;
-
-	if (!gen->options->use_private_memory)
-		return;
-
-	private = isl_union_map_empty(isl_union_map_get_space(gen->shared_sched));
-
-	for (i = 0; i < gen->prog->n_array; ++i) {
-		struct gpu_array_info *array = &gen->prog->array[i];
-
-		if (gpu_array_is_read_only_scalar(array))
-			continue;
-		if (array->has_compound_element)
-			continue;
-
-		for (j = 0; j < array->n_group; ++j) {
-			if (!array->groups[j]->private_tile)
-				continue;
-
-			private = isl_union_map_union(private,
-				group_access_relation(array->groups[j], 1, 1));
-		}
-	}
-
-	if (isl_union_map_is_empty(private))
-		isl_union_map_free(private);
-	else {
-		isl_union_map *priv;
-
-		private = isl_union_map_apply_domain(private,
-					isl_union_map_copy(gen->shared_sched));
-		priv = isl_union_map_from_map(isl_map_copy(gen->privatization));
-		private = isl_union_map_apply_domain(private, priv);
-		gen->private_access = private;
-	}
 }
 
 /* Compute the size of the tile specified by "tile"
@@ -5205,13 +5153,11 @@ static __isl_give isl_ast_node *create_host_leaf(
 				isl_union_map_copy(gen->prog->to_outer));
 	kernel->space = isl_ast_build_get_schedule_space(build);
 
-	gen->private_access = NULL;
 	compute_shared_sched(gen);
 	gen->privatization = compute_privatization(gen);
 	check_scalar_live_ranges(gen);
 	if (group_references(gen) < 0)
 		schedule = isl_union_map_free(schedule);
-	compute_private_access(gen);
 	host_domain = isl_set_from_union_set(isl_union_map_range(
 						isl_union_map_copy(schedule)));
 	localize_bounds(gen, kernel, host_domain);
@@ -5226,7 +5172,6 @@ static __isl_give isl_ast_node *create_host_leaf(
 
 	free_local_array_info(gen);
 	isl_map_free(gen->privatization);
-	isl_union_map_free(gen->private_access);
 	isl_union_map_free(gen->local_sched);
 	isl_union_map_free(gen->tiled_sched);
 	isl_union_map_free(gen->shared_sched);
