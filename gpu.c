@@ -187,10 +187,6 @@ struct gpu_gen {
 	 */
 	isl_map *privatization;
 
-	/* The schedule for the current private/shared access
-	 * (within print_private_access or print_shared_access).
-	 */
-	isl_map *copy_sched;
 	/* The array reference group corresponding to copy_sched. */
 	struct gpu_array_ref_group *copy_group;
 
