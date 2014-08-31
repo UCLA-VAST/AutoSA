@@ -5389,7 +5389,7 @@ static void separate_bands(struct band_info *info, int n)
 
 /* Select the outermost bands in the elements of the sequence or set
  * node "node", align their prefix schedules.  Separate all bands
- * if "serialize" is set and then separate bands with different values
+ * if "serialize" is set and otherwise separate bands with different values
  * for tile_len and/or n_parallel.  Finally, combine the resulting
  * prefix and suffix schedules into a single pair of prefix and
  * suffix schedules for the entire list.
@@ -5434,17 +5434,17 @@ static void list_select_outer_band(struct gpu_gen *gen,
 							pos, i);
 			info[i].tile_first = l + 1;
 		}
+	} else {
+		qsort(info, n, sizeof(struct band_info), &cmp_band);
+
+		for (i = 0; i < n - 1; ++i)
+			if (info[i].tile_len != info[i + 1].tile_len ||
+			    info[i].n_parallel != info[i + 1].n_parallel)
+				break;
+
+		if (i < n - 1)
+			separate_bands(info, n);
 	}
-
-	qsort(info, n, sizeof(struct band_info), &cmp_band);
-
-	for (i = 0; i < n - 1; ++i)
-		if (info[i].tile_len != info[i + 1].tile_len ||
-		    info[i].n_parallel != info[i + 1].n_parallel)
-			break;
-
-	if (i < n -1)
-		separate_bands(info, n);
 
 	prefix = info[0].prefix;
 	suffix = info[0].suffix;
