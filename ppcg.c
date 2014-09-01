@@ -304,15 +304,7 @@ static __isl_give isl_union_set *collect_call_domains(struct pet_scop *scop)
 static __isl_give isl_union_map *project_out_tags(
 	__isl_take isl_union_map *umap)
 {
-	isl_union_map *proj;
-
-	proj = isl_union_map_universe(isl_union_map_copy(umap));
-	proj = isl_union_set_unwrap(isl_union_map_domain(proj));
-	proj = isl_union_map_domain_map(proj);
-
-	umap = isl_union_map_apply_domain(umap, proj);
-
-	return umap;
+	return isl_union_map_domain_factor_domain(umap);
 }
 
 /* Construct a relation from the iteration domains to tagged iteration
