@@ -325,7 +325,7 @@ static __isl_give isl_printer *allocate_device_array(__isl_take isl_printer *p,
 static __isl_give isl_printer *opencl_allocate_device_arrays(
 	__isl_take isl_printer *p, struct gpu_prog *prog)
 {
-	int i, j;
+	int i;
 
 	for (i = 0; i < prog->n_array; ++i) {
 		struct gpu_array_info *array = &prog->array[i];
