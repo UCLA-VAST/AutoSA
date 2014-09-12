@@ -544,15 +544,15 @@ static void read_tile_sizes(struct gpu_gen *gen)
 	isl_set *size;
 	struct ppcg_kernel *kernel = gen->kernel;
 
-	gen->tile_size = isl_alloc_array(gen->ctx, int, kernel->tile_len);
-	assert(gen->tile_size);
+	kernel->tile_size = isl_alloc_array(gen->ctx, int, kernel->tile_len);
+	assert(kernel->tile_size);
 	for (n = 0; n < kernel->tile_len; ++n)
-		gen->tile_size[n] = kernel->options->tile_size;
+		kernel->tile_size[n] = kernel->options->tile_size;
 
 	size = extract_sizes(gen->sizes, "tile", kernel->id);
-	read_sizes_from_set(size, gen->tile_size, &kernel->tile_len);
+	read_sizes_from_set(size, kernel->tile_size, &kernel->tile_len);
 	set_used_sizes(gen, "tile", kernel->id,
-			gen->tile_size, kernel->tile_len);
+			kernel->tile_size, kernel->tile_len);
 
 	if (kernel->n_parallel > kernel->tile_len)
 		kernel->n_parallel = kernel->tile_len;
@@ -781,7 +781,7 @@ static __isl_give isl_union_map *tile_schedule(struct gpu_gen *gen,
 
 	dim = isl_union_map_get_space(sched);
 	tiling = tile(isl_space_copy(dim), gen->untiled_len,
-		      gen->tile_first, kernel->tile_len, gen->tile_size);
+		      gen->tile_first, kernel->tile_len, kernel->tile_size);
 
 	if (gen->options->wrap)
 		block_tiling = wrap(dim, gen->untiled_len + kernel->tile_len,
@@ -856,7 +856,7 @@ static __isl_give isl_union_map *thread_tile_schedule(struct gpu_gen *gen,
 }
 
 /* If the user asked for it, scale the shared memory tile loops
- * (T1T and T2) of "sched" by gen->tile_size[i].
+ * (T1T and T2) of "sched" by kernel->tile_size[i].
  * If we are not performing "wrapping", then additionally scale the T1P
  * loops by kernel->grid_dim[i].
  */
@@ -884,13 +884,13 @@ static __isl_give isl_union_map *scale_tile_loops(struct gpu_gen *gen,
 
 		if (i >= gen->tile_first &&
 		    i < gen->tile_first + kernel->n_grid) {
-			f = gen->tile_size[i - gen->tile_first];
+			f = kernel->tile_size[i - gen->tile_first];
 			if (!gen->options->wrap)
 				f *= kernel->grid_dim[i - gen->tile_first];
 		} else if (i >= gen->tile_first + kernel->n_grid &&
 			   i < gen->tile_first + kernel->n_grid +
 				kernel->tile_len) {
-			f = gen->tile_size[i -
+			f = kernel->tile_size[i -
 					    (gen->tile_first + kernel->n_grid)];
 		}
 
@@ -1785,6 +1785,7 @@ struct ppcg_kernel *ppcg_kernel_free(struct ppcg_kernel *kernel)
 		isl_vec_free(kernel->var[i].size);
 	}
 	free(kernel->var);
+	free(kernel->tile_size);
 
 	free(kernel);
 
@@ -3605,7 +3606,6 @@ static __isl_give isl_ast_node *create_host_leaf(
 	isl_union_map_free(gen->shared_sched);
 	isl_union_map_free(gen->shared_proj);
 	isl_set_free(host_domain);
-	free(gen->tile_size);
 
 	node = construct_launch(build, schedule, isl_id_copy(gen->kernel_mark));
 

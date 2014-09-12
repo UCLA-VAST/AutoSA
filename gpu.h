@@ -215,8 +215,6 @@ struct gpu_gen {
 	 * schedule.
 	 */
 	int first_unroll;
-
-	int *tile_size;
 };
 
 enum ppcg_kernel_access_type {
@@ -294,6 +292,7 @@ struct ppcg_kernel_var {
  * tile_len is the number of tile dimensions and
  * n_parallel is the number of initial parallel loops among those
  * tile dimensions.
+ * tile_size is an array of length tile_len containing the tile sizes.
  *
  * the first n_grid elements of grid_dim represent the specified size
  * of the grid.
@@ -332,6 +331,7 @@ struct ppcg_kernel {
 	isl_id_list *thread_ids;
 
 	int tile_len;
+	int *tile_size;
 	int n_parallel;
 
 	int n_grid;
