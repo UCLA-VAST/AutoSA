@@ -2912,6 +2912,8 @@ static int group_references(struct gpu_gen *gen)
 	int r = 0;
 	isl_union_map *sched;
 
+	check_scalar_live_ranges(gen);
+
 	sched = isl_union_map_apply_range(isl_union_map_copy(gen->shared_sched),
 					  isl_union_map_copy(gen->shared_proj));
 
@@ -4897,7 +4899,6 @@ static __isl_give isl_ast_node *create_host_leaf(
 
 	compute_shared_sched(gen);
 	gen->privatization = compute_privatization(gen);
-	check_scalar_live_ranges(gen);
 	if (group_references(gen) < 0)
 		schedule = isl_union_map_free(schedule);
 	host_domain = isl_set_from_union_set(isl_union_map_range(
