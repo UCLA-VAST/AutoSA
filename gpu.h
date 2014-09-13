@@ -172,10 +172,6 @@ struct gpu_gen {
 
 	/* First tile dimension. */
 	int tile_first;
-	/* Number of tile dimensions. */
-	int tile_len;
-	/* Number of initial parallel loops among tile dimensions. */
-	int n_parallel;
 
 	/* Number of dimensions determining shared memory. */
 	int shared_len;
