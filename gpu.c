@@ -1766,6 +1766,7 @@ struct ppcg_kernel *ppcg_kernel_free(struct ppcg_kernel *kernel)
 	isl_id_list_free(kernel->thread_ids);
 	isl_multi_pw_aff_free(kernel->grid_size);
 	isl_set_free(kernel->context);
+	isl_union_set_free(kernel->core);
 	isl_union_set_free(kernel->arrays);
 	isl_space_free(kernel->space);
 	isl_ast_node_free(kernel->tree);
@@ -3934,6 +3935,7 @@ static __isl_give isl_schedule_node *create_kernel(struct gpu_gen *gen,
 	kernel->ctx = gen->ctx;
 	kernel->options = gen->options;
 	kernel->context = extract_context(node, gen->prog);
+	kernel->core = isl_union_set_universe(isl_union_set_copy(domain));
 	kernel->arrays = accessed_by_domain(domain, gen->prog);
 	kernel->tile_len = isl_schedule_node_band_n_member(node);
 	kernel->n_parallel = n_outer_coincidence(node);

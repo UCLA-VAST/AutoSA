@@ -308,6 +308,11 @@ struct ppcg_kernel_var {
  * context contains the values of the parameters and outer schedule dimensions
  * for which any statement instance in this kernel needs to be executed.
  *
+ * core contains the spaces of the statement domains that form
+ * the core computation of the kernel.  It is used to navigate
+ * the tree during the construction of the device part of the schedule
+ * tree in create_kernel.
+ *
  * arrays is the set of possibly accessed outer array elements.
  *
  * space is the schedule space of the AST context.  That is, it represents
@@ -342,6 +347,7 @@ struct ppcg_kernel {
 	isl_multi_pw_aff *grid_size;
 	isl_set *context;
 
+	isl_union_set *core;
 	isl_union_set *arrays;
 
 	isl_space *space;
