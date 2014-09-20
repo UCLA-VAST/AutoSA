@@ -1597,11 +1597,12 @@ static void compute_shared_sched(struct gpu_gen *gen)
  * and add one.
  */
 static __isl_give isl_multi_pw_aff *extract_size(__isl_take isl_set *set,
-	__isl_keep isl_set *context)
+	__isl_take isl_set *context)
 {
 	int i, n;
 	isl_multi_pw_aff *mpa;
 
+	context = isl_set_params(context);
 	n = isl_set_dim(set, isl_dim_set);
 	mpa = isl_multi_pw_aff_zero(isl_set_get_space(set));
 	for (i = 0; i < n; ++i) {
@@ -1620,6 +1621,7 @@ static __isl_give isl_multi_pw_aff *extract_size(__isl_take isl_set *set,
 		mpa = isl_multi_pw_aff_set_pw_aff(mpa, i, bound);
 	}
 	isl_set_free(set);
+	isl_set_free(context);
 
 	return mpa;
 }
@@ -1663,7 +1665,7 @@ static __isl_give isl_multi_pw_aff *extract_grid_size(struct gpu_gen *gen,
 		grid = isl_set_project_out(grid, isl_dim_param, pos, 1);
 	}
 
-	return extract_size(grid, kernel->context);
+	return extract_size(grid, isl_set_copy(kernel->context));
 }
 
 /* Compute the size of a fixed bounding box around the origin and "set",
@@ -3759,7 +3761,8 @@ static int set_stmt_tile_len(__isl_take isl_map *map, void *user)
 	return 0;
 }
 
-/* Extract the set of parameter values for which any statement instance
+/* Extract the set of parameter values and outer schedule dimensions
+ * for which any statement instance
  * in the kernel inserted at "node" needs to be executed.
  * Intersect the set of parameter values derived from the host schedule
  * relation with the context of "prog".
@@ -3776,7 +3779,6 @@ static __isl_give isl_set *extract_context(__isl_keep isl_schedule_node *node,
 	context = isl_set_from_union_set(schedule_domain);
 	context = isl_set_intersect_params(context,
 					    isl_set_copy(prog->context));
-	context = isl_set_params(context);
 
 	return context;
 }
