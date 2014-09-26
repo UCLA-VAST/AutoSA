@@ -3197,12 +3197,11 @@ static __isl_give isl_union_map *remove_local_accesses(
 
 /* Given an access relation "access" from "group", remove those reads
  * if ("read" is 1) or writes (if "read" is 0) that are only needed to
- * communicate data within the same iteration of the last_shared dimension
- * of the group.
+ * communicate data within the same iteration of the schedule at the
+ * position where the copying of the group is inserted.
  *
- * We extract a schedule that picks out the iteration of the last_shared
- * dimension of the group (and outer dimensions) and
- * call remove_local_accesses.
+ * We extract a schedule that picks out the iterations of the outer
+ * group->depth dimensions and call remove_local_accesses.
  */
 static __isl_give isl_union_map *remove_local_accesses_group(
 	struct gpu_gen *gen, struct gpu_array_ref_group *group,
@@ -3218,7 +3217,7 @@ static __isl_give isl_union_map *remove_local_accesses_group(
 	sched = isl_union_map_copy(gen->sched);
 
 	space = isl_union_map_get_space(sched);
-	proj = projection(space, gen->untiled_len, group->last_shared + 1);
+	proj = projection(space, gen->untiled_len, group->depth);
 	sched = isl_union_map_apply_range(sched, isl_union_map_from_map(proj));
 
 	return remove_local_accesses(gen->prog, group, access, sched, read);
@@ -3250,7 +3249,8 @@ static __isl_give isl_union_map *remove_local_accesses_group(
  *
  * and remove from this access relation those reads or writes
  * that only needed to communicate data within the same iteration
- * of the last_shared dimension of the group.
+ * of the outer part of the schedule where the copying for the group
+ * is inserted.
  * We then combine what is left with shared_sched into
  *
  *	D -> [S -> A]
@@ -3319,7 +3319,7 @@ static __isl_give isl_union_map *add_group_schedule(struct gpu_gen *gen,
 	map = isl_map_domain_map(isl_map_universe(space));
 
 	space = isl_union_map_get_space(schedule);
-	pos = group->last_shared + 1 - gen->tile_first;
+	pos = group->depth - gen->tile_first;
 	assert(pos >= 0);
 	if (read)
 		val = -2 - k;

@@ -9,6 +9,10 @@
  * Otherwise, it is accessed from global memory.
  * Note that if both private_tile and shared_tile are set, then shared_tile
  * is only used inside group_common_shared_memory_tile.
+ * "depth" reflects the number of schedule dimensions that affect the tile
+ * (private_tile if set; shared_tile if shared_tile is set and private_tile
+ * is not).  The copying into and/or out of the tile is performed at that
+ * depth.
  */
 struct gpu_array_ref_group {
 	/* The references in this group access this local array. */
@@ -38,12 +42,11 @@ struct gpu_array_ref_group {
 	/* The private memory tile, NULL if none. */
 	struct gpu_array_tile *private_tile;
 
+	int depth;
+
 	/* References in this group; point to elements of a linked list. */
 	int n_ref;
 	struct gpu_stmt_access **refs;
-
-	/* Last shared memory tile dimension that affects tile of this group. */
-	int last_shared;
 };
 
 int gpu_group_references(struct gpu_gen *gen);

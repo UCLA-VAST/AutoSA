@@ -489,12 +489,12 @@ static int access_is_bijective(struct gpu_gen *gen, __isl_keep isl_map *access)
 	return res;
 }
 
-/* Look for the last shared tile loop that affects the offset of "tile"
- * and return the result.
- * If there is no such loop, then return the index of the loop
- * before the first shared tile loop, in particular gen->tile_first - 1.
+/* Compute the number of outer schedule tile dimensions that affect
+ * the offset of "tile".
+ * If there is no such dimension, then return the index
+ * of the first shared tile loop, i.e., gen->tile_first.
  */
-static int compute_tile_last_shared(struct gpu_gen *gen,
+static int compute_tile_depth(struct gpu_gen *gen,
 	struct gpu_array_tile *tile)
 {
 	int i, j;
@@ -518,28 +518,27 @@ static int compute_tile_last_shared(struct gpu_gen *gen,
 			break;
 	}
 
-	return j;
+	return ++j;
 }
 
-/* Look for the last shared tile loop that affects the offset of the
- * shared or private tile and store the result in group->last_shared.
- * If there is no such loop, then group->last_shared is set to a value
- * before the first shared tile loop, in particular gen->tile_first - 1.
+/* Determine the number of schedule dimensions that affect the offset of the
+ * shared or private tile and store the result in group->depth, with
+ * a lower bound of gen->tile_first.
  * If there is no tile defined on the array reference group,
- * then set group->last_shared to gen->shared_len - 1.
+ * then set group->depth to gen->shared_len.
  */
-static void set_last_shared(struct gpu_gen *gen,
+static void set_depth(struct gpu_gen *gen,
 	struct gpu_array_ref_group *group)
 {
 	struct gpu_array_tile *tile;
 
-	group->last_shared = gen->shared_len - 1;
+	group->depth = gen->shared_len;
 
 	tile = gpu_array_ref_group_tile(group);
 	if (!tile)
 		return;
 
-	group->last_shared = compute_tile_last_shared(gen, tile);
+	group->depth = compute_tile_depth(gen, tile);
 }
 
 /* Fill up the groups array with singleton groups, i.e., one group
@@ -909,7 +908,7 @@ static int compute_group_bounds_core(struct gpu_gen *gen,
 }
 
 /* Compute the private and/or shared memory tiles for the array
- * reference group "group" of array "array" and set last_shared.
+ * reference group "group" of array "array" and set the tile depth.
  * Return 0 on success and -1 on error.
  */
 static int compute_group_bounds(struct gpu_gen *gen,
@@ -919,7 +918,7 @@ static int compute_group_bounds(struct gpu_gen *gen,
 		return -1;
 	if (compute_group_bounds_core(gen, group) < 0)
 		return -1;
-	set_last_shared(gen, group);
+	set_depth(gen, group);
 
 	return 0;
 }
@@ -978,26 +977,24 @@ static int group_overlapping_writes(struct gpu_gen *gen,
 }
 
 /* Check if the access relations of group1 and group2 overlap within
- * the outermost min(group1->last_shared, group2->last_shared) loops.
+ * the outermost min(group1->depth, group2->depth) loops.
  */
-static int last_shared_accesses_overlap(struct gpu_array_ref_group *group1,
+static int depth_accesses_overlap(struct gpu_array_ref_group *group1,
 	struct gpu_array_ref_group *group2)
 {
-	int last_shared;
+	int depth;
 	int dim;
 	int empty;
 	isl_map *map_i, *map_j, *map;
 
-	last_shared = group1->last_shared;
-	if (group2->last_shared < last_shared)
-		last_shared = group2->last_shared;
+	depth = group1->depth;
+	if (group2->depth < depth)
+		depth = group2->depth;
 	map_i = isl_map_copy(group1->access);
 	dim = isl_map_dim(map_i, isl_dim_in);
-	map_i = isl_map_eliminate(map_i, isl_dim_in,
-				last_shared + 1, dim - (last_shared + 1));
+	map_i = isl_map_eliminate(map_i, isl_dim_in, depth, dim - depth);
 	map_j = isl_map_copy(group2->access);
-	map_j = isl_map_eliminate(map_j, isl_dim_in,
-				last_shared + 1, dim - (last_shared + 1));
+	map_j = isl_map_eliminate(map_j, isl_dim_in, depth, dim - depth);
 	map = isl_map_intersect(map_i, map_j);
 	empty = isl_map_is_empty(map);
 	isl_map_free(map);
@@ -1006,15 +1003,15 @@ static int last_shared_accesses_overlap(struct gpu_array_ref_group *group1,
 }
 
 /* If two groups have overlapping access relations (within the outer
- * last_shared loops) and if one of them involves a write,
+ * depth loops) and if one of them involves a write,
  * then merge the two groups into one.
  *
  * Return the updated number of groups.
  */
-static int group_last_shared_overlapping_writes(struct gpu_gen *gen, int n,
+static int group_depth_overlapping_writes(struct gpu_gen *gen, int n,
 	struct gpu_array_ref_group **groups)
 {
-	return group_writes(gen, n, groups, &last_shared_accesses_overlap, 1);
+	return group_writes(gen, n, groups, &depth_accesses_overlap, 1);
 }
 
 /* Is the size of the tile specified by "tile" smaller than the sum of
@@ -1045,7 +1042,7 @@ static int smaller_tile(struct gpu_array_tile *tile,
  * a shared memory tile and the size of the tile for the merge group
  * is smaller than the sum of the tile sizes of the individual groups.
  *
- * If merging two groups decreases the "last_shared" dimension of
+ * If merging two groups decreases the depth of the tile of
  * one or both of the two groups, then we need to check for overlapping
  * writes again.
  *
@@ -1092,8 +1089,8 @@ static int group_common_shared_memory_tile(struct gpu_gen *gen,
 				continue;
 			}
 
-			if (group->last_shared < groups[i]->last_shared ||
-			    group->last_shared < groups[j]->last_shared)
+			if (group->depth < groups[i]->depth ||
+			    group->depth < groups[j]->depth)
 				recompute_overlap = 1;
 			gpu_array_ref_group_free(groups[i]);
 			gpu_array_ref_group_free(groups[j]);
@@ -1105,7 +1102,7 @@ static int group_common_shared_memory_tile(struct gpu_gen *gen,
 	}
 
 	if (recompute_overlap)
-		n = group_last_shared_overlapping_writes(gen, n, groups);
+		n = group_depth_overlapping_writes(gen, n, groups);
 	return n;
 }
 
@@ -1134,7 +1131,7 @@ static void set_array_groups(struct gpu_local_array_info *array,
  * We first perform an initial grouping based only on the access relation.
  * After computing shared and private memory tiles, we check for
  * overlapping writes again, but this time taking into account
- * the "last_shared" property.
+ * the depth of the effective tile.
  *
  * Furthermore, if two groups admit a shared memory tile and if the
  * combination of the two also admits a shared memory tile, we merge
@@ -1168,7 +1165,7 @@ static int group_array_references(struct gpu_gen *gen,
 		if (compute_group_bounds(gen, groups[i]) < 0)
 			n = -1;
 
-	n = group_last_shared_overlapping_writes(gen, n, groups);
+	n = group_depth_overlapping_writes(gen, n, groups);
 
 	n = group_common_shared_memory_tile(gen, local->array, n, groups);
 
