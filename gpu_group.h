@@ -7,6 +7,8 @@
  * If private_tile is not NULL, then it is mapped to registers.
  * Otherwise, if shared_tile is not NULL, it is mapped to shared memory.
  * Otherwise, it is accessed from global memory.
+ * Note that if both private_tile and shared_tile are set, then shared_tile
+ * is only used inside group_common_shared_memory_tile.
  */
 struct gpu_array_ref_group {
 	/* The references in this group access this local array. */
