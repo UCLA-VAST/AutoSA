@@ -4008,7 +4008,6 @@ static __isl_give isl_ast_node *at_each_domain(__isl_take isl_ast_node *node,
 	isl_pw_multi_aff *iterator_map;
 	isl_ast_expr *expr, *arg;
 	isl_union_map *schedule;
-	int i, n;
 
 	stmt = isl_calloc_type(gen->ctx, struct ppcg_kernel_stmt);
 	if (!stmt)
