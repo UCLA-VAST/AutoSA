@@ -4026,7 +4026,8 @@ static __isl_give isl_ast_node *at_each_domain(__isl_take isl_ast_node *node,
 	stmt->type = ppcg_kernel_domain;
 	stmt->u.d.stmt = find_stmt(gen->prog, id);
 	if (!stmt->u.d.stmt)
-		goto error;
+		isl_die(gen->ctx, isl_error_internal,
+			"statement not found", goto error);
 
 	data.gen = gen;
 	data.accesses = stmt->u.d.stmt->accesses;
