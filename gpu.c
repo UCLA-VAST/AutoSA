@@ -3747,7 +3747,7 @@ static const char *get_outer_array_name(__isl_keep isl_map *access)
  *
  *	L -> A
  *
- * We update the tiling to refer to the AST loop iteratos
+ * We update the tiling to refer to the AST loop iterators
  *
  *	[L -> A] -> T
  *
