@@ -2537,7 +2537,6 @@ static __isl_give isl_ast_node *attach_copy_stmt(__isl_take isl_ast_node *node,
 	isl_map *access, *local_access, *map;
 	isl_pw_multi_aff *pma;
 	const char *type;
-	int array_index;
 
 	stmt = isl_calloc_type(gen->ctx, struct ppcg_kernel_stmt);
 	if (!stmt)
@@ -2567,8 +2566,7 @@ static __isl_give isl_ast_node *attach_copy_stmt(__isl_take isl_ast_node *node,
 	stmt->u.c.local_index = expr;
 
 	stmt->u.c.array = gen->copy_group->array;
-	array_index = stmt->u.c.array - gen->prog->array;
-	stmt->u.c.local_array = &gen->kernel->array[array_index];
+	stmt->u.c.local_array = gen->copy_group->local_array;
 	stmt->type = ppcg_kernel_copy;
 
 	id = isl_id_alloc(gen->ctx, NULL, stmt);
