@@ -387,7 +387,6 @@ static __isl_give isl_printer *opencl_set_kernel_arguments(
 	int i, n, ro;
 	unsigned nparam;
 	isl_space *space;
-	const char *type;
 	int arg_index = 0;
 
 	for (i = 0; i < prog->n_array; ++i) {
@@ -420,7 +419,6 @@ static __isl_give isl_printer *opencl_set_kernel_arguments(
 	n = isl_space_dim(kernel->space, isl_dim_set);
 	for (i = 0; i < n; ++i) {
 		const char *name;
-		isl_id *id;
 
 		name = isl_space_get_dim_name(kernel->space, isl_dim_set, i);
 		opencl_set_kernel_argument(p, kernel->id, name, arg_index, 1);
@@ -493,7 +491,6 @@ static __isl_give isl_printer *opencl_print_kernel_arguments(
 	type = isl_options_get_ast_iterator_type(prog->ctx);
 	for (i = 0; i < n; ++i) {
 		const char *name;
-		isl_id *id;
 
 		if (!first)
 			p = isl_printer_print_str(p, ", ");
@@ -697,8 +694,6 @@ static __isl_give int any_double_elements(struct gpu_prog *prog)
 static __isl_give isl_printer *opencl_enable_double_support(
 	__isl_take isl_printer *p)
 {
-	int i;
-
 	p = isl_printer_start_line(p);
 	p = isl_printer_print_str(p, "#pragma OPENCL EXTENSION cl_khr_fp64 :"
 		" enable");
@@ -958,7 +953,6 @@ static __isl_give isl_printer *opencl_print_host_user(
 	isl_id *id;
 	struct ppcg_kernel *kernel;
 	struct print_host_user_data_opencl *data;
-	int i;
 
 	id = isl_ast_node_get_annotation(node);
 	kernel = isl_id_get_user(id);
@@ -1073,8 +1067,6 @@ static __isl_give isl_printer *opencl_print_host_code(
 static __isl_give isl_printer *opencl_setup(__isl_take isl_printer *p,
 	const char *input, struct opencl_info *info)
 {
-	int len;
-
 	p = isl_printer_start_line(p);
 	p = isl_printer_print_str(p, "cl_device_id device;");
 	p = isl_printer_end_line(p);
