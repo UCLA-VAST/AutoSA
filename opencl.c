@@ -95,7 +95,7 @@ static int opencl_open_files(struct opencl_info *info)
 	strcpy(name + len, "_kernel.h");
 	info->kernel_h = open_or_croak(name);
 
-	if (!info->host_c || !info->kernel_c || !info->host_c)
+	if (!info->host_c || !info->kernel_c || !info->kernel_h)
 		return -1;
 
 	fprintf(info->host_c, "#include <assert.h>\n");
