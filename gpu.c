@@ -2967,8 +2967,8 @@ static __isl_give isl_ast_node *construct_launch(
 /* This function is called before the AST generator starts traversing
  * the schedule subtree of a node with mark "mark".
  *
- * If the mark is called "kernel", store the mark itself in gen->kernel_mark
- * and the kernel pointer in gen->kernel for use in at_domain.
+ * If the mark is called "kernel", store the kernel pointer in gen->kernel
+ * for use in at_domain.
  */
 static int before_mark(__isl_keep isl_id *mark,
 	__isl_keep isl_ast_build *build, void *user)
@@ -2977,10 +2977,8 @@ static int before_mark(__isl_keep isl_id *mark,
 
 	if (!mark)
 		return -1;
-	if (!strcmp(isl_id_get_name(mark), "kernel")) {
-		gen->kernel_mark = isl_id_copy(mark);
+	if (!strcmp(isl_id_get_name(mark), "kernel"))
 		gen->kernel = isl_id_get_user(mark);
-	}
 	return 0;
 }
 
@@ -2993,7 +2991,7 @@ static int before_mark(__isl_keep isl_id *mark,
  * The original "node" is stored inside the kernel object so that
  * it can be used to print the device code.
  * Note that this assumes that a kernel is only launched once.
- * Also clear the kernel and kernel_mark fields of gen.
+ * Also clear the kernel field of gen.
  */
 static __isl_give isl_ast_node *after_mark(__isl_take isl_ast_node *node,
         __isl_keep isl_ast_build *build, void *user)
@@ -3013,7 +3011,6 @@ static __isl_give isl_ast_node *after_mark(__isl_take isl_ast_node *node,
 		isl_id_free(id);
 		return node;
 	}
-	gen->kernel_mark = isl_id_free(gen->kernel_mark);
 	kernel = gen->kernel;
 	gen->kernel = NULL;
 	kernel->space = isl_ast_build_get_schedule_space(build);
