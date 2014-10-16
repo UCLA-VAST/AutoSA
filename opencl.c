@@ -181,10 +181,15 @@ static void opencl_print_as_c_string(const char *str, FILE *file)
  * the code as a C string literal.  Start that string literal with an empty
  * line, such that line numbers reported by the OpenCL C compiler match those
  * of the kernel file.
+ *
+ * Return 0 on success and -1 on failure.
  */
-static void opencl_write_kernel_file(struct opencl_info *opencl)
+static int opencl_write_kernel_file(struct opencl_info *opencl)
 {
 	char *raw = isl_printer_get_str(opencl->kprinter);
+
+	if (!raw)
+		return -1;
 
 	if (opencl->options->opencl_embed_kernel_code) {
 		fprintf(opencl->kernel_c,
@@ -195,21 +200,29 @@ static void opencl_write_kernel_file(struct opencl_info *opencl)
 		fprintf(opencl->kernel_c, "%s", raw);
 
 	free(raw);
+
+	return 0;
 }
 
 /* Close all output files.  Write the kernel contents to the kernel file before
  * closing it.
+ *
+ * Return 0 on success and -1 on failure.
  */
-static void opencl_close_files(struct opencl_info *info)
+static int opencl_close_files(struct opencl_info *info)
 {
+	int r = 0;
+
 	if (info->kernel_c) {
-		opencl_write_kernel_file(info);
+		r = opencl_write_kernel_file(info);
 		fclose(info->kernel_c);
 	}
 	if (info->kernel_h)
 		fclose(info->kernel_h);
 	if (info->host_c)
 		fclose(info->host_c);
+
+	return r;
 }
 
 static __isl_give isl_printer *opencl_print_host_macros(
@@ -1244,7 +1257,8 @@ int generate_opencl(isl_ctx *ctx, struct ppcg_options *options,
 		r = generate_gpu(ctx, input, opencl.host_c, options,
 				&print_opencl, &opencl);
 
-	opencl_close_files(&opencl);
+	if (opencl_close_files(&opencl) < 0)
+		r = -1;
 	isl_printer_free(opencl.kprinter);
 
 	return r;
