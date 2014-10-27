@@ -3532,6 +3532,32 @@ static __isl_give isl_schedule *mark_kernels(struct gpu_gen *gen,
 	return schedule;
 }
 
+/* Save the schedule "schedule" to a file called "filename".
+ * The schedule is printed in block style.
+ */
+static void save_schedule(__isl_keep isl_schedule *schedule,
+	const char *filename)
+{
+	FILE *file;
+	isl_ctx *ctx;
+	isl_printer *p;
+
+	if (!schedule)
+		return;
+
+	file = fopen(filename, "w");
+	if (!file) {
+		fprintf(stderr, "Unable to open '%s' for writing\n", filename);
+		return;
+	}
+	ctx = isl_schedule_get_ctx(schedule);
+	p = isl_printer_to_file(ctx, file);
+	p = isl_printer_set_yaml_style(p, ISL_YAML_STYLE_BLOCK);
+	p = isl_printer_print_schedule(p, schedule);
+	isl_printer_free(p);
+	fclose(file);
+}
+
 /* Compute an appropriate schedule based on the accesses in
  * gen->read and gen->write.
  *
@@ -3608,6 +3634,8 @@ static __isl_give isl_schedule *compute_schedule(struct gpu_gen *gen)
 	if (gen->options->debug->dump_schedule_constraints)
 		isl_schedule_constraints_dump(sc);
 	schedule = isl_schedule_constraints_compute_schedule(sc);
+	if (gen->options->save_schedule_file)
+		save_schedule(schedule, gen->options->save_schedule_file);
 	if (gen->options->debug->dump_schedule)
 		isl_schedule_dump(schedule);
 

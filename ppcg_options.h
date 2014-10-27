@@ -54,6 +54,9 @@ struct ppcg_options {
 	int opencl_print_kernel_types;
 	/* Embed OpenCL kernel code in host code. */
 	int opencl_embed_kernel_code;
+
+	/* Name of file for saving isl computed schedule or NULL. */
+	char *save_schedule_file;
 };
 
 ISL_ARG_DECL(ppcg_debug_options, struct ppcg_debug_options,
