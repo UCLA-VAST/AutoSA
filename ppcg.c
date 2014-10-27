@@ -422,8 +422,7 @@ static void compute_tagged_flow_dep(struct ppcg_scop *ps)
 				isl_union_map_domain(kills));
 	ps->tagged_dep_flow = tagged_flow;
 	ps->dep_flow = isl_union_map_copy(ps->tagged_dep_flow);
-	ps->dep_flow = isl_union_map_zip(ps->dep_flow);
-	ps->dep_flow = isl_union_set_unwrap(isl_union_map_domain(ps->dep_flow));
+	ps->dep_flow = isl_union_map_factor_domain(ps->dep_flow);
 	live_in = isl_union_map_union(live_in, may_live_in);
 	ps->live_in = project_out_tags(live_in);
 }
