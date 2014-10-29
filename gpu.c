@@ -3558,6 +3558,25 @@ static void save_schedule(__isl_keep isl_schedule *schedule,
 	fclose(file);
 }
 
+/* Load and return a schedule from a file called "filename".
+ */
+static __isl_give isl_schedule *load_schedule(isl_ctx *ctx,
+	const char *filename)
+{
+	FILE *file;
+	isl_schedule *schedule;
+
+	file = fopen(filename, "r");
+	if (!file) {
+		fprintf(stderr, "Unable to open '%s' for reading\n", filename);
+		return NULL;
+	}
+	schedule = isl_schedule_read_from_file(ctx, file);
+	fclose(file);
+
+	return schedule;
+}
+
 /* Compute an appropriate schedule based on the accesses in
  * gen->read and gen->write.
  *
@@ -3634,8 +3653,26 @@ static __isl_give isl_schedule *compute_schedule(struct gpu_gen *gen)
 	if (gen->options->debug->dump_schedule_constraints)
 		isl_schedule_constraints_dump(sc);
 	schedule = isl_schedule_constraints_compute_schedule(sc);
-	if (gen->options->save_schedule_file)
-		save_schedule(schedule, gen->options->save_schedule_file);
+
+	return schedule;
+}
+
+/* Obtain a schedule for the scop, either by reading it from
+ * a file or by computing one.
+ */
+static __isl_give isl_schedule *get_schedule(struct gpu_gen *gen)
+{
+	isl_schedule *schedule;
+
+	if (gen->options->load_schedule_file) {
+		schedule = load_schedule(gen->ctx,
+					gen->options->load_schedule_file);
+	} else {
+		schedule = compute_schedule(gen);
+		if (gen->options->save_schedule_file)
+			save_schedule(schedule,
+					gen->options->save_schedule_file);
+	}
 	if (gen->options->debug->dump_schedule)
 		isl_schedule_dump(schedule);
 
@@ -3941,6 +3978,8 @@ static __isl_give isl_printer *print_gpu(__isl_take isl_printer *p, void *user)
  * We first compute a schedule that respects the dependences
  * of the original program and select the outermost bands
  * of tilable dimensions that have at least one parallel loop.
+ * If the --load-schedule is specified, then the loaded schedule
+ * is used instead of a computed schedule.
  *
  * Each of these bands B is then tiled according to "tile" sizes, resulting
  * in two nested bands, with a kernel marker on top
@@ -4006,7 +4045,7 @@ static __isl_give isl_printer *generate(__isl_take isl_printer *p,
 	prog->context = isl_set_intersect(prog->context, isl_set_copy(guard));
 
 	gen->prog = prog;
-	schedule = compute_schedule(gen);
+	schedule = get_schedule(gen);
 
 	any_permutable = has_any_permutable_node(schedule);
 	if (any_permutable < 0 || !any_permutable) {

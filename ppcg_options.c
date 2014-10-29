@@ -74,4 +74,7 @@ ISL_ARG_BOOL(struct ppcg_options, live_range_reordering, 0,
 ISL_ARG_GROUP("opencl", &ppcg_opencl_options_args, "OpenCL options")
 ISL_ARG_STR(struct ppcg_options, save_schedule_file, 0, "save-schedule",
 	"file", NULL, "save isl computed schedule to <file>")
+ISL_ARG_STR(struct ppcg_options, load_schedule_file, 0, "load-schedule",
+	"file", NULL, "load schedule from <file>, "
+	"using it instead of an isl computed schedule")
 ISL_ARGS_END
