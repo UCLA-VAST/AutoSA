@@ -466,7 +466,7 @@ static __isl_give isl_map *next(__isl_take isl_space *domain_dim, int pos)
 static int access_is_coalesced(struct gpu_group_data *data,
 	__isl_keep isl_union_map *access)
 {
-	isl_space *dim;
+	isl_space *space;
 	isl_map *access_map;
 	isl_map *next_thread_x;
 	isl_map *next_element;
@@ -478,13 +478,13 @@ static int access_is_coalesced(struct gpu_group_data *data,
 				isl_union_map_copy(data->full_sched));
 	access_map = isl_map_from_union_map(access);
 
-	dim = isl_map_get_space(access_map);
-	dim = isl_space_domain(dim);
-	next_thread_x = next(dim, data->thread_depth + data->n_thread - 1);
+	space = isl_map_get_space(access_map);
+	space = isl_space_domain(space);
+	next_thread_x = next(space, data->thread_depth + data->n_thread - 1);
 
-	dim = isl_map_get_space(access_map);
-	dim = isl_space_range(dim);
-	next_element = next(dim, isl_space_dim(dim, isl_dim_set) - 1);
+	space = isl_map_get_space(access_map);
+	space = isl_space_range(space);
+	next_element = next(space, isl_space_dim(space, isl_dim_set) - 1);
 
 	map = isl_map_apply_domain(next_thread_x, isl_map_copy(access_map));
 	map = isl_map_apply_range(map, access_map);
