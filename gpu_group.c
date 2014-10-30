@@ -455,10 +455,18 @@ static __isl_give isl_map *next(__isl_take isl_space *domain_dim, int pos)
 	return isl_map_from_basic_map(next);
 }
 
-/* Check if the given access is coalesced.
+/* Check if the given access is coalesced (or if there is no point
+ * in trying to coalesce the access by mapping the array to shared memory).
  * That is, check whether incrementing the dimension that will get
  * wrapped over the last thread index results in incrementing
  * the last array index.
+ *
+ * If no two consecutive array elements are ever accessed by "access",
+ * then mapping the corresponding array to shared memory will not
+ * improve coalescing.  In fact, the copying will likely be performed
+ * by a single thread.  Consider the access as coalesced such that
+ * the caller will not try and map the array to shared memory just
+ * to improve coalescing.
  *
  * This function is only called for access relations without reuse and
  * kernels with at least one thread identifier.
@@ -467,11 +475,12 @@ static int access_is_coalesced(struct gpu_group_data *data,
 	__isl_keep isl_union_map *access)
 {
 	isl_space *space;
+	isl_set *accessed;
 	isl_map *access_map;
 	isl_map *next_thread_x;
 	isl_map *next_element;
 	isl_map *map;
-	int coalesced;
+	int coalesced, empty;
 
 	access = isl_union_map_copy(access);
 	access = isl_union_map_apply_domain(access,
@@ -479,12 +488,25 @@ static int access_is_coalesced(struct gpu_group_data *data,
 	access_map = isl_map_from_union_map(access);
 
 	space = isl_map_get_space(access_map);
-	space = isl_space_domain(space);
-	next_thread_x = next(space, data->thread_depth + data->n_thread - 1);
-
-	space = isl_map_get_space(access_map);
 	space = isl_space_range(space);
 	next_element = next(space, isl_space_dim(space, isl_dim_set) - 1);
+
+	accessed = isl_map_range(isl_map_copy(access_map));
+	map = isl_map_copy(next_element);
+	map = isl_map_intersect_domain(map, isl_set_copy(accessed));
+	map = isl_map_intersect_range(map, accessed);
+	empty = isl_map_is_empty(map);
+	isl_map_free(map);
+
+	if (empty < 0 || empty) {
+		isl_map_free(next_element);
+		isl_map_free(access_map);
+		return empty;
+	}
+
+	space = isl_map_get_space(access_map);
+	space = isl_space_domain(space);
+	next_thread_x = next(space, data->thread_depth + data->n_thread - 1);
 
 	map = isl_map_apply_domain(next_thread_x, isl_map_copy(access_map));
 	map = isl_map_apply_range(map, access_map);
