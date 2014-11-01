@@ -108,6 +108,54 @@ static __isl_give isl_printer *allocate_device_arrays(
 	return p;
 }
 
+/* Print code to "p" for copying "array" from the host to the device
+ * in its entirety.  The bounds on the extent of "array" have
+ * been precomputed in extract_array_info and are used in
+ * gpu_array_info_print_size.
+ */
+static __isl_give isl_printer *copy_array_to_device(__isl_take isl_printer *p,
+	struct gpu_array_info *array)
+{
+	p = isl_printer_start_line(p);
+	p = isl_printer_print_str(p, "cudaCheckReturn(cudaMemcpy(dev_");
+	p = isl_printer_print_str(p, array->name);
+	p = isl_printer_print_str(p, ", ");
+
+	if (gpu_array_is_scalar(array))
+		p = isl_printer_print_str(p, "&");
+	p = isl_printer_print_str(p, array->name);
+	p = isl_printer_print_str(p, ", ");
+
+	p = gpu_array_info_print_size(p, array);
+	p = isl_printer_print_str(p, ", cudaMemcpyHostToDevice));");
+	p = isl_printer_end_line(p);
+
+	return p;
+}
+
+/* Print code to "p" for copying "array" back from the device to the host
+ * in its entirety.  The bounds on the extent of "array" have
+ * been precomputed in extract_array_info and are used in
+ * gpu_array_info_print_size.
+ */
+static __isl_give isl_printer *copy_array_from_device(
+	__isl_take isl_printer *p, struct gpu_array_info *array)
+{
+	p = isl_printer_start_line(p);
+	p = isl_printer_print_str(p, "cudaCheckReturn(cudaMemcpy(");
+	if (gpu_array_is_scalar(array))
+		p = isl_printer_print_str(p, "&");
+	p = isl_printer_print_str(p, array->name);
+	p = isl_printer_print_str(p, ", dev_");
+	p = isl_printer_print_str(p, array->name);
+	p = isl_printer_print_str(p, ", ");
+	p = gpu_array_info_print_size(p, array);
+	p = isl_printer_print_str(p, ", cudaMemcpyDeviceToHost));");
+	p = isl_printer_end_line(p);
+
+	return p;
+}
+
 static __isl_give isl_printer *copy_arrays_to_device(__isl_take isl_printer *p,
 	struct gpu_prog *prog)
 {
@@ -128,19 +176,7 @@ static __isl_give isl_printer *copy_arrays_to_device(__isl_take isl_printer *p,
 		if (empty)
 			continue;
 
-		p = isl_printer_start_line(p);
-		p = isl_printer_print_str(p, "cudaCheckReturn(cudaMemcpy(dev_");
-		p = isl_printer_print_str(p, prog->array[i].name);
-		p = isl_printer_print_str(p, ", ");
-
-		if (gpu_array_is_scalar(&prog->array[i]))
-			p = isl_printer_print_str(p, "&");
-		p = isl_printer_print_str(p, prog->array[i].name);
-		p = isl_printer_print_str(p, ", ");
-
-		p = gpu_array_info_print_size(p, &prog->array[i]);
-		p = isl_printer_print_str(p, ", cudaMemcpyHostToDevice));");
-		p = isl_printer_end_line(p);
+		p = copy_array_to_device(p, &prog->array[i]);
 	}
 	p = isl_printer_start_line(p);
 	p = isl_printer_end_line(p);
@@ -592,17 +628,7 @@ static __isl_give isl_printer *copy_arrays_from_device(
 		if (empty)
 			continue;
 
-		p = isl_printer_start_line(p);
-		p = isl_printer_print_str(p, "cudaCheckReturn(cudaMemcpy(");
-		if (gpu_array_is_scalar(&prog->array[i]))
-			p = isl_printer_print_str(p, "&");
-		p = isl_printer_print_str(p, prog->array[i].name);
-		p = isl_printer_print_str(p, ", dev_");
-		p = isl_printer_print_str(p, prog->array[i].name);
-		p = isl_printer_print_str(p, ", ");
-		p = gpu_array_info_print_size(p, &prog->array[i]);
-		p = isl_printer_print_str(p, ", cudaMemcpyDeviceToHost));");
-		p = isl_printer_end_line(p);
+		p = copy_array_from_device(p, &prog->array[i]);
 	}
 
 	isl_union_set_free(copy_out);
