@@ -3836,18 +3836,24 @@ static __isl_give isl_multi_pw_aff *transform_index(
 static __isl_give isl_ast_expr *dereference(__isl_take isl_ast_expr *expr)
 {
 	isl_ctx *ctx;
-	isl_ast_expr *res;
+	isl_ast_expr *arg0, *res;
 	isl_ast_expr_list *list;
 
-	if (isl_ast_expr_get_op_type(expr) == isl_ast_op_member) {
+	arg0 = isl_ast_expr_get_op_arg(expr, 0);
+	if (!arg0)
+		return isl_ast_expr_free(expr);
+	if (isl_ast_expr_get_type(arg0) == isl_ast_expr_op &&
+	    isl_ast_expr_get_op_type(arg0) == isl_ast_op_member) {
 		isl_ast_expr *arg;
 
-		arg = isl_ast_expr_get_op_arg(expr, 0);
+		arg = isl_ast_expr_get_op_arg(arg0, 0);
 		arg = dereference(arg);
-		expr = isl_ast_expr_set_op_arg(expr, 0, arg);
+		arg0 = isl_ast_expr_set_op_arg(arg0, 0, arg);
+		expr = isl_ast_expr_set_op_arg(expr, 0, arg0);
 
 		return expr;
 	}
+	isl_ast_expr_free(arg0);
 
 	ctx = isl_ast_expr_get_ctx(expr);
 	res = isl_ast_expr_from_val(isl_val_zero(ctx));
