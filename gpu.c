@@ -562,7 +562,7 @@ void collect_order_dependences(struct gpu_prog *prog)
 		order = remove_independences(prog, array, order);
 		array->dep_order = order;
 
-		if (gpu_array_is_scalar(array))
+		if (gpu_array_is_scalar(array) && !array->has_compound_element)
 			continue;
 
 		prog->array_order = isl_union_map_union(prog->array_order,
@@ -631,12 +631,11 @@ static void free_array_info(struct gpu_prog *prog)
 /* Check if a gpu array is a scalar.  A scalar is a value that is not stored
  * as an array or through a pointer reference, but as a single data element.
  * At the moment, scalars are represented as zero-dimensional arrays.
- * A zero-dimensional array containing structures is not considered
- * to be a scalar.
+ * Note that the single data element may be an entire structure.
  */
 int gpu_array_is_scalar(struct gpu_array_info *array)
 {
-	return !array->has_compound_element && array->n_index == 0;
+	return array->n_index == 0;
 }
 
 /* Is "array" a read-only scalar?
