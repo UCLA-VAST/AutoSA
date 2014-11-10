@@ -5970,6 +5970,7 @@ struct gpu_prog *gpu_prog_alloc(isl_ctx *ctx, struct ppcg_scop *scop)
 	prog->read = isl_union_map_copy(scop->reads);
 	prog->may_write = isl_union_map_copy(scop->may_writes);
 	prog->must_write = isl_union_map_copy(scop->must_writes);
+	prog->tagged_must_kill = isl_union_map_copy(scop->tagged_must_kills);
 	prog->to_inner = pet_scop_compute_outer_to_inner(scop->pet);
 	prog->to_outer = isl_union_map_copy(prog->to_inner);
 	prog->to_outer = isl_union_map_reverse(prog->to_outer);
@@ -5997,6 +5998,7 @@ void *gpu_prog_free(struct gpu_prog *prog)
 	isl_union_map_free(prog->read);
 	isl_union_map_free(prog->may_write);
 	isl_union_map_free(prog->must_write);
+	isl_union_map_free(prog->tagged_must_kill);
 	isl_union_map_free(prog->array_order);
 	isl_set_free(prog->context);
 	free(prog);

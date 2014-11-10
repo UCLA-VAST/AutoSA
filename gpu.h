@@ -95,6 +95,8 @@ struct gpu_prog {
 	isl_union_map *may_write;
 	/* All definite write accesses in the entire program */
 	isl_union_map *must_write;
+	/* All tagged definite kills in the entire program */
+	isl_union_map *tagged_must_kill;
 
 	/* Set of outer array elements that need to be copied in. */
 	isl_union_set *copy_in;
