@@ -5576,7 +5576,8 @@ static void compute_schedule(struct gpu_gen *gen)
  * to be copied in. Furthermore, if there are any array elements that
  * are copied out, but that may not be written inside gen->prog, then
  * they also need to be copied in to ensure that the value after execution
- * is the same as the value before execution.
+ * is the same as the value before execution, at least for those array
+ * elements that may have their values preserved by the scop.
  * In case the array elements are structures, we need to take into
  * account that all members of the structures need to be written
  * by gen->prog before we can avoid copying the data structure in.
@@ -5648,6 +5649,8 @@ static void compute_copy_in_and_out(struct gpu_gen *gen)
 
 	copy_out = isl_union_set_apply(copy_out,
 				    isl_union_map_copy(gen->prog->to_inner));
+	copy_out = isl_union_set_intersect(copy_out,
+				    isl_union_set_copy(gen->prog->may_persist));
 	not_written = isl_union_set_subtract(copy_out, must_write);
 
 	uninitialized = isl_union_map_copy(gen->prog->scop->live_in);
@@ -5941,6 +5944,41 @@ int generate_gpu(isl_ctx *ctx, const char *input, FILE *out,
 	return r;
 }
 
+/* Compute the set of inner array elements that may have their values
+ * preserved by "prog".  In particular, collect the array elements of
+ * arrays that are not local to "prog" and remove those elements that
+ * are definitely killed or definitely written by "prog".
+ */
+static __isl_give isl_union_set *compute_may_persist(struct gpu_prog *prog)
+{
+	int i;
+	isl_union_set *may_persist, *killed;
+	isl_union_map *must_kill;
+
+	may_persist = isl_union_set_empty(isl_set_get_space(prog->context));
+	for (i = 0; i < prog->n_array; ++i) {
+		isl_set *extent;
+
+		if (prog->array[i].local)
+			continue;
+
+		extent = isl_set_copy(prog->array[i].extent);
+		may_persist = isl_union_set_add_set(may_persist, extent);
+	}
+
+	may_persist = isl_union_set_intersect_params(may_persist,
+						isl_set_copy(prog->context));
+	may_persist = isl_union_set_apply(may_persist,
+					isl_union_map_copy(prog->to_inner));
+	must_kill = isl_union_map_copy(prog->tagged_must_kill);
+	killed = isl_union_map_range(must_kill);
+	must_kill = isl_union_map_copy(prog->must_write);
+	killed = isl_union_set_union(killed, isl_union_map_range(must_kill));
+
+	may_persist = isl_union_set_subtract(may_persist, killed);
+	return may_persist;
+}
+
 struct gpu_prog *gpu_prog_alloc(isl_ctx *ctx, struct ppcg_scop *scop)
 {
 	struct gpu_prog *prog;
@@ -5980,6 +6018,7 @@ struct gpu_prog *gpu_prog_alloc(isl_ctx *ctx, struct ppcg_scop *scop)
 
 	if (collect_array_info(prog) < 0)
 		return gpu_prog_free(prog);
+	prog->may_persist = compute_may_persist(prog);
 
 	return prog;
 }
@@ -6000,6 +6039,7 @@ void *gpu_prog_free(struct gpu_prog *prog)
 	isl_union_map_free(prog->must_write);
 	isl_union_map_free(prog->tagged_must_kill);
 	isl_union_map_free(prog->array_order);
+	isl_union_set_free(prog->may_persist);
 	isl_set_free(prog->context);
 	free(prog);
 	return NULL;

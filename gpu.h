@@ -98,6 +98,9 @@ struct gpu_prog {
 	/* All tagged definite kills in the entire program */
 	isl_union_map *tagged_must_kill;
 
+	/* The set of inner array elements that may be preserved. */
+	isl_union_set *may_persist;
+
 	/* Set of outer array elements that need to be copied in. */
 	isl_union_set *copy_in;
 	/* Set of outer array elements that need to be copied out. */
