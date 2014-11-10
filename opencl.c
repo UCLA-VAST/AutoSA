@@ -1,7 +1,7 @@
 /*
  * Copyright 2013      Ecole Normale Superieure
  *
- * Use of this software is governed by the GNU LGPLv2.1 license
+ * Use of this software is governed by the MIT license
  *
  * Written by Sven Verdoolaege and Riyadh Baghdadi,
  * Ecole Normale Superieure, 45 rue d’Ulm, 75230 Paris, France
