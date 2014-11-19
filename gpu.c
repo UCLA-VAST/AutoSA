@@ -343,7 +343,7 @@ static struct pet_array *find_array(struct ppcg_scop *scop,
  * accessed elements.
  *
  * In particular, the extent in the outer dimension is taken
- * from "accessed", while then extent in the remaing dimensions
+ * from "accessed", while the extents in the remaining dimensions
  * are taken from array->extent.
  *
  * The extent in the outer dimension cannot be taken from array->extent
