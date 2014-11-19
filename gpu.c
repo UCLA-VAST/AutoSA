@@ -318,27 +318,6 @@ static void *free_tile(struct gpu_array_tile *tile)
 	return NULL;
 }
 
-static struct pet_array *find_array(struct ppcg_scop *scop,
-	__isl_keep isl_set *accessed)
-{
-	int i;
-	isl_id *id;
-
-	id = isl_set_get_tuple_id(accessed);
-
-	for (i = 0; i < scop->pet->n_array; ++i) {
-		isl_id *id_i;
-
-		id_i = isl_set_get_tuple_id(scop->pet->arrays[i]->extent);
-		isl_id_free(id_i);
-		if (id == id_i)
-			break;
-	}
-	isl_id_free(id);
-
-	return i < scop->pet->n_array ? scop->pet->arrays[i] : NULL;
-}
-
 /* Compute and return the extent of "array", taking into account the set of
  * accessed elements.
  *
@@ -401,44 +380,36 @@ static int is_read_only_scalar(struct gpu_array_info *array,
 	return empty;
 }
 
-/* Compute bounds on the host arrays based on the accessed elements
+/* Compute bounds on the host array "pa" based on the corresponding
+ * accessed elements in "arrays"
  * and collect all references to the array.
+ * Store the results in "info".
  *
  * If the array is zero-dimensional and does not contain structures,
  * i.e., if the array is a scalar, we check whether it is read-only.
  * We also check whether the array is accessed at all.
  */
-static int extract_array_info(__isl_take isl_set *array, void *user)
+static int extract_array_info(struct gpu_prog *prog,
+	struct gpu_array_info *info, struct pet_array *pa,
+	__isl_keep isl_union_set *arrays)
 {
 	int i, empty;
-	struct gpu_prog *prog = (struct gpu_prog *)user;
 	const char *name;
 	int n_index;
 	isl_pw_aff **bounds;
-	struct pet_array *pa;
-	struct gpu_array_info *info;
-	isl_set *extent;
+	isl_set *accessed, *extent;
 
-	info = &prog->array[prog->n_array];
-	prog->n_array++;
-
-	n_index = isl_set_dim(array, isl_dim_set);
-	name = isl_set_get_tuple_name(array);
-	bounds = isl_alloc_array(isl_set_get_ctx(array),
-				 isl_pw_aff *, n_index);
+	n_index = isl_set_dim(pa->extent, isl_dim_set);
+	name = isl_set_get_tuple_name(pa->extent);
+	bounds = isl_alloc_array(prog->ctx, isl_pw_aff *, n_index);
 	if (!bounds)
-		goto error;
+		return -1;
 
-	info->space = isl_set_get_space(array);
+	info->space = isl_set_get_space(pa->extent);
 	info->name = strdup(name);
 	info->n_index = n_index;
 	info->bound = bounds;
 	info->linearize = prog->scop->options->linearize_device_arrays;
-
-	pa = find_array(prog->scop, array);
-	if (!pa)
-		isl_die(isl_set_get_ctx(array), isl_error_internal,
-			"unable to find array in scop", goto error);
 
 	info->type = strdup(pa->element_type);
 	info->size = pa->element_size;
@@ -446,8 +417,11 @@ static int extract_array_info(__isl_take isl_set *array, void *user)
 	info->has_compound_element = pa->element_is_record;
 	info->read_only_scalar = is_read_only_scalar(info, prog);
 
-	empty = isl_set_is_empty(array);
-	extent = compute_extent(pa, array);
+	accessed = isl_union_set_extract_set(arrays,
+					    isl_space_copy(info->space));
+	empty = isl_set_is_empty(accessed);
+	extent = compute_extent(pa, accessed);
+	isl_set_free(accessed);
 	info->extent = extent;
 	if (empty < 0)
 		return -1;
@@ -482,11 +456,7 @@ static int extract_array_info(__isl_take isl_set *array, void *user)
 
 	collect_references(prog, info);
 
-	isl_set_free(array);
 	return 0;
-error:
-	isl_set_free(array);
-	return -1;
 }
 
 /* Remove independence from the order constraints "order" on array "array".
@@ -577,9 +547,11 @@ void collect_order_dependences(struct gpu_prog *prog)
 	isl_union_map_free(accesses);
 }
 
-/* Construct a gpu_array_info for each array possibly accessed by "prog" and
+/* Construct a gpu_array_info for each array referenced by prog->scop and
  * collect them in prog->array.
  *
+ * The sizes are based on the extents and the set of possibly accessed
+ * elements by "prog".
  * If there are any member accesses involved, then they are first mapped
  * to the outer arrays of structs.
  *
@@ -588,7 +560,8 @@ void collect_order_dependences(struct gpu_prog *prog)
  */
 static int collect_array_info(struct gpu_prog *prog)
 {
-	int r;
+	int i;
+	int r = 0;
 	isl_union_set *arrays;
 
 	arrays = isl_union_map_range(isl_union_map_copy(prog->read));
@@ -600,12 +573,15 @@ static int collect_array_info(struct gpu_prog *prog)
 
 	arrays = isl_union_set_coalesce(arrays);
 
-	prog->n_array = isl_union_set_n_set(arrays);
+	prog->n_array = prog->scop->pet->n_array;
 	prog->array = isl_calloc_array(prog->ctx,
 				     struct gpu_array_info, prog->n_array);
 	assert(prog->array);
-	prog->n_array = 0;
-	r = isl_union_set_foreach_set(arrays, &extract_array_info, prog);
+	for (i = 0; i < prog->scop->pet->n_array; ++i)
+		if (extract_array_info(prog, &prog->array[i],
+					prog->scop->pet->arrays[i], arrays) < 0)
+			r = -1;
+
 	isl_union_set_free(arrays);
 
 	if (prog->scop->options->live_range_reordering)
