@@ -5748,7 +5748,9 @@ static int extract_access(__isl_keep pet_expr *expr, void *user)
 		access->exact_write = isl_union_map_is_equal(must, may);
 		isl_union_map_free(must);
 	}
-	access->access = isl_map_from_union_map(may);
+	isl_union_map_free(may);
+	access->access = isl_map_copy(access->tagged_access);
+	access->access = isl_map_domain_factor_domain(access->access);
 	index = pet_expr_access_get_index(expr);
 	access->n_index = isl_multi_pw_aff_dim(index, isl_dim_out);
 	isl_multi_pw_aff_free(index);
