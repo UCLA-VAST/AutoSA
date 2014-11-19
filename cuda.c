@@ -74,6 +74,8 @@ static __isl_give isl_printer *declare_device_arrays(__isl_take isl_printer *p,
 	for (i = 0; i < prog->n_array; ++i) {
 		if (gpu_array_is_read_only_scalar(&prog->array[i]))
 			continue;
+		if (!prog->array[i].accessed)
+			continue;
 
 		p = declare_device_array(p, &prog->array[i]);
 	}
@@ -89,6 +91,8 @@ static __isl_give isl_printer *allocate_device_arrays(
 
 	for (i = 0; i < prog->n_array; ++i) {
 		if (gpu_array_is_read_only_scalar(&prog->array[i]))
+			continue;
+		if (!prog->array[i].accessed)
 			continue;
 		p = isl_printer_start_line(p);
 		p = isl_printer_print_str(p,
@@ -614,6 +618,8 @@ static __isl_give isl_printer *free_device_arrays(__isl_take isl_printer *p,
 
 	for (i = 0; i < prog->n_array; ++i) {
 		if (gpu_array_is_read_only_scalar(&prog->array[i]))
+			continue;
+		if (!prog->array[i].accessed)
 			continue;
 		p = isl_printer_start_line(p);
 		p = isl_printer_print_str(p, "cudaCheckReturn(cudaFree(dev_");
