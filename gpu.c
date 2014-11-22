@@ -5758,6 +5758,9 @@ static int extract_access(__isl_keep pet_expr *expr, void *user)
 	*data->next_access = access;
 	data->next_access = &(*data->next_access)->next;
 
+	if (!access->access)
+		return -1;
+
 	return 0;
 }
 
@@ -5765,7 +5768,7 @@ static int extract_access(__isl_keep pet_expr *expr, void *user)
  * one for each access expression in the statement body.
  * "any_to_outer" maps all intermediate arrays to their outer arrays.
  */
-static void pet_stmt_extract_accesses(struct gpu_stmt *stmt,
+static int pet_stmt_extract_accesses(struct gpu_stmt *stmt,
 	__isl_keep isl_union_map *any_to_outer)
 {
 	struct ppcg_extract_access_data data;
@@ -5775,7 +5778,8 @@ static void pet_stmt_extract_accesses(struct gpu_stmt *stmt,
 	data.single_expression =
 		pet_tree_get_type(stmt->stmt->body) == pet_tree_expr;
 	data.any_to_outer = any_to_outer;
-	pet_tree_foreach_access_expr(stmt->stmt->body, &extract_access, &data);
+	return pet_tree_foreach_access_expr(stmt->stmt->body,
+						&extract_access, &data);
 }
 
 /* Return an array of gpu_stmt representing the statements in "scop".
@@ -5795,7 +5799,8 @@ static struct gpu_stmt *extract_stmts(isl_ctx *ctx, struct ppcg_scop *scop,
 
 		s->id = isl_set_get_tuple_id(scop->pet->stmts[i]->domain);
 		s->stmt = scop->pet->stmts[i];
-		pet_stmt_extract_accesses(s, any_to_outer);
+		if (pet_stmt_extract_accesses(s, any_to_outer) < 0)
+			return free_stmts(stmts, i + 1);
 	}
 
 	return stmts;
