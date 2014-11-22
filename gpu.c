@@ -3469,6 +3469,21 @@ static void create_kernel_vars(struct gpu_gen *gen, struct ppcg_kernel *kernel)
 	}
 }
 
+/* Replace "pa" by the zero function defined over the universe domain
+ * in the space of "pa".
+ */
+static __isl_give isl_pw_aff *set_universally_zero(__isl_take isl_pw_aff *pa)
+{
+	isl_space *space;
+	isl_aff *zero;
+
+	space = isl_space_domain(isl_pw_aff_get_space(pa));
+	isl_pw_aff_free(pa);
+	zero = isl_aff_zero_on_domain(isl_local_space_from_space(space));
+
+	return isl_pw_aff_from_aff(zero);
+}
+
 /* The sizes of the arrays on the host that have been computed by
  * extract_array_info may depend on the parameters.  Use the extra
  * constraints on the parameters that are valid at "host_domain"
@@ -3478,6 +3493,12 @@ static void create_kernel_vars(struct gpu_gen *gen, struct ppcg_kernel *kernel)
  * by the current kernel.  If we have found at least one reference group
  * then the array is accessed by the kernel.  If the array has compound
  * elements then we skipped the construction of array reference groups.
+ *
+ * The resulting sizes may be functions that are nowhere defined
+ * in case the access function cannot possibly access anything inside
+ * the kernel for some reason.  If so, they are replaced by the zero
+ * function.  Since the access function cannot actually access anything,
+ * there is no harm in printing the array sizes as zero.
  */
 static void localize_bounds(struct gpu_gen *gen, struct ppcg_kernel *kernel,
 	__isl_keep isl_set *host_domain)
@@ -3504,9 +3525,15 @@ static void localize_bounds(struct gpu_gen *gen, struct ppcg_kernel *kernel,
 
 		for (j = 0; j < array->n_index; ++j) {
 			isl_pw_aff *pwaff;
+			int empty;
 
 			pwaff = isl_pw_aff_copy(array->bound[j]);
 			pwaff = isl_pw_aff_gist(pwaff, isl_set_copy(context));
+			empty = isl_pw_aff_is_empty(pwaff);
+			if (empty < 0)
+				pwaff = isl_pw_aff_free(pwaff);
+			else if (empty)
+				pwaff = set_universally_zero(pwaff);
 			local = isl_pw_aff_list_add(local, pwaff);
 		}
 
