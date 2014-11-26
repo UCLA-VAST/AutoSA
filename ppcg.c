@@ -619,7 +619,8 @@ static void compute_dependences(struct ppcg_scop *scop)
 
 /* Eliminate dead code from ps->domain.
  *
- * In particular, intersect ps->domain with the (parts of) iteration
+ * In particular, intersect both ps->domain and the domain of
+ * ps->schedule with the (parts of) iteration
  * domains that are needed to produce the output or for statement
  * iterations that call functions.
  * Also intersect the range of the dataflow dependences with
@@ -671,6 +672,8 @@ static void eliminate_dead_code(struct ppcg_scop *ps)
 	isl_union_map_free(dep);
 
 	ps->domain = isl_union_set_intersect(ps->domain,
+						isl_union_set_copy(live));
+	ps->schedule = isl_schedule_intersect_domain(ps->schedule,
 						isl_union_set_copy(live));
 	ps->dep_flow = isl_union_map_intersect_range(ps->dep_flow,
 						isl_union_set_copy(live));
