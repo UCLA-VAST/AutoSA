@@ -762,6 +762,9 @@ static struct gpu_array_ref_group *join_groups(
 	isl_ctx *ctx;
 	struct gpu_array_ref_group *group;
 
+	if (!group1 || !group2)
+		return NULL;
+
 	ctx = isl_map_get_ctx(group1->access);
 	group = isl_calloc_type(ctx, struct gpu_array_ref_group);
 	if (!group)
