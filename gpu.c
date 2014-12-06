@@ -3968,6 +3968,10 @@ __isl_give isl_ast_expr *gpu_local_array_info_linearize_index(
 
 /* AST expression transformation callback for pet_stmt_build_ast_exprs.
  *
+ * If the AST expression refers to an array that is not accessed
+ * at all, then this means the value of the expression is not used,
+ * so we might as well print zero (NULL pointer) instead.
+ *
  * If the AST expression refers to a global scalar that is not
  * a read-only scalar, then its address was passed to the kernel and
  * we need to dereference it.
@@ -3982,6 +3986,13 @@ static __isl_give isl_ast_expr *transform_expr(__isl_take isl_ast_expr *expr,
 
 	if (!data->array)
 		return expr;
+	if (!data->array->accessed) {
+		isl_ctx *ctx;
+
+		ctx = isl_ast_expr_get_ctx(expr);
+		isl_ast_expr_free(expr);
+		return isl_ast_expr_from_val(isl_val_zero(ctx));
+	}
 	if (gpu_array_is_read_only_scalar(data->array))
 		return expr;
 	if (!data->global)
