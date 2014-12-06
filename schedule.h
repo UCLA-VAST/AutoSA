@@ -4,6 +4,8 @@
 /* An access to an outer array element or an iterator.
  * Accesses to iterators have an access relation that maps to an unnamed space.
  * An access may be both read and write.
+ * If the access relation is empty, then the output dimension may
+ * not be equal to the dimension of the corresponding array.
  */
 struct gpu_stmt_access {
 	/* Access reads elements */

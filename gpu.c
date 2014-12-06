@@ -5703,6 +5703,55 @@ struct ppcg_extract_access_data {
 	isl_union_map *any_to_outer;
 };
 
+/* Given a tagged access relation to a single array "tagged", extract it
+ * as a map, taking into account that the input may be empty.
+ * If the access relation is empty, then it does not contain
+ * any space information, so we try to recover it from the index
+ * expression.
+ * The space of the index expression is of the form I -> A,
+ * with I the statement instances and A the array, or [I -> F] -> A,
+ * with F the filters corresponding to arguments.
+ * We first drop F, if present, obtaining I -> A.
+ * Then we construct I -> R, with R the reference tag,
+ * combine the two into I -> [R -> A] and uncurry to obtain
+ * the final result [I -> R] -> A.
+ * Note that the index expression may have a lower dimension
+ * than that of the array, but this dimension is not used
+ * if the access relation is empty.
+ */
+static __isl_give isl_map *extract_single_tagged_access(
+	__isl_take isl_union_map *tagged, __isl_keep pet_expr *expr)
+{
+	int empty;
+	isl_id *id;
+	isl_space *space, *space2;
+	isl_multi_pw_aff *index;
+
+	empty = isl_union_map_is_empty(tagged);
+	if (empty < 0)
+		goto error;
+	if (!empty)
+		return isl_map_from_union_map(tagged);
+	isl_union_map_free(tagged);
+
+	index = pet_expr_access_get_index(expr);
+	space = isl_multi_pw_aff_get_space(index);
+	isl_multi_pw_aff_free(index);
+	if (isl_space_domain_is_wrapping(space))
+		space = isl_space_domain_factor_domain(space);
+	space2 = isl_space_copy(space);
+	space2 = isl_space_from_domain(isl_space_domain(space));
+	id = pet_expr_access_get_ref_id(expr);
+	space2 = isl_space_set_tuple_id(space2, isl_dim_out, id);
+	space = isl_space_range_product(space2, space);
+	space = isl_space_uncurry(space);
+
+	return isl_map_empty(space);
+error:
+	isl_union_map_free(tagged);
+	return NULL;
+}
+
 /* Extract a gpu_stmt_access from "expr", append it to the list
  * that ends in *data->next_access and update the end of the list.
  * If the access expression performs a write, then it is considered
@@ -5745,14 +5794,14 @@ static int extract_access(__isl_keep pet_expr *expr, void *user)
 		isl_union_map_free(must);
 		isl_union_map_free(may);
 	}
-	access->tagged_access = isl_map_from_union_map(tagged);
-	access->access = isl_map_copy(access->tagged_access);
-	access->access = isl_map_domain_factor_domain(access->access);
 	index = pet_expr_access_get_index(expr);
 	access->n_index = isl_multi_pw_aff_dim(index, isl_dim_out);
 	isl_multi_pw_aff_free(index);
 	access->ref_id = pet_expr_access_get_ref_id(expr);
 	access->group = -1;
+	access->tagged_access = extract_single_tagged_access(tagged, expr);
+	access->access = isl_map_copy(access->tagged_access);
+	access->access = isl_map_domain_factor_domain(access->access);
 
 	*data->next_access = access;
 	data->next_access = &(*data->next_access)->next;
