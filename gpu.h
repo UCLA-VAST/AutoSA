@@ -35,6 +35,9 @@ struct gpu_array_info {
 	int n_group;
 	struct gpu_array_ref_group **groups;
 
+	/* Is this array accessed at all by the program? */
+	int accessed;
+
 	/* Is this a scalar that is read-only within the entire program? */
 	int read_only_scalar;
 

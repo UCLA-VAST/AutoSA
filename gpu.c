@@ -406,10 +406,11 @@ static int is_read_only_scalar(struct gpu_array_info *array,
  *
  * If the array is zero-dimensional and does not contain structures,
  * i.e., if the array is a scalar, we check whether it is read-only.
+ * We also check whether the array is accessed at all.
  */
 static int extract_array_info(__isl_take isl_set *array, void *user)
 {
-	int i;
+	int i, empty;
 	struct gpu_prog *prog = (struct gpu_prog *)user;
 	const char *name;
 	int n_index;
@@ -445,8 +446,12 @@ static int extract_array_info(__isl_take isl_set *array, void *user)
 	info->has_compound_element = pa->element_is_record;
 	info->read_only_scalar = is_read_only_scalar(info, prog);
 
+	empty = isl_set_is_empty(array);
 	extent = compute_extent(pa, array);
 	info->extent = extent;
+	if (empty < 0)
+		return -1;
+	info->accessed = !empty;
 	for (i = 0; i < n_index; ++i) {
 		isl_set *dom;
 		isl_local_space *ls;
