@@ -274,6 +274,26 @@ static void collect_references(struct gpu_prog *prog,
 	}
 }
 
+static void *free_tile(struct gpu_array_tile *tile)
+{
+	int j;
+
+	if (!tile)
+		return NULL;
+
+	for (j = 0; j < tile->n; ++j) {
+		isl_val_free(tile->bound[j].size);
+		isl_val_free(tile->bound[j].stride);
+		isl_aff_free(tile->bound[j].lb);
+		isl_aff_free(tile->bound[j].shift);
+	}
+	free(tile->bound);
+	isl_multi_aff_free(tile->tiling);
+	free(tile);
+
+	return NULL;
+}
+
 /* Create a gpu_array_tile for an array of dimension "n_index".
  */
 static struct gpu_array_tile *create_tile(isl_ctx *ctx, int n_index)
@@ -298,26 +318,6 @@ static struct gpu_array_tile *create_tile(isl_ctx *ctx, int n_index)
 	}
 
 	return tile;
-}
-
-static void *free_tile(struct gpu_array_tile *tile)
-{
-	int j;
-
-	if (!tile)
-		return NULL;
-
-	for (j = 0; j < tile->n; ++j) {
-		isl_val_free(tile->bound[j].size);
-		isl_val_free(tile->bound[j].stride);
-		isl_aff_free(tile->bound[j].lb);
-		isl_aff_free(tile->bound[j].shift);
-	}
-	free(tile->bound);
-	isl_multi_aff_free(tile->tiling);
-	free(tile);
-
-	return NULL;
 }
 
 /* Compute and return the extent of "array", taking into account the set of
