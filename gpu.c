@@ -5717,16 +5717,11 @@ struct ppcg_extract_access_data {
 static int extract_access(__isl_keep pet_expr *expr, void *user)
 {
 	struct ppcg_extract_access_data *data = user;
-	isl_union_map *may, *tagged;
+	isl_union_map *tagged;
 	struct gpu_stmt_access *access;
-	isl_ctx *ctx;
+	isl_ctx *ctx = pet_expr_get_ctx(expr);
 	isl_multi_pw_aff *index;
 
-	may = pet_expr_access_get_may_read(expr);
-	may = isl_union_map_union(may, pet_expr_access_get_may_write(expr));
-	may = isl_union_map_apply_range(may,
-					isl_union_map_copy(data->any_to_outer));
-	ctx = isl_union_map_get_ctx(may);
 	access = isl_alloc_type(ctx, struct gpu_stmt_access);
 	assert(access);
 	access->next = NULL;
@@ -5737,18 +5732,20 @@ static int extract_access(__isl_keep pet_expr *expr, void *user)
 				pet_expr_access_get_tagged_may_write(expr));
 	tagged = isl_union_map_apply_range(tagged,
 					isl_union_map_copy(data->any_to_outer));
-	access->tagged_access = isl_map_from_union_map(tagged);
 	if (!access->write) {
 		access->exact_write = 1;
 	} else if (!data->single_expression) {
 		access->exact_write = 0;
 	} else {
-		isl_union_map *must;
+		isl_union_map *must, *may;
+		may = isl_union_map_copy(tagged);
+		may = isl_union_map_domain_factor_domain(may);
 		must = pet_expr_access_get_must_write(expr);
 		access->exact_write = isl_union_map_is_equal(must, may);
 		isl_union_map_free(must);
+		isl_union_map_free(may);
 	}
-	isl_union_map_free(may);
+	access->tagged_access = isl_map_from_union_map(tagged);
 	access->access = isl_map_copy(access->tagged_access);
 	access->access = isl_map_domain_factor_domain(access->access);
 	index = pet_expr_access_get_index(expr);
