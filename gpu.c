@@ -54,18 +54,12 @@ static const char *get_outer_array_name(__isl_keep isl_map *access)
 
 /* Collect all references to the given array and store pointers to them
  * in array->refs.
- *
- * If the array contains structures, then there is no need to collect
- * the references since we will not be computing any reference groups.
  */
 static void collect_references(struct gpu_prog *prog,
 	struct gpu_array_info *array)
 {
 	int i;
 	int n;
-
-	if (array->has_compound_element)
-		return;
 
 	n = 0;
 	for (i = 0; i < prog->n_stmts; ++i) {
@@ -74,8 +68,7 @@ static void collect_references(struct gpu_prog *prog,
 
 		for (access = stmt->accesses; access; access = access->next) {
 			const char *name;
-			name = isl_map_get_tuple_name(access->access,
-						      isl_dim_out);
+			name = get_outer_array_name(access->access);
 			if (name && !strcmp(array->name, name))
 				n++;
 		}
@@ -92,8 +85,7 @@ static void collect_references(struct gpu_prog *prog,
 
 		for (access = stmt->accesses; access; access = access->next) {
 			const char *name;
-			name = isl_map_get_tuple_name(access->access,
-						      isl_dim_out);
+			name = get_outer_array_name(access->access);
 			if (!name || strcmp(array->name, name))
 				continue;
 
