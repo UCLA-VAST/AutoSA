@@ -36,6 +36,22 @@
 
 struct gpu_array_info;
 
+/* Return the name of the outer array (of structs) accessed by "access".
+ */
+static const char *get_outer_array_name(__isl_keep isl_map *access)
+{
+	isl_space *space;
+	const char *name;
+
+	space = isl_space_range(isl_map_get_space(access));
+	while (space && isl_space_is_wrapping(space))
+		space = isl_space_domain(isl_space_unwrap(space));
+	name = isl_space_get_tuple_name(space, isl_dim_set);
+	isl_space_free(space);
+
+	return name;
+}
+
 /* Collect all references to the given array and store pointers to them
  * in array->refs.
  *
@@ -1407,22 +1423,6 @@ struct ppcg_transform_data {
 	int global;
 	struct gpu_local_array_info *local_array;
 };
-
-/* Return the name of the outer array (of structs) accessed by "access".
- */
-static const char *get_outer_array_name(__isl_keep isl_map *access)
-{
-	isl_space *space;
-	const char *name;
-
-	space = isl_space_range(isl_map_get_space(access));
-	while (space && isl_space_is_wrapping(space))
-		space = isl_space_domain(isl_space_unwrap(space));
-	name = isl_space_get_tuple_name(space, isl_dim_set);
-	isl_space_free(space);
-
-	return name;
-}
 
 /* Return a pointer to the gpu_array_ref_group in "local"
  * that contains the reference "access".
