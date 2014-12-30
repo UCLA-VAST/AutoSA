@@ -4056,8 +4056,154 @@ static __isl_give isl_schedule *compute_schedule(struct gpu_gen *gen)
 	return schedule;
 }
 
-/* Obtain a schedule for the scop, either by reading it from
- * a file or by computing one.
+/* If the band node "node" has exactly one member then mark it permutable.
+ */
+static __isl_give isl_schedule_node *band_set_permutable(
+	__isl_take isl_schedule_node *node,
+	__isl_keep isl_schedule_constraints *sc)
+{
+	if (isl_schedule_node_band_n_member(node) == 1)
+		node = isl_schedule_node_band_set_permutable(node, 1);
+
+	return node;
+}
+
+/* Return the coincidence constraints between pairs of instances
+ * that are scheduled together by the ancestors of "node".
+ * That is, select those coincidence constraints that relate
+ * pairs of instances that have the same value for the prefix schedule.
+ * If the schedule depth is zero, then the prefix schedule does not
+ * contain any information, so we intersect domain and range
+ * of the schedule constraints with the reaching domain elements instead.
+ */
+static __isl_give isl_union_map *get_local_coincidence(
+	__isl_keep isl_schedule_node *node,
+	__isl_keep isl_schedule_constraints *sc)
+{
+	isl_union_map *coincidence;
+	isl_multi_union_pw_aff *prefix;
+	isl_union_pw_multi_aff *contraction;
+
+	coincidence = isl_schedule_constraints_get_coincidence(sc);
+	contraction = isl_schedule_node_get_subtree_contraction(node);
+	if (isl_schedule_node_get_schedule_depth(node) == 0) {
+		isl_union_set *domain;
+
+		domain = isl_schedule_node_get_domain(node);
+		domain = isl_union_set_preimage_union_pw_multi_aff(domain,
+						    contraction);
+		coincidence = isl_union_map_intersect_domain(coincidence,
+						    isl_union_set_copy(domain));
+		coincidence = isl_union_map_intersect_range(coincidence,
+						    domain);
+		return coincidence;
+	}
+
+	prefix = isl_schedule_node_get_prefix_schedule_multi_union_pw_aff(node);
+	prefix = isl_multi_union_pw_aff_pullback_union_pw_multi_aff(prefix,
+								contraction);
+	return isl_union_map_eq_at_multi_union_pw_aff(coincidence, prefix);
+}
+
+/* For each member in the band node "node", determine whether
+ * it is coincident with respect to the outer nodes and mark
+ * it accordingly.
+ *
+ * That is, for each coincidence constraint between pairs
+ * of instances that are scheduled together by the outer nodes,
+ * check that domain and range are assigned the same value
+ * by the band member.  This test is performed by checking
+ * that imposing the same value for the band member does not
+ * remove any elements from the set of coincidence constraints.
+ */
+static __isl_give isl_schedule_node *band_set_coincident(
+	__isl_take isl_schedule_node *node,
+	__isl_keep isl_schedule_constraints *sc)
+{
+	isl_union_map *coincidence;
+	isl_union_pw_multi_aff *contraction;
+	isl_multi_union_pw_aff *partial;
+	int i, n;
+
+	coincidence = get_local_coincidence(node, sc);
+
+	partial = isl_schedule_node_band_get_partial_schedule(node);
+	contraction = isl_schedule_node_get_subtree_contraction(node);
+	partial = isl_multi_union_pw_aff_pullback_union_pw_multi_aff(partial,
+								contraction);
+	n = isl_schedule_node_band_n_member(node);
+	for (i = 0; i < n; ++i) {
+		isl_union_map *coincidence_i;
+		isl_union_pw_aff *upa;
+		isl_multi_union_pw_aff *partial_i;
+		int subset;
+
+		upa = isl_multi_union_pw_aff_get_union_pw_aff(partial, i);
+		partial_i = isl_multi_union_pw_aff_from_union_pw_aff(upa);
+		coincidence_i = isl_union_map_copy(coincidence);
+		coincidence_i = isl_union_map_eq_at_multi_union_pw_aff(
+						    coincidence_i, partial_i);
+		subset = isl_union_map_is_subset(coincidence, coincidence_i);
+		isl_union_map_free(coincidence_i);
+
+		if (subset < 0)
+			break;
+		node = isl_schedule_node_band_member_set_coincident(node, i,
+								    subset);
+	}
+	if (i < n)
+		node = isl_schedule_node_free(node);
+	isl_multi_union_pw_aff_free(partial);
+	isl_union_map_free(coincidence);
+
+	return node;
+}
+
+/* If "node" is a band, then set its properties.
+ *
+ * In particular, if the band has exactly one member, then mark it permutable.
+ * Mark the band member coincident based on the coincidence constraints
+ * of "sc".
+ */
+static __isl_give isl_schedule_node *set_band_properties(
+	__isl_take isl_schedule_node *node, void *user)
+{
+	isl_schedule_constraints *sc = user;
+
+	if (isl_schedule_node_get_type(node) != isl_schedule_node_band)
+		return node;
+	if (isl_schedule_node_band_n_member(node) == 0)
+		return node;
+
+	node = band_set_permutable(node, sc);
+	node = band_set_coincident(node, sc);
+
+	return node;
+}
+
+/* Return the original schedule with all bands marked permutable and
+ * all band members marked coincident based on the coincidence constraints.
+ * The bands are explicitly marked permutable so that they will be considered
+ * by mark_outer_permutable.
+ */
+static __isl_give isl_schedule *determine_properties_original_schedule(
+	struct gpu_gen *gen)
+{
+	isl_schedule *schedule;
+	isl_schedule_constraints *sc;
+
+	schedule = isl_schedule_copy(gen->prog->scop->schedule);
+	sc = construct_schedule_constraints(gen->prog);
+	schedule = isl_schedule_map_schedule_node(schedule,
+						    &set_band_properties, sc);
+	isl_schedule_constraints_free(sc);
+
+	return schedule;
+}
+
+/* Obtain a schedule for the scop, by reading it from
+ * a file, by computing one or by determining the properties
+ * of the original schedule.
  */
 static __isl_give isl_schedule *get_schedule(struct gpu_gen *gen)
 {
@@ -4067,7 +4213,10 @@ static __isl_give isl_schedule *get_schedule(struct gpu_gen *gen)
 		schedule = load_schedule(gen->ctx,
 					gen->options->load_schedule_file);
 	} else {
-		schedule = compute_schedule(gen);
+		if (gen->options->reschedule)
+			schedule = compute_schedule(gen);
+		else
+			schedule = determine_properties_original_schedule(gen);
 		if (gen->options->save_schedule_file)
 			save_schedule(schedule,
 					gen->options->save_schedule_file);

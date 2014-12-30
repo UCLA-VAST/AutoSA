@@ -14,6 +14,8 @@ struct ppcg_debug_options {
 struct ppcg_options {
 	struct ppcg_debug_options *debug;
 
+	/* Use isl to compute a schedule replacing the original schedule. */
+	int reschedule;
 	int scale_tile_loops;
 	int wrap;
 

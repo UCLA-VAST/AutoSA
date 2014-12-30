@@ -48,6 +48,8 @@ ISL_ARGS_END
 ISL_ARGS_START(struct ppcg_options, ppcg_options_args)
 ISL_ARG_CHILD(struct ppcg_options, debug, NULL, &ppcg_debug_options_args,
 	"debugging options")
+ISL_ARG_BOOL(struct ppcg_options, reschedule, 0, "reschedule", 1,
+	"replace original schedule by isl computed schedule (except C target)")
 ISL_ARG_BOOL(struct ppcg_options, scale_tile_loops, 0,
 	"scale-tile-loops", 1, NULL)
 ISL_ARG_BOOL(struct ppcg_options, wrap, 0, "wrap", 1, NULL)
