@@ -3964,12 +3964,8 @@ static __isl_give isl_schedule *load_schedule(isl_ctx *ctx,
 	return schedule;
 }
 
-/* Compute an appropriate schedule based on the accesses in
- * gen->read and gen->write.
- *
- * We use the dependences in gen->prog->scop to compute
- * a schedule that has a parallel loop in each tilable band and
- * return this schedule.
+/* Construct schedule constraints from the dependences in prog->scop and
+ * the array order dependences in prog->array_order.
  *
  * If live range reordering is allowed, then we need to make sure
  * that live ranges on arrays are not run in parallel since doing
@@ -3997,36 +3993,36 @@ static __isl_give isl_schedule *load_schedule(isl_ctx *ctx,
  * as there should be no flow or external false dependence on local
  * variables that can be filtered out.
  */
-static __isl_give isl_schedule *compute_schedule(struct gpu_gen *gen)
+static __isl_give isl_schedule_constraints *construct_schedule_constraints(
+	struct gpu_prog *prog)
 {
 	isl_union_set *domain;
 	isl_union_map *dep_raw, *dep;
 	isl_union_map *validity, *proximity, *coincidence;
 	isl_schedule_constraints *sc;
-	isl_schedule *schedule;
 
-	domain = isl_union_set_copy(gen->prog->scop->domain);
+	domain = isl_union_set_copy(prog->scop->domain);
 	sc = isl_schedule_constraints_on_domain(domain);
 	sc = isl_schedule_constraints_set_context(sc,
-				isl_set_copy(gen->prog->scop->context));
-	if (gen->options->live_range_reordering) {
+				isl_set_copy(prog->scop->context));
+	if (prog->scop->options->live_range_reordering) {
 		sc = isl_schedule_constraints_set_conditional_validity(sc,
-			isl_union_map_copy(gen->prog->scop->tagged_dep_flow),
-			isl_union_map_copy(gen->prog->scop->tagged_dep_order));
-		proximity = isl_union_map_copy(gen->prog->scop->dep_flow);
+			isl_union_map_copy(prog->scop->tagged_dep_flow),
+			isl_union_map_copy(prog->scop->tagged_dep_order));
+		proximity = isl_union_map_copy(prog->scop->dep_flow);
 		validity = isl_union_map_copy(proximity);
 		validity = isl_union_map_union(validity,
-			    isl_union_map_copy(gen->prog->scop->dep_forced));
+			    isl_union_map_copy(prog->scop->dep_forced));
 		proximity = isl_union_map_union(proximity,
-			    isl_union_map_copy(gen->prog->scop->dep_false));
+			    isl_union_map_copy(prog->scop->dep_false));
 		coincidence = isl_union_map_copy(validity);
 		coincidence = isl_union_map_subtract(coincidence,
-			isl_union_map_copy(gen->prog->scop->independence));
+			isl_union_map_copy(prog->scop->independence));
 		coincidence = isl_union_map_union(coincidence,
-				isl_union_map_copy(gen->prog->array_order));
+				isl_union_map_copy(prog->array_order));
 	} else {
-		dep_raw = isl_union_map_copy(gen->prog->scop->dep_flow);
-		dep = isl_union_map_copy(gen->prog->scop->dep_false);
+		dep_raw = isl_union_map_copy(prog->scop->dep_flow);
+		dep = isl_union_map_copy(prog->scop->dep_false);
 		dep = isl_union_map_union(dep, dep_raw);
 		dep = isl_union_map_coalesce(dep);
 		proximity = isl_union_map_copy(dep);
@@ -4037,8 +4033,24 @@ static __isl_give isl_schedule *compute_schedule(struct gpu_gen *gen)
 	sc = isl_schedule_constraints_set_coincidence(sc, coincidence);
 	sc = isl_schedule_constraints_set_proximity(sc, proximity);
 
-	if (gen->options->debug->dump_schedule_constraints)
+	if (prog->scop->options->debug->dump_schedule_constraints)
 		isl_schedule_constraints_dump(sc);
+	return sc;
+}
+
+/* Compute an appropriate schedule based on the accesses in
+ * gen->read and gen->write.
+ *
+ * We derive schedule constraints from the dependences in gen->prog->scop
+ * and then use isl to compute a schedule that has a parallel loop
+ * in each tilable band.
+ */
+static __isl_give isl_schedule *compute_schedule(struct gpu_gen *gen)
+{
+	isl_schedule_constraints *sc;
+	isl_schedule *schedule;
+
+	sc = construct_schedule_constraints(gen->prog);
 	schedule = isl_schedule_constraints_compute_schedule(sc);
 
 	return schedule;
