@@ -291,6 +291,16 @@ static void compute_live_out(struct ppcg_scop *ps)
  *
  * We first compute ps->tagged_dep_flow, i.e., the tagged flow dependences
  * and then project out the tags.
+ *
+ * We allow both the must writes and the must kills to serve as
+ * definite sources such that a subsequent read would not depend
+ * on any earlier write.  The resulting flow dependences with
+ * a must kill as source reflect possibly uninitialized reads.
+ * No dependences need to be introduced to protect such reads
+ * (other than those imposed by potential flows from may writes
+ * that follow the kill).  We therefore those flow dependences.
+ * This is also useful for the dead code elimination, which assumes
+ * the flow sources are non-kill instances.
  */
 static void compute_tagged_flow_dep(struct ppcg_scop *ps)
 {
@@ -298,17 +308,26 @@ static void compute_tagged_flow_dep(struct ppcg_scop *ps)
 	isl_union_map *schedule;
 	isl_union_map *may_flow;
 	isl_union_map *live_in, *may_live_in;
+	isl_union_map *must_source;
+	isl_union_map *kills;
+	isl_union_map *tagged_flow;
 
 	tagger = isl_union_map_copy(ps->tagger);
 	schedule = isl_union_map_copy(ps->schedule);
 	schedule = isl_union_map_apply_domain(schedule, tagger);
+	kills = isl_union_map_copy(ps->tagged_must_kills);
+	must_source = isl_union_map_copy(ps->tagged_must_writes);
+	must_source = isl_union_map_union(must_source,
+				isl_union_map_copy(kills));
 	isl_union_map_compute_flow(isl_union_map_copy(ps->tagged_reads),
-				isl_union_map_copy(ps->tagged_must_writes),
+				must_source,
 				isl_union_map_copy(ps->tagged_may_writes),
 				schedule, &ps->tagged_dep_flow, &may_flow,
 				&live_in, &may_live_in);
-	ps->tagged_dep_flow = isl_union_map_union(ps->tagged_dep_flow,
-							may_flow);
+	tagged_flow = isl_union_map_union(ps->tagged_dep_flow, may_flow);
+	tagged_flow = isl_union_map_subtract_domain(tagged_flow,
+				isl_union_map_domain(kills));
+	ps->tagged_dep_flow = tagged_flow;
 	ps->dep_flow = isl_union_map_copy(ps->tagged_dep_flow);
 	ps->dep_flow = isl_union_map_zip(ps->dep_flow);
 	ps->dep_flow = isl_union_set_unwrap(isl_union_map_domain(ps->dep_flow));
