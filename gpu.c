@@ -4695,17 +4695,27 @@ static __isl_give isl_union_map *wrapped_reference_to_access(
  * communicate data within the same iteration of the last_shared dimension
  * of the group.
  *
- * If the access is a read then it is necessarily an element of
+ * If the access is a read then it is either an element of
  *
  *	live_in union (range flow)
  *
- * where live_in and flow may be overapproximations.
- * If the access is a write then it is necessarily an element of
+ * where live_in and flow may be overapproximations, or
+ * it reads an uninitialized value (that is not live-in because
+ * there is an intermediate kill) or it reads a value that was
+ * written within the same (compound) statement instance.
+ * If the access is a write then it is either an element of
  *
  *	live_out union (domain flow)
  *
+ * or it writes a value that is never read (and is not live-out
+ * because of an intermediate kill) or only
+ * within the same (compound) statement instance.
  * In both cases, the access relation is also a subset of
  * the group access relation.
+ *
+ * The cases where an uninitialized value is read or a value is written
+ * that is never read or where the dataflow occurs within a statement
+ * instance are also considered local and may also be removed.
  *
  * Essentially, we compute the intersection of "access" with either
  *
@@ -4724,10 +4734,21 @@ static __isl_give isl_union_map *wrapped_reference_to_access(
  * of the last_shared dimension.
  *
  * If this relation does not intersect the dataflow dependences,
- * then there is nothing we can possibly remove and we simply
- * return the input.
+ * then there is nothing we can possibly remove, unless the dataflow
+ * dependences themselves only relate a subset of the accesses.
+ * In particular, the accesses may not be involved in any dataflow
+ * dependences, either because they are uninitialized reads/dead writes
+ * or because the dataflow occurs inside a statement instance.
  *
- * Otherwise, we remove the "local" dataflow dependences from
+ * Since the computation below may break up the access relation
+ * into smaller pieces, we only perform the intersection with
+ * the non-local dependent accesses if the local pairs
+ * intersect the dataflow dependences.  Otherwise, we intersect
+ * with the universe of the non-local dependent accesses.
+ * This should at least remove accesses from statements that
+ * do not participate in any dependences.
+ *
+ * In particular, we remove the "local" dataflow dependences from
  * the set of all dataflow dependences.
  * Note that if the potential dataflow dependences are an overapproximation
  * of the actual dataflow dependences, then the result remains an
@@ -4774,13 +4795,6 @@ static __isl_give isl_union_map *remove_local_accesses(struct gpu_gen *gen,
 			isl_union_map_copy(gen->prog->scop->tagged_dep_flow));
 
 	empty = isl_union_map_is_empty(local);
-	if (empty < 0 || empty) {
-		isl_union_map_free(tagged);
-		isl_union_map_free(local);
-		if (empty < 0)
-			return isl_union_map_free(access);
-		return access;
-	}
 
 	external = isl_union_map_copy(gen->prog->scop->tagged_dep_flow);
 	external = isl_union_map_intersect_params(external,
@@ -4798,6 +4812,11 @@ static __isl_give isl_union_map *remove_local_accesses(struct gpu_gen *gen,
 		external = isl_union_map_union(external,
 				isl_union_map_copy(gen->prog->scop->live_out));
 	}
+
+	if (empty < 0)
+		external = isl_union_map_free(external);
+	else if (empty)
+		external = isl_union_map_universe(external);
 
 	access = isl_union_map_intersect(access, external);
 
