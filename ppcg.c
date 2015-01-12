@@ -522,6 +522,9 @@ static void compute_dependences(struct ppcg_scop *scop)
  * In particular, intersect ps->domain with the (parts of) iteration
  * domains that are needed to produce the output or for statement
  * iterations that call functions.
+ * Also intersect the range of the dataflow dependences with
+ * this domain such that the removed instances will no longer
+ * be considered as targets of dataflow.
  *
  * We start with the iteration domains that call functions
  * and the set of iterations that last write to an array
@@ -538,6 +541,7 @@ static void eliminate_dead_code(struct ppcg_scop *ps)
 {
 	isl_union_set *live;
 	isl_union_map *dep;
+	isl_union_map *tagger;
 
 	live = isl_union_map_domain(isl_union_map_copy(ps->live_out));
 	if (!isl_union_set_is_empty(ps->call)) {
@@ -566,7 +570,14 @@ static void eliminate_dead_code(struct ppcg_scop *ps)
 
 	isl_union_map_free(dep);
 
-	ps->domain = isl_union_set_intersect(ps->domain, live);
+	ps->domain = isl_union_set_intersect(ps->domain,
+						isl_union_set_copy(live));
+	ps->dep_flow = isl_union_map_intersect_range(ps->dep_flow,
+						isl_union_set_copy(live));
+	tagger = isl_union_map_copy(ps->tagger);
+	live = isl_union_set_apply(live, tagger);
+	ps->tagged_dep_flow = isl_union_map_intersect_range(ps->tagged_dep_flow,
+						live);
 }
 
 /* Intersect "set" with the set described by "str", taking the NULL
