@@ -1239,7 +1239,7 @@ static __isl_give isl_printer *print_opencl(__isl_take isl_printer *p,
  * derived from "output" or "input".
  *
  * We let generate_gpu do all the hard work and then let it call
- * us back for printing the AST in print_cuda.
+ * us back for printing the AST in print_opencl.
  *
  * To prepare for this printing, we first open the output files
  * and we close them after generate_gpu has finished.
