@@ -3635,21 +3635,51 @@ static __isl_give isl_ast_build *set_unroll(
 	return build;
 }
 
-/* Return a list of isl_ids of the form "prefix%d".
+/* Return an isl_id called "prefix%d", with "%d" set to "i".
+ * If an isl_id with such a name already appears among the variable names
+ * of "scop", then adjust the name to "prefix%d_%d".
  */
-static __isl_give isl_id_list *generate_names(isl_ctx *ctx,
+static __isl_give isl_id *generate_name(struct ppcg_scop *scop,
+	const char *prefix, int i)
+{
+	int j;
+	char name[16];
+	isl_ctx *ctx;
+	isl_id *id;
+	int has_name;
+
+	ctx = isl_set_get_ctx(scop->context);
+	snprintf(name, sizeof(name), "%s%d", prefix, i);
+	id = isl_id_alloc(ctx, name, NULL);
+
+	j = 0;
+	while ((has_name = isl_id_to_ast_expr_has(scop->names, id)) == 1) {
+		isl_id_free(id);
+		snprintf(name, sizeof(name), "%s%d_%d", prefix, i, j++);
+		id = isl_id_alloc(ctx, name, NULL);
+	}
+
+	return has_name < 0 ? isl_id_free(id) : id;
+}
+
+/* Return a list of "n" isl_ids of the form "prefix%d".
+ * If an isl_id with such a name already appears among the variable names
+ * of "scop", then adjust the name to "prefix%d_%d".
+ */
+static __isl_give isl_id_list *generate_names(struct ppcg_scop *scop,
 	int n, const char *prefix)
 {
 	int i;
 	char name[10];
+	isl_ctx *ctx;
 	isl_id_list *names;
 
+	ctx = isl_set_get_ctx(scop->context);
 	names = isl_id_list_alloc(ctx, n);
 	for (i = 0; i < n; ++i) {
 		isl_id *id;
 
-		snprintf(name, sizeof(name), "%s%d", prefix, i);
-		id = isl_id_alloc(ctx, name, NULL);
+		id = generate_name(scop, prefix, i);
 		names = isl_id_list_add(names, id);
 	}
 
@@ -4125,7 +4155,7 @@ static __isl_give isl_ast_node *create_domain_leaf(
 		space = isl_space_set_alloc(gen->ctx, 0, n);
 		build = set_unroll(build, space, gen->first_unroll);
 	}
-	iterators = generate_names(gen->ctx, n, "c");
+	iterators = generate_names(gen->prog->scop, n, "c");
 	build = isl_ast_build_set_iterators(build, iterators);
 	build = isl_ast_build_set_at_each_domain(build, &at_each_domain, gen);
 	tree = isl_ast_build_ast_from_schedule(build, schedule);
@@ -4282,7 +4312,7 @@ static __isl_give isl_ast_node *copy_access(struct gpu_gen *gen,
 		space = isl_space_range(isl_space_unwrap(space));
 		build = set_unroll(build, space, 0);
 	}
-	iterators = generate_names(gen->ctx, n, "c");
+	iterators = generate_names(gen->prog->scop, n, "c");
 	build = isl_ast_build_set_iterators(build, iterators);
 	build = isl_ast_build_set_at_each_domain(build, &attach_copy_stmt, gen);
 	tree = isl_ast_build_ast_from_schedule(build,
@@ -5064,7 +5094,7 @@ static __isl_give isl_ast_node *generate_kernel(struct gpu_gen *gen,
 	sched_len = 2 * (gen->shared_len - gen->tile_first) + 1;
 
 	build = set_atomic_and_unroll(build, space, sched_len);
-	iterators = generate_names(gen->ctx, sched_len, "g");
+	iterators = generate_names(gen->prog->scop, sched_len, "g");
 	build = isl_ast_build_set_iterators(build, iterators);
 	build = isl_ast_build_set_create_leaf(build, &create_kernel_leaf, gen);
 	tree = isl_ast_build_ast_from_schedule(build, schedule);
@@ -5243,7 +5273,7 @@ static __isl_give isl_ast_node *generate_host_code(struct gpu_gen *gen)
 
 	isl_options_set_ast_build_group_coscheduled(gen->ctx, 1);
 	build = isl_ast_build_from_context(isl_set_copy(gen->prog->context));
-	iterators = generate_names(gen->ctx, gen->tile_first, "h");
+	iterators = generate_names(gen->prog->scop, gen->tile_first, "h");
 	build = isl_ast_build_set_iterators(build, iterators);
 	build = isl_ast_build_set_create_leaf(build, &create_host_leaf, gen);
 	tree = isl_ast_build_ast_from_schedule(build, sched);
