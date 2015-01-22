@@ -88,6 +88,48 @@ int ppcg_extract_base_name(char *name, const char *input)
 	return len;
 }
 
+/* Collect all variable names that are in use in "scop".
+ * In particular, collect all parameters in the context and
+ * all the array names.
+ * Store these names in an isl_id_to_ast_expr by mapping
+ * them to a dummy value (0).
+ */
+static __isl_give isl_id_to_ast_expr *collect_names(struct pet_scop *scop)
+{
+	int i, n;
+	isl_ctx *ctx;
+	isl_ast_expr *zero;
+	isl_id_to_ast_expr *names;
+
+	ctx = isl_set_get_ctx(scop->context);
+
+	n = isl_set_dim(scop->context, isl_dim_param);
+
+	names = isl_id_to_ast_expr_alloc(ctx, n + scop->n_array);
+	zero = isl_ast_expr_from_val(isl_val_zero(ctx));
+
+	for (i = 0; i < n; ++i) {
+		isl_id *id;
+
+		id = isl_set_get_dim_id(scop->context, isl_dim_param, i);
+		names = isl_id_to_ast_expr_set(names,
+						id, isl_ast_expr_copy(zero));
+	}
+
+	for (i = 0; i < scop->n_array; ++i) {
+		struct pet_array *array = scop->arrays[i];
+		isl_id *id;
+
+		id = isl_set_get_tuple_id(array->extent);
+		names = isl_id_to_ast_expr_set(names,
+						id, isl_ast_expr_copy(zero));
+	}
+
+	isl_ast_expr_free(zero);
+
+	return names;
+}
+
 /* Is "stmt" not a kill statement?
  */
 static int is_not_kill(struct pet_stmt *stmt)
@@ -625,6 +667,7 @@ static void *ppcg_scop_free(struct ppcg_scop *ps)
 	isl_union_map_free(ps->schedule);
 	isl_union_map_free(ps->tagger);
 	isl_union_map_free(ps->independence);
+	isl_id_to_ast_expr_free(ps->names);
 
 	free(ps);
 
@@ -652,6 +695,7 @@ static struct ppcg_scop *ppcg_scop_from_pet_scop(struct pet_scop *scop,
 	if (!ps)
 		return NULL;
 
+	ps->names = collect_names(scop);
 	ps->options = options;
 	ps->start = pet_loc_get_start(scop->loc);
 	ps->end = pet_loc_get_end(scop->loc);
@@ -679,7 +723,7 @@ static struct ppcg_scop *ppcg_scop_from_pet_scop(struct pet_scop *scop,
 
 	if (!ps->context || !ps->domain || !ps->call || !ps->reads ||
 	    !ps->may_writes || !ps->must_writes || !ps->tagged_must_kills ||
-	    !ps->schedule || !ps->independence)
+	    !ps->schedule || !ps->independence || !ps->names)
 		return ppcg_scop_free(ps);
 
 	return ps;
