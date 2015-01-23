@@ -195,6 +195,9 @@ struct ppcg_kernel_var {
  *
  * id is the sequence number of the kernel.
  *
+ * block_ids contains the list of block identifiers for this kernel.
+ * thread_ids contains the list of thread identifiers for this kernel.
+ *
  * the first n_block elements of block_dim represent the effective size
  * of the block.
  *
@@ -216,6 +219,9 @@ struct ppcg_kernel_var {
  */
 struct ppcg_kernel {
 	int id;
+
+	isl_id_list *block_ids;
+	isl_id_list *thread_ids;
 
 	int n_block;
 	int block_dim[3];

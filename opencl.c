@@ -537,7 +537,7 @@ static __isl_give isl_printer *opencl_print_kernel_header(
 	return p;
 }
 
-/* Print a list of "n" iterators of type "type" called "prefix%d" to "p".
+/* Print a list of iterators of type "type" with names "ids" to "p".
  * Each iterator is assigned the corresponding opencl identifier returned
  * by the function "opencl_id".
  * Unlike the equivalent function in the CUDA backend which prints iterators
@@ -546,20 +546,24 @@ static __isl_give isl_printer *opencl_print_kernel_header(
  * into account any coalescing considerations.
  */
 static __isl_give isl_printer *print_iterators(__isl_take isl_printer *p,
-	const char *type, int n, const char *prefix, const char *opencl_id)
+	const char *type, __isl_keep isl_id_list *ids, const char *opencl_id)
 {
-	int i;
+	int i, n;
 
+	n = isl_id_list_n_id(ids);
 	if (n <= 0)
 		return p;
 	p = isl_printer_start_line(p);
 	p = isl_printer_print_str(p, type);
 	p = isl_printer_print_str(p, " ");
 	for (i = 0; i < n; ++i) {
+		isl_id *id;
+
 		if (i)
 			p = isl_printer_print_str(p, ", ");
-		p = isl_printer_print_str(p, prefix);
-		p = isl_printer_print_int(p, i);
+		id = isl_id_list_get_id(ids, i);
+		p = isl_printer_print_id(p, id);
+		isl_id_free(id);
 		p = isl_printer_print_str(p, " = ");
 		p = isl_printer_print_str(p, opencl_id);
 		p = isl_printer_print_str(p, "(");
@@ -575,15 +579,13 @@ static __isl_give isl_printer *print_iterators(__isl_take isl_printer *p,
 static __isl_give isl_printer *opencl_print_kernel_iterators(
 	__isl_take isl_printer *p, struct ppcg_kernel *kernel)
 {
-	int n_grid;
 	isl_ctx *ctx = isl_ast_node_get_ctx(kernel->tree);
 	const char *type;
 
 	type = isl_options_get_ast_iterator_type(ctx);
 
-	n_grid = isl_multi_pw_aff_dim(kernel->grid_size, isl_dim_set);
-	p = print_iterators(p, type, n_grid, "b", "get_group_id");
-	p = print_iterators(p, type, kernel->n_block, "t", "get_local_id");
+	p = print_iterators(p, type, kernel->block_ids, "get_group_id");
+	p = print_iterators(p, type, kernel->thread_ids, "get_local_id");
 
 	return p;
 }

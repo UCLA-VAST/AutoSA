@@ -325,31 +325,36 @@ static void print_indent(FILE *dst, int indent)
 	fprintf(dst, "%*s", indent, "");
 }
 
-/* Print a list of "n" iterators of type "type" called "prefix%d" to "out".
+/* Print a list of iterators of type "type" with names "ids" to "out".
  * Each iterator is assigned one of the cuda identifiers in cuda_dims.
  * In particular, the last iterator is assigned the x identifier
  * (the first in the list of cuda identifiers).
  */
-static void print_iterators(FILE *out, const char *type, int n,
-	const char *prefix, const char *cuda_dims[])
+static void print_iterators(FILE *out, const char *type,
+	__isl_keep isl_id_list *ids, const char *cuda_dims[])
 {
-	int i;
+	int i, n;
 
+	n = isl_id_list_n_id(ids);
 	if (n <= 0)
 		return;
 	print_indent(out, 4);
 	fprintf(out, "%s ", type);
 	for (i = 0; i < n; ++i) {
+		isl_id *id;
+
 		if (i)
 			fprintf(out, ", ");
-		fprintf(out, "%s%d = %s", prefix, i, cuda_dims[n - 1 - i]);
+		id = isl_id_list_get_id(ids, i);
+		fprintf(out, "%s%d = %s", isl_id_get_name(id), i,
+			cuda_dims[n - 1 - i]);
+		isl_id_free(id);
 	}
 	fprintf(out, ";\n");
 }
 
 static void print_kernel_iterators(FILE *out, struct ppcg_kernel *kernel)
 {
-	int n_grid;
 	isl_ctx *ctx = isl_ast_node_get_ctx(kernel->tree);
 	const char *type;
 	const char *block_dims[] = { "blockIdx.x", "blockIdx.y" };
@@ -358,9 +363,8 @@ static void print_kernel_iterators(FILE *out, struct ppcg_kernel *kernel)
 
 	type = isl_options_get_ast_iterator_type(ctx);
 
-	n_grid = isl_multi_pw_aff_dim(kernel->grid_size, isl_dim_set);
-	print_iterators(out, type, n_grid, "b", block_dims);
-	print_iterators(out, type, kernel->n_block, "t", thread_dims);
+	print_iterators(out, type, kernel->block_ids, block_dims);
+	print_iterators(out, type, kernel->thread_ids, thread_dims);
 }
 
 static __isl_give isl_printer *print_kernel_var(__isl_take isl_printer *p,

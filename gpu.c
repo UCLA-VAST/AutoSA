@@ -1018,40 +1018,44 @@ static __isl_give isl_map *wrap(__isl_take isl_space *dim, int len,
 	return isl_map_from_basic_map(bmap);
 }
 
-/* Add "n" parameters named prefix%d.
+/* Add parameters with identifiers "ids" to "set".
  */
 static __isl_give isl_set *add_params(__isl_take isl_set *set,
-	int n, const char *prefix)
+	__isl_keep isl_id_list *ids)
 {
-	int i;
+	int i, n;
 	unsigned nparam;
-	char name[20];
+
+	n = isl_id_list_n_id(ids);
 
 	nparam = isl_set_dim(set, isl_dim_param);
 	set = isl_set_add_dims(set, isl_dim_param, n);
 
 	for (i = 0; i < n; ++i) {
-		snprintf(name, sizeof(name), "%s%d", prefix, i);
-		set = isl_set_set_dim_name(set, isl_dim_param,
-					    nparam + i, name);
+		isl_id *id;
+
+		id = isl_id_list_get_id(ids, i);
+		set = isl_set_set_dim_id(set, isl_dim_param, nparam + i, id);
 	}
 
 	return set;
 }
 
-/* Equate the "n" dimensions of "set" starting at "first" to
- * freshly created parameters named prefix%d.
+/* Equate the dimensions of "set" starting at "first" to
+ * freshly created parameters with identifiers "ids".
+ * The number of equated dimensions is equal to the number of elements in "ids".
  */
 static __isl_give isl_set *parametrize(__isl_take isl_set *set,
-	int first, int n, const char *prefix)
+	int first, __isl_keep isl_id_list *ids)
 {
-	int i;
+	int i, n;
 	unsigned nparam;
 
 	nparam = isl_set_dim(set, isl_dim_param);
 
-	set = add_params(set, n, prefix);
+	set = add_params(set, ids);
 
+	n = isl_id_list_n_id(ids);
 	for (i = 0; i < n; ++i)
 		set = isl_set_equate(set, isl_dim_param, nparam + i,
 					isl_dim_set, first + i);
@@ -1060,11 +1064,11 @@ static __isl_give isl_set *parametrize(__isl_take isl_set *set,
 }
 
 /* Given a parameter space "space", create a set of dimension "len"
- * of which the "n" dimensions starting at "first" are equated to
- * freshly created parameters named prefix%d.
+ * of which the dimensions starting at "first" are equated to
+ * freshly created parameters with identifiers "ids".
  */
 static __isl_give isl_set *parametrization(__isl_take isl_space *space,
-	int len, int first, int n, const char *prefix)
+	int len, int first, __isl_keep isl_id_list *ids)
 {
 	isl_set *set;
 
@@ -1072,7 +1076,7 @@ static __isl_give isl_set *parametrization(__isl_take isl_space *space,
 	space = isl_space_add_dims(space, isl_dim_set, len);
 	set = isl_set_universe(space);
 
-	return parametrize(set, first, n, prefix);
+	return parametrize(set, first, ids);
 }
 
 /* Tile the B loops over the tile sizes and then tile/wrap
@@ -1118,7 +1122,7 @@ static __isl_give isl_union_map *parametrize_tiled_schedule(
 
 	dim = isl_union_map_get_space(sched);
 	par = parametrization(dim, gen->tiled_len,
-		gen->tile_first + gen->n_grid, gen->n_grid, "b");
+		gen->tile_first + gen->n_grid, gen->kernel->block_ids);
 	sched = isl_union_map_intersect_range(sched,
 						isl_union_set_from_set(par));
 
@@ -1149,7 +1153,7 @@ static __isl_give isl_union_map *thread_tile_schedule(struct gpu_gen *gen,
 
 	par = parametrization(dim, gen->thread_tiled_len,
 		gen->tile_first + gen->tile_len + gen->n_grid + gen->n_block,
-		gen->n_block, "t");
+		gen->kernel->thread_ids);
 	sched = isl_union_map_intersect_range(sched,
 						isl_union_set_from_set(par));
 
@@ -1294,27 +1298,28 @@ static __isl_give isl_union_map *scale_access_tile_loops(struct gpu_gen *gen,
 	return sched;
 }
 
-/* Add "len" parameters p[i] called prefix%d,
+/* Add parameters p[i] with identifiers "ids" to "set",
  * with bounds to 0 <= p[i] < size[i].
  */
 __isl_give isl_set *add_bounded_parameters(__isl_take isl_set *set,
-	int len, int *size, const char *prefix)
+	int *size, __isl_keep isl_id_list *ids)
 {
-	int i;
+	int i, len;
 	unsigned nparam;
 	isl_space *dim;
 	isl_basic_set *bset;
 	isl_constraint *c;
 	isl_local_space *ls;
-	char name[20];
 
+	len = isl_id_list_n_id(ids);
 	nparam = isl_set_dim(set, isl_dim_param);
 	set = isl_set_add_dims(set, isl_dim_param, len);
 
 	for (i = 0; i < len; ++i) {
-		snprintf(name, sizeof(name), "%s%d", prefix, i);
-		set = isl_set_set_dim_name(set, isl_dim_param,
-					    nparam + i, name);
+		isl_id *id;
+
+		id = isl_id_list_get_id(ids, i);
+		set = isl_set_set_dim_id(set, isl_dim_param, nparam + i, id);
 	}
 
 	dim = isl_set_get_space(set);
@@ -1339,7 +1344,7 @@ __isl_give isl_set *add_bounded_parameters(__isl_take isl_set *set,
 	return isl_set_intersect(set, isl_set_from_basic_set(bset));
 }
 
-/* Add "len" parameters p[i] called prefix%d and intersect "set"
+/* Add "len" parameters p[i] with identifiers "ids" and intersect "set"
  * with
  *
  *	{ : 0 <= p[i] < size[i] }
@@ -1348,22 +1353,22 @@ __isl_give isl_set *add_bounded_parameters(__isl_take isl_set *set,
  */
 static __isl_give isl_set *add_bounded_parameters_dynamic(
 	__isl_take isl_set *set, __isl_keep isl_multi_pw_aff *size,
-	const char *prefix)
+	__isl_keep isl_id_list *ids)
 {
 	int i, len;
 	unsigned nparam;
 	isl_space *space;
 	isl_local_space *ls;
-	char name[20];
 
 	len = isl_multi_pw_aff_dim(size, isl_dim_out);
 	nparam = isl_set_dim(set, isl_dim_param);
 	set = isl_set_add_dims(set, isl_dim_param, len);
 
 	for (i = 0; i < len; ++i) {
-		snprintf(name, sizeof(name), "%s%d", prefix, i);
-		set = isl_set_set_dim_name(set, isl_dim_param,
-					    nparam + i, name);
+		isl_id *id;
+
+		id = isl_id_list_get_id(ids, i);
+		set = isl_set_set_dim_id(set, isl_dim_param, nparam + i, id);
 	}
 
 	space = isl_space_params(isl_set_get_space(set));
@@ -1474,7 +1479,8 @@ static __isl_give isl_map *tile_access_schedule(struct gpu_gen *gen,
 				n_tile, gen->kernel->block_dim);
 	sched = isl_map_apply_range(sched, tiling);
 
-	par = parametrization(dim, nvar + n_tile, first + n_tile, n_tile, "t");
+	par = parametrization(dim, nvar + n_tile, first + n_tile,
+				gen->kernel->thread_ids);
 	sched = isl_map_intersect_range(sched, par);
 
 	usched = isl_union_map_from_map(sched);
@@ -2157,7 +2163,7 @@ static __isl_give isl_map *compute_privatization(struct gpu_gen *gen)
 
 	par = parametrization(dim, gen->shared_len + 2 * gen->n_block,
 		gen->tile_first + gen->tile_len + gen->n_grid + gen->n_block,
-		gen->n_block, "t");
+		gen->kernel->thread_ids);
 
 	priv = isl_map_align_params(priv, isl_set_get_space(par));
 	priv = isl_map_intersect_range(priv, par);
@@ -2257,11 +2263,13 @@ static int access_is_bijective(struct gpu_gen *gen, __isl_keep isl_map *access)
 	int res;
 	isl_set *par;
 	isl_space *space;
+	isl_id_list *ids;
 
 	access = isl_map_copy(access);
 	space = isl_space_params(isl_map_get_space(access));
-	par = parametrization(space, gen->shared_len + gen->n_block,
-				0, gen->shared_len, "s");
+	ids = ppcg_scop_generate_names(gen->prog->scop, gen->shared_len, "s");
+	par = parametrization(space, gen->shared_len + gen->n_block, 0, ids);
+	isl_id_list_free(ids);
 	access = isl_map_intersect_domain(access, par);
 	res = isl_map_is_bijective(access);
 	isl_map_free(access);
@@ -3296,10 +3304,11 @@ static __isl_give isl_multi_pw_aff *extract_grid_size(struct gpu_gen *gen,
 	grid = isl_set_add_dims(grid, isl_dim_set, gen->n_grid);
 	for (i = 0; i < gen->n_grid; ++i) {
 		int pos;
-		char name[20];
+		isl_id *id;
 
-		snprintf(name, sizeof(name), "b%d", i);
-		pos = isl_set_find_dim_by_name(grid, isl_dim_param, name);
+		id = isl_id_list_get_id(kernel->block_ids, i);
+		pos = isl_set_find_dim_by_id(grid, isl_dim_param, id);
+		isl_id_free(id);
 		assert(pos >= 0);
 		grid = isl_set_equate(grid, isl_dim_param, pos, isl_dim_set, i);
 		grid = isl_set_project_out(grid, isl_dim_param, pos, 1);
@@ -3366,10 +3375,11 @@ static void extract_block_size(struct gpu_gen *gen, struct ppcg_kernel *kernel)
 	kernel->n_block = gen->n_block;
 	for (i = 0; i < gen->n_block; ++i) {
 		int pos;
-		char name[20];
+		isl_id *id;
 
-		snprintf(name, sizeof(name), "t%d", i);
-		pos = isl_set_find_dim_by_name(block, isl_dim_param, name);
+		id = isl_id_list_get_id(kernel->thread_ids, i);
+		pos = isl_set_find_dim_by_id(block, isl_dim_param, id);
+		isl_id_free(id);
 		assert(pos >= 0);
 		block = isl_set_equate(block, isl_dim_param, pos,
 					isl_dim_set, i);
@@ -3388,6 +3398,8 @@ void ppcg_kernel_free(void *user)
 	if (!kernel)
 		return;
 
+	isl_id_list_free(kernel->block_ids);
+	isl_id_list_free(kernel->thread_ids);
 	isl_multi_pw_aff_free(kernel->grid_size);
 	isl_set_free(kernel->context);
 	isl_union_set_free(kernel->arrays);
@@ -4094,8 +4106,8 @@ static __isl_give isl_ast_node *create_domain_leaf(
 
 	space = isl_ast_build_get_schedule_space(build);
 	set = isl_set_universe(space);
-	set = add_bounded_parameters(set, gen->kernel->n_block,
-					gen->kernel->block_dim, "t");
+	set = add_bounded_parameters(set, gen->kernel->block_dim,
+					gen->kernel->thread_ids);
 	build = isl_ast_build_restrict(build, set);
 
 	n = gen->thread_tiled_len - gen->shared_len;
@@ -4239,8 +4251,8 @@ static __isl_give isl_ast_node *copy_access(struct gpu_gen *gen,
 
 	n = isl_map_dim(schedule, isl_dim_out);
 	set = isl_set_universe(isl_ast_build_get_schedule_space(build));
-	set = add_bounded_parameters(set, gen->kernel->n_block,
-					gen->kernel->block_dim, "t");
+	set = add_bounded_parameters(set, gen->kernel->block_dim,
+					gen->kernel->thread_ids);
 
 	schedule = isl_map_range_product(sched, schedule);
 
@@ -5035,7 +5047,8 @@ static __isl_give isl_ast_node *generate_kernel(struct gpu_gen *gen,
 	build = isl_ast_build_restrict(build, isl_set_copy(host_domain));
 	space = isl_ast_build_get_schedule_space(build);
 	set = isl_set_universe(isl_space_copy(space));
-	set = add_bounded_parameters_dynamic(set, grid_size, "b");
+	set = add_bounded_parameters_dynamic(set, grid_size,
+						gen->kernel->block_ids);
 	build = isl_ast_build_restrict(build, set);
 
 	schedule = body_schedule(gen, schedule);
@@ -5147,6 +5160,14 @@ static __isl_give isl_ast_node *create_host_leaf(
 	access = isl_union_map_apply_domain(access,
 					    isl_union_map_copy(local_sched));
 
+	kernel = gen->kernel = isl_calloc_type(gen->ctx, struct ppcg_kernel);
+	if (!kernel)
+		goto error;
+	kernel->block_ids = ppcg_scop_generate_names(gen->prog->scop,
+						gen->n_grid, "b");
+	kernel->thread_ids = ppcg_scop_generate_names(gen->prog->scop,
+						gen->n_block, "t");
+
 	gen->tiled_sched = tile_schedule(gen, local_sched);
 	gen->tiled_sched = parametrize_tiled_schedule(gen, gen->tiled_sched);
 	gen->tiled_sched = scale_tile_loops(gen, gen->tiled_sched);
@@ -5154,10 +5175,6 @@ static __isl_give isl_ast_node *create_host_leaf(
 	gen->local_sched = isl_union_map_copy(gen->tiled_sched);
 	gen->local_sched = thread_tile_schedule(gen, gen->local_sched);
 	gen->local_sched = scale_thread_tile_loops(gen, gen->local_sched);
-
-	kernel = gen->kernel = isl_calloc_type(gen->ctx, struct ppcg_kernel);
-	if (!kernel)
-		goto error;
 
 	kernel->id = gen->kernel_id++;
 	kernel->context = isl_union_map_params(isl_union_map_copy(schedule));
