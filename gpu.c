@@ -1020,7 +1020,7 @@ static __isl_give isl_map *wrap(__isl_take isl_space *dim, int len,
 
 /* Add "n" parameters named prefix%d.
  */
-static __isl_give isl_set *add_params( __isl_take isl_set *set,
+static __isl_give isl_set *add_params(__isl_take isl_set *set,
 	int n, const char *prefix)
 {
 	int i;
