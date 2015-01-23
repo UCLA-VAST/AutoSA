@@ -409,6 +409,20 @@ error:
 	return isl_ast_node_free(node);
 }
 
+/* Set *depth to the number of scheduling dimensions
+ * for the schedule of the first domain.
+ * We assume here that this number is the same for all domains.
+ */
+static int set_depth(__isl_take isl_map *map, void *user)
+{
+	unsigned *depth = user;
+
+	*depth = isl_map_dim(map, isl_dim_out);
+
+	isl_map_free(map);
+	return -1;
+}
+
 /* Code generate the scop 'scop' and print the corresponding C code to 'p'.
  */
 static __isl_give isl_printer *print_scop(struct ppcg_scop *scop,
@@ -421,14 +435,20 @@ static __isl_give isl_printer *print_scop(struct ppcg_scop *scop,
 	isl_ast_build *build;
 	isl_ast_print_options *print_options;
 	isl_ast_node *tree;
+	isl_id_list *iterators;
 	struct ast_build_userinfo build_info;
+	int depth;
 
 	context = isl_set_copy(scop->context);
 	domain_set = isl_union_set_copy(scop->domain);
 	schedule_map = isl_union_map_copy(scop->schedule);
 	schedule_map = isl_union_map_intersect_domain(schedule_map, domain_set);
 
+	isl_union_map_foreach_map(schedule_map, &set_depth, &depth);
+
 	build = isl_ast_build_from_context(context);
+	iterators = ppcg_scop_generate_names(scop, depth, "c");
+	build = isl_ast_build_set_iterators(build, iterators);
 	build = isl_ast_build_set_at_each_domain(build, &at_each_domain, scop);
 
 	if (options->openmp) {
