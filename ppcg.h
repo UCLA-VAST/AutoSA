@@ -100,6 +100,9 @@ struct ppcg_scop {
 	struct pet_scop *pet;
 };
 
+__isl_give isl_id_list *ppcg_scop_generate_names(struct ppcg_scop *scop,
+	int n, const char *prefix);
+
 int ppcg_transform(isl_ctx *ctx, const char *input, FILE *out,
 	struct ppcg_options *options,
 	__isl_give isl_printer *(*fn)(__isl_take isl_printer *p,

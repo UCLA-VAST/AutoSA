@@ -130,6 +130,57 @@ static __isl_give isl_id_to_ast_expr *collect_names(struct pet_scop *scop)
 	return names;
 }
 
+/* Return an isl_id called "prefix%d", with "%d" set to "i".
+ * If an isl_id with such a name already appears among the variable names
+ * of "scop", then adjust the name to "prefix%d_%d".
+ */
+static __isl_give isl_id *generate_name(struct ppcg_scop *scop,
+	const char *prefix, int i)
+{
+	int j;
+	char name[16];
+	isl_ctx *ctx;
+	isl_id *id;
+	int has_name;
+
+	ctx = isl_set_get_ctx(scop->context);
+	snprintf(name, sizeof(name), "%s%d", prefix, i);
+	id = isl_id_alloc(ctx, name, NULL);
+
+	j = 0;
+	while ((has_name = isl_id_to_ast_expr_has(scop->names, id)) == 1) {
+		isl_id_free(id);
+		snprintf(name, sizeof(name), "%s%d_%d", prefix, i, j++);
+		id = isl_id_alloc(ctx, name, NULL);
+	}
+
+	return has_name < 0 ? isl_id_free(id) : id;
+}
+
+/* Return a list of "n" isl_ids of the form "prefix%d".
+ * If an isl_id with such a name already appears among the variable names
+ * of "scop", then adjust the name to "prefix%d_%d".
+ */
+__isl_give isl_id_list *ppcg_scop_generate_names(struct ppcg_scop *scop,
+	int n, const char *prefix)
+{
+	int i;
+	char name[10];
+	isl_ctx *ctx;
+	isl_id_list *names;
+
+	ctx = isl_set_get_ctx(scop->context);
+	names = isl_id_list_alloc(ctx, n);
+	for (i = 0; i < n; ++i) {
+		isl_id *id;
+
+		id = generate_name(scop, prefix, i);
+		names = isl_id_list_add(names, id);
+	}
+
+	return names;
+}
+
 /* Is "stmt" not a kill statement?
  */
 static int is_not_kill(struct pet_stmt *stmt)
