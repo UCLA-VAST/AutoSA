@@ -267,7 +267,6 @@ static __isl_give isl_printer *print_kernel_arguments(__isl_take isl_printer *p,
 	type = isl_options_get_ast_iterator_type(prog->ctx);
 	for (i = 0; i < n; ++i) {
 		const char *name;
-		isl_id *id;
 
 		if (!first)
 			p = isl_printer_print_str(p, ", ");
