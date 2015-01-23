@@ -647,6 +647,77 @@ static __isl_give isl_printer *opencl_print_sync(__isl_take isl_printer *p,
 	return p;
 }
 
+/* Data structure containing function names for which the calls
+ * should be changed from
+ *
+ *	name(arg)
+ *
+ * to
+ *
+ *	opencl_name((type) (arg))
+ */
+static struct ppcg_opencl_fn {
+	const char *name;
+	const char *opencl_name;
+	const char *type;
+} opencl_fn[] = {
+	{ "expf",	"exp",		"float" },
+	{ "powf",	"pow",		"float" },
+	{ "sqrtf",	"sqrt",		"float" },
+};
+
+#define ARRAY_SIZE(array) (sizeof(array)/sizeof(*array))
+
+/* If the name of function called by "expr" matches any of those
+ * in ppcg_opencl_fn, then replace the call by a cast to the corresponding
+ * type in ppcg_opencl_fn and a call to corresponding OpenCL function.
+ */
+static __isl_give pet_expr *map_opencl_call(__isl_take pet_expr *expr,
+	void *user)
+{
+	const char *name;
+	int i;
+
+	name = pet_expr_call_get_name(expr);
+	for (i = 0; i < ARRAY_SIZE(opencl_fn); ++i) {
+		pet_expr *arg;
+
+		if (strcmp(name, opencl_fn[i].name))
+			continue;
+		expr = pet_expr_call_set_name(expr, opencl_fn[i].opencl_name);
+		arg = pet_expr_get_arg(expr, 0);
+		arg = pet_expr_new_cast(opencl_fn[i].type, arg);
+		expr = pet_expr_set_arg(expr, 0, arg);
+	}
+	return expr;
+}
+
+/* Print the body of a statement from the input program,
+ * for use in OpenCL code.
+ *
+ * Before calling ppcg_kernel_print_domain to print the actual statement body,
+ * we first modify this body to take into account that the output code
+ * is OpenCL code.  In particular, if the statement calls any function
+ * with a "f" suffix, then it needs to be replaced by a call to
+ * the corresponding function without suffix after casting the argument
+ * to a float.
+ */
+static __isl_give isl_printer *print_opencl_kernel_domain(
+	__isl_take isl_printer *p, struct ppcg_kernel_stmt *stmt)
+{
+	struct pet_stmt *ps;
+	pet_tree *tree;
+
+	ps = stmt->u.d.stmt->stmt;
+	tree = pet_tree_copy(ps->body);
+	ps->body = pet_tree_map_call_expr(ps->body, &map_opencl_call, NULL);
+	p = ppcg_kernel_print_domain(p, stmt);
+	pet_tree_free(ps->body);
+	ps->body = tree;
+
+	return p;
+}
+
 /* This function is called for each user statement in the AST,
  * i.e., for each kernel body statement, copy statement or sync statement.
  */
@@ -670,7 +741,7 @@ static __isl_give isl_printer *opencl_print_kernel_stmt(
 	case ppcg_kernel_sync:
 		return opencl_print_sync(p, stmt);
 	case ppcg_kernel_domain:
-		return ppcg_kernel_print_domain(p, stmt);
+		return print_opencl_kernel_domain(p, stmt);
 	}
 
 	return p;
