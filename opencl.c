@@ -537,54 +537,53 @@ static __isl_give isl_printer *opencl_print_kernel_header(
 	return p;
 }
 
-/* Unlike the equivalent function in the CUDA backend which prints iterators
+/* Print a list of "n" iterators of type "type" called "prefix%d" to "p".
+ * Each iterator is assigned the corresponding opencl identifier returned
+ * by the function "opencl_id".
+ * Unlike the equivalent function in the CUDA backend which prints iterators
  * in reverse order to promote coalescing, this function does not print
  * iterators in reverse order.  The OpenCL backend currently does not take
  * into account any coalescing considerations.
  */
+static __isl_give isl_printer *print_iterators(__isl_take isl_printer *p,
+	const char *type, int n, const char *prefix, const char *opencl_id)
+{
+	int i;
+
+	if (n <= 0)
+		return p;
+	p = isl_printer_start_line(p);
+	p = isl_printer_print_str(p, type);
+	p = isl_printer_print_str(p, " ");
+	for (i = 0; i < n; ++i) {
+		if (i)
+			p = isl_printer_print_str(p, ", ");
+		p = isl_printer_print_str(p, prefix);
+		p = isl_printer_print_int(p, i);
+		p = isl_printer_print_str(p, " = ");
+		p = isl_printer_print_str(p, opencl_id);
+		p = isl_printer_print_str(p, "(");
+		p = isl_printer_print_int(p, i);
+		p = isl_printer_print_str(p, ")");
+	}
+	p = isl_printer_print_str(p, ";");
+	p = isl_printer_end_line(p);
+
+	return p;
+}
+
 static __isl_give isl_printer *opencl_print_kernel_iterators(
 	__isl_take isl_printer *p, struct ppcg_kernel *kernel)
 {
-	int i, n_grid;
+	int n_grid;
 	isl_ctx *ctx = isl_ast_node_get_ctx(kernel->tree);
 	const char *type;
 
 	type = isl_options_get_ast_iterator_type(ctx);
 
 	n_grid = isl_multi_pw_aff_dim(kernel->grid_size, isl_dim_set);
-	if (n_grid > 0) {
-		p = isl_printer_start_line(p);
-		p = isl_printer_print_str(p, type);
-		p = isl_printer_print_str(p, " ");
-		for (i = 0; i < n_grid; ++i) {
-			if (i)
-				p = isl_printer_print_str(p, ", ");
-			p = isl_printer_print_str(p, "b");
-			p = isl_printer_print_int(p, i);
-			p = isl_printer_print_str(p, " = get_group_id(");
-			p = isl_printer_print_int(p, i);
-			p = isl_printer_print_str(p, ")");
-		}
-		p = isl_printer_print_str(p, ";");
-		p = isl_printer_end_line(p);
-	}
-
-	if (kernel->n_block > 0) {
-		p = isl_printer_start_line(p);
-		p = isl_printer_print_str(p, type);
-		p = isl_printer_print_str(p, " ");
-		for (i = 0; i < kernel->n_block; ++i) {
-			if (i)
-				p = isl_printer_print_str(p, ", ");
-			p = isl_printer_print_str(p, "t");
-			p = isl_printer_print_int(p, i);
-			p = isl_printer_print_str(p, " = get_local_id(");
-			p = isl_printer_print_int(p, i);
-			p = isl_printer_print_str(p, ")");
-		}
-		p = isl_printer_print_str(p, ";");
-		p = isl_printer_end_line(p);
-	}
+	p = print_iterators(p, type, n_grid, "b", "get_group_id");
+	p = print_iterators(p, type, kernel->n_block, "t", "get_local_id");
 
 	return p;
 }
