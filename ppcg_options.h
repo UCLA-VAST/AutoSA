@@ -50,6 +50,8 @@ struct ppcg_options {
 	int opencl_n_include_file;
 	/* Files to include. */
 	const char **opencl_include_files;
+	/* Print definitions of types in kernels. */
+	int opencl_print_kernel_types;
 	/* Embed OpenCL kernel code in host code. */
 	int opencl_embed_kernel_code;
 };

@@ -162,6 +162,12 @@ program fragment.  If the pathnames of the included files
 are relative to the current directory, then you may need
 to additionally specify the --opencl-compiler-options=-I.
 to make sure that the files can be found by the OpenCL compiler.
+The included files may contain definitions of types used by the
+generated kernels.  By default, PPCG generates definitions for
+types as needed, but these definitions may collide with those in
+the included files, as PPCG does not consider the contents of the
+included files.  The --no-opencl-print-kernel-types will prevent
+PPCG from generating type definitions.
 
 
 Processing PolyBench

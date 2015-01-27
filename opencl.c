@@ -1206,7 +1206,9 @@ static __isl_give isl_printer *print_opencl(__isl_take isl_printer *p,
 	if (any_double_elements(prog))
 		opencl->kprinter = opencl_enable_double_support(
 							opencl->kprinter);
-	opencl->kprinter = gpu_print_types(opencl->kprinter, types, prog);
+	if (opencl->options->opencl_print_kernel_types)
+		opencl->kprinter = gpu_print_types(opencl->kprinter, types,
+								prog);
 
 	if (!opencl->kprinter)
 		return isl_printer_free(p);
