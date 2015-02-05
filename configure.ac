@@ -8,6 +8,7 @@ AC_PROG_CC
 AC_PROG_LIBTOOL
 PKG_PROG_PKG_CONFIG
 
+AX_CHECK_OPENMP
 AX_CHECK_OPENCL
 if test $HAVE_OPENCL = yes; then
 	extra_tests="$extra_tests opencl_test.sh"
