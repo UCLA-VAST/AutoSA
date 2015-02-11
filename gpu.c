@@ -5535,9 +5535,9 @@ static void compute_schedule(struct gpu_gen *gen)
 	isl_schedule *schedule;
 
 	domain = isl_union_set_copy(gen->prog->scop->domain);
-	domain = isl_union_set_intersect_params(domain,
-				isl_set_copy(gen->prog->scop->context));
 	sc = isl_schedule_constraints_on_domain(isl_union_set_copy(domain));
+	sc = isl_schedule_constraints_set_context(sc,
+				isl_set_copy(gen->prog->scop->context));
 	if (gen->options->live_range_reordering) {
 		sc = isl_schedule_constraints_set_conditional_validity(sc,
 			isl_union_map_copy(gen->prog->scop->tagged_dep_flow),
