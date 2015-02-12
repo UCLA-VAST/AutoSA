@@ -31,8 +31,7 @@
  * kernel_c_name is the name of the kernel_c file.
  * kprinter is an isl_printer for the kernel file.
  * host_c is the generated source file for the host code.  kernel_c is
- * the generated source file for the kernel.  kernel_h is the generated
- * header file for the kernel.
+ * the generated source file for the kernel.
  */
 struct opencl_info {
 	struct ppcg_options *options;
@@ -44,7 +43,6 @@ struct opencl_info {
 
 	FILE *host_c;
 	FILE *kernel_c;
-	FILE *kernel_h;
 };
 
 /* Open the file called "name" for writing or print an error message.
@@ -92,38 +90,17 @@ static int opencl_open_files(struct opencl_info *info)
 	strcpy(info->kernel_c_name + len, "_kernel.cl");
 	info->kernel_c = open_or_croak(info->kernel_c_name);
 
-	strcpy(name + len, "_kernel.h");
-	info->kernel_h = open_or_croak(name);
-
-	if (!info->host_c || !info->kernel_c || !info->kernel_h)
+	if (!info->host_c || !info->kernel_c)
 		return -1;
 
 	fprintf(info->host_c, "#include <assert.h>\n");
 	fprintf(info->host_c, "#include <stdio.h>\n");
-	fprintf(info->host_c, "#include \"%s\"\n\n", ppcg_base_name(name));
+	fprintf(info->host_c, "#include \"ocl_utilities.h\"\n");
 	if (info->options->opencl_embed_kernel_code) {
 		fprintf(info->host_c, "#include \"%s\"\n\n",
 			info->kernel_c_name);
 	}
 
-	fprintf(info->kernel_h, "#if defined(__APPLE__)\n");
-	fprintf(info->kernel_h, "#include <OpenCL/opencl.h>\n");
-	fprintf(info->kernel_h, "#else\n");
-	fprintf(info->kernel_h, "#include <CL/opencl.h>\n");
-	fprintf(info->kernel_h, "#endif\n\n");
-	fprintf(info->kernel_h, "cl_device_id opencl_create_device("
-				"int use_gpu);\n");
-	fprintf(info->kernel_h, "cl_program opencl_build_program_from_string("
-				"cl_context ctx, "
-				"cl_device_id dev, const char *program_source, "
-				"size_t program_size, "
-				"const char *opencl_options);\n");
-	fprintf(info->kernel_h, "cl_program opencl_build_program_from_file("
-				"cl_context ctx, "
-				"cl_device_id dev, const char *filename, "
-				"const char *opencl_options);\n");
-	fprintf(info->kernel_h,
-		"const char *opencl_error_string(cl_int error);\n");
 	for (i = 0; i < info->options->opencl_n_include_file; ++i) {
 		info->kprinter = isl_printer_print_str(info->kprinter,
 					"#include <");
@@ -217,8 +194,6 @@ static int opencl_close_files(struct opencl_info *info)
 		r = opencl_write_kernel_file(info);
 		fclose(info->kernel_c);
 	}
-	if (info->kernel_h)
-		fclose(info->kernel_h);
 	if (info->host_c)
 		fclose(info->host_c);
 

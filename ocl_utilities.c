@@ -1,11 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
-
-#if defined(__APPLE__)
-#include <OpenCL/opencl.h>
-#else
-#include <CL/opencl.h>
-#endif
+#include "ocl_utilities.h"
 
 /* Return the OpenCL error string for a given error number.
  */

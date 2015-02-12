@@ -101,7 +101,7 @@ fi
 
 if [ $HAVE_OPENCL = "yes" ]; then
 	run_tests ppcg_opencl "--target=opencl --opencl-no-use-gpu" \
-				"$srcdir/ocl_utilities.c -lOpenCL"
+				"-I $srcdir $srcdir/ocl_utilities.c -lOpenCL"
 fi
 
 if [ $keep = "no" ]; then

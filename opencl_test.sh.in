@@ -45,8 +45,8 @@ run_tests () {
 			options="$options --opencl-compiler-options=-I."
 		fi
 		./ppcg$EXEEXT $options $i -o "$out_c" || exit
-		$CC $CFLAGS "$srcdir/ocl_utilities.c" -lOpenCL -I. "$out_c" \
-			-o "$out" || exit
+		$CC $CFLAGS -I "$srcdir" "$srcdir/ocl_utilities.c" -lOpenCL \
+			-I. "$out_c" -o "$out" || exit
 		$out || exit
 	done
 }
