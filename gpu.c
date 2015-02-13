@@ -5525,7 +5525,7 @@ static int set_untiled_len(__isl_take isl_map *map, void *user)
  * The false dependences are still added to the proximity constraints
  * for consistency with the case where live range reordering is not allowed.
  * The coincidence constraints then consist of flow dependences,
- * exernal false dependences and array order dependences.
+ * external false dependences and array order dependences.
  * The independences can be filtered out from the first two sets.
  * They have already been filtered out from the array order dependences
  * on a per array basis in collect_order_dependences.

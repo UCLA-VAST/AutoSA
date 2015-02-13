@@ -154,7 +154,7 @@ static __isl_give isl_printer *print_guarded_user(__isl_take isl_printer *p,
  *
  * We slightly abuse the AST generator to print this guard.
  * In particular, we create a trivial schedule for an iteration
- * domain with a single instance, restriced by the guard.
+ * domain with a single instance, restricted by the guard.
  */
 __isl_give isl_printer *ppcg_print_guarded(__isl_take isl_printer *p,
 	__isl_take isl_set *guard, __isl_take isl_set *context,
