@@ -346,7 +346,7 @@ static void print_iterators(FILE *out, const char *type,
 		if (i)
 			fprintf(out, ", ");
 		id = isl_id_list_get_id(ids, i);
-		fprintf(out, "%s%d = %s", isl_id_get_name(id), i,
+		fprintf(out, "%s = %s", isl_id_get_name(id),
 			cuda_dims[n - 1 - i]);
 		isl_id_free(id);
 	}
