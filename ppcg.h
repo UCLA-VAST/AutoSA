@@ -53,7 +53,9 @@ int ppcg_extract_base_name(char *name, const char *input);
  * "dep_forced" represents the validity constraints that should be enforced
  *	even when live-range reordering is used.
  *	In particular, these constraints ensure that all live-in
- *	accesses remain live-in and that all live-out accesses remain live-out.
+ *	accesses remain live-in and that all live-out accesses remain live-out
+ *	and that multiple potential sources for the same read are
+ *	executed in the original order.
  * "dep_order"/"tagged_dep_order" represents the order dependences between
  *	the live range intervals in "dep_flow"/"tagged_dep_flow".
  *	It is only used if the live_range_reordering
