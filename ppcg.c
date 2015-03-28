@@ -486,11 +486,13 @@ static void compute_order_dependences(struct ppcg_scop *ps,
 	ps->tagged_dep_order = shared_access;
 }
 
-/* Compute the external false dependences of the program represented by "scop"
- * in case live range reordering is allowed.
+/* Compute those validity dependences of the program represented by "scop"
+ * that should be unconditionally enforced even when live-range reordering
+ * is used.
  * "before" contains all pairs of statement iterations where
  * the first is executed before the second according to the original schedule.
  *
+ * In particular, compute the external false dependences.
  * The anti-dependences are already taken care of by the order dependences.
  * The external false dependences are only used to ensure that live-in and
  * live-out data is not overwritten by any writes inside the scop.
@@ -509,7 +511,7 @@ static void compute_order_dependences(struct ppcg_scop *ps,
  * an overapproximation.  There may therefore be potential writes
  * before a live-in access and after a live-out access.
  */
-static void compute_external_false_dependences(struct ppcg_scop *ps,
+static void compute_forced_dependences(struct ppcg_scop *ps,
 	__isl_take isl_union_map *before)
 {
 	isl_union_map *shared_access;
@@ -522,13 +524,13 @@ static void compute_external_false_dependences(struct ppcg_scop *ps,
 	shared_access = isl_union_map_copy(ps->may_writes);
 	shared_access = isl_union_map_apply_range(shared_access, exposed);
 
-	ps->dep_external = shared_access;
+	ps->dep_forced = shared_access;
 
 	live_in = isl_union_map_apply_range(isl_union_map_copy(ps->live_in),
 		    isl_union_map_reverse(isl_union_map_copy(ps->may_writes)));
 
-	ps->dep_external = isl_union_map_union(ps->dep_external, live_in);
-	ps->dep_external = isl_union_map_intersect(ps->dep_external, before);
+	ps->dep_forced = isl_union_map_union(ps->dep_forced, live_in);
+	ps->dep_forced = isl_union_map_intersect(ps->dep_forced, before);
 }
 
 /* Compute the dependences of the program represented by "scop"
@@ -548,7 +550,7 @@ static void compute_live_range_reordering_dependences(struct ppcg_scop *ps)
 
 	compute_tagged_flow_dep(ps);
 	compute_order_dependences(ps, isl_union_map_copy(before));
-	compute_external_false_dependences(ps, before);
+	compute_forced_dependences(ps, before);
 }
 
 /* Compute the potential flow dependences and the potential live in
@@ -723,7 +725,7 @@ static void *ppcg_scop_free(struct ppcg_scop *ps)
 	isl_union_map_free(ps->tagged_dep_flow);
 	isl_union_map_free(ps->dep_flow);
 	isl_union_map_free(ps->dep_false);
-	isl_union_map_free(ps->dep_external);
+	isl_union_map_free(ps->dep_forced);
 	isl_union_map_free(ps->tagged_dep_order);
 	isl_union_map_free(ps->dep_order);
 	isl_schedule_free(ps->schedule);

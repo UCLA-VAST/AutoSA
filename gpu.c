@@ -4243,7 +4243,7 @@ static void compute_schedule(struct gpu_gen *gen)
 		proximity = isl_union_map_copy(gen->prog->scop->dep_flow);
 		validity = isl_union_map_copy(proximity);
 		validity = isl_union_map_union(validity,
-			    isl_union_map_copy(gen->prog->scop->dep_external));
+			    isl_union_map_copy(gen->prog->scop->dep_forced));
 		proximity = isl_union_map_union(proximity,
 			    isl_union_map_copy(gen->prog->scop->dep_false));
 		coincidence = isl_union_map_copy(validity);
