@@ -3765,10 +3765,28 @@ static __isl_give isl_set *extract_context(__isl_keep isl_schedule_node *node,
 	isl_union_map *schedule;
 	isl_union_set *schedule_domain;
 	isl_set *context;
+	int empty;
 
 	schedule = isl_schedule_node_get_prefix_schedule_relation(node);
 	schedule_domain = isl_union_map_range(schedule);
-	context = isl_set_from_union_set(schedule_domain);
+	empty = isl_union_set_is_empty(schedule_domain);
+	if (empty < 0) {
+		isl_union_set_free(schedule_domain);
+		return NULL;
+	}
+	if (empty) {
+		int depth;
+		isl_space *space;
+
+		space = isl_union_set_get_space(schedule_domain);
+		isl_union_set_free(schedule_domain);
+		space = isl_space_set_from_params(space);
+		depth = isl_schedule_node_get_schedule_depth(node);
+		space = isl_space_add_dims(space, isl_dim_set, depth);
+		context = isl_set_empty(space);
+	} else {
+		context = isl_set_from_union_set(schedule_domain);
+	}
 	context = isl_set_intersect_params(context,
 					    isl_set_copy(prog->context));
 
