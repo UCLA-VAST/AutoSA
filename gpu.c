@@ -2396,14 +2396,14 @@ static int any_sync_writes_in_group(struct ppcg_kernel *kernel,
 }
 
 /* Collect the references to all writes in "kernel" that write directly
- * to global memory, i.e., that are not mapped to private or shared memory.
+ * to global or shared memory, i.e., that are not mapped to private memory.
  * Each reference is represented by a universe set in a space
  *
  *	[S[i,j] -> R[]]
  *
  * with S[i,j] the statement instance space and R[] the array reference.
  */
-static __isl_give isl_union_set *collect_global_tagged_writes(
+static __isl_give isl_union_set *collect_non_private_tagged_writes(
 	struct ppcg_kernel *kernel)
 {
 	isl_union_set *writes;
@@ -2420,7 +2420,7 @@ static __isl_give isl_union_set *collect_global_tagged_writes(
 
 			if (!group->write)
 				continue;
-			if (group->private_tile || group->shared_tile)
+			if (group->private_tile)
 				continue;
 			writes_ij = group_tagged_writes(group);
 			writes = isl_union_set_union(writes, writes_ij);
@@ -2433,7 +2433,7 @@ static __isl_give isl_union_set *collect_global_tagged_writes(
 /* Are there any direct writes to global memory that require
  * synchronization?
  */
-static int any_global_sync_writes(struct ppcg_kernel *kernel)
+static int any_global_or_shared_sync_writes(struct ppcg_kernel *kernel)
 {
 	isl_union_set *writes;
 	int empty, disjoint;
@@ -2444,7 +2444,7 @@ static int any_global_sync_writes(struct ppcg_kernel *kernel)
 	if (empty)
 		return 0;
 
-	writes = collect_global_tagged_writes(kernel);
+	writes = collect_non_private_tagged_writes(kernel);
 	disjoint = isl_union_set_is_disjoint(kernel->sync_writes, writes);
 	isl_union_set_free(writes);
 
@@ -2862,7 +2862,15 @@ static __isl_give isl_schedule_node *unroll(__isl_take isl_schedule_node *node)
  * after the core computation of "kernel" at the level of the band
  * that is mapped to threads, except if that level is equal to
  * that of the band that is mapped to blocks or if there are no writes
- * to global memory in the core computation that require synchronization.
+ * to global or shared memory in the core computation that require
+ * synchronization.
+ * If there are any writes to shared memory and the shared memory
+ * copying is performed at the same level, then synchronization
+ * is needed between the core and the copying anyway, so we might
+ * as well add it here.  If the copying is performed at a higher
+ * level, then different iterations of intermediate schedule dimensions
+ * may have a different mapping from between shared memory elements and
+ * threads, such that synchronization is required after the core.
  * "node" is assumed to point to the kernel node.
  */
 static __isl_give isl_schedule_node *add_sync(struct ppcg_kernel *kernel,
@@ -2871,7 +2879,7 @@ static __isl_give isl_schedule_node *add_sync(struct ppcg_kernel *kernel,
 	int kernel_depth;
 	int need_sync;
 
-	need_sync = any_global_sync_writes(kernel);
+	need_sync = any_global_or_shared_sync_writes(kernel);
 	if (need_sync < 0)
 		return isl_schedule_node_free(node);
 	if (!need_sync)
