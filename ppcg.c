@@ -597,11 +597,41 @@ static void compute_forced_dependences(struct ppcg_scop *ps,
 	ps->dep_forced = isl_union_map_union(ps->dep_forced, shared_sink);
 }
 
+/* Remove independence from the tagged flow dependences.
+ * Since the user has guaranteed that source and sink of an independence
+ * can be executed in any order, there cannot be a flow dependence
+ * between them, so they can be removed from the set of flow dependences.
+ * However, if the source of such a flow dependence is a must write,
+ * then it may have killed other potential sources, which would have
+ * to be recovered if we were to remove those flow dependences.
+ * We therefore keep the flow dependences that originate in a must write,
+ * even if it corresponds to a known independence.
+ */
+static void remove_independences_from_tagged_flow(struct ppcg_scop *ps)
+{
+	isl_union_map *tf;
+	isl_union_set *indep;
+	isl_union_set *mw;
+
+	tf = isl_union_map_copy(ps->tagged_dep_flow);
+	tf = isl_union_map_zip(tf);
+	indep = isl_union_map_wrap(isl_union_map_copy(ps->independence));
+	tf = isl_union_map_intersect_domain(tf, indep);
+	tf = isl_union_map_zip(tf);
+	mw = isl_union_map_domain(isl_union_map_copy(ps->tagged_must_writes));
+	tf = isl_union_map_subtract_domain(tf, mw);
+	ps->tagged_dep_flow = isl_union_map_subtract(ps->tagged_dep_flow, tf);
+}
+
 /* Compute the dependences of the program represented by "scop"
  * in case live range reordering is allowed.
  *
  * We compute the actual live ranges and the corresponding order
  * false dependences.
+ *
+ * The independences are removed from the flow dependences
+ * (provided the source is not a must-write) as well as
+ * from the external false dependences.
  */
 static void compute_live_range_reordering_dependences(struct ppcg_scop *ps)
 {
@@ -612,8 +642,12 @@ static void compute_live_range_reordering_dependences(struct ppcg_scop *ps)
 	before = isl_union_map_lex_lt_union_map(schedule,
 			isl_union_map_copy(schedule));
 
-	compute_tagged_flow_dep(ps);
+	compute_tagged_flow_dep_only(ps);
+	remove_independences_from_tagged_flow(ps);
+	derive_flow_dep_from_tagged_flow_dep(ps);
 	compute_order_dependences(ps, isl_union_map_copy(before));
+	before = isl_union_map_subtract(before,
+					isl_union_map_copy(ps->independence));
 	compute_forced_dependences(ps, before);
 }
 
