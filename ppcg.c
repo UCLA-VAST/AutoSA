@@ -391,13 +391,8 @@ static void compute_live_out(struct ppcg_scop *ps)
 	ps->live_out = project_out_tags(exposed);
 }
 
-/* Compute the flow dependences and the live_in accesses and store
- * the results in ps->dep_flow and ps->live_in.
- * A copy of the flow dependences, tagged with the reference tags
- * is stored in ps->tagged_dep_flow.
- *
- * We first compute ps->tagged_dep_flow, i.e., the tagged flow dependences
- * and then project out the tags.
+/* Compute the tagged flow dependences and the live_in accesses and store
+ * the results in ps->tagged_dep_flow and ps->live_in.
  *
  * We allow both the must writes and the must kills to serve as
  * definite sources such that a subsequent read would not depend
@@ -409,7 +404,7 @@ static void compute_live_out(struct ppcg_scop *ps)
  * This is also useful for the dead code elimination, which assumes
  * the flow sources are non-kill instances.
  */
-static void compute_tagged_flow_dep(struct ppcg_scop *ps)
+static void compute_tagged_flow_dep_only(struct ppcg_scop *ps)
 {
 	isl_union_pw_multi_aff *tagger;
 	isl_schedule *schedule;
@@ -438,11 +433,32 @@ static void compute_tagged_flow_dep(struct ppcg_scop *ps)
 	tagged_flow = isl_union_map_subtract_domain(tagged_flow,
 				isl_union_map_domain(kills));
 	ps->tagged_dep_flow = tagged_flow;
-	ps->dep_flow = isl_union_map_copy(ps->tagged_dep_flow);
-	ps->dep_flow = isl_union_map_factor_domain(ps->dep_flow);
 	live_in = isl_union_flow_get_may_no_source(flow);
 	ps->live_in = project_out_tags(live_in);
 	isl_union_flow_free(flow);
+}
+
+/* Compute ps->dep_flow from ps->tagged_dep_flow
+ * by projecting out the reference tags.
+ */
+static void derive_flow_dep_from_tagged_flow_dep(struct ppcg_scop *ps)
+{
+	ps->dep_flow = isl_union_map_copy(ps->tagged_dep_flow);
+	ps->dep_flow = isl_union_map_factor_domain(ps->dep_flow);
+}
+
+/* Compute the flow dependences and the live_in accesses and store
+ * the results in ps->dep_flow and ps->live_in.
+ * A copy of the flow dependences, tagged with the reference tags
+ * is stored in ps->tagged_dep_flow.
+ *
+ * We first compute ps->tagged_dep_flow, i.e., the tagged flow dependences
+ * and then project out the tags.
+ */
+static void compute_tagged_flow_dep(struct ppcg_scop *ps)
+{
+	compute_tagged_flow_dep_only(ps);
+	derive_flow_dep_from_tagged_flow_dep(ps);
 }
 
 /* Compute the order dependences that prevent the potential live ranges
