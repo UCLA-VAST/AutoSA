@@ -405,7 +405,7 @@ static void compute_live_out(struct ppcg_scop *ps)
  * a must kill as source reflect possibly uninitialized reads.
  * No dependences need to be introduced to protect such reads
  * (other than those imposed by potential flows from may writes
- * that follow the kill).  We therefore those flow dependences.
+ * that follow the kill).  We therefore remove those flow dependences.
  * This is also useful for the dead code elimination, which assumes
  * the flow sources are non-kill instances.
  */
