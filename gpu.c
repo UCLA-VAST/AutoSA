@@ -404,6 +404,9 @@ __isl_give isl_set *gpu_array_positive_size_guard(struct gpu_array_info *array)
 	isl_space *space;
 	isl_set *guard;
 
+	if (!array)
+		return NULL;
+
 	space = isl_space_params(isl_space_copy(array->space));
 	guard = isl_set_universe(space);
 
