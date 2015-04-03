@@ -3972,6 +3972,9 @@ static char *concat(isl_ctx *ctx, const char *a, const char *b)
  * of which the tuple id has name "<prefix>_<name of array>" and a user
  * pointer pointing to the array (gpu_array_info).
  *
+ * If the array is local to "prog", then make sure it will be declared
+ * in the host code.
+ *
  * Return the list of these universe sets.
  */
 static __isl_give isl_union_set_list *create_copy_filters(struct gpu_prog *prog,
@@ -4005,6 +4008,9 @@ static __isl_give isl_union_set_list *create_copy_filters(struct gpu_prog *prog,
 		}
 		if (empty)
 			continue;
+
+		if (array->local)
+			array->declare_local = 1;
 
 		name = concat(ctx, prefix, array->name);
 		id = name ? isl_id_alloc(ctx, name, array) : NULL;

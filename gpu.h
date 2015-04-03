@@ -40,6 +40,8 @@ struct gpu_array_info {
 
 	/* Is the array local to the scop? */
 	int local;
+	/* Is the array local and should it be declared on the host? */
+	int declare_local;
 
 	/* Should the array be linearized? */
 	int linearize;

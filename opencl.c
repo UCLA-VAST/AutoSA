@@ -1242,6 +1242,7 @@ static __isl_give isl_printer *print_opencl(__isl_take isl_printer *p,
 
 	p = opencl_print_host_macros(p);
 
+	p = gpu_print_local_declarations(p, prog);
 	p = opencl_declare_device_arrays(p, prog);
 	p = opencl_setup(p, opencl->input, opencl);
 	p = opencl_allocate_device_arrays(p, prog);

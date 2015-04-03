@@ -3,6 +3,9 @@
 
 #include "gpu.h"
 
+__isl_give isl_printer *gpu_print_local_declarations(__isl_take isl_printer *p,
+	struct gpu_prog *prog);
+
 __isl_give isl_printer *gpu_print_types(__isl_take isl_printer *p,
 	struct gpu_types *types, struct gpu_prog *prog);
 

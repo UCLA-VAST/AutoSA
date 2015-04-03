@@ -664,6 +664,7 @@ static __isl_give isl_printer *print_cuda(__isl_take isl_printer *p,
 
 	p = print_cuda_macros(p);
 
+	p = gpu_print_local_declarations(p, prog);
 	p = declare_device_arrays(p, prog);
 	p = allocate_device_arrays(p, prog);
 

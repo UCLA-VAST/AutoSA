@@ -12,7 +12,28 @@
 #include <isl/aff.h>
 
 #include "gpu_print.h"
+#include "print.h"
 #include "schedule.h"
+
+/* Print declarations to "p" for arrays that are local to "prog"
+ * but that are used on the host and therefore require a declaration.
+ */
+__isl_give isl_printer *gpu_print_local_declarations(__isl_take isl_printer *p,
+	struct gpu_prog *prog)
+{
+	int i;
+
+	if (!prog)
+		return isl_printer_free(p);
+
+	for (i = 0; i < prog->n_array; ++i) {
+		if (!prog->array[i].declare_local)
+			continue;
+		p = ppcg_print_declaration(p, prog->scop->pet->arrays[i]);
+	}
+
+	return p;
+}
 
 static int print_macro(enum isl_ast_op_type type, void *user)
 {
