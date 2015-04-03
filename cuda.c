@@ -237,14 +237,12 @@ static __isl_give isl_printer *print_kernel_arguments(__isl_take isl_printer *p,
 	const char *type;
 
 	for (i = 0; i < prog->n_array; ++i) {
-		isl_set *arr;
-		int empty;
+		int required;
 
-		space = isl_space_copy(prog->array[i].space);
-		arr = isl_union_set_extract_set(kernel->arrays, space);
-		empty = isl_set_plain_is_empty(arr);
-		isl_set_free(arr);
-		if (empty)
+		required = ppcg_kernel_requires_array_argument(kernel, i);
+		if (required < 0)
+			return isl_printer_free(p);
+		if (!required)
 			continue;
 
 		if (!first)

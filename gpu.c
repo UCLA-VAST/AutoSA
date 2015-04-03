@@ -1319,6 +1319,25 @@ static struct ppcg_kernel *ppcg_kernel_create_local_arrays(
 	return kernel;
 }
 
+/* Does "kernel" need to be passed an argument corresponding to array "i"?
+ *
+ * If the array is not accessed by the kernel at all, then it does
+ * not need to be passed as an argument.
+ */
+int ppcg_kernel_requires_array_argument(struct ppcg_kernel *kernel, int i)
+{
+	isl_space *space;
+	isl_set *arr;
+	int empty;
+
+	space = isl_space_copy(kernel->array[i].array->space);
+	arr = isl_union_set_extract_set(kernel->arrays, space);
+	empty = isl_set_plain_is_empty(arr);
+	isl_set_free(arr);
+
+	return empty < 0 ? empty : !empty;
+}
+
 /* Find the element in gen->stmt that has the given "id".
  * Return NULL if no such gpu_stmt can be found.
  */
