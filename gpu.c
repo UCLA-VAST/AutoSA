@@ -402,6 +402,21 @@ int gpu_array_is_read_only_scalar(struct gpu_array_info *array)
 	return array->read_only_scalar;
 }
 
+/* Does "array" need to be allocated on the device?
+ * If it is a read-only scalar, then it will be passed as an argument
+ * to the kernel and therefore does not require any allocation.
+ * If it is not accessed at all, then it does not require any allocation
+ * either.
+ */
+int gpu_array_requires_device_allocation(struct gpu_array_info *array)
+{
+	if (gpu_array_is_read_only_scalar(array))
+		return 0;
+	if (!array->accessed)
+		return 0;
+	return 1;
+}
+
 /* Return the set of parameter values for which the array has a positive
  * size in all dimensions.
  * If the sizes are only valid for some parameter values, then those

@@ -227,9 +227,7 @@ static __isl_give isl_printer *opencl_declare_device_arrays(
 	int i;
 
 	for (i = 0; i < prog->n_array; ++i) {
-		if (gpu_array_is_read_only_scalar(&prog->array[i]))
-			continue;
-		if (!prog->array[i].accessed)
+		if (!gpu_array_requires_device_allocation(&prog->array[i]))
 			continue;
 		p = isl_printer_start_line(p);
 		p = isl_printer_print_str(p, "cl_mem dev_");
@@ -305,9 +303,7 @@ static __isl_give isl_printer *opencl_allocate_device_arrays(
 	for (i = 0; i < prog->n_array; ++i) {
 		struct gpu_array_info *array = &prog->array[i];
 
-		if (gpu_array_is_read_only_scalar(array))
-			continue;
-		if (!array->accessed)
+		if (!gpu_array_requires_device_allocation(array))
 			continue;
 
 		p = allocate_device_array(p, array);
@@ -1211,9 +1207,7 @@ static __isl_give isl_printer *opencl_release_device_arrays(
 
 	for (i = 0; i < prog->n_array; ++i) {
 		struct gpu_array_info *array = &prog->array[i];
-		if (gpu_array_is_read_only_scalar(array))
-			continue;
-		if (!array->accessed)
+		if (!gpu_array_requires_device_allocation(array))
 			continue;
 
 		p = release_device_array(p, array);
