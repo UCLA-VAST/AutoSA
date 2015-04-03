@@ -68,6 +68,29 @@ static __isl_give isl_printer *print_extent(__isl_take isl_printer *p,
 	return p;
 }
 
+/* Print a declaration for array "array" to "p".
+ */
+__isl_give isl_printer *ppcg_print_declaration(__isl_take isl_printer *p,
+	struct pet_array *array)
+{
+	const char *name;
+
+	if (!array)
+		return isl_printer_free(p);
+
+	name = isl_set_get_tuple_name(array->extent);
+
+	p = isl_printer_start_line(p);
+	p = isl_printer_print_str(p, array->element_type);
+	p = isl_printer_print_str(p, " ");
+	p = isl_printer_print_str(p, name);
+	p = print_extent(p, array->extent);
+	p = isl_printer_print_str(p, ";");
+	p = isl_printer_end_line(p);
+
+	return p;
+}
+
 /* Print declarations for the arrays in "scop" that are declared
  * and that are exposed (if exposed == 1) or not exposed (if exposed == 0).
  */
@@ -81,22 +104,13 @@ static __isl_give isl_printer *print_declarations(__isl_take isl_printer *p,
 
 	for (i = 0; i < scop->pet->n_array; ++i) {
 		struct pet_array *array = scop->pet->arrays[i];
-		const char *name;
 
 		if (!array->declared)
 			continue;
 		if (array->exposed != exposed)
 			continue;
 
-		name = isl_set_get_tuple_name(array->extent);
-
-		p = isl_printer_start_line(p);
-		p = isl_printer_print_str(p, array->element_type);
-		p = isl_printer_print_str(p, " ");
-		p = isl_printer_print_str(p, name);
-		p = print_extent(p, array->extent);
-		p = isl_printer_print_str(p, ";");
-		p = isl_printer_end_line(p);
+		p = ppcg_print_declaration(p, array);
 	}
 
 	return p;
