@@ -105,6 +105,7 @@ struct ppcg_scop {
 	struct pet_scop *pet;
 };
 
+int ppcg_scop_any_hidden_declarations(struct ppcg_scop *scop);
 __isl_give isl_id_list *ppcg_scop_generate_names(struct ppcg_scop *scop,
 	int n, const char *prefix);
 

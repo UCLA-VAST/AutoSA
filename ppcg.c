@@ -89,6 +89,24 @@ int ppcg_extract_base_name(char *name, const char *input)
 	return len;
 }
 
+/* Does "scop" refer to any arrays that are declared, but not
+ * exposed to the code after the scop?
+ */
+int ppcg_scop_any_hidden_declarations(struct ppcg_scop *scop)
+{
+	int i;
+
+	if (!scop)
+		return 0;
+
+	for (i = 0; i < scop->pet->n_array; ++i)
+		if (scop->pet->arrays[i]->declared &&
+		    !scop->pet->arrays[i]->exposed)
+			return 1;
+
+	return 0;
+}
+
 /* Collect all variable names that are in use in "scop".
  * In particular, collect all parameters in the context and
  * all the array names.
