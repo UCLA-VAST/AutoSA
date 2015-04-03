@@ -43,6 +43,9 @@ struct gpu_array_info {
 	/* Is the array local and should it be declared on the host? */
 	int declare_local;
 
+	/* Is the corresponding global device memory accessed in any way? */
+	int global;
+
 	/* Should the array be linearized? */
 	int linearize;
 

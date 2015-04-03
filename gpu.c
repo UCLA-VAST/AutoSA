@@ -405,14 +405,14 @@ int gpu_array_is_read_only_scalar(struct gpu_array_info *array)
 /* Does "array" need to be allocated on the device?
  * If it is a read-only scalar, then it will be passed as an argument
  * to the kernel and therefore does not require any allocation.
- * If it is not accessed at all, then it does not require any allocation
- * either.
+ * If this device memory is not accessed at all, then it does not
+ * need to be allocated either.
  */
 int gpu_array_requires_device_allocation(struct gpu_array_info *array)
 {
 	if (gpu_array_is_read_only_scalar(array))
 		return 0;
-	if (!array->accessed)
+	if (!array->global)
 		return 0;
 	return 1;
 }
@@ -971,6 +971,7 @@ static void mark_global_arrays(struct ppcg_kernel *kernel)
 				continue;
 
 			local->global = 1;
+			local->array->global = 1;
 			break;
 		}
 	}
@@ -3147,6 +3148,7 @@ static __isl_give isl_schedule_node *add_copies_group_private(
 		return gpu_tree_move_up_to_kernel(node);
 	}
 
+	group->array->global = 1;
 	group->local_array->global = 1;
 
 	from_access = create_from_access(kernel->ctx, group, read);
@@ -3295,6 +3297,7 @@ static __isl_give isl_schedule_node *add_copies_group_shared(
 		return gpu_tree_move_up_to_kernel(node);
 	}
 
+	group->array->global = 1;
 	group->local_array->global = 1;
 
 	from_access = create_from_access(kernel->ctx, group, read);
@@ -4338,6 +4341,7 @@ static __isl_give isl_union_set_list *create_copy_filters(struct gpu_prog *prog,
 		if (empty)
 			continue;
 
+		array->global = 1;
 		if (array->local)
 			array->declare_local = 1;
 
