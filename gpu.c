@@ -938,6 +938,29 @@ static void check_shared_memory_bound(struct ppcg_kernel *kernel)
 	isl_val_free(left);
 }
 
+/* Mark all arrays of "kernel" that have an array reference group
+ * that is not mapped to private or shared memory as
+ * accessing the corresponding global device memory.
+ */
+static void mark_global_arrays(struct ppcg_kernel *kernel)
+{
+	int i, j;
+
+	for (i = 0; i < kernel->n_array; ++i) {
+		struct gpu_local_array_info *local = &kernel->array[i];
+
+		if (local->global)
+			continue;
+		for (j = 0; j < local->n_group; ++j) {
+			if (gpu_array_ref_group_tile(local->groups[j]))
+				continue;
+
+			local->global = 1;
+			break;
+		}
+	}
+}
+
 /* Compute a tiling for all the array reference groups in "kernel".
  */
 static void compute_group_tilings(struct ppcg_kernel *kernel)
@@ -1321,21 +1344,11 @@ static struct ppcg_kernel *ppcg_kernel_create_local_arrays(
 
 /* Does "kernel" need to be passed an argument corresponding to array "i"?
  *
- * If the array is not accessed by the kernel at all, then it does
- * not need to be passed as an argument.
+ * The argument is only needed if the kernel accesses this device memory.
  */
 int ppcg_kernel_requires_array_argument(struct ppcg_kernel *kernel, int i)
 {
-	isl_space *space;
-	isl_set *arr;
-	int empty;
-
-	space = isl_space_copy(kernel->array[i].array->space);
-	arr = isl_union_set_extract_set(kernel->arrays, space);
-	empty = isl_set_plain_is_empty(arr);
-	isl_set_free(arr);
-
-	return empty < 0 ? empty : !empty;
+	return kernel->array[i].global;
 }
 
 /* Find the element in gen->stmt that has the given "id".
@@ -3119,6 +3132,8 @@ static __isl_give isl_schedule_node *add_copies_group_private(
 		return gpu_tree_move_up_to_kernel(node);
 	}
 
+	group->local_array->global = 1;
+
 	from_access = create_from_access(kernel->ctx, group, read);
 	space = isl_space_domain(isl_multi_aff_get_space(from_access));
 	access = isl_union_map_preimage_range_multi_aff(access, from_access);
@@ -3264,6 +3279,8 @@ static __isl_give isl_schedule_node *add_copies_group_shared(
 			return isl_schedule_node_free(node);
 		return gpu_tree_move_up_to_kernel(node);
 	}
+
+	group->local_array->global = 1;
 
 	from_access = create_from_access(kernel->ctx, group, read);
 
@@ -3666,6 +3683,7 @@ static __isl_give isl_schedule_node *create_kernel(struct gpu_gen *gen,
 	isl_set_free(host_domain);
 
 	check_shared_memory_bound(kernel);
+	mark_global_arrays(kernel);
 	compute_group_tilings(kernel);
 
 	node = gpu_tree_move_down_to_thread(node, kernel->core);

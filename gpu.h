@@ -60,6 +60,8 @@ struct gpu_array_info {
  * The "n_group" "groups" are the reference groups associated to the array.
  * If "force_private" is set, then the array (in practice a scalar)
  * must be mapped to a register.
+ * "global" is set if the global device memory corresponding
+ * to this array is accessed by the kernel.
  * For each index i with 0 <= i < n_index,
  * bound[i] is equal to array->bound[i] specialized to the current kernel.
  */
@@ -70,6 +72,7 @@ struct gpu_local_array_info {
 	struct gpu_array_ref_group **groups;
 
 	int force_private;
+	int global;
 
 	unsigned n_index;
 	isl_pw_aff_list *bound;
