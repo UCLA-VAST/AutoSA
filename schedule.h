@@ -1,6 +1,13 @@
 #ifndef _SCHEDULE_H
 #define _SCHEDULE_H
 
+#include <isl/id.h>
+#include <isl/set_type.h>
+#include <isl/map_type.h>
+#include <isl/union_map_type.h>
+
+#include <pet.h>
+
 /* An access to an outer array element or an iterator.
  * Accesses to iterators have an access relation that maps to an unnamed space.
  * An access may be both read and write.
