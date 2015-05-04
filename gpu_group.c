@@ -1,3 +1,4 @@
+#include <isl/constraint.h>
 #include <isl/ilp.h>
 
 #include "gpu_array_tile.h"
