@@ -62,6 +62,7 @@ static FILE *get_output_file(const char *input, const char *output)
 	const char *ext;
 	const char ppcg_marker[] = ".ppcg";
 	int len;
+	FILE *file;
 
 	len = ppcg_extract_base_name(name, input);
 
@@ -72,7 +73,13 @@ static FILE *get_output_file(const char *input, const char *output)
 	if (!output)
 		output = name;
 
-	return fopen(output, "w");
+	file = fopen(output, "w");
+	if (!file) {
+		fprintf(stderr, "Unable to open '%s' for writing\n", output);
+		return NULL;
+	}
+
+	return file;
 }
 
 /* Data used to annotate for nodes in the ast.
@@ -532,6 +539,8 @@ int generate_cpu(isl_ctx *ctx, struct ppcg_options *options,
 	int r;
 
 	output_file = get_output_file(input, output);
+	if (!output_file)
+		return -1;
 
 	r = ppcg_transform(ctx, input, output_file, options,
 					&print_cpu_wrap, options);
