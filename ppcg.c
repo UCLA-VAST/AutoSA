@@ -463,8 +463,6 @@ static void compute_tagged_flow_dep(struct ppcg_scop *ps)
 
 /* Compute the order dependences that prevent the potential live ranges
  * from overlapping.
- * "before" contains all pairs of statement iterations where
- * the first is executed before the second according to the original schedule.
  *
  * In particular, construct a union of relations
  *
@@ -494,31 +492,42 @@ static void compute_tagged_flow_dep(struct ppcg_scop *ps)
  * Note that dead code elimination should have removed most of these
  * dead writes, but the dead code elimination may not remove all dead writes,
  * so we need to consider them to be safe.
+ *
+ * The order dependences are computed by computing the "dataflow"
+ * from the above unmatched writes and the reads to the may writes.
+ * The unmatched writes and the reads are treated as may sources
+ * such that they would not kill order dependences from earlier
+ * such writes and reads.
  */
-static void compute_order_dependences(struct ppcg_scop *ps,
-	__isl_take isl_union_map *before)
+static void compute_order_dependences(struct ppcg_scop *ps)
 {
 	isl_union_map *reads;
 	isl_union_map *shared_access;
 	isl_union_set *matched;
 	isl_union_map *unmatched;
-	isl_union_set *domain;
+	isl_union_pw_multi_aff *tagger;
+	isl_schedule *schedule;
+	isl_union_access_info *access;
+	isl_union_flow *flow;
 
+	tagger = isl_union_pw_multi_aff_copy(ps->tagger);
+	schedule = isl_schedule_copy(ps->schedule);
+	schedule = isl_schedule_pullback_union_pw_multi_aff(schedule, tagger);
 	reads = isl_union_map_copy(ps->tagged_reads);
 	matched = isl_union_map_domain(isl_union_map_copy(ps->tagged_dep_flow));
 	unmatched = isl_union_map_copy(ps->tagged_may_writes);
 	unmatched = isl_union_map_subtract_domain(unmatched, matched);
 	reads = isl_union_map_union(reads, unmatched);
-	shared_access = isl_union_map_copy(ps->tagged_may_writes);
-	shared_access = isl_union_map_reverse(shared_access);
-	shared_access = isl_union_map_apply_range(reads, shared_access);
-	shared_access = isl_union_map_zip(shared_access);
-	shared_access = isl_union_map_intersect_domain(shared_access,
-						isl_union_map_wrap(before));
-	domain = isl_union_map_domain(isl_union_map_copy(shared_access));
-	shared_access = isl_union_map_zip(shared_access);
-	ps->dep_order = isl_union_set_unwrap(domain);
-	ps->tagged_dep_order = shared_access;
+	access = isl_union_access_info_from_sink(
+				isl_union_map_copy(ps->tagged_may_writes));
+	access = isl_union_access_info_set_may_source(access, reads);
+	access = isl_union_access_info_set_schedule(access, schedule);
+	flow = isl_union_access_info_compute_flow(access);
+	shared_access = isl_union_flow_get_may_dependence(flow);
+	isl_union_flow_free(flow);
+
+	ps->tagged_dep_order = isl_union_map_copy(shared_access);
+	ps->dep_order = isl_union_map_factor_domain(shared_access);
 }
 
 /* Compute those validity dependences of the program represented by "scop"
@@ -645,7 +654,7 @@ static void compute_live_range_reordering_dependences(struct ppcg_scop *ps)
 	compute_tagged_flow_dep_only(ps);
 	remove_independences_from_tagged_flow(ps);
 	derive_flow_dep_from_tagged_flow_dep(ps);
-	compute_order_dependences(ps, isl_union_map_copy(before));
+	compute_order_dependences(ps);
 	before = isl_union_map_subtract(before,
 					isl_union_map_copy(ps->independence));
 	compute_forced_dependences(ps, before);
