@@ -2111,7 +2111,9 @@ static __isl_give isl_union_map *wrapped_reference_to_access(
  * do not participate in any dependences.
  *
  * In particular, we remove the "local" dataflow dependences from
- * the set of all dataflow dependences.
+ * the set of all dataflow dependences, or at least those
+ * that may contribute to a domain/range that intersects
+ * the domain of "access".
  * Note that if the potential dataflow dependences are an overapproximation
  * of the actual dataflow dependences, then the result remains an
  * overapproximation of the non-local dataflow dependences.
@@ -2130,8 +2132,8 @@ static __isl_give isl_union_map *remove_local_accesses(
 {
 	int empty;
 	isl_union_pw_multi_aff *tagger;
-	isl_union_set *domain;
-	isl_union_map *local, *external;
+	isl_union_set *domain, *access_domain;
+	isl_union_map *local, *external, *universe;
 	isl_union_set *tag_set;
 
 	if (isl_union_map_is_empty(access)) {
@@ -2142,7 +2144,8 @@ static __isl_give isl_union_map *remove_local_accesses(
 
 	tagger = isl_union_pw_multi_aff_copy(prog->scop->tagger);
 	domain = isl_union_map_domain(isl_union_map_copy(tagged));
-	tagger = isl_union_pw_multi_aff_intersect_domain(tagger, domain);
+	tagger = isl_union_pw_multi_aff_intersect_domain(tagger,
+					isl_union_set_copy(domain));
 	sched = isl_union_map_preimage_domain_union_pw_multi_aff(sched, tagger);
 
 	local = isl_union_map_apply_range(sched,
@@ -2153,6 +2156,16 @@ static __isl_give isl_union_map *remove_local_accesses(
 	empty = isl_union_map_is_empty(local);
 
 	external = isl_union_map_copy(prog->scop->tagged_dep_flow);
+	universe = isl_union_map_universe(isl_union_map_copy(access));
+	access_domain = isl_union_map_domain(universe);
+	domain = isl_union_set_universe(domain);
+	universe = isl_union_set_unwrap(domain);
+	universe = isl_union_map_intersect_domain(universe, access_domain);
+	domain = isl_union_map_wrap(universe);
+	if (read)
+		external = isl_union_map_intersect_range(external, domain);
+	else
+		external = isl_union_map_intersect_domain(external, domain);
 	external = isl_union_map_intersect_params(external,
 				isl_set_copy(prog->scop->context));
 	external = isl_union_map_subtract(external, local);
