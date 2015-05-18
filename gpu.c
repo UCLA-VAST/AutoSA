@@ -1951,21 +1951,21 @@ struct ppcg_at_domain_data {
  * in the kernel.  This may be one of the original user statements
  * or a statement introduced by PPCG.
  *
- * We assume that the original user statements only have a name
- * and no user pointer.  The statements introduced by PPCG
- * on the other hand all have a user pointer.
+ * We first check if the statement id corresponds to a gpu statement,
+ * which indicates the statement is an original user statement. Any statement
+ * that is not an original user statement has been introduced by PPCG and
+ * requires special handling.
  *
- * If the user statement is one of the original user statements
- * (one with no user pointer), then we call create_domain_leaf.  Otherwise,
- * we check if it is a copy or synchronization statement and
- * call the appropriate functions.
- * Statements that copy an array to/from the device do not need
- * any further treatment.
+ * If the user statement is one of the original user statements, then we call
+ * create_domain_leaf.  Otherwise, we check if it is a copy or synchronization
+ * statement and call the appropriate functions.  Statements that copy an array
+ * to/from the device do not need any further treatment.
  */
 static __isl_give isl_ast_node *at_domain(__isl_take isl_ast_node *node,
 	__isl_keep isl_ast_build *build, void *user)
 {
 	struct ppcg_at_domain_data *data = user;
+	struct gpu_stmt *gpu_stmt;
 	isl_ast_expr *expr, *arg;
 	isl_id *id;
 	int is_sync;
@@ -1980,21 +1980,13 @@ static __isl_give isl_ast_node *at_domain(__isl_take isl_ast_node *node,
 	isl_ast_expr_free(expr);
 	isl_ast_expr_free(arg);
 
-	if (!p) {
-		struct gpu_stmt *gpu_stmt;
-
-		gpu_stmt = find_stmt(data->prog, id);
-		isl_id_free(id);
-		if (!gpu_stmt)
-			isl_die(data->prog->ctx, isl_error_internal,
-				"statement not found",
-				return isl_ast_node_free(node));
-
-		return create_domain_leaf(data->kernel, node, build, gpu_stmt);
-	}
-
+	gpu_stmt = find_stmt(data->prog, id);
 	is_sync = gpu_tree_id_is_sync(id, data->kernel);
 	isl_id_free(id);
+
+	if (gpu_stmt)
+		return create_domain_leaf(data->kernel, node, build, gpu_stmt);
+
 	if (!prefixcmp(name, "to_device_") || !prefixcmp(name, "from_device_"))
 		return node;
 	if (is_sync < 0)
