@@ -420,14 +420,14 @@ error:
  * for the schedule of the first domain.
  * We assume here that this number is the same for all domains.
  */
-static int set_depth(__isl_take isl_map *map, void *user)
+static isl_stat set_depth(__isl_take isl_map *map, void *user)
 {
 	unsigned *depth = user;
 
 	*depth = isl_map_dim(map, isl_dim_out);
 
 	isl_map_free(map);
-	return -1;
+	return isl_stat_error;
 }
 
 /* Code generate the scop 'scop' and print the corresponding C code to 'p'.

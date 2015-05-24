@@ -134,7 +134,7 @@ __isl_give isl_set *extend(__isl_take isl_set *set, int dst_len)
 /* Set max_out to the maximal number of output dimensions over
  * all maps.
  */
-static int update_max_out(__isl_take isl_map *map, void *user)
+static isl_stat update_max_out(__isl_take isl_map *map, void *user)
 {
 	int *max_out = user;
 	int n_out = isl_map_dim(map, isl_dim_out);
@@ -143,7 +143,7 @@ static int update_max_out(__isl_take isl_map *map, void *user)
 		*max_out = n_out;
 
 	isl_map_free(map);
-	return 0;
+	return isl_stat_ok;
 }
 
 struct align_range_data {
@@ -154,7 +154,7 @@ struct align_range_data {
 /* Extend the dimension of the range of the given map to data->max_out and
  * then add the result to data->res.
  */
-static int map_align_range(__isl_take isl_map *map, void *user)
+static isl_stat map_align_range(__isl_take isl_map *map, void *user)
 {
 	struct align_range_data *data = user;
 	int i;
@@ -171,7 +171,7 @@ static int map_align_range(__isl_take isl_map *map, void *user)
 
 	data->res = isl_union_map_add_map(data->res, map);
 
-	return 0;
+	return isl_stat_ok;
 }
 
 /* Extend the ranges of the maps in the union map such they all have
