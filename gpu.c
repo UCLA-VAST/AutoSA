@@ -2307,7 +2307,7 @@ static __isl_give isl_ast_node *generate_code(struct gpu_gen *gen,
 	data.kernel = NULL;
 
 	depth = 0;
-	if (isl_schedule_foreach_schedule_node(schedule, &update_depth,
+	if (isl_schedule_foreach_schedule_node_top_down(schedule, &update_depth,
 						&depth) < 0)
 		return NULL;
 	build = isl_ast_build_alloc(gen->prog->ctx);
@@ -2351,7 +2351,7 @@ static int is_permutable(__isl_keep isl_schedule_node *node)
 	return 1;
 }
 
-/* A isl_schedule_foreach_schedule_node callback
+/* A isl_schedule_foreach_schedule_node_top_down callback
  * for setting *any_permutable and aborting the search
  * if "node" is a permutable band with coincident dimensions.
  * Otherwise, continue searching.
@@ -2379,8 +2379,8 @@ static int has_any_permutable_node(__isl_keep isl_schedule *schedule)
 {
 	int any_permutable = 0;
 
-	if (isl_schedule_foreach_schedule_node(schedule, &set_permutable,
-						&any_permutable) < 0 &&
+	if (isl_schedule_foreach_schedule_node_top_down(schedule,
+				    &set_permutable, &any_permutable) < 0 &&
 	    !any_permutable)
 		return -1;
 
@@ -3836,7 +3836,7 @@ static int subtree_has_permutable_bands(__isl_keep isl_schedule_node *node)
 {
 	int any_parallelism = 0;
 
-	if (isl_schedule_node_foreach_descendant(node, &set_permutable,
+	if (isl_schedule_node_foreach_descendant_top_down(node, &set_permutable,
 						&any_parallelism) < 0 &&
 	    !any_parallelism)
 		return -1;
