@@ -16,6 +16,8 @@
 #include <isl/ctx.h>
 #include <isl/map.h>
 #include <isl/ast_build.h>
+#include <isl/schedule.h>
+#include <isl/schedule_node.h>
 #include <pet.h>
 
 #include "ppcg.h"
@@ -418,18 +420,21 @@ error:
 	return isl_ast_node_free(node);
 }
 
-/* Set *depth to the number of scheduling dimensions
- * for the schedule of the first domain.
- * We assume here that this number is the same for all domains.
+/* Set *depth (initialized to 0 by the caller) to the maximum
+ * of the schedule depths of the leaf nodes for which this function is called.
  */
-static isl_stat set_depth(__isl_take isl_map *map, void *user)
+static isl_bool update_depth(__isl_keep isl_schedule_node *node, void *user)
 {
-	unsigned *depth = user;
+	int *depth = user;
+	int node_depth;
 
-	*depth = isl_map_dim(map, isl_dim_out);
+	if (isl_schedule_node_get_type(node) != isl_schedule_node_leaf)
+		return isl_bool_true;
+	node_depth = isl_schedule_node_get_schedule_depth(node);
+	if (node_depth > *depth)
+		*depth = node_depth;
 
-	isl_map_free(map);
-	return isl_stat_error;
+	return isl_bool_false;
 }
 
 /* Code generate the scop 'scop' and print the corresponding C code to 'p'.
@@ -439,8 +444,7 @@ static __isl_give isl_printer *print_scop(struct ppcg_scop *scop,
 {
 	isl_ctx *ctx = isl_printer_get_ctx(p);
 	isl_set *context;
-	isl_union_set *domain_set;
-	isl_union_map *schedule_map;
+	isl_schedule *schedule;
 	isl_ast_build *build;
 	isl_ast_print_options *print_options;
 	isl_ast_node *tree;
@@ -449,13 +453,16 @@ static __isl_give isl_printer *print_scop(struct ppcg_scop *scop,
 	int depth;
 
 	context = isl_set_copy(scop->context);
-	domain_set = isl_union_set_copy(scop->domain);
-	schedule_map = isl_schedule_get_map(scop->schedule);
-	schedule_map = isl_union_map_intersect_domain(schedule_map, domain_set);
+	context = isl_set_from_params(context);
+	schedule = isl_schedule_copy(scop->schedule);
+	schedule = isl_schedule_insert_context(schedule, context);
 
-	isl_union_map_foreach_map(schedule_map, &set_depth, &depth);
+	depth = 0;
+	if (isl_schedule_foreach_schedule_node_top_down(schedule, &update_depth,
+						&depth) < 0)
+		goto error;
 
-	build = isl_ast_build_from_context(context);
+	build = isl_ast_build_alloc(ctx);
 	iterators = ppcg_scop_generate_names(scop, depth, "c");
 	build = isl_ast_build_set_iterators(build, iterators);
 	build = isl_ast_build_set_at_each_domain(build, &at_each_domain, scop);
@@ -472,7 +479,7 @@ static __isl_give isl_printer *print_scop(struct ppcg_scop *scop,
 							&build_info);
 	}
 
-	tree = isl_ast_build_node_from_schedule_map(build, schedule_map);
+	tree = isl_ast_build_node_from_schedule(build, schedule);
 	isl_ast_build_free(build);
 
 	print_options = isl_ast_print_options_alloc(ctx);
@@ -488,6 +495,10 @@ static __isl_give isl_printer *print_scop(struct ppcg_scop *scop,
 	isl_ast_node_free(tree);
 
 	return p;
+error:
+	isl_schedule_free(schedule);
+	isl_printer_free(p);
+	return NULL;
 }
 
 /* Generate CPU code for the scop "ps" and print the corresponding C code
