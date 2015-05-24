@@ -3975,7 +3975,7 @@ static __isl_give isl_union_map *approximate_copy_out(
 static __isl_give isl_schedule_node *mark_kernels(struct gpu_gen *gen,
 	__isl_take isl_schedule_node *node)
 {
-	return isl_schedule_node_map_descendant(node,
+	return isl_schedule_node_map_descendant_bottom_up(node,
 						&mark_outer_permutable, gen);
 }
 
@@ -4254,7 +4254,7 @@ static __isl_give isl_schedule *determine_properties_original_schedule(
 
 	schedule = isl_schedule_copy(gen->prog->scop->schedule);
 	sc = construct_schedule_constraints(gen->prog);
-	schedule = isl_schedule_map_schedule_node(schedule,
+	schedule = isl_schedule_map_schedule_node_bottom_up(schedule,
 						    &set_band_properties, sc);
 	isl_schedule_constraints_free(sc);
 
