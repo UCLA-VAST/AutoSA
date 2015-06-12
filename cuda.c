@@ -469,6 +469,7 @@ static void print_kernel(struct gpu_prog *prog, struct ppcg_kernel *kernel,
 
 	p = print_kernel_vars(p, kernel);
 	p = isl_printer_end_line(p);
+	p = isl_ast_op_type_print_macro(isl_ast_op_fdiv_q, p);
 	p = gpu_print_macros(p, kernel->tree);
 
 	print_options = isl_ast_print_options_alloc(ctx);
