@@ -35,30 +35,6 @@ __isl_give isl_printer *gpu_print_local_declarations(__isl_take isl_printer *p,
 	return p;
 }
 
-static int print_macro(enum isl_ast_op_type type, void *user)
-{
-	isl_printer **p = user;
-
-	if (type == isl_ast_op_fdiv_q)
-		return 0;
-
-	*p = isl_ast_op_type_print_macro(type, *p);
-
-	return 0;
-}
-
-/* Print the required macros for "node", except one for floord.
- * The caller is assumed to have printed a macro for floord already
- * as it may also appear in the declarations and the statements.
- */
-__isl_give isl_printer *gpu_print_macros(__isl_take isl_printer *p,
-	__isl_keep isl_ast_node *node)
-{
-	if (isl_ast_node_foreach_ast_op_type(node, &print_macro, &p) < 0)
-		return isl_printer_free(p);
-	return p;
-}
-
 /* Print an expression for the size of "array" in bytes.
  */
 __isl_give isl_printer *gpu_array_info_print_size(__isl_take isl_printer *prn,
