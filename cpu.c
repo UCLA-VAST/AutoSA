@@ -480,7 +480,7 @@ static __isl_give isl_printer *print_scop(struct ppcg_scop *scop,
 	print_options = isl_ast_print_options_set_print_for(print_options,
 							&print_for, NULL);
 
-	p = isl_ast_node_print_macros(tree, p);
+	p = ppcg_print_macros(p, tree);
 	p = isl_ast_node_print(tree, p, print_options);
 
 	isl_ast_node_free(tree);
@@ -503,6 +503,7 @@ __isl_give isl_printer *print_cpu(__isl_take isl_printer *p,
 	p = isl_printer_start_line(p);
 	p = isl_printer_end_line(p);
 
+	p = isl_ast_op_type_print_macro(isl_ast_op_fdiv_q, p);
 	p = ppcg_print_exposed_declarations(p, ps);
 	hidden = ppcg_scop_any_hidden_declarations(ps);
 	if (hidden) {
