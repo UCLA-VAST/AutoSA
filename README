@@ -9,7 +9,7 @@ Requirements:
 	(only needed if you want to compile the pet executable)
 - LLVM/clang libraries, 2.9 or higher (http://clang.llvm.org/get_started.html)
 	Unless you have some other reasons for wanting to use the svn version,
-	it is best to install the latest release (3.3).
+	it is best to install the latest release (3.6).
 	For more details, see pet/README.
 
 If you are installing on Ubuntu, then you can install the following packages:
