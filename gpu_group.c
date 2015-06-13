@@ -428,21 +428,21 @@ struct gpu_group_data {
 	isl_union_map *full_sched;
 };
 
-/* Construct a map from domain_dim to domain_dim that increments
+/* Construct a map from domain_space to domain_space that increments
  * the dimension at position "pos" and leaves all other dimensions
  * constant.
  */
-static __isl_give isl_map *next(__isl_take isl_space *domain_dim, int pos)
+static __isl_give isl_map *next(__isl_take isl_space *domain_space, int pos)
 {
 	int i;
-	int len = isl_space_dim(domain_dim, isl_dim_set);
-	isl_space *dim;
+	int len = isl_space_dim(domain_space, isl_dim_set);
+	isl_space *space;
 	isl_basic_map *next;
 	isl_local_space *ls;
 
-	dim = isl_space_map_from_set(domain_dim);
-	next = isl_basic_map_universe(isl_space_copy(dim));
-	ls = isl_local_space_from_space(dim);
+	space = isl_space_map_from_set(domain_space);
+	next = isl_basic_map_universe(isl_space_copy(space));
+	ls = isl_local_space_from_space(space);
 
 	for (i = 0; i < len; ++i) {
 		isl_constraint *c;
