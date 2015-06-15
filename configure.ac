@@ -1,4 +1,4 @@
-AC_INIT([ppcg], [0.03], [isl-development@googlegroups.com])
+AC_INIT([ppcg], [0.04], [isl-development@googlegroups.com])
 AC_CONFIG_AUX_DIR([.])
 AC_CONFIG_MACRO_DIR([m4])
 AM_INIT_AUTOMAKE([foreign])
