@@ -59,9 +59,10 @@ __isl_give isl_printer *ppcg_print_macros(__isl_take isl_printer *p,
  *	[1 + maximal_value]
  *
  * one for each dimension.
+ * "build" is used to simplify the size expressions, if any.
  */
 static __isl_give isl_printer *print_extent(__isl_take isl_printer *p,
-	__isl_keep isl_set *extent)
+	__isl_keep isl_set *extent, __isl_keep isl_ast_build *build)
 {
 	int i, n;
 
@@ -74,6 +75,7 @@ static __isl_give isl_printer *print_extent(__isl_take isl_printer *p,
 		isl_local_space *ls;
 		isl_aff *one;
 		isl_pw_aff *bound;
+		isl_ast_expr *expr;
 
 		bound = isl_set_dim_max(isl_set_copy(extent), i);
 		dom = isl_pw_aff_domain(isl_pw_aff_copy(bound));
@@ -83,19 +85,21 @@ static __isl_give isl_printer *print_extent(__isl_take isl_printer *p,
 		bound = isl_pw_aff_add(bound, isl_pw_aff_alloc(dom, one));
 
 		p = isl_printer_print_str(p, "[");
-		p = isl_printer_print_pw_aff(p, bound);
+		expr = isl_ast_build_expr_from_pw_aff(build, bound);
+		p = isl_printer_print_ast_expr(p, expr);
 		p = isl_printer_print_str(p, "]");
 
-		isl_pw_aff_free(bound);
+		isl_ast_expr_free(expr);
 	}
 
 	return p;
 }
 
-/* Print a declaration for array "array" to "p".
+/* Print a declaration for array "array" to "p", using "build"
+ * to simplify any size expressions.
  */
 __isl_give isl_printer *ppcg_print_declaration(__isl_take isl_printer *p,
-	struct pet_array *array)
+	struct pet_array *array, __isl_keep isl_ast_build *build)
 {
 	const char *name;
 
@@ -108,7 +112,7 @@ __isl_give isl_printer *ppcg_print_declaration(__isl_take isl_printer *p,
 	p = isl_printer_print_str(p, array->element_type);
 	p = isl_printer_print_str(p, " ");
 	p = isl_printer_print_str(p, name);
-	p = print_extent(p, array->extent);
+	p = print_extent(p, array->extent, build);
 	p = isl_printer_print_str(p, ";");
 	p = isl_printer_end_line(p);
 
@@ -122,10 +126,12 @@ static __isl_give isl_printer *print_declarations(__isl_take isl_printer *p,
 	struct ppcg_scop *scop, int exposed)
 {
 	int i;
+	isl_ast_build *build;
 
 	if (!scop)
 		return isl_printer_free(p);
 
+	build = isl_ast_build_from_context(isl_set_copy(scop->context));
 	for (i = 0; i < scop->pet->n_array; ++i) {
 		struct pet_array *array = scop->pet->arrays[i];
 
@@ -134,8 +140,9 @@ static __isl_give isl_printer *print_declarations(__isl_take isl_printer *p,
 		if (array->exposed != exposed)
 			continue;
 
-		p = ppcg_print_declaration(p, array);
+		p = ppcg_print_declaration(p, array, build);
 	}
+	isl_ast_build_free(build);
 
 	return p;
 }

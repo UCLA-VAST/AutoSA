@@ -22,15 +22,19 @@ __isl_give isl_printer *gpu_print_local_declarations(__isl_take isl_printer *p,
 	struct gpu_prog *prog)
 {
 	int i;
+	isl_ast_build *build;
 
 	if (!prog)
 		return isl_printer_free(p);
 
+	build = isl_ast_build_from_context(isl_set_copy(prog->scop->context));
 	for (i = 0; i < prog->n_array; ++i) {
 		if (!prog->array[i].declare_local)
 			continue;
-		p = ppcg_print_declaration(p, prog->scop->pet->arrays[i]);
+		p = ppcg_print_declaration(p, prog->scop->pet->arrays[i],
+					    build);
 	}
+	isl_ast_build_free(build);
 
 	return p;
 }
