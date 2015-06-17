@@ -61,6 +61,7 @@ TEST_EXTENSIONS = .sh
 
 EXTRA_DIST = \
 	ocl_utilities.c \
+	ocl_utilities.h \
 	tests
 
 dist-hook:
