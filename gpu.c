@@ -2947,12 +2947,7 @@ static int kernel_requires_unroll(struct ppcg_kernel *kernel)
  */
 static __isl_give isl_schedule_node *unroll(__isl_take isl_schedule_node *node)
 {
-	int i, n;
-
-	n = isl_schedule_node_band_n_member(node);
-	for (i = 0; i < n; ++i)
-		node = isl_schedule_node_band_member_set_ast_loop_type(node, i,
-							isl_ast_loop_unroll);
+	node = ppcg_set_schedule_node_type(node, isl_ast_loop_unroll);
 
 	node = isl_schedule_node_band_sink(node);
 
@@ -3436,14 +3431,7 @@ static __isl_give isl_schedule_node *add_copies(struct ppcg_kernel *kernel,
  */
 static __isl_give isl_schedule_node *atomic(__isl_take isl_schedule_node *node)
 {
-	int i, n;
-
-	n = isl_schedule_node_band_n_member(node);
-	for (i = 0; i < n; ++i)
-		node = isl_schedule_node_band_member_set_ast_loop_type(node, i,
-							isl_ast_loop_atomic);
-
-	return node;
+	return ppcg_set_schedule_node_type(node, isl_ast_loop_atomic);
 }
 
 /* Mark "node" atomic, if it is a band node.

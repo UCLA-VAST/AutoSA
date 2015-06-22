@@ -148,3 +148,18 @@ __isl_give isl_schedule *ppcg_get_schedule(isl_ctx *ctx,
 
 	return schedule;
 }
+
+/* Mark all dimensions in the band node "node" to be of "type".
+ */
+__isl_give isl_schedule_node *ppcg_set_schedule_node_type(
+	__isl_take isl_schedule_node *node, enum isl_ast_loop_type type)
+{
+	int i, n;
+
+	n = isl_schedule_node_band_n_member(node);
+	for (i = 0; i < n; ++i)
+		node = isl_schedule_node_band_member_set_ast_loop_type(node, i,
+							type);
+
+	return node;
+}
