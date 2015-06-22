@@ -18,31 +18,6 @@
 
 #include "schedule.h"
 
-/* Construct a map from a len-dimensional domain to
- * a (len-n)-dimensional domain that projects out the n coordinates
- * starting at first.
- * "dim" prescribes the parameters.
- */
-__isl_give isl_map *project_out(__isl_take isl_space *dim,
-    int len, int first, int n)
-{
-    int i, j;
-    isl_basic_map *bmap;
-
-    dim = isl_space_add_dims(dim, isl_dim_in, len);
-    dim = isl_space_add_dims(dim, isl_dim_out, len - n);
-    bmap = isl_basic_map_universe(dim);
-
-    for (i = 0, j = 0; i < len; ++i) {
-        if (i >= first && i < first + n)
-            continue;
-	bmap = isl_basic_map_equate(bmap, isl_dim_in, i, isl_dim_out, j);
-        ++j;
-    }
-
-    return isl_map_from_basic_map(bmap);
-}
-
 /* Add parameters with identifiers "ids" to "set".
  */
 static __isl_give isl_set *add_params(__isl_take isl_set *set,
