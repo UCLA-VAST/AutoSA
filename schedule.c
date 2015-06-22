@@ -43,16 +43,6 @@ __isl_give isl_map *project_out(__isl_take isl_space *dim,
     return isl_map_from_basic_map(bmap);
 }
 
-/* Construct a projection that maps a src_len dimensional domain
- * to its first dst_len coordinates.
- * "dim" prescribes the parameters.
- */
-__isl_give isl_map *projection(__isl_take isl_space *dim,
-    int src_len, int dst_len)
-{
-    return project_out(dim, src_len, dst_len, src_len - dst_len);
-}
-
 /* Add parameters with identifiers "ids" to "set".
  */
 static __isl_give isl_set *add_params(__isl_take isl_set *set,
