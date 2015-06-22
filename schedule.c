@@ -113,20 +113,3 @@ __isl_give isl_set *parametrization(__isl_take isl_space *space,
 
 	return parametrize(set, first, ids);
 }
-
-/* Extend "set" with unconstrained coordinates to a total length of "dst_len".
- */
-__isl_give isl_set *extend(__isl_take isl_set *set, int dst_len)
-{
-    int n_set;
-    isl_space *dim;
-    isl_map *map;
-
-    dim = isl_set_get_space(set);
-    n_set = isl_space_dim(dim, isl_dim_set);
-    dim = isl_space_drop_dims(dim, isl_dim_set, 0, n_set);
-    map = projection(dim, dst_len, n_set);
-    map = isl_map_reverse(map);
-
-    return isl_set_apply(set, map);
-}
