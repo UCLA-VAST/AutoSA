@@ -2745,26 +2745,13 @@ static int any_global_or_shared_sync_writes(struct ppcg_kernel *kernel)
 static __isl_give isl_multi_val *construct_band_tiles_sizes(
 	__isl_keep isl_schedule_node *node, int *tile_size)
 {
-	int i, n;
-	isl_ctx *ctx;
 	isl_space *space;
-	isl_multi_val *mv;
 
 	if (!node)
 		return NULL;
 
-	ctx = isl_schedule_node_get_ctx(node);
 	space = isl_schedule_node_band_get_space(node);
-	n = isl_schedule_node_band_n_member(node);
-	mv = isl_multi_val_zero(space);
-	for (i = 0; i < n; ++i) {
-		isl_val *v;
-
-		v = isl_val_int_from_si(ctx, tile_size[i]);
-		mv = isl_multi_val_set_val(mv, i, v);
-	}
-
-	return mv;
+	return ppcg_multi_val_from_int_list(space, tile_size);
 }
 
 /* Replace the partial schedule S of the band node "node" by

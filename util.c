@@ -1,5 +1,5 @@
 /*
- * Copyright 2012      Ecole Normale Superieure
+ * Copyright 2012-2013 Ecole Normale Superieure
  *
  * Use of this software is governed by the MIT license
  *
@@ -34,6 +34,33 @@ __isl_give isl_multi_val *ppcg_multi_val_from_int(__isl_take isl_space *space,
 	for (i = 0; i < n; ++i)
 		mv = isl_multi_val_set_val(mv, i, isl_val_copy(v));
 	isl_val_free(v);
+
+	return mv;
+}
+
+/* Construct an isl_multi_val living in "space" with values specified
+ * by "list".  "list" is assumed to have at least as many entries
+ * as the set dimension of "space".
+ */
+__isl_give isl_multi_val *ppcg_multi_val_from_int_list(
+	__isl_take isl_space *space, int *list)
+{
+	int i, n;
+	isl_ctx *ctx;
+	isl_multi_val *mv;
+
+	if (!space)
+		return NULL;
+
+	ctx = isl_space_get_ctx(space);
+	n = isl_space_dim(space, isl_dim_set);
+	mv = isl_multi_val_zero(space);
+	for (i = 0; i < n; ++i) {
+		isl_val *v;
+
+		v = isl_val_int_from_si(ctx, list[i]);
+		mv = isl_multi_val_set_val(mv, i, v);
+	}
 
 	return mv;
 }
