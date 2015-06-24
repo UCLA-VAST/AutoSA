@@ -466,6 +466,7 @@ static __isl_give isl_map *next(__isl_take isl_space *domain_space, int pos)
 static int access_is_coalesced(struct gpu_group_data *data,
 	__isl_keep isl_union_map *access)
 {
+	int dim;
 	isl_space *space;
 	isl_set *accessed;
 	isl_map *access_map;
@@ -481,7 +482,11 @@ static int access_is_coalesced(struct gpu_group_data *data,
 
 	space = isl_map_get_space(access_map);
 	space = isl_space_range(space);
-	next_element = next(space, isl_space_dim(space, isl_dim_set) - 1);
+	dim = isl_space_dim(space, isl_dim_set);
+	if (dim == 0)
+		next_element = isl_map_empty(isl_space_map_from_set(space));
+	else
+		next_element = next(space, dim - 1);
 
 	accessed = isl_map_range(isl_map_copy(access_map));
 	map = isl_map_copy(next_element);
