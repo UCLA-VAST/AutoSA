@@ -204,7 +204,7 @@ struct gpu_gen {
 	int kernel_id;
 };
 
-enum ppcg_kernel_access_type {
+enum ppcg_group_access_type {
 	ppcg_access_global,
 	ppcg_access_shared,
 	ppcg_access_private
@@ -264,7 +264,7 @@ struct ppcg_kernel_stmt {
  */
 struct ppcg_kernel_var {
 	struct gpu_array_info *array;
-	enum ppcg_kernel_access_type type;
+	enum ppcg_group_access_type type;
 	char *name;
 	isl_vec *size;
 };
