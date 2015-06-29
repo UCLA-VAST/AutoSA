@@ -1161,19 +1161,12 @@ static int group_common_shared_memory_tile(struct ppcg_kernel *kernel,
 		if (!groups[i]->shared_tile)
 			continue;
 		for (j = n - 1; j > i; --j) {
-			isl_map *map;
-			int empty;
 			struct gpu_array_ref_group *group;
 
 			if (!groups[j]->shared_tile)
 				continue;
 
-			map = isl_map_intersect(isl_map_copy(groups[i]->access),
-					    isl_map_copy(groups[j]->access));
-			empty = isl_map_is_empty(map);
-			isl_map_free(map);
-
-			if (empty)
+			if (!depth_accesses_overlap(groups[i], groups[j]))
 				continue;
 
 			group = join_groups(groups[i], groups[j]);
