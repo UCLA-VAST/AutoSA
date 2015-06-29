@@ -323,10 +323,10 @@ struct ppcg_kernel_var {
  * are represented by "n_block" parameters with as names the elements
  * of "thread_ids".
  *
- * shared_schedule corresponds to the schedule dimensions of
+ * copy_schedule corresponds to the schedule dimensions of
  * the (tiled) schedule for this kernel that have been taken into account
  * for computing private/shared memory tiles.
- * shared_schedule_dim is the dimension of this schedule.
+ * copy_schedule_dim is the dimension of this schedule.
  *
  * sync_writes contains write references that require synchronization.
  * Each reference is represented by a universe set in a space [S[i,j] -> R[]]
@@ -367,8 +367,8 @@ struct ppcg_kernel {
 
 	isl_union_set *block_filter;
 	isl_union_set *thread_filter;
-	isl_union_pw_multi_aff *shared_schedule;
-	int shared_schedule_dim;
+	isl_union_pw_multi_aff *copy_schedule;
+	int copy_schedule_dim;
 
 	isl_union_set *sync_writes;
 

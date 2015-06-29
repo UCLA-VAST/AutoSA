@@ -873,15 +873,15 @@ static __isl_give isl_map *group_tile(struct gpu_array_ref_group *group)
 
 /* Given a mapping "iterator_map" from the AST schedule to a domain,
  * return the corresponding mapping from the AST schedule to
- * to the outer kernel->shared_schedule_dim dimensions of
+ * to the outer kernel->copy_schedule_dim dimensions of
  * the schedule computed by PPCG for this kernel.
  *
- * Note that kernel->shared_schedule_dim is at least as large as
+ * Note that kernel->copy_schedule_dim is at least as large as
  * the largest depth of any array reference group associated to the kernel.
  * This is needed as the returned schedule is used to extract a mapping
  * to the outer group->depth dimensions in transform_index.
  */
-static __isl_give isl_pw_multi_aff *compute_sched_to_shared(
+static __isl_give isl_pw_multi_aff *compute_sched_to_copy(
 	struct ppcg_kernel *kernel, __isl_take isl_pw_multi_aff *iterator_map)
 {
 	isl_union_pw_multi_aff *upma;
@@ -891,9 +891,9 @@ static __isl_give isl_pw_multi_aff *compute_sched_to_shared(
 	space = isl_space_range(isl_pw_multi_aff_get_space(iterator_map));
 	space = isl_space_from_domain(space);
 	space = isl_space_add_dims(space, isl_dim_out,
-					kernel->shared_schedule_dim);
+					kernel->copy_schedule_dim);
 
-	upma = isl_union_pw_multi_aff_copy(kernel->shared_schedule);
+	upma = isl_union_pw_multi_aff_copy(kernel->copy_schedule);
 	pma = isl_union_pw_multi_aff_extract_pw_multi_aff(upma, space);
 	isl_union_pw_multi_aff_free(upma);
 
@@ -1175,7 +1175,7 @@ struct ppcg_kernel *ppcg_kernel_free(struct ppcg_kernel *kernel)
 	isl_ast_node_free(kernel->tree);
 	isl_union_set_free(kernel->block_filter);
 	isl_union_set_free(kernel->thread_filter);
-	isl_union_pw_multi_aff_free(kernel->shared_schedule);
+	isl_union_pw_multi_aff_free(kernel->copy_schedule);
 	isl_union_set_free(kernel->sync_writes);
 
 	for (i = 0; i < kernel->n_array; ++i) {
@@ -1452,7 +1452,7 @@ static int find_array_index(struct ppcg_kernel *kernel, const char *name)
  * "accesses" is the list of gpu_stmt_access in the statement.
  * "iterator_map" expresses the statement iterators in terms of
  * the AST loop iterators.
- * "sched2shared" expresses the outer shared_schedule_dim dimensions of
+ * "sched2copy" expresses the outer copy_schedule_dim dimensions of
  * the kernel schedule in terms of the AST loop iterators and
  * may be NULL if we are not inside a kernel.
  *
@@ -1467,7 +1467,7 @@ struct ppcg_transform_data {
 	struct ppcg_kernel *kernel;
 	struct gpu_stmt_access *accesses;
 	isl_pw_multi_aff *iterator_map;
-	isl_pw_multi_aff *sched2shared;
+	isl_pw_multi_aff *sched2copy;
 
 	struct gpu_array_info *array;
 	int global;
@@ -1590,7 +1590,7 @@ static __isl_give isl_multi_pw_aff *transform_index(
 	space = isl_space_range(isl_multi_pw_aff_get_space(index));
 	space = isl_space_map_from_set(space);
 	pma = isl_pw_multi_aff_identity(space);
-	sched2depth = isl_pw_multi_aff_copy(data->sched2shared);
+	sched2depth = isl_pw_multi_aff_copy(data->sched2copy);
 	dim = isl_pw_multi_aff_dim(sched2depth, isl_dim_out);
 	sched2depth = isl_pw_multi_aff_drop_dims(sched2depth, isl_dim_out,
 					    group->depth, dim - group->depth);
@@ -1792,8 +1792,8 @@ static __isl_give isl_ast_expr *transform_expr(__isl_take isl_ast_expr *expr,
  * with name "user".
  * These AST expressions are computed from iterator_map,
  * which expresses the domain
- * elements in terms of the generated loops, and sched2shared,
- * which expresses the outer shared_schedule_dim dimensions of
+ * elements in terms of the generated loops, and sched2copy,
+ * which expresses the outer copy_schedule_dim dimensions of
  * the kernel schedule computed by PPCG in terms of the generated loops.
  */
 static __isl_give isl_ast_node *create_domain_leaf(
@@ -1804,7 +1804,7 @@ static __isl_give isl_ast_node *create_domain_leaf(
 	struct ppcg_kernel_stmt *stmt;
 	isl_ctx *ctx;
 	isl_id *id;
-	isl_pw_multi_aff *sched2shared;
+	isl_pw_multi_aff *sched2copy;
 	isl_map *map;
 	isl_pw_multi_aff *iterator_map;
 	isl_union_map *schedule;
@@ -1821,10 +1821,10 @@ static __isl_give isl_ast_node *create_domain_leaf(
 	map = isl_map_reverse(isl_map_from_union_map(schedule));
 	iterator_map = isl_pw_multi_aff_from_map(map);
 	if (kernel)
-		sched2shared = compute_sched_to_shared(kernel,
+		sched2copy = compute_sched_to_copy(kernel,
 					isl_pw_multi_aff_copy(iterator_map));
 	else
-		sched2shared = NULL;
+		sched2copy = NULL;
 
 	stmt->type = ppcg_kernel_domain;
 	stmt->u.d.stmt = gpu_stmt;
@@ -1832,13 +1832,13 @@ static __isl_give isl_ast_node *create_domain_leaf(
 	data.kernel = kernel;
 	data.accesses = stmt->u.d.stmt->accesses;
 	data.iterator_map = iterator_map;
-	data.sched2shared = sched2shared;
+	data.sched2copy = sched2copy;
 	stmt->u.d.ref2expr = pet_stmt_build_ast_exprs(stmt->u.d.stmt->stmt,
 					    build, &transform_index, &data,
 					    &transform_expr, &data);
 
 	isl_pw_multi_aff_free(iterator_map);
-	isl_pw_multi_aff_free(sched2shared);
+	isl_pw_multi_aff_free(sched2copy);
 
 	id = isl_id_alloc(ctx, "user", stmt);
 	id = isl_id_set_free_user(id, &ppcg_kernel_stmt_free);
@@ -3602,7 +3602,7 @@ static __isl_give isl_schedule_node *group_statements(
  * to be unrolled, then we perform the required unrolling.
  *
  * We save a copy of the schedule that may influence the mappings
- * to shared or private memory in kernel->shared_schedule.
+ * to shared or private memory in kernel->copy_schedule.
  *
  * Finally, we add synchronization and copy statements to the schedule tree,
  * remove the "thread" mark and create representations for the local
@@ -3722,9 +3722,8 @@ static __isl_give isl_schedule_node *create_kernel(struct gpu_gen *gen,
 	}
 
 	node = gpu_tree_move_up_to_thread(node);
-	kernel->shared_schedule_dim =
-		isl_schedule_node_get_schedule_depth(node);
-	kernel->shared_schedule =
+	kernel->copy_schedule_dim = isl_schedule_node_get_schedule_depth(node);
+	kernel->copy_schedule =
 		isl_schedule_node_get_prefix_schedule_union_pw_multi_aff(node);
 
 	node = gpu_tree_move_up_to_kernel(node);
