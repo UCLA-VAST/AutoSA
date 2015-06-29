@@ -818,8 +818,8 @@ static __isl_give isl_set *array_extent(struct gpu_array_info *array)
 	return extent;
 }
 
-/* Return a map from the first group->depth dimensions of the computed
- * schedule to the array tile in
+/* Return a map from the first group->shared_tile->depth dimensions
+ * of the computed schedule to the array tile in
  * global memory that corresponds to the shared memory copy.
  *
  * In particular, return a map
@@ -879,7 +879,7 @@ static __isl_give isl_map *group_tile(struct gpu_array_ref_group *group)
  * Note that kernel->copy_schedule_dim is at least as large as
  * the largest depth of any array reference group associated to the kernel.
  * This is needed as the returned schedule is used to extract a mapping
- * to the outer group->depth dimensions in transform_index.
+ * to the outer tile->depth dimensions in transform_index.
  */
 static __isl_give isl_pw_multi_aff *compute_sched_to_copy(
 	struct ppcg_kernel *kernel, __isl_take isl_pw_multi_aff *iterator_map)
@@ -1516,7 +1516,7 @@ static struct gpu_array_ref_group *find_ref_group(
  *
  *	[D -> A] -> T
  *
- * where D corresponds to the outer group->depth dimensions of
+ * where D corresponds to the outer tile->depth dimensions of
  * the kernel schedule.
  * The index is of the form
  *
@@ -1593,7 +1593,7 @@ static __isl_give isl_multi_pw_aff *transform_index(
 	sched2depth = isl_pw_multi_aff_copy(data->sched2copy);
 	dim = isl_pw_multi_aff_dim(sched2depth, isl_dim_out);
 	sched2depth = isl_pw_multi_aff_drop_dims(sched2depth, isl_dim_out,
-					    group->depth, dim - group->depth);
+					    tile->depth, dim - tile->depth);
 	pma = isl_pw_multi_aff_product(sched2depth, pma);
 	tiling = isl_multi_pw_aff_from_multi_aff(
 				    isl_multi_aff_copy(tile->tiling));
@@ -1856,7 +1856,7 @@ static __isl_give isl_ast_node *create_domain_leaf(
  *
  *	type[D -> A] -> L
  *
- * where D corresponds to the outer group->depth dimensions of
+ * where D corresponds to the outer tile->depth dimensions of
  * the kernel schedule, A to the global array and L to the outer
  * generated AST schedule.
  * We compute the inverse and strip off the type, resulting in
@@ -2200,10 +2200,10 @@ static __isl_give isl_union_map *remove_local_accesses(
  * communicate data within the same iteration of the schedule at the
  * position where the copying of the group is inserted.
  * "node" points to this position, i.e., the depth at "node"
- * is equal to group->depth.
+ * is equal to tile->depth.
  *
  * We extract a schedule that picks out the iterations of the outer
- * group->depth dimensions and call remove_local_accesses.
+ * tile->depth dimensions and call remove_local_accesses.
  */
 static __isl_give isl_union_map *remove_local_accesses_group(
 	struct ppcg_kernel *kernel, struct gpu_array_ref_group *group,
@@ -3030,18 +3030,20 @@ static __isl_give isl_union_map *anchored_non_local_accesses(
  *	write[D -> A] -> [D -> A]
  *
  * if "read" is not set.
- * D corresponds to the outer group->depth dimensions of
+ * D corresponds to the outer tile->depth dimensions of
  * the kernel schedule.
  */
 static __isl_give isl_multi_aff *create_from_access(isl_ctx *ctx,
 	struct gpu_array_ref_group *group, int read)
 {
+	struct gpu_array_tile *tile;
 	isl_space *space;
 	isl_id *id;
 
+	tile = gpu_array_ref_group_tile(group);
 	space = isl_space_copy(group->array->space);
 	space = isl_space_from_range(space);
-	space = isl_space_add_dims(space, isl_dim_in, group->depth);
+	space = isl_space_add_dims(space, isl_dim_in, tile->depth);
 	space = isl_space_wrap(space);
 	space = isl_space_map_from_set(space);
 
@@ -3078,9 +3080,12 @@ static __isl_give isl_schedule_node *add_group_write_sync(
 		node = isl_schedule_node_child(node, 0);
 		node = gpu_tree_ensure_following_sync(node, kernel);
 	} else if (shared) {
+		struct gpu_array_tile *tile;
+
+		tile = gpu_array_ref_group_tile(group);
 		node = isl_schedule_node_parent(node);
 		node = isl_schedule_node_parent(node);
-		node = gpu_tree_move_down_to_depth(node, group->depth,
+		node = gpu_tree_move_down_to_depth(node, tile->depth,
 							kernel->core);
 		node = gpu_tree_move_left_to_sync(node, kernel);
 	}
@@ -3098,14 +3103,14 @@ static __isl_give isl_schedule_node *add_group_write_sync(
  *
  * The copies are performed in the order of the array elements.
  * The copy statement instances include a reference to the outer
- * group->depth dimensions of the kernel schedule for ease of
+ * tile->depth dimensions of the kernel schedule for ease of
  * combining them with the group tiling.
  *
  * That is, the extra schedule is of the form
  *
  *	type[D -> A] -> A
  *
- * where D corresponds to the outer group->depth dimensions of
+ * where D corresponds to the outer tile->depth dimensions of
  * the kernel schedule and A to the global array.
  * This schedule is unrolled because registers are not addressable.
  *
@@ -3137,6 +3142,7 @@ static __isl_give isl_schedule_node *add_copies_group_private(
 	struct ppcg_kernel *kernel, struct gpu_array_ref_group *group,
 	__isl_take isl_schedule_node *node, int read)
 {
+	struct gpu_array_tile *tile;
 	isl_union_map *access;
 	isl_union_map *prefix;
 	isl_union_set *domain;
@@ -3150,7 +3156,8 @@ static __isl_give isl_schedule_node *add_copies_group_private(
 	int empty;
 
 	kernel_depth = isl_schedule_node_get_schedule_depth(node);
-	node = gpu_tree_move_down_to_depth(node, group->depth, kernel->core);
+	tile = gpu_array_ref_group_tile(group);
+	node = gpu_tree_move_down_to_depth(node, tile->depth, kernel->core);
 
 	access = anchored_non_local_accesses(kernel, group, node, read);
 	empty = isl_union_map_is_empty(access);
@@ -3196,7 +3203,7 @@ static __isl_give isl_schedule_node *add_copies_group_private(
 		node = isl_schedule_node_graft_before(node, graft);
 	else {
 		node = isl_schedule_node_graft_after(node, graft);
-		if (kernel_depth < group->depth)
+		if (kernel_depth < tile->depth)
 			node = add_group_write_sync(node, kernel, group, 0);
 	}
 
@@ -3216,7 +3223,7 @@ static __isl_give isl_schedule_node *add_copies_group_private(
  * The copies are performed in the order of the corresponding shared
  * memory tile.
  * The copy statement instances include a reference to the outer
- * group->depth dimensions of the kernel schedule for ease of
+ * tile->depth dimensions of the kernel schedule for ease of
  * combining them with the group tiling.
  *
  * If we are performing a read from global memory to shared memory and
@@ -3232,7 +3239,7 @@ static __isl_give isl_schedule_node *add_copies_group_private(
  *
  *	type[D -> A] -> T
  *
- * where D corresponds to the outer group->depth dimensions of
+ * where D corresponds to the outer tile->depth dimensions of
  * the kernel schedule, A to the global array and T is the corresponding
  * shared memory tile.
  *
@@ -3298,8 +3305,9 @@ static __isl_give isl_schedule_node *add_copies_group_shared(
 	int kernel_depth;
 	int empty;
 
+	tile = gpu_array_ref_group_tile(group);
 	kernel_depth = isl_schedule_node_get_schedule_depth(node);
-	node = gpu_tree_move_down_to_depth(node, group->depth, kernel->core);
+	node = gpu_tree_move_down_to_depth(node, tile->depth, kernel->core);
 
 	access = anchored_non_local_accesses(kernel, group, node, read);
 	empty = isl_union_map_is_empty(access);
@@ -3315,7 +3323,6 @@ static __isl_give isl_schedule_node *add_copies_group_shared(
 
 	from_access = create_from_access(kernel->ctx, group, read);
 
-	tile = gpu_array_ref_group_tile(group);
 	ma = isl_multi_aff_copy(tile->tiling);
 	ma = isl_multi_aff_pullback_multi_aff(ma,
 					    isl_multi_aff_copy(from_access));
@@ -3363,14 +3370,14 @@ static __isl_give isl_schedule_node *add_copies_group_shared(
 		graft = isl_schedule_node_parent(graft);
 
 	if (read) {
-		if (kernel_depth < group->depth)
+		if (kernel_depth < tile->depth)
 			node = gpu_tree_ensure_sync_after_core(node, kernel);
 		node = gpu_tree_move_left_to_sync(node, kernel);
 		node = isl_schedule_node_graft_before(node, graft);
 	} else {
 		node = gpu_tree_move_right_to_sync(node, kernel);
 		node = isl_schedule_node_graft_after(node, graft);
-		if (kernel_depth < group->depth)
+		if (kernel_depth < tile->depth)
 			node = add_group_write_sync(node, kernel, group, 1);
 	}
 

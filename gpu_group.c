@@ -403,10 +403,14 @@ static int compute_array_dim_size(struct gpu_array_bound *bound,
  *
  * We project the accesses on each index in turn and look for a parametric
  * offset such that the size is constant.
+ *
+ * tile->depth is initialized to the input dimension of the computed bounds.
  */
 static int can_tile(__isl_keep isl_map *access, struct gpu_array_tile *tile)
 {
 	int i;
+
+	tile->depth = isl_map_dim(access, isl_dim_in);
 
 	for (i = 0; i < tile->n; ++i) {
 		isl_map *access_i;
@@ -613,7 +617,7 @@ static int compute_tile_depth(struct gpu_group_data *data,
 {
 	int i, j;
 
-	for (j = data->thread_depth - 1; j >= data->kernel_depth; --j) {
+	for (j = tile->depth - 1; j >= data->kernel_depth; --j) {
 		for (i = 0; i < tile->n; ++i) {
 			isl_aff *lb;
 			isl_aff *shift;
@@ -635,57 +639,73 @@ static int compute_tile_depth(struct gpu_group_data *data,
 	return ++j;
 }
 
-/* Adjust the fields of "tile" to reflect the new input dimension "new_dim",
- * where "old_dim" is the old dimension.
- * The dimension beyond "new_dim" are assumed not to affect the tile,
+/* Adjust the fields of "tile" to reflect the new input dimension "depth".
+ * The dimension beyond "depth" are assumed not to affect the tile,
  * so they can simply be dropped.
  */
-static int tile_adjust_depth(struct gpu_array_tile *tile,
-	int old_dim, int new_dim)
+static int tile_adjust_depth(struct gpu_array_tile *tile, int depth)
 {
 	int i;
 
-	if (old_dim == new_dim)
+	if (tile->depth == depth)
 		return 0;
 
 	for (i = 0; i < tile->n; ++i) {
 		tile->bound[i].lb = isl_aff_drop_dims(tile->bound[i].lb,
-					isl_dim_in, new_dim, old_dim - new_dim);
+					isl_dim_in, depth, tile->depth - depth);
 		if (!tile->bound[i].lb)
 			return -1;
 		if (!tile->bound[i].shift)
 			continue;
 		tile->bound[i].shift = isl_aff_drop_dims(tile->bound[i].shift,
-					isl_dim_in, new_dim, old_dim - new_dim);
+					isl_dim_in, depth, tile->depth - depth);
 		if (!tile->bound[i].shift)
 			return -1;
 	}
+
+	tile->depth = depth;
 
 	return 0;
 }
 
 /* Determine the number of schedule dimensions that affect the offset of the
- * shared or private tile and store the result in group->depth, with
+ * shared or private tile "tile" and store the result in tile->depth, with
+ * a lower bound of data->kernel_depth.
+ * Also adjust the fields of the tile to only refer to the tile->depth
+ * outer schedule dimensions.
+ */
+static isl_stat tile_set_depth(struct gpu_group_data *data,
+	struct gpu_array_tile *tile)
+{
+	if (tile_adjust_depth(tile, compute_tile_depth(data, tile)) < 0)
+		return isl_stat_error;
+
+	return isl_stat_ok;
+}
+
+/* Determine the number of schedule dimensions that affect the offset of the
+ * shared or private tile and store the result in group->min_depth, with
  * a lower bound of data->kernel_depth.
  * If there is no tile defined on the array reference group,
- * then set group->depth to data->thread_depth.
- * Also adjust the fields of the tile to only refer to the group->depth
- * outer schedule dimensions.
+ * then set group->min_depth to data->thread_depth.
  */
 static int set_depth(struct gpu_group_data *data,
 	struct gpu_array_ref_group *group)
 {
-	struct gpu_array_tile *tile;
+	group->min_depth = data->thread_depth;
 
-	group->depth = data->thread_depth;
-
-	tile = gpu_array_ref_group_tile(group);
-	if (!tile)
-		return 0;
-
-	group->depth = compute_tile_depth(data, tile);
-	if (tile_adjust_depth(tile, data->thread_depth, group->depth) < 0)
-		return -1;
+	if (group->private_tile) {
+		if (tile_set_depth(data, group->private_tile) < 0)
+			return -1;
+		if (group->private_tile->depth < group->min_depth)
+			group->min_depth = group->private_tile->depth;
+	}
+	if (group->shared_tile) {
+		if (tile_set_depth(data, group->shared_tile) < 0)
+			return -1;
+		if (group->shared_tile->depth < group->min_depth)
+			group->min_depth = group->shared_tile->depth;
+	}
 
 	return 0;
 }
@@ -1108,7 +1128,7 @@ static int group_overlapping_writes(struct ppcg_kernel *kernel,
 }
 
 /* Check if the access relations of group1 and group2 overlap within
- * the outermost min(group1->depth, group2->depth) loops.
+ * the outermost min(group1->min_depth, group2->min_depth) loops.
  */
 static int depth_accesses_overlap(struct gpu_array_ref_group *group1,
 	struct gpu_array_ref_group *group2)
@@ -1118,9 +1138,9 @@ static int depth_accesses_overlap(struct gpu_array_ref_group *group1,
 	int empty;
 	isl_map *map_i, *map_j, *map;
 
-	depth = group1->depth;
-	if (group2->depth < depth)
-		depth = group2->depth;
+	depth = group1->min_depth;
+	if (group2->min_depth < depth)
+		depth = group2->min_depth;
 	map_i = isl_map_copy(group1->access);
 	dim = isl_map_dim(map_i, isl_dim_in);
 	map_i = isl_map_eliminate(map_i, isl_dim_in, depth, dim - depth);
@@ -1214,8 +1234,8 @@ static int group_common_shared_memory_tile(struct ppcg_kernel *kernel,
 				continue;
 			}
 
-			if (group->depth < groups[i]->depth ||
-			    group->depth < groups[j]->depth)
+			if (group->min_depth < groups[i]->min_depth ||
+			    group->min_depth < groups[j]->min_depth)
 				recompute_overlap = 1;
 			gpu_array_ref_group_free(groups[i]);
 			gpu_array_ref_group_free(groups[j]);
@@ -1501,7 +1521,7 @@ int gpu_group_references(struct ppcg_kernel *kernel,
  *
  *	{ D -> A }
  *
- * where D represents the first group->depth schedule dimensions
+ * where D represents the first tile->depth schedule dimensions
  * and A represents the array, construct an isl_multi_aff
  *
  *	{ [D[i] -> A[a]] -> A'[a'] }
@@ -1572,7 +1592,7 @@ static __isl_give isl_multi_aff *strided_tile(
  *
  *	{ [D[i] -> A[a]] -> T[t] }
  *
- * where D represents the first group->depth schedule dimensions,
+ * where D represents the first tile->depth schedule dimensions,
  * A represents the global array and T represents the shared or
  * private memory tile.  The name of T is the name of the local
  * array.
@@ -1601,7 +1621,7 @@ void gpu_array_ref_group_compute_tiling(struct gpu_array_ref_group *group)
 
 	space = isl_map_get_space(group->access);
 	space = isl_space_from_range(isl_space_range(space));
-	space = isl_space_add_dims(space, isl_dim_in, group->depth);
+	space = isl_space_add_dims(space, isl_dim_in, tile->depth);
 	insert_array = isl_multi_aff_domain_map(isl_space_copy(space));
 
 	for (i = 0; i < tile->n; ++i)

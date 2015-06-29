@@ -10,9 +10,6 @@
  * Otherwise, it is accessed from global memory.
  * Note that if both private_tile and shared_tile are set, then shared_tile
  * is only used inside group_common_shared_memory_tile.
- * "depth" reflects the number of schedule dimensions that affect the tile
- * (as selected by gpu_array_ref_group_tile).
- * The copying into and/or out of the tile is performed at that depth.
  */
 struct gpu_array_ref_group {
 	/* The references in this group access this local array. */
@@ -30,19 +27,19 @@ struct gpu_array_ref_group {
 	 * exact_write is set if all writes are definite writes.
 	 * slice is set if there is at least one access in the group
 	 * that refers to more than one element
+	 * "min_depth" is the minimum of the tile depths and thread_depth.
 	 */
 	isl_map *access;
 	int write;
 	int exact_write;
 	int slice;
+	int min_depth;
 
 	/* The shared memory tile, NULL if none. */
 	struct gpu_array_tile *shared_tile;
 
 	/* The private memory tile, NULL if none. */
 	struct gpu_array_tile *private_tile;
-
-	int depth;
 
 	/* References in this group; point to elements of a linked list. */
 	int n_ref;
