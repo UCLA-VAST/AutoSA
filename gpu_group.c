@@ -70,11 +70,15 @@ __isl_give isl_union_map *gpu_array_ref_group_access_relation(
 /* Should this array reference group be mapped to private, shared or global
  * memory?
  * If we have computed both a private and a shared tile, then
- * the private tile is used, i.e., the group is mapped to private memory.
+ * the tile with the smallest depth is used.  If both have the same depth,
+ * then the private tile is used.
  */
 enum ppcg_group_access_type gpu_array_ref_group_type(
 	struct gpu_array_ref_group *group)
 {
+	if (group->private_tile && group->shared_tile &&
+	    group->shared_tile->depth < group->private_tile->depth)
+		return ppcg_access_shared;
 	if (group->private_tile)
 		return ppcg_access_private;
 	if (group->shared_tile)
