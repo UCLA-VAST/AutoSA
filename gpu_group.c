@@ -1569,7 +1569,6 @@ static __isl_give isl_multi_aff *strided_tile(
 void gpu_array_ref_group_compute_tiling(struct gpu_array_ref_group *group)
 {
 	int i;
-	int dim;
 	struct gpu_array_tile *tile;
 	struct gpu_array_info *array = group->array;
 	isl_space *space;
@@ -1584,9 +1583,8 @@ void gpu_array_ref_group_compute_tiling(struct gpu_array_ref_group *group)
 		return;
 
 	space = isl_map_get_space(group->access);
-	dim = isl_space_dim(space, isl_dim_in);
-	space = isl_space_drop_dims(space, isl_dim_in, group->depth,
-							dim - group->depth);
+	space = isl_space_from_range(isl_space_range(space));
+	space = isl_space_add_dims(space, isl_dim_in, group->depth);
 	insert_array = isl_multi_aff_domain_map(isl_space_copy(space));
 
 	for (i = 0; i < tile->n; ++i)
