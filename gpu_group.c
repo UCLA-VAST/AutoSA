@@ -25,10 +25,12 @@ __isl_give isl_printer *gpu_array_ref_group_print_name(
 	struct gpu_array_ref_group *group, __isl_take isl_printer *p)
 {
 	int global = 0;
+	enum ppcg_group_access_type type;
 
-	if (group->private_tile)
+	type = gpu_array_ref_group_type(group);
+	if (type == ppcg_access_private)
 		p = isl_printer_print_str(p, "private_");
-	else if (group->shared_tile)
+	else if (type == ppcg_access_shared)
 		p = isl_printer_print_str(p, "shared_");
 	else
 		global = 1;
@@ -65,19 +67,36 @@ __isl_give isl_union_map *gpu_array_ref_group_access_relation(
 	return access;
 }
 
+/* Should this array reference group be mapped to private, shared or global
+ * memory?
+ * If we have computed both a private and a shared tile, then
+ * the private tile is used, i.e., the group is mapped to private memory.
+ */
+enum ppcg_group_access_type gpu_array_ref_group_type(
+	struct gpu_array_ref_group *group)
+{
+	if (group->private_tile)
+		return ppcg_access_private;
+	if (group->shared_tile)
+		return ppcg_access_shared;
+	return ppcg_access_global;
+}
+
+
 /* Return the effective gpu_array_tile associated to "group" or
  * NULL if there is no such gpu_array_tile.
- * If we have computed both a private and a shared tile, then
- * the private tile is used.
  */
 struct gpu_array_tile *gpu_array_ref_group_tile(
 	struct gpu_array_ref_group *group)
 {
-	if (group->private_tile)
-		return group->private_tile;
-	if (group->shared_tile)
+	switch (gpu_array_ref_group_type(group)) {
+	case ppcg_access_global:
+		return NULL;
+	case ppcg_access_shared:
 		return group->shared_tile;
-	return NULL;
+	case ppcg_access_private:
+		return group->private_tile;
+	}
 }
 
 /* Does the tile associated to "group" require unrolling of the schedule
@@ -1576,9 +1595,7 @@ void gpu_array_ref_group_compute_tiling(struct gpu_array_ref_group *group)
 	isl_printer *p;
 	char *local_name;
 
-	tile = group->private_tile;
-	if (!tile)
-		tile = group->shared_tile;
+	tile = gpu_array_ref_group_tile(group);
 	if (!tile)
 		return;
 

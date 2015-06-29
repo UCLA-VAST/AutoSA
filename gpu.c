@@ -929,11 +929,11 @@ static void check_shared_memory_bound(struct ppcg_kernel *kernel)
 
 		for (j = 0; j < local->n_group; ++j) {
 			struct gpu_array_ref_group *group;
+			enum ppcg_group_access_type type;
 
 			group = local->groups[j];
-			if (group->private_tile)
-				continue;
-			if (!group->shared_tile)
+			type = gpu_array_ref_group_type(group);
+			if (type != ppcg_access_shared)
 				continue;
 
 			size = gpu_array_tile_size(group->shared_tile);
@@ -1219,12 +1219,8 @@ static void create_kernel_var(isl_ctx *ctx, struct gpu_array_ref_group *group,
 
 	var->array = group->array;
 
-	tile = group->private_tile;
-	var->type = ppcg_access_private;
-	if (!tile) {
-		tile = group->shared_tile;
-		var->type = ppcg_access_shared;
-	}
+	var->type = gpu_array_ref_group_type(group);
+	tile = gpu_array_ref_group_tile(group);
 
 	p = isl_printer_to_str(ctx);
 	p = gpu_array_ref_group_print_name(group, p);
@@ -1248,7 +1244,10 @@ static int create_kernel_vars(struct ppcg_kernel *kernel)
 
 		for (j = 0; j < array->n_group; ++j) {
 			struct gpu_array_ref_group *group = array->groups[j];
-			if (group->private_tile || group->shared_tile)
+			enum ppcg_group_access_type type;
+
+			type = gpu_array_ref_group_type(group);
+			if (type != ppcg_access_global)
 				++n;
 		}
 	}
@@ -1264,7 +1263,10 @@ static int create_kernel_vars(struct ppcg_kernel *kernel)
 
 		for (j = 0; j < array->n_group; ++j) {
 			struct gpu_array_ref_group *group = array->groups[j];
-			if (!group->private_tile && !group->shared_tile)
+			enum ppcg_group_access_type type;
+
+			type = gpu_array_ref_group_type(group);
+			if (type == ppcg_access_global)
 				continue;
 			create_kernel_var(kernel->ctx, group, &kernel->var[n]);
 			++n;
@@ -1580,9 +1582,7 @@ static __isl_give isl_multi_pw_aff *transform_index(
 		return index;
 	}
 
-	tile = group->private_tile;
-	if (!tile)
-		tile = group->shared_tile;
+	tile = gpu_array_ref_group_tile(group);
 	data->global = !tile;
 	if (!tile)
 		return index;
@@ -2517,11 +2517,13 @@ static __isl_give isl_union_set *collect_non_private_tagged_writes(
 
 		for (j = 0; j < array->n_group; ++j) {
 			struct gpu_array_ref_group *group = array->groups[j];
+			enum ppcg_group_access_type type;
 			isl_union_set *writes_ij;
 
 			if (!group->write)
 				continue;
-			if (group->private_tile)
+			type = gpu_array_ref_group_type(group);
+			if (type == ppcg_access_private)
 				continue;
 			writes_ij = group_tagged_writes(group);
 			writes = isl_union_set_union(writes, writes_ij);
@@ -3390,9 +3392,12 @@ static __isl_give isl_schedule_node *add_copies_group(
 	struct ppcg_kernel *kernel, struct gpu_array_ref_group *group,
 	__isl_take isl_schedule_node *node, int read)
 {
-	if (group->private_tile)
+	enum ppcg_group_access_type type;
+
+	type = gpu_array_ref_group_type(group);
+	if (type == ppcg_access_private)
 		return add_copies_group_private(kernel, group, node, read);
-	if (group->shared_tile)
+	if (type == ppcg_access_shared)
 		return add_copies_group_shared(kernel, group, node, read);
 	return node;
 }
