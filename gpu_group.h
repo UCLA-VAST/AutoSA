@@ -26,7 +26,7 @@ struct gpu_array_ref_group {
 	/* The following fields are use during the construction of the groups.
 	 * access is the combined access relation relative to the shared
 	 * memory tiling.  In particular, the domain of the map corresponds
-	 * to the first shared_schedule_dim dimensions of the kernel schedule.
+	 * to the first thread_depth dimensions of the kernel schedule.
 	 * write is set if any access in the group is a write.
 	 * exact_write is set if all writes are definite writes.
 	 * slice is set if there is at least one access in the group
