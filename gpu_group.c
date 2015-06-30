@@ -1603,6 +1603,21 @@ static void compute_privatization(struct gpu_group_data *data,
 	data->privatization = set;
 }
 
+/* Return the prefix schedule at "node" as a relation
+ * between domain elements and schedule dimensions after detecting
+ * equalities in this relation.
+ */
+static __isl_give isl_union_map *prefix_with_equalities(
+	__isl_keep isl_schedule_node *node)
+{
+	isl_union_map *schedule;
+
+	schedule = isl_schedule_node_get_prefix_schedule_relation(node);
+	schedule = isl_union_map_detect_equalities(schedule);
+
+	return schedule;
+}
+
 /* Group references of all arrays in "kernel".
  * "node" points to the kernel mark.
  *
@@ -1628,9 +1643,7 @@ int gpu_group_references(struct ppcg_kernel *kernel,
 	node = isl_schedule_node_copy(node);
 	node = gpu_tree_move_down_to_thread(node, kernel->core);
 	data.shared_depth = isl_schedule_node_get_schedule_depth(node);
-	data.shared_sched =
-		isl_schedule_node_get_prefix_schedule_relation(node);
-	data.shared_sched = isl_union_map_detect_equalities(data.shared_sched);
+	data.shared_sched = prefix_with_equalities(node);
 
 	node = isl_schedule_node_child(node, 0);
 	data.thread_depth = isl_schedule_node_get_schedule_depth(node);
