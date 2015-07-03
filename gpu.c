@@ -1118,7 +1118,7 @@ static void extract_fixed_size(__isl_take isl_set *set, int *size)
  * We would have to make sure to project out all b%d and t%d parameters,
  * however.
  */
-static void extract_block_size(struct ppcg_kernel *kernel,
+static isl_stat extract_block_size(struct ppcg_kernel *kernel,
 	__isl_take isl_union_set *domain)
 {
 	int i;
@@ -1134,17 +1134,28 @@ static void extract_block_size(struct ppcg_kernel *kernel,
 		int pos;
 		isl_id *id;
 
+		if (!block)
+			return isl_stat_error;
+
 		id = isl_id_list_get_id(kernel->thread_ids, i);
 		pos = isl_set_find_dim_by_id(block, isl_dim_param, id);
 		isl_id_free(id);
-		assert(pos >= 0);
+		if (pos < 0)
+			isl_die(isl_set_get_ctx(block), isl_error_internal,
+				"missing constraints on thread identifier",
+				block = isl_set_free(block));
 		block = isl_set_equate(block, isl_dim_param, pos,
 					isl_dim_set, i);
 	}
 	nparam = isl_set_dim(block, isl_dim_param);
 	block = isl_set_project_out(block, isl_dim_param, 0, nparam);
 
+	if (!block)
+		return isl_stat_error;
+
 	extract_fixed_size(block, kernel->block_dim);
+
+	return isl_stat_ok;
 }
 
 struct ppcg_kernel *ppcg_kernel_free(struct ppcg_kernel *kernel)
@@ -3689,7 +3700,8 @@ static __isl_give isl_schedule_node *create_kernel(struct gpu_gen *gen,
 						kernel->n_block, "t");
 	kernel->thread_filter = set_schedule_modulo(node, kernel->thread_ids,
 						kernel->block_dim);
-	extract_block_size(kernel, domain);
+	if (extract_block_size(kernel, domain) < 0)
+		node = isl_schedule_node_free(node);
 
 	node = gpu_tree_move_up_to_kernel(node);
 	node = isl_schedule_node_child(node, 0);
