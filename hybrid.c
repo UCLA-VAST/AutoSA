@@ -204,7 +204,8 @@ isl_bool ppcg_ht_bounds_is_valid(__isl_keep ppcg_ht_bounds *bounds)
  * define the hexagonal shape and the required skewing in the remaining
  * space dimensions.
  *
- * "input_schedule" is the partial schedule of the input pair of band nodes.
+ * "input_node" points to the input pair of band nodes.
+ * "input_schedule" is the partial schedule of this input pair of band nodes.
  * The space of this schedule is [P -> C], where P is the space
  * of the parent node and C is the space of the child node.
  *
@@ -239,6 +240,7 @@ struct ppcg_ht_tiling {
 	int ref;
 
 	ppcg_ht_bounds *bounds;
+	isl_schedule_node *input_node;
 	isl_multi_union_pw_aff *input_schedule;
 
 	isl_multi_val *space_sizes;
@@ -279,6 +281,7 @@ static __isl_null ppcg_ht_tiling *ppcg_ht_tiling_free(
 		return NULL;
 
 	ppcg_ht_bounds_free(tiling->bounds);
+	isl_schedule_node_free(tiling->input_node);
 	isl_multi_union_pw_aff_free(tiling->input_schedule);
 	isl_multi_val_free(tiling->space_sizes);
 	isl_aff_free(tiling->time_tile);
@@ -865,12 +868,14 @@ static __isl_give ppcg_ht_tiling *ppcg_ht_tiling_set_project_ts(
 
 /* Construct a hybrid tiling description from bounds on the dependence
  * distances "bounds".
+ * "input_node" points to the original parent node.
  * "input_schedule" is the combined schedule of the parent and child
  * node in the input.
  * "tile_sizes" are the original, user specified tile sizes.
  */
 static __isl_give ppcg_ht_tiling *ppcg_ht_bounds_construct_tiling(
 	__isl_take ppcg_ht_bounds *bounds,
+	__isl_keep isl_schedule_node *input_node,
 	__isl_keep isl_multi_union_pw_aff *input_schedule,
 	__isl_keep isl_multi_val *tile_sizes)
 {
@@ -883,7 +888,7 @@ static __isl_give ppcg_ht_tiling *ppcg_ht_bounds_construct_tiling(
 	isl_val *st, *s0, *du, *dl;
 	isl_space *ts, *local_ts;
 
-	if (!bounds || !input_schedule || !tile_sizes)
+	if (!bounds || !input_node || !input_schedule || !tile_sizes)
 		goto error;
 
 	ctx = isl_multi_union_pw_aff_get_ctx(input_schedule);
@@ -911,6 +916,7 @@ static __isl_give ppcg_ht_tiling *ppcg_ht_bounds_construct_tiling(
 	localize = compute_localize(local_ts, shift_space, st, space_sizes);
 	isl_space_free(ts);
 
+	tiling->input_node = isl_schedule_node_copy(input_node);
 	tiling->input_schedule = isl_multi_union_pw_aff_copy(input_schedule);
 	tiling->space_sizes = space_sizes;
 	tiling->bounds = bounds;
@@ -1907,7 +1913,7 @@ __isl_give isl_schedule_node *ppcg_ht_bounds_insert_tiling(
 
 	input = extract_input_schedule(node);
 
-	tiling = ppcg_ht_bounds_construct_tiling(bounds, input, sizes);
+	tiling = ppcg_ht_bounds_construct_tiling(bounds, node, input, sizes);
 	phase_0 = ppcg_ht_tiling_compute_phase(tiling, 1);
 	phase_1 = ppcg_ht_tiling_compute_phase(tiling, 0);
 	time = combine_time_tile(phase_0, phase_1);
