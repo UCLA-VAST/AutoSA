@@ -360,8 +360,38 @@ static void compute_tagger(struct ppcg_scop *ps)
  *
  * We compute the "dependence" of any "kill" (an explicit kill
  * or a must write) on any may write.
- * The may writes with a "depending" kill are definitely killed.
+ * The elements accessed by the may writes with a "depending" kill
+ * also accessing the element are definitely killed.
  * The remaining may writes can potentially be live out.
+ *
+ * The dependence analysis is based on tagged domain elements and
+ * produces a result of the form
+ *
+ *	{ [IW -> RW] -> [IK -> RK] }
+ *
+ * with IW the instance of the write statement and RW the write references
+ * and similarly for the kills.
+ * Combining this result with the accessed elements
+ *
+ *	{ [[DW -> RW] -> AW] -> [DW -> RW] } .
+ *		{ [IW -> RW] -> [IK -> RK] } .
+ *		{ [IK -> RK] -> [[IK -> RK] -> AK] }
+ *
+ * produces
+ *
+ *	{ [[DW -> RW] -> AW] -> [[IK -> RK] -> AK] }
+ *
+ * This is transformed into
+ *
+ *	{ [[DW -> RW] -> [IK -> RK]] -> [AW -> AK] }
+ *
+ * after which the accessed elements are equated
+ *
+ *	{ [[DW -> RW] -> [IK -> RK]] -> [A -> A] }
+ *
+ * and the domain factor is extracted
+ *
+ *	{ [DW -> RW] -> A] }
  */
 static void compute_live_out(struct ppcg_scop *ps)
 {
@@ -370,6 +400,9 @@ static void compute_live_out(struct ppcg_scop *ps)
 	isl_union_map *kills;
 	isl_union_map *exposed;
 	isl_union_map *covering;
+	isl_union_map *universe;
+	isl_union_map *writes;
+	isl_union_set *accessed;
 	isl_union_access_info *access;
 	isl_union_flow *flow;
 
@@ -378,16 +411,28 @@ static void compute_live_out(struct ppcg_scop *ps)
 	schedule = isl_schedule_pullback_union_pw_multi_aff(schedule, tagger);
 	kills = isl_union_map_union(isl_union_map_copy(ps->tagged_must_writes),
 				    isl_union_map_copy(ps->tagged_must_kills));
-	access = isl_union_access_info_from_sink(kills);
+	access = isl_union_access_info_from_sink(isl_union_map_copy(kills));
 	access = isl_union_access_info_set_may_source(access,
 				isl_union_map_copy(ps->tagged_may_writes));
 	access = isl_union_access_info_set_schedule(access, schedule);
 	flow = isl_union_access_info_compute_flow(access);
 	covering = isl_union_flow_get_may_dependence(flow);
 	isl_union_flow_free(flow);
+
+	universe = isl_union_map_universe(isl_union_map_copy(kills));
+	accessed = isl_union_map_range(universe);
+	kills = isl_union_map_domain_map(kills);
+	kills = isl_union_map_reverse(kills);
+	writes = isl_union_map_copy(ps->tagged_may_writes);
+	writes = isl_union_map_domain_map(writes);
+	covering = isl_union_map_apply_range(covering, kills);
+	covering = isl_union_map_apply_range(writes, covering);
+	covering = isl_union_map_zip(covering);
+	accessed = isl_union_map_wrap(isl_union_set_identity(accessed));
+	covering = isl_union_map_intersect_range(covering, accessed);
+	covering = isl_union_map_factor_domain(covering);
 	exposed = isl_union_map_copy(ps->tagged_may_writes);
-	exposed = isl_union_map_subtract_domain(exposed,
-				isl_union_map_domain(covering));
+	exposed = isl_union_map_subtract(exposed, covering);
 	ps->live_out = project_out_tags(exposed);
 }
 
