@@ -496,15 +496,15 @@ error:
 	return NULL;
 }
 
-/* Generate CPU code for the scop "ps" and print the corresponding C code
- * to "p", including variable declarations.
+/* Generate CPU code for the scop "ps" using "schedule" and
+ * print the corresponding C code to "p", including variable declarations.
  */
-__isl_give isl_printer *print_cpu(__isl_take isl_printer *p,
-	struct ppcg_scop *ps, struct ppcg_options *options)
+static __isl_give isl_printer *print_cpu_with_schedule(
+	__isl_take isl_printer *p, struct ppcg_scop *ps,
+	__isl_take isl_schedule *schedule, struct ppcg_options *options)
 {
 	int hidden;
 	isl_set *context;
-	isl_schedule *schedule;
 
 	p = isl_printer_start_line(p);
 	p = isl_printer_print_str(p, "/* ppcg generated CPU code */");
@@ -521,7 +521,6 @@ __isl_give isl_printer *print_cpu(__isl_take isl_printer *p,
 		p = ppcg_print_hidden_declarations(p, ps);
 	}
 
-	schedule = isl_schedule_copy(ps->schedule);
 	context = isl_set_copy(ps->context);
 	context = isl_set_from_params(context);
 	schedule = isl_schedule_insert_context(schedule, context);
@@ -532,6 +531,18 @@ __isl_give isl_printer *print_cpu(__isl_take isl_printer *p,
 		p = ppcg_end_block(p);
 
 	return p;
+}
+
+/* Generate CPU code for the scop "ps" and print the corresponding C code
+ * to "p", including variable declarations.
+ */
+__isl_give isl_printer *print_cpu(__isl_take isl_printer *p,
+	struct ppcg_scop *ps, struct ppcg_options *options)
+{
+	isl_schedule *schedule;
+
+	schedule = isl_schedule_copy(ps->schedule);
+	return print_cpu_with_schedule(p, ps, schedule, options);
 }
 
 /* Wrapper around print_cpu for use as a ppcg_transform callback.
