@@ -3991,51 +3991,6 @@ static __isl_give isl_schedule_node *mark_kernels(struct gpu_gen *gen,
 						&mark_outer_permutable, gen);
 }
 
-/* Save the schedule "schedule" to a file called "filename".
- * The schedule is printed in block style.
- */
-static void save_schedule(__isl_keep isl_schedule *schedule,
-	const char *filename)
-{
-	FILE *file;
-	isl_ctx *ctx;
-	isl_printer *p;
-
-	if (!schedule)
-		return;
-
-	file = fopen(filename, "w");
-	if (!file) {
-		fprintf(stderr, "Unable to open '%s' for writing\n", filename);
-		return;
-	}
-	ctx = isl_schedule_get_ctx(schedule);
-	p = isl_printer_to_file(ctx, file);
-	p = isl_printer_set_yaml_style(p, ISL_YAML_STYLE_BLOCK);
-	p = isl_printer_print_schedule(p, schedule);
-	isl_printer_free(p);
-	fclose(file);
-}
-
-/* Load and return a schedule from a file called "filename".
- */
-static __isl_give isl_schedule *load_schedule(isl_ctx *ctx,
-	const char *filename)
-{
-	FILE *file;
-	isl_schedule *schedule;
-
-	file = fopen(filename, "r");
-	if (!file) {
-		fprintf(stderr, "Unable to open '%s' for reading\n", filename);
-		return NULL;
-	}
-	schedule = isl_schedule_read_from_file(ctx, file);
-	fclose(file);
-
-	return schedule;
-}
-
 /* Construct schedule constraints from the dependences in prog->scop and
  * the array order dependences in prog->array_order.
  *
@@ -4273,30 +4228,27 @@ static __isl_give isl_schedule *determine_properties_original_schedule(
 	return schedule;
 }
 
+/* Compute a schedule or determine the properties of the original schedule
+ * depending on the value of the "reschedule" option.
+ */
+static __isl_give isl_schedule *compute_or_set_properties(void *user)
+{
+	struct gpu_gen *gen = user;
+
+	if (gen->options->reschedule)
+		return compute_schedule(gen);
+	else
+		return determine_properties_original_schedule(gen);
+}
+
 /* Obtain a schedule for the scop, by reading it from
  * a file, by computing one or by determining the properties
  * of the original schedule.
  */
 static __isl_give isl_schedule *get_schedule(struct gpu_gen *gen)
 {
-	isl_schedule *schedule;
-
-	if (gen->options->load_schedule_file) {
-		schedule = load_schedule(gen->ctx,
-					gen->options->load_schedule_file);
-	} else {
-		if (gen->options->reschedule)
-			schedule = compute_schedule(gen);
-		else
-			schedule = determine_properties_original_schedule(gen);
-		if (gen->options->save_schedule_file)
-			save_schedule(schedule,
-					gen->options->save_schedule_file);
-	}
-	if (gen->options->debug->dump_schedule)
-		isl_schedule_dump(schedule);
-
-	return schedule;
+	return ppcg_get_schedule(gen->ctx, gen->options,
+				&compute_or_set_properties, gen);
 }
 
 /* Construct the string "<a>_<b>".
