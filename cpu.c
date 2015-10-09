@@ -437,25 +437,20 @@ static isl_bool update_depth(__isl_keep isl_schedule_node *node, void *user)
 	return isl_bool_false;
 }
 
-/* Code generate the scop 'scop' and print the corresponding C code to 'p'.
+/* Code generate the scop 'scop' using "schedule"
+ * and print the corresponding C code to 'p'.
  */
 static __isl_give isl_printer *print_scop(struct ppcg_scop *scop,
-	__isl_take isl_printer *p, struct ppcg_options *options)
+	__isl_take isl_schedule *schedule, __isl_take isl_printer *p,
+	struct ppcg_options *options)
 {
 	isl_ctx *ctx = isl_printer_get_ctx(p);
-	isl_set *context;
-	isl_schedule *schedule;
 	isl_ast_build *build;
 	isl_ast_print_options *print_options;
 	isl_ast_node *tree;
 	isl_id_list *iterators;
 	struct ast_build_userinfo build_info;
 	int depth;
-
-	context = isl_set_copy(scop->context);
-	context = isl_set_from_params(context);
-	schedule = isl_schedule_copy(scop->schedule);
-	schedule = isl_schedule_insert_context(schedule, context);
 
 	depth = 0;
 	if (isl_schedule_foreach_schedule_node_top_down(schedule, &update_depth,
@@ -508,6 +503,8 @@ __isl_give isl_printer *print_cpu(__isl_take isl_printer *p,
 	struct ppcg_scop *ps, struct ppcg_options *options)
 {
 	int hidden;
+	isl_set *context;
+	isl_schedule *schedule;
 
 	p = isl_printer_start_line(p);
 	p = isl_printer_print_str(p, "/* ppcg generated CPU code */");
@@ -523,9 +520,14 @@ __isl_give isl_printer *print_cpu(__isl_take isl_printer *p,
 		p = ppcg_start_block(p);
 		p = ppcg_print_hidden_declarations(p, ps);
 	}
+
+	schedule = isl_schedule_copy(ps->schedule);
+	context = isl_set_copy(ps->context);
+	context = isl_set_from_params(context);
+	schedule = isl_schedule_insert_context(schedule, context);
 	if (options->debug->dump_final_schedule)
-		isl_schedule_dump(ps->schedule);
-	p = print_scop(ps, p, options);
+		isl_schedule_dump(schedule);
+	p = print_scop(ps, schedule, p, options);
 	if (hidden)
 		p = ppcg_end_block(p);
 
