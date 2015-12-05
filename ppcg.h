@@ -37,8 +37,10 @@ int ppcg_extract_base_name(char *name, const char *input);
  *	to a reference identifier
  * "live_out" contains the potential write accesses that are potentially
  *	not killed by any kills or any other writes.
- * "tagged_must_kills" contains all definite kill accesses with
- *	a reference identifier in the domain.
+ * "must_kills" contains all definite kill accesses.
+ * "tagged_must_kills" is the same as "must_kills", except that the domain
+ *	is a wrapped relation mapping an iteration domain
+ *	to a reference identifier.
  *
  * "tagger" maps tagged iteration domains to the corresponding untagged
  *	iteration domain.
@@ -87,6 +89,7 @@ struct ppcg_scop {
 	isl_union_map *must_writes;
 	isl_union_map *live_out;
 	isl_union_map *tagged_must_kills;
+	isl_union_map *must_kills;
 
 	isl_union_pw_multi_aff *tagger;
 

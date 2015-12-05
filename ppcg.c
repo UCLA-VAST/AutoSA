@@ -873,6 +873,7 @@ static void *ppcg_scop_free(struct ppcg_scop *ps)
 	isl_union_map_free(ps->must_writes);
 	isl_union_map_free(ps->live_out);
 	isl_union_map_free(ps->tagged_must_kills);
+	isl_union_map_free(ps->must_kills);
 	isl_union_map_free(ps->tagged_dep_flow);
 	isl_union_map_free(ps->dep_flow);
 	isl_union_map_free(ps->dep_false);
@@ -930,6 +931,7 @@ static struct ppcg_scop *ppcg_scop_from_pet_scop(struct pet_scop *scop,
 	ps->tagged_must_writes = pet_scop_collect_tagged_must_writes(scop);
 	ps->must_writes = pet_scop_collect_must_writes(scop);
 	ps->tagged_must_kills = pet_scop_collect_tagged_must_kills(scop);
+	ps->must_kills = pet_scop_collect_must_kills(scop);
 	ps->schedule = isl_schedule_copy(scop->schedule);
 	ps->pet = scop;
 	ps->independence = isl_union_map_empty(isl_set_get_space(ps->context));
@@ -943,7 +945,7 @@ static struct ppcg_scop *ppcg_scop_from_pet_scop(struct pet_scop *scop,
 
 	if (!ps->context || !ps->domain || !ps->call || !ps->reads ||
 	    !ps->may_writes || !ps->must_writes || !ps->tagged_must_kills ||
-	    !ps->schedule || !ps->independence || !ps->names)
+	    !ps->must_kills || !ps->schedule || !ps->independence || !ps->names)
 		return ppcg_scop_free(ps);
 
 	return ps;
