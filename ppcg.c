@@ -892,14 +892,14 @@ static struct ppcg_scop *ppcg_scop_from_pet_scop(struct pet_scop *scop,
 	}
 	ps->domain = collect_non_kill_domains(scop);
 	ps->call = collect_call_domains(scop);
-	ps->tagged_reads = pet_scop_collect_tagged_may_reads(scop);
-	ps->reads = pet_scop_collect_may_reads(scop);
-	ps->tagged_may_writes = pet_scop_collect_tagged_may_writes(scop);
-	ps->may_writes = pet_scop_collect_may_writes(scop);
-	ps->tagged_must_writes = pet_scop_collect_tagged_must_writes(scop);
-	ps->must_writes = pet_scop_collect_must_writes(scop);
-	ps->tagged_must_kills = pet_scop_collect_tagged_must_kills(scop);
-	ps->must_kills = pet_scop_collect_must_kills(scop);
+	ps->tagged_reads = pet_scop_get_tagged_may_reads(scop);
+	ps->reads = pet_scop_get_may_reads(scop);
+	ps->tagged_may_writes = pet_scop_get_tagged_may_writes(scop);
+	ps->may_writes = pet_scop_get_may_writes(scop);
+	ps->tagged_must_writes = pet_scop_get_tagged_must_writes(scop);
+	ps->must_writes = pet_scop_get_must_writes(scop);
+	ps->tagged_must_kills = pet_scop_get_tagged_must_kills(scop);
+	ps->must_kills = pet_scop_get_must_kills(scop);
 	ps->schedule = isl_schedule_copy(scop->schedule);
 	ps->pet = scop;
 	ps->independence = isl_union_map_empty(isl_set_get_space(ps->context));
