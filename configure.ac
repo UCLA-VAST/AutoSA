@@ -25,6 +25,7 @@ bundled)
 	ISL_CFLAGS="$ISL_CFLAGS"
 	ppcg_configure_args="$ppcg_configure_args --with-isl-builddir=../isl"
 	ppcg_configure_args="$ppcg_configure_args --with-isl=build"
+	ppcg_configure_args="$ppcg_configure_args --with-clang=system"
 	;;
 build)
 	ISL_BUILDDIR=`echo @abs_builddir@ | $with_isl_builddir/config.status --file=-`
