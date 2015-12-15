@@ -3875,6 +3875,49 @@ static __isl_give isl_schedule_node *mark_outer_permutable(
 	return node;
 }
 
+/* Given a set or sequence node, return the union of the filters of
+ * the direct subtrees that do not contain any suitably permutable bands
+ * (according to subtree_has_permutable_bands).
+ */
+static __isl_give isl_union_set *get_all_non_parallel_subtree_filters(
+	__isl_keep isl_schedule_node *node)
+{
+	isl_space *space;
+	isl_union_set *filter;
+	int i, n;
+
+	n = isl_schedule_node_n_children(node);
+	if (n < 0)
+		return NULL;
+
+	node = isl_schedule_node_copy(node);
+	node = isl_schedule_node_child(node, 0);
+	filter = isl_schedule_node_filter_get_filter(node);
+	node = isl_schedule_node_parent(node);
+	space = isl_union_set_get_space(filter);
+	isl_union_set_free(filter);
+	filter = isl_union_set_empty(space);
+
+	for (i = 0; i < n; ++i) {
+		int parallelism;
+
+		node = isl_schedule_node_child(node, i);
+		parallelism = subtree_has_permutable_bands(node);
+		if (parallelism < 0) {
+			filter = isl_union_set_free(filter);
+		} else if (!parallelism) {
+			isl_union_set *filter_i;
+			filter_i = isl_schedule_node_filter_get_filter(node);
+			filter = isl_union_set_union(filter, filter_i);
+		}
+		node = isl_schedule_node_parent(node);
+	}
+
+	isl_schedule_node_free(node);
+
+	return filter;
+}
+
 /* Mark all variables that are accessed by the statement instances in "domain"
  * and that are local to "prog" as requiring a declaration in the host code.
  */
@@ -3924,40 +3967,16 @@ error:
 static __isl_give isl_schedule_node *isolate_permutable_subtrees(
 	__isl_take isl_schedule_node *node, struct gpu_prog *prog)
 {
-	isl_space *space;
 	isl_union_set *filter;
-	int i, n;
 
 	if (!node)
 		return NULL;
 	if (isl_schedule_node_get_type(node) != isl_schedule_node_set)
 		return node;
 
-	n = isl_schedule_node_n_children(node);
-	if (n < 0)
-		return isl_schedule_node_free(node);
-
-	node = isl_schedule_node_child(node, 0);
-	filter = isl_schedule_node_filter_get_filter(node);
-	node = isl_schedule_node_parent(node);
-	space = isl_union_set_get_space(filter);
-	isl_union_set_free(filter);
-	filter = isl_union_set_empty(space);
-
-	for (i = 0; i < n; ++i) {
-		int parallelism;
-
-		node = isl_schedule_node_child(node, i);
-		parallelism = subtree_has_permutable_bands(node);
-		if (parallelism < 0) {
-			node = isl_schedule_node_free(node);
-		} else if (!parallelism) {
-			isl_union_set *filter_i;
-			filter_i = isl_schedule_node_filter_get_filter(node);
-			filter = isl_union_set_union(filter, filter_i);
-		}
-		node = isl_schedule_node_parent(node);
-	}
+	filter = get_all_non_parallel_subtree_filters(node);
+	if (!filter)
+		node = isl_schedule_node_free(node);
 
 	if (declare_accessed_local_variables(prog, filter) < 0)
 		node = isl_schedule_node_free(node);
