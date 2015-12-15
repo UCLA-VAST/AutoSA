@@ -2414,27 +2414,42 @@ static int has_any_permutable_node(__isl_keep isl_schedule *schedule)
 	return any_permutable;
 }
 
-/* Is "node" a leaf or can it be tiled and then mapped to
- * block and thread identifiers?
+/* Is "node" a candidate for mapping to block and thread identifiers?
+ * In particular, is it permutable with at least one coincident dimension?
+ * Alternatively, does the subtree rooted at "node" not contain
+ * any such permutable node?  Filter nodes are skipped in this case,
+ * because a band node will be inserted in front of the returned
+ * node and this is not possible for filter nodes that are children
+ * of set or sequence nodes.
  */
-static int is_leaf_or_tilable(__isl_keep isl_schedule_node *node)
+static int is_candidate(__isl_keep isl_schedule_node *node)
 {
+	int permutable;
+
 	if (isl_schedule_node_get_type(node) == isl_schedule_node_leaf)
 		return 1;
-	return is_permutable(node);
+	permutable = is_permutable(node);
+	if (permutable < 0 || permutable)
+		return permutable;
+	if (isl_schedule_node_get_type(node) == isl_schedule_node_filter)
+		return 0;
+	permutable = subtree_has_permutable_bands(node);
+	if (permutable < 0)
+		return -1;
+	return !permutable;
 }
 
 /* Is "node" the outermost node in its branch that can be tiled
  * and then mapped to block and thread identifiers?
- * If there are no such nodes in the branch and if "node" is a leaf,
- * then it is accepted too.
+ * If there are no such nodes in the subtree at "node" and
+ * if "node" is not a filter node, then it is accepted too.
  */
 static int is_outer_tilable(__isl_keep isl_schedule_node *node)
 {
 	int tilable;
 	isl_schedule_node *ancestor;
 
-	tilable = is_leaf_or_tilable(node);
+	tilable = is_candidate(node);
 	if (tilable < 0)
 		return -1;
 	if (!tilable)
@@ -2445,7 +2460,7 @@ static int is_outer_tilable(__isl_keep isl_schedule_node *node)
 	while (isl_schedule_node_has_parent(ancestor)) {
 		ancestor = isl_schedule_node_parent(ancestor);
 
-		tilable = is_permutable(ancestor);
+		tilable = is_candidate(ancestor);
 		if (tilable < 0 || tilable)
 			break;
 	}
@@ -3800,12 +3815,16 @@ static __isl_give isl_schedule_node *insert_empty_permutable_band(
 }
 
 /* If "node" is the outermost permutable band that can be mapped to block and
- * thread identifiers in its branch (or a leaf with no such outer bands),
+ * thread identifiers in its branch (or the root of a subtree with
+ * no such outer bands),
  * then mark the band as such, attaching a ppcg_kernel to the mark.
  *
- * If "node" originally points to a leaf, then insert a zero-dimensional
- * permutable band such that we can assume that "node" always
- * points to a band node.
+ * If "node" is the root of a subtree without permutable bands,
+ * then insert a zero-dimensional permutable band such that
+ * we can assume that "node" always points to a band node.
+ * This includes the case where "node" already points to a band node,
+ * but one without any coincident dimension.  In this case,
+ * the extra node ensures that this original node does not get tiled.
  *
  * Tile "node" using user specified tile sizes, after splitting the band
  * if the number of specified tile sizes is smaller than the dimension
@@ -3831,7 +3850,8 @@ static __isl_give isl_schedule_node *mark_outer_permutable(
 	if (!outer)
 		return node;
 
-	if (isl_schedule_node_get_type(node) == isl_schedule_node_leaf)
+	if (isl_schedule_node_get_type(node) != isl_schedule_node_band ||
+	    !isl_schedule_node_band_member_get_coincident(node, 0))
 		node = insert_empty_permutable_band(node);
 
 	tile_len = isl_schedule_node_band_n_member(node);
