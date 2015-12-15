@@ -3875,12 +3875,13 @@ static __isl_give isl_schedule_node *mark_outer_permutable(
 	return node;
 }
 
-/* Given a set or sequence node, return the union of the filters of
- * the direct subtrees that do not contain any suitably permutable bands
+/* Given a set or sequence node, return the union the filters of either all
+ * (if "only_initial" is not set) or the initial (if "only_initial" is set)
+ * direct subtrees that do not contain any suitably permutable bands
  * (according to subtree_has_permutable_bands).
  */
-static __isl_give isl_union_set *get_all_non_parallel_subtree_filters(
-	__isl_keep isl_schedule_node *node)
+static __isl_give isl_union_set *get_non_parallel_subtree_filters(
+	__isl_keep isl_schedule_node *node, int only_initial)
 {
 	isl_space *space;
 	isl_union_set *filter;
@@ -3909,13 +3910,34 @@ static __isl_give isl_union_set *get_all_non_parallel_subtree_filters(
 			isl_union_set *filter_i;
 			filter_i = isl_schedule_node_filter_get_filter(node);
 			filter = isl_union_set_union(filter, filter_i);
-		}
+		} else if (only_initial)
+			break;
 		node = isl_schedule_node_parent(node);
 	}
 
 	isl_schedule_node_free(node);
 
 	return filter;
+}
+
+/* Given a set or sequence node, return the union of the filters of
+ * the direct subtrees that do not contain any suitably permutable bands
+ * (according to subtree_has_permutable_bands).
+ */
+static __isl_give isl_union_set *get_all_non_parallel_subtree_filters(
+	__isl_keep isl_schedule_node *node)
+{
+	return get_non_parallel_subtree_filters(node, 0);
+}
+
+/* Given a set or sequence node, return the union of the filters of
+ * the initial direct subtrees that do not contain any suitably permutable
+ * bands (according to subtree_has_permutable_bands).
+ */
+static __isl_give isl_union_set *get_initial_non_parallel_subtree_filters(
+	__isl_keep isl_schedule_node *node)
+{
+	return get_non_parallel_subtree_filters(node, 1);
 }
 
 /* Mark all variables that are accessed by the statement instances in "domain"
@@ -3961,26 +3983,40 @@ error:
  * Adjust the schedule tree in order to execute the second group
  * after the first group and return a pointer to the first group,
  * assuming there are any such subtrees.
- * Mark all local variables in "prog" that are accessed by
- * the second group as requiring a declaration on the host.
+ * If "node" points to a sequence node, then separate the initial
+ * children that do not have suitably permutable bands and
+ * return a pointer to the subsequence of children that do have such bands,
+ * assuming there are any such subtrees.
+ *
+ * In both cases, mark all local variables in "prog" that are accessed by
+ * the group without permutable bands as requiring a declaration on the host.
  */
 static __isl_give isl_schedule_node *isolate_permutable_subtrees(
 	__isl_take isl_schedule_node *node, struct gpu_prog *prog)
 {
 	isl_union_set *filter;
+	enum isl_schedule_node_type type;
 
 	if (!node)
 		return NULL;
-	if (isl_schedule_node_get_type(node) != isl_schedule_node_set)
-		return node;
+	type = isl_schedule_node_get_type(node);
+	if (type == isl_schedule_node_set) {
+		filter = get_all_non_parallel_subtree_filters(node);
+		if (!filter)
+			node = isl_schedule_node_free(node);
 
-	filter = get_all_non_parallel_subtree_filters(node);
-	if (!filter)
-		node = isl_schedule_node_free(node);
+		if (declare_accessed_local_variables(prog, filter) < 0)
+			node = isl_schedule_node_free(node);
+		node = isl_schedule_node_order_after(node, filter);
+	} else if (type == isl_schedule_node_sequence) {
+		filter = get_initial_non_parallel_subtree_filters(node);
+		if (!filter)
+			node = isl_schedule_node_free(node);
 
-	if (declare_accessed_local_variables(prog, filter) < 0)
-		node = isl_schedule_node_free(node);
-	node = isl_schedule_node_order_after(node, filter);
+		if (declare_accessed_local_variables(prog, filter) < 0)
+			node = isl_schedule_node_free(node);
+		node = isl_schedule_node_order_before(node, filter);
+	}
 
 	return node;
 }
