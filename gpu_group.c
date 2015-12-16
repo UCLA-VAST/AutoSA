@@ -684,8 +684,8 @@ static isl_stat tile_set_depth(struct gpu_group_data *data,
 }
 
 /* Determine the number of schedule dimensions that affect the offset of the
- * shared or private tile and store the result in group->min_depth, with
- * a lower bound of data->kernel_depth.
+ * shared tile and store the minimum of the private and shared tile depth
+ * in group->min_depth, with a lower bound of data->kernel_depth.
  * If there is no tile defined on the array reference group,
  * then set group->min_depth to data->thread_depth.
  */
@@ -695,8 +695,6 @@ static int set_depth(struct gpu_group_data *data,
 	group->min_depth = data->thread_depth;
 
 	if (group->private_tile) {
-		if (tile_set_depth(data, group->private_tile) < 0)
-			return -1;
 		if (group->private_tile->depth < group->min_depth)
 			group->min_depth = group->private_tile->depth;
 	}
@@ -940,6 +938,12 @@ static int check_requires_unroll(struct gpu_group_data *data,
  * and then they could be allowed to access the same memory elements,
  * but our check does not allow this situation.
  *
+ * For private memory tiles, the number of schedule dimensions that
+ * affect the offset is computed and stored in tile->depth, with
+ * a lower bound of data->kernel_depth.
+ * The fields of the tile are then adjusted to only refer to the tile->depth
+ * outer schedule dimensions.
+ *
  * We also check that the index expression only depends on parallel
  * loops.  That way, we can move those loops innermost and unroll them.
  * Again, we use a test that is stricter than necessary.
@@ -1046,6 +1050,12 @@ static int compute_group_bounds_core(struct ppcg_kernel *kernel,
 		group->private_tile = gpu_array_tile_free(group->private_tile);
 
 	isl_map_free(acc);
+
+	if (group->private_tile) {
+		struct gpu_array_tile *tile = group->private_tile;
+		if (tile_adjust_depth(tile, compute_tile_depth(data, tile)) < 0)
+			return -1;
+	}
 
 	if (force_private && !group->private_tile)
 		isl_die(ctx, isl_error_internal,
