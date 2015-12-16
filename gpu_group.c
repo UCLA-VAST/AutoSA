@@ -639,6 +639,91 @@ static int compute_tile_depth(struct gpu_group_data *data,
 	return ++j;
 }
 
+/* Return the lowest depth between data->kernel_depth and data->thread_depth
+ * at which every array element accessed through "acc" is accessed
+ * by a single thread.  The input dimension of "acc" is
+ * data->thread_depth + data->n_thread, where the final data->n_thread
+ * dimensions are those that will be mapped to threads.
+ * If the values for these dimensions are uniquely determined
+ * by the array index and a given number of outer dimensions, then
+ * there is only one thread accessing that array element within those
+ * outer dimensions.
+ *
+ * The input space of "acc" is first split up, such that it has the form
+ *
+ *	[O -> T] -> A
+ *
+ * with O the outer dimensions, T the dimensions that will be mapped to threads
+ * and A the array index.
+ *
+ * Then the positions of T and A are interchanged to simplify the test
+ * whether T uniquely depends on O and A.
+ * In particular, the above access relation is first combined with
+ *
+ *	[O -> T] -> T
+ *
+ * to form
+ *
+ *	[O -> T] -> [A -> T]
+ *
+ * from which
+ *
+ *	O -> [A -> T]
+ *
+ * is extracted, which is then uncurried to
+ *
+ *	[O -> A] -> T
+ *
+ * Finally, the final dimensions of O are projected out one by one
+ * until T is no longer uniquely determined by A and the remaining
+ * dimensions in O.  The value returned is that of the last dimension
+ * that was successfully projected out.
+ * Note that there is no need to test whether [O -> A] -> T itself
+ * is single-valued as that was already tested in access_is_bijective.
+ */
+static int compute_accessed_by_single_thread_depth(struct gpu_group_data *data,
+	__isl_keep isl_map *acc)
+{
+	int i;
+	isl_space *space;
+	isl_map *map;
+	isl_bool sv;
+
+	if (data->thread_depth == data->kernel_depth)
+		return data->thread_depth;
+
+	acc = isl_map_copy(acc);
+
+	space = isl_map_get_space(acc);
+	space = isl_space_params(space);
+	space = isl_space_set_from_params(space);
+	space = isl_space_add_dims(space, isl_dim_set, data->thread_depth);
+	space = isl_space_from_domain(space);
+	space = isl_space_add_dims(space, isl_dim_out, data->n_thread);
+	space = isl_space_wrap(space);
+	map = isl_set_flatten_map(isl_set_universe(space));
+	acc = isl_map_apply_range(map, acc);
+
+	space = isl_space_domain(isl_map_get_space(acc));
+	map = isl_map_range_map(isl_map_universe(isl_space_unwrap(space)));
+	acc = isl_map_range_product(acc, map);
+	acc = isl_map_domain_factor_domain(acc);
+	acc = isl_map_uncurry(acc);
+
+	for (i = data->thread_depth - 1; i >= data->kernel_depth; --i) {
+		acc = isl_map_project_out(acc, isl_dim_in, i, 1);
+		sv = isl_map_is_single_valued(acc);
+		if (sv < 0)
+			return -1;
+		if (!sv)
+			break;
+	}
+
+	isl_map_free(acc);
+
+	return ++i;
+}
+
 /* Adjust the fields of "tile" to reflect the new input dimension "depth".
  * The dimension beyond "depth" are assumed not to affect the tile,
  * so they can simply be dropped.
@@ -940,7 +1025,10 @@ static int check_requires_unroll(struct gpu_group_data *data,
  *
  * For private memory tiles, the number of schedule dimensions that
  * affect the offset is computed and stored in tile->depth, with
- * a lower bound of data->kernel_depth.
+ * a lower bound of data->kernel_depth.  If this depth is smaller
+ * than the minimal depth that still ensures that every element
+ * is accessed by a single thread, then the depth is raised
+ * to this minimal depth.
  * The fields of the tile are then adjusted to only refer to the tile->depth
  * outer schedule dimensions.
  *
@@ -982,6 +1070,7 @@ static int compute_group_bounds_core(struct ppcg_kernel *kernel,
 	int use_private = force_private || kernel->options->use_private_memory;
 	int r = 0;
 	int requires_unroll;
+	int unique_depth;
 
 	if (!use_shared && !use_private)
 		return 0;
@@ -1030,11 +1119,13 @@ static int compute_group_bounds_core(struct ppcg_kernel *kernel,
 		return 0;
 	}
 
+	unique_depth = compute_accessed_by_single_thread_depth(data, acc);
+
 	acc = isl_map_intersect_domain(acc, isl_set_copy(data->privatization));
 	acc = isl_map_project_out(acc, isl_dim_in, data->thread_depth,
 								data->n_thread);
 	requires_unroll = check_requires_unroll(data, acc, force_private);
-	if (requires_unroll < 0 ||
+	if (unique_depth < 0 || requires_unroll < 0 ||
 	    (requires_unroll && kernel->any_force_private)) {
 		isl_map_free(acc);
 		return requires_unroll < 0 ? -1 : 0;
@@ -1053,7 +1144,10 @@ static int compute_group_bounds_core(struct ppcg_kernel *kernel,
 
 	if (group->private_tile) {
 		struct gpu_array_tile *tile = group->private_tile;
-		if (tile_adjust_depth(tile, compute_tile_depth(data, tile)) < 0)
+		int tile_depth = compute_tile_depth(data, tile);
+		if (tile_depth < unique_depth)
+			tile_depth = unique_depth;
+		if (tile_adjust_depth(tile, tile_depth) < 0)
 			return -1;
 	}
 
