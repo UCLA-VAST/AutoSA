@@ -2383,17 +2383,33 @@ static isl_bool set_permutable(__isl_keep isl_schedule_node *node, void *user)
 	return isl_bool_error;
 }
 
+/* Does the subtree rooted at "node" have any suitably permutable band nodes?
+ * That is, does it have any nodes that are permutable and that
+ * have a least one coincident dimension?
+ */
+static int subtree_has_permutable_bands(__isl_keep isl_schedule_node *node)
+{
+	int any_parallelism = 0;
+
+	if (isl_schedule_node_foreach_descendant_top_down(node, &set_permutable,
+						&any_parallelism) < 0 &&
+	    !any_parallelism)
+		return -1;
+
+	return any_parallelism;
+}
+
 /* Does "schedule" contain any permutable band with at least one coincident
  * member?
  */
 static int has_any_permutable_node(__isl_keep isl_schedule *schedule)
 {
-	int any_permutable = 0;
+	isl_schedule_node *root;
+	int any_permutable;
 
-	if (isl_schedule_foreach_schedule_node_top_down(schedule,
-				    &set_permutable, &any_permutable) < 0 &&
-	    !any_permutable)
-		return -1;
+	root = isl_schedule_get_root(schedule);
+	any_permutable = subtree_has_permutable_bands(root);
+	isl_schedule_node_free(root);
 
 	return any_permutable;
 }
@@ -3837,22 +3853,6 @@ static __isl_give isl_schedule_node *mark_outer_permutable(
 	free(tile_size);
 
 	return node;
-}
-
-/* Does the subtree rooted at "node" have any suitably permutable band nodes?
- * That is, does it have any nodes that are permutable and that
- * have a least one coincident dimension?
- */
-static int subtree_has_permutable_bands(__isl_keep isl_schedule_node *node)
-{
-	int any_parallelism = 0;
-
-	if (isl_schedule_node_foreach_descendant_top_down(node, &set_permutable,
-						&any_parallelism) < 0 &&
-	    !any_parallelism)
-		return -1;
-
-	return any_parallelism;
 }
 
 /* Mark all variables that are accessed by the statement instances in "domain"
