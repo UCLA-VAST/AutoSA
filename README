@@ -200,6 +200,11 @@ Contact
 For bug reports, feature requests and questions,
 contact http://groups.google.com/group/isl-development
 
+Whenever you report a bug, please mention the exact version of PPCG
+that you are using (output of "./ppcg --version").  If you are unable
+to compile PPCG, then report the git version (output of "git describe")
+or the version number included in the name of the tarball.
+
 
 Citing PPCG
 
