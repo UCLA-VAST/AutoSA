@@ -5,9 +5,14 @@
 
 #include "ppcg.h"
 
+extern const char *ppcg_min;
+extern const char *ppcg_max;
+extern const char *ppcg_fdiv_q;
+
 __isl_give isl_printer *ppcg_start_block(__isl_take isl_printer *p);
 __isl_give isl_printer *ppcg_end_block(__isl_take isl_printer *p);
 
+__isl_give isl_printer *ppcg_set_macro_names(__isl_take isl_printer *p);
 __isl_give isl_printer *ppcg_print_macros(__isl_take isl_printer *p,
 	__isl_keep isl_ast_node *node);
 

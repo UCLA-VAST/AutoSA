@@ -679,6 +679,7 @@ static __isl_give isl_printer *print_cpu_with_schedule(
 	p = isl_printer_start_line(p);
 	p = isl_printer_end_line(p);
 
+	p = ppcg_set_macro_names(p);
 	p = isl_ast_op_type_print_macro(isl_ast_op_fdiv_q, p);
 	p = ppcg_print_exposed_declarations(p, ps);
 	hidden = ppcg_scop_any_hidden_declarations(ps);

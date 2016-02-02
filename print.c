@@ -54,6 +54,23 @@ __isl_give isl_printer *ppcg_print_macros(__isl_take isl_printer *p,
 	return p;
 }
 
+/* Names used for the macros that may appear in a printed isl AST.
+ */
+const char *ppcg_min = "ppcg_min";
+const char *ppcg_max = "ppcg_max";
+const char *ppcg_fdiv_q = "ppcg_fdiv_q";
+
+/* Set the names of the macros that may appear in a printed isl AST.
+ */
+__isl_give isl_printer *ppcg_set_macro_names(__isl_take isl_printer *p)
+{
+	p = isl_ast_op_type_set_print_name(p, isl_ast_op_min, ppcg_min);
+	p = isl_ast_op_type_set_print_name(p, isl_ast_op_max, ppcg_max);
+	p = isl_ast_op_type_set_print_name(p, isl_ast_op_fdiv_q, ppcg_fdiv_q);
+
+	return p;
+}
+
 /* Print "extent" as a sequence of
  *
  *	[1 + maximal_value]
