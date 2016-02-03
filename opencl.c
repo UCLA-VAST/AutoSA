@@ -945,9 +945,9 @@ static __isl_give isl_printer *opencl_print_total_number_of_work_items_for_dim(
 		p = isl_printer_print_str(p, ") * ");
 		p = isl_printer_print_int(p, kernel->block_dim[i]);
 		isl_pw_aff_free(bound_grid);
-	} else if (i >= grid_dim)
+	} else if (i >= grid_dim) {
 		p = isl_printer_print_int(p, kernel->block_dim[i]);
-	else {
+	} else {
 		bound_grid = isl_multi_pw_aff_get_pw_aff(kernel->grid_size, i);
 		p = isl_printer_print_pw_aff(p, bound_grid);
 		isl_pw_aff_free(bound_grid);
