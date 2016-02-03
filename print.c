@@ -31,6 +31,35 @@ __isl_give isl_printer *ppcg_end_block(__isl_take isl_printer *p)
 	return p;
 }
 
+/* isl_id_to_ast_expr_foreach callback that prints the required
+ * macro definitions for "val".
+ */
+static isl_stat print_expr_macros(__isl_take isl_id *key,
+	__isl_take isl_ast_expr *val, void *user)
+{
+	isl_printer **p = user;
+
+	*p = isl_ast_expr_print_macros(val, *p);
+	isl_id_free(key);
+	isl_ast_expr_free(val);
+
+	if (!*p)
+		return isl_stat_error;
+	return isl_stat_ok;
+}
+
+/* Print the required macro definitions for the body of a statement in which
+ * the access expressions are replaced by the isl_ast_expr objects
+ * in "ref2expr".
+ */
+__isl_give isl_printer *ppcg_print_body_macros(__isl_take isl_printer *p,
+	__isl_keep isl_id_to_ast_expr *ref2expr)
+{
+	if (isl_id_to_ast_expr_foreach(ref2expr, &print_expr_macros, &p) < 0)
+		return isl_printer_free(p);
+	return p;
+}
+
 /* Print the required macros for "node".
  */
 __isl_give isl_printer *ppcg_print_macros(__isl_take isl_printer *p,
