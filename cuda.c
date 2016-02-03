@@ -56,12 +56,13 @@ static __isl_give isl_printer *declare_device_array(__isl_take isl_printer *p,
 	if (!array->linearize && array->n_index > 1) {
 		p = isl_printer_print_str(p, ")");
 		for (i = 1; i < array->n_index; i++) {
-			isl_pw_aff *bound;
-			bound = isl_multi_pw_aff_get_pw_aff(array->bound, i);
+			isl_ast_expr *bound;
+			bound = isl_ast_expr_get_op_arg(array->bound_expr,
+							1 + i);
 			p = isl_printer_print_str(p, "[");
-			p = isl_printer_print_pw_aff(p, bound);
+			p = isl_printer_print_ast_expr(p, bound);
 			p = isl_printer_print_str(p, "]");
-			isl_pw_aff_free(bound);
+			isl_ast_expr_free(bound);
 		}
 	}
 	p = isl_printer_print_str(p, ";");

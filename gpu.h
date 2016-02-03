@@ -63,6 +63,10 @@ struct gpu_array_info {
 	unsigned n_index;
 	/* For each index, a bound on "extent" in that direction. */
 	isl_multi_pw_aff *bound;
+	/* The corresponding access AST expression, if the array needs
+	 * to be allocated on the device.
+	 */
+	isl_ast_expr *bound_expr;
 
 	/* All references to this array; point to elements of a linked list. */
 	int n_ref;

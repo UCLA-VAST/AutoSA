@@ -351,6 +351,7 @@ static void free_array_info(struct gpu_prog *prog)
 		free(prog->array[i].type);
 		free(prog->array[i].name);
 		isl_multi_pw_aff_free(prog->array[i].bound);
+		isl_ast_expr_free(prog->array[i].bound_expr);
 		isl_space_free(prog->array[i].space);
 		isl_set_free(prog->array[i].extent);
 		free(prog->array[i].refs);
@@ -1892,6 +1893,34 @@ static __isl_give isl_ast_node *create_sync_leaf(
 	return isl_ast_node_set_annotation(node, id);
 }
 
+/* Build AST expressions for the device array sizes of all arrays in "prog"
+ * that require allocation on the device using "build".
+ * "node" is freed in case of error.
+ */
+static __isl_give isl_ast_node *build_array_bounds(
+	__isl_take isl_ast_node *node, struct gpu_prog *prog,
+	__isl_keep isl_ast_build *build)
+{
+	int i;
+
+	for (i = 0; i < prog->n_array; ++i) {
+		struct gpu_array_info *array = &prog->array[i];
+		isl_multi_pw_aff *size;
+		isl_ast_expr *expr;
+
+		if (!gpu_array_requires_device_allocation(array))
+			continue;
+
+		size = isl_multi_pw_aff_copy(array->bound);
+		expr = ppcg_build_size_expr(size, build);
+		array->bound_expr = expr;
+		if (!expr)
+			return isl_ast_node_free(node);
+	}
+
+	return node;
+}
+
 /* Internal data structure for at_domain.
  *
  * "prog" represents the entire scop.
@@ -1914,10 +1943,11 @@ struct ppcg_at_domain_data {
  * requires special handling.
  *
  * If the user statement is one of the original user statements, then we call
- * create_domain_leaf.  Otherwise, we check if it is a copy or synchronization
+ * create_domain_leaf.  If it is "init_device", then we call
+ * build_array_bounds.  Otherwise, we check if it is a copy or synchronization
  * statement and call the appropriate functions.  Statements that copy an array
  * to/from the device do not need any further treatment.
- * Neither do "init_device" and "clear_device".
+ * Neither does "clear_device".
  */
 static __isl_give isl_ast_node *at_domain(__isl_take isl_ast_node *node,
 	__isl_keep isl_ast_build *build, void *user)
@@ -1947,7 +1977,9 @@ static __isl_give isl_ast_node *at_domain(__isl_take isl_ast_node *node,
 
 	if (!prefixcmp(name, "to_device_") || !prefixcmp(name, "from_device_"))
 		return node;
-	if (!strcmp(name, "init_device") || !strcmp(name, "clear_device"))
+	if (!strcmp(name, "init_device"))
+		return build_array_bounds(node, data->prog, build);
+	if (!strcmp(name, "clear_device"))
 		return node;
 	if (is_sync < 0)
 		return isl_ast_node_free(node);
