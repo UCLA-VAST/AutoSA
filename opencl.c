@@ -933,24 +933,27 @@ static __isl_give isl_printer *opencl_print_total_number_of_work_items_for_dim(
 	__isl_take isl_printer *p, struct ppcg_kernel *kernel, int i)
 {
 	int grid_dim, block_dim;
-	isl_pw_aff *bound_grid;
+	isl_ast_expr *grid_size_expr;
+	isl_ast_expr *bound_grid;
 
 	grid_dim = isl_multi_pw_aff_dim(kernel->grid_size, isl_dim_set);
 	block_dim = kernel->n_block;
 
 	if (i < min(grid_dim, block_dim)) {
-		bound_grid = isl_multi_pw_aff_get_pw_aff(kernel->grid_size, i);
+		grid_size_expr = kernel->grid_size_expr;
+		bound_grid = isl_ast_expr_get_op_arg(grid_size_expr, 1 + i);
 		p = isl_printer_print_str(p, "(");
-		p = isl_printer_print_pw_aff(p, bound_grid);
+		p = isl_printer_print_ast_expr(p, bound_grid);
 		p = isl_printer_print_str(p, ") * ");
 		p = isl_printer_print_int(p, kernel->block_dim[i]);
-		isl_pw_aff_free(bound_grid);
+		isl_ast_expr_free(bound_grid);
 	} else if (i >= grid_dim) {
 		p = isl_printer_print_int(p, kernel->block_dim[i]);
 	} else {
-		bound_grid = isl_multi_pw_aff_get_pw_aff(kernel->grid_size, i);
-		p = isl_printer_print_pw_aff(p, bound_grid);
-		isl_pw_aff_free(bound_grid);
+		grid_size_expr = kernel->grid_size_expr;
+		bound_grid = isl_ast_expr_get_op_arg(grid_size_expr, 1 + i);
+		p = isl_printer_print_ast_expr(p, bound_grid);
+		isl_ast_expr_free(bound_grid);
 	}
 
 	return p;

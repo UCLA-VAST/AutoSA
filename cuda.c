@@ -205,11 +205,11 @@ static __isl_give isl_printer *print_grid_size(__isl_take isl_printer *p,
 
 	p = isl_printer_print_str(p, "(");
 	for (i = dim - 1; i >= 0; --i) {
-		isl_pw_aff *bound;
+		isl_ast_expr *bound;
 
-		bound = isl_multi_pw_aff_get_pw_aff(kernel->grid_size, i);
-		p = isl_printer_print_pw_aff(p, bound);
-		isl_pw_aff_free(bound);
+		bound = isl_ast_expr_get_op_arg(kernel->grid_size_expr, 1 + i);
+		p = isl_printer_print_ast_expr(p, bound);
+		isl_ast_expr_free(bound);
 
 		if (i > 0)
 			p = isl_printer_print_str(p, ", ");

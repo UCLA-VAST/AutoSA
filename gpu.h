@@ -288,6 +288,8 @@ struct ppcg_kernel_var {
  * refers to the x dimension.
  *
  * grid_size reflects the effective grid size.
+ * grid_size_expr contains a corresponding access AST expression, built within
+ * the context where the launch appears.
  *
  * context contains the values of the parameters and outer schedule dimensions
  * for which any statement instance in this kernel needs to be executed.
@@ -349,6 +351,7 @@ struct ppcg_kernel {
 	int block_dim[3];
 
 	isl_multi_pw_aff *grid_size;
+	isl_ast_expr *grid_size_expr;
 	isl_set *context;
 
 	int n_sync;

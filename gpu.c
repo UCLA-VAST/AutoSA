@@ -1112,6 +1112,7 @@ struct ppcg_kernel *ppcg_kernel_free(struct ppcg_kernel *kernel)
 	isl_id_list_free(kernel->block_ids);
 	isl_id_list_free(kernel->thread_ids);
 	isl_multi_pw_aff_free(kernel->grid_size);
+	isl_ast_expr_free(kernel->grid_size_expr);
 	isl_set_free(kernel->context);
 	isl_union_set_free(kernel->core);
 	isl_union_set_free(kernel->arrays);
@@ -2169,11 +2170,28 @@ static __isl_give isl_union_map *remove_local_accesses_group(
 	return remove_local_accesses(kernel->prog, tagged, access, sched, read);
 }
 
+/* Build an access AST expression for the effective grid size using "build".
+ * Store the result in kernel->grid_size_expr.
+ */
+static isl_stat build_grid_size(struct ppcg_kernel *kernel,
+	__isl_keep isl_ast_build *build)
+{
+	isl_multi_pw_aff *size;
+
+	size = isl_multi_pw_aff_copy(kernel->grid_size);
+	size = isl_multi_pw_aff_set_tuple_name(size, isl_dim_out, "grid");
+	kernel->grid_size_expr = ppcg_build_size_expr(size, build);
+
+	if (!kernel->grid_size_expr)
+		return isl_stat_error;
+	return isl_stat_ok;
+}
+
 /* This function is called before the AST generator starts traversing
  * the schedule subtree of a node with mark "mark".
  *
  * If the mark is called "kernel", store the kernel pointer in data->kernel
- * for use in at_domain.
+ * for use in at_domain and build an AST expression for the grid size.
  */
 static isl_stat before_mark(__isl_keep isl_id *mark,
 	__isl_keep isl_ast_build *build, void *user)
@@ -2182,8 +2200,11 @@ static isl_stat before_mark(__isl_keep isl_id *mark,
 
 	if (!mark)
 		return isl_stat_error;
-	if (!strcmp(isl_id_get_name(mark), "kernel"))
+	if (!strcmp(isl_id_get_name(mark), "kernel")) {
 		data->kernel = isl_id_get_user(mark);
+		if (build_grid_size(data->kernel, build) < 0)
+			return isl_stat_error;
+	}
 	return isl_stat_ok;
 }
 
