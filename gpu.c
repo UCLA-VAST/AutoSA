@@ -5008,18 +5008,29 @@ static __isl_give isl_schedule_node *add_init_clear_device(
  * then children of this node that do not contain any tilable bands
  * are separated from the other children and are not mapped to
  * the device.
+ *
+ * The GPU code is generated in a context where at least one
+ * statement instance is executed.  The corresponding guard is inserted
+ * around the entire schedule.
  */
 static __isl_give isl_schedule *map_to_device(struct gpu_gen *gen,
 	__isl_take isl_schedule *schedule)
 {
 	isl_schedule_node *node;
 	isl_set *context;
+	isl_set *guard;
 	isl_union_set *domain;
 	isl_union_map *prefix;
+	struct gpu_prog *prog;
 
 	context = isl_set_copy(gen->prog->context);
 	context = isl_set_from_params(context);
 	schedule = isl_schedule_insert_context(schedule, context);
+
+	prog = gen->prog;
+	guard = isl_union_set_params(isl_union_set_copy(prog->scop->domain));
+	prog->context = isl_set_intersect(prog->context, isl_set_copy(guard));
+	guard = isl_set_from_params(guard);
 
 	node = isl_schedule_get_root(schedule);
 	isl_schedule_free(schedule);
@@ -5032,6 +5043,8 @@ static __isl_give isl_schedule *map_to_device(struct gpu_gen *gen,
 	node = add_to_from_device(node, domain, prefix, gen->prog);
 	node = isl_schedule_node_root(node);
 	node = isl_schedule_node_child(node, 0);
+	node = isl_schedule_node_child(node, 0);
+	node = isl_schedule_node_insert_guard(node, guard);
 	node = isl_schedule_node_child(node, 0);
 	node = add_init_clear_device(node);
 	schedule = isl_schedule_node_get_schedule(node);
@@ -5203,16 +5216,6 @@ static struct gpu_stmt *extract_stmts(isl_ctx *ctx, struct ppcg_scop *scop,
 	return stmts;
 }
 
-/* Callback for ppcg_print_guarded that calls the callback for generate_gpu.
- */
-static __isl_give isl_printer *print_gpu(__isl_take isl_printer *p, void *user)
-{
-	struct gpu_gen *gen = user;
-
-	return gen->print(p, gen->prog, gen->tree, &gen->types,
-			    gen->print_user);
-}
-
 /* Generate CUDA code for "scop" and print it to "p".
  * After generating an AST for the transformed scop as explained below,
  * we call "gen->print" to print the AST in the desired output format
@@ -5221,11 +5224,9 @@ static __isl_give isl_printer *print_gpu(__isl_take isl_printer *p, void *user)
  * If it turns out that it does not make sense to generate GPU code,
  * then we generate CPU code instead.
  *
- * The GPU code is generated in a context where at least one
- * statement instance is executed.  The corresponding guard (if any) is printed
- * around the entire generated GPU code, except for the declaration
- * of the arrays that are visible outside of the scop and that therefore
- * cannot be declared inside the body of any possible guard.
+ * The declarations of the arrays that are visible outside of the scop
+ * are printed outside of the code generated from the schedule,
+ * because the generated code may involve a guard around the entire code.
  *
  * We first compute a schedule that respects the dependences
  * of the original program and select the outermost bands
@@ -5280,7 +5281,6 @@ static __isl_give isl_printer *generate(__isl_take isl_printer *p,
 {
 	struct gpu_prog *prog;
 	isl_ctx *ctx;
-	isl_set *context, *guard;
 	isl_schedule *schedule;
 	int any_permutable;
 
@@ -5292,17 +5292,11 @@ static __isl_give isl_printer *generate(__isl_take isl_printer *p,
 	if (!prog)
 		return isl_printer_free(p);
 
-	context = isl_set_copy(prog->context);
-	guard = isl_union_set_params(isl_union_set_copy(prog->scop->domain));
-	prog->context = isl_set_intersect(prog->context, isl_set_copy(guard));
-
 	gen->prog = prog;
 	schedule = get_schedule(gen);
 
 	any_permutable = has_any_permutable_node(schedule);
 	if (any_permutable < 0 || !any_permutable) {
-		isl_set_free(context);
-		isl_set_free(guard);
 		if (any_permutable < 0)
 			p = isl_printer_free(p);
 		else
@@ -5314,7 +5308,8 @@ static __isl_give isl_printer *generate(__isl_take isl_printer *p,
 		p = ppcg_set_macro_names(p);
 		p = isl_ast_op_type_print_macro(isl_ast_op_fdiv_q, p);
 		p = ppcg_print_exposed_declarations(p, prog->scop);
-		p = ppcg_print_guarded(p, guard, context, &print_gpu, gen);
+		p = gen->print(p, gen->prog, gen->tree, &gen->types,
+				    gen->print_user);
 		isl_ast_node_free(gen->tree);
 	}
 
