@@ -191,6 +191,72 @@ __isl_give isl_printer *ppcg_kernel_print_domain(__isl_take isl_printer *p,
 	return pet_stmt_print_body(stmt->u.d.stmt->stmt, p, stmt->u.d.ref2expr);
 }
 
+/* This function is called for each node in a GPU AST.
+ * In case of a user node, print the macro definitions required
+ * for printing the AST expressions in the annotation, if any.
+ * For other nodes, return true such that descendants are also
+ * visited.
+ *
+ * In particular, for a kernel launch, print the macro definitions
+ * needed for the grid size.
+ * For a copy statement, print the macro definitions needed
+ * for the two index expressions.
+ * For an original user statement, print the macro definitions
+ * needed for the substitutions.
+ */
+static isl_bool at_node(__isl_keep isl_ast_node *node, void *user)
+{
+	const char *name;
+	isl_id *id;
+	int is_kernel;
+	struct ppcg_kernel *kernel;
+	struct ppcg_kernel_stmt *stmt;
+	isl_printer **p = user;
+
+	if (isl_ast_node_get_type(node) != isl_ast_node_user)
+		return isl_bool_true;
+
+	id = isl_ast_node_get_annotation(node);
+	if (!id)
+		return isl_bool_false;
+
+	name = isl_id_get_name(id);
+	if (!name)
+		return isl_bool_error;
+	is_kernel = !strcmp(name, "kernel");
+	kernel = is_kernel ? isl_id_get_user(id) : NULL;
+	stmt = is_kernel ? NULL : isl_id_get_user(id);
+	isl_id_free(id);
+
+	if ((is_kernel && !kernel) || (!is_kernel && !stmt))
+		return isl_bool_error;
+
+	if (is_kernel) {
+		*p = isl_ast_expr_print_macros(kernel->grid_size_expr, *p);
+	} else if (stmt->type == ppcg_kernel_copy) {
+		*p = isl_ast_expr_print_macros(stmt->u.c.index, *p);
+		*p = isl_ast_expr_print_macros(stmt->u.c.local_index, *p);
+	} else if (stmt->type == ppcg_kernel_domain) {
+		*p = ppcg_print_body_macros(*p, stmt->u.d.ref2expr);
+	}
+	if (!*p)
+		return isl_bool_error;
+
+	return isl_bool_false;
+}
+
+/* Print the required macros for the GPU AST "node" to "p",
+ * including those needed for the user statements inside the AST.
+ */
+__isl_give isl_printer *gpu_print_macros(__isl_take isl_printer *p,
+	__isl_keep isl_ast_node *node)
+{
+	if (isl_ast_node_foreach_descendant_top_down(node, &at_node, &p) < 0)
+		return isl_printer_free(p);
+	p = ppcg_print_macros(p, node);
+	return p;
+}
+
 /* Was the definition of "type" printed before?
  * That is, does its name appear in the list of printed types "types"?
  */
