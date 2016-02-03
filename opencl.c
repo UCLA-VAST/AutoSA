@@ -216,8 +216,6 @@ static __isl_give isl_printer *opencl_print_host_macros(
 	p = isl_printer_print_str(p, macros);
 	p = isl_printer_end_line(p);
 
-	p = isl_ast_op_type_print_macro(isl_ast_op_max, p);
-
 	return p;
 }
 
@@ -264,6 +262,10 @@ static __isl_give isl_printer *allocate_device_array(__isl_take isl_printer *p,
 {
 	int need_lower_bound;
 
+	need_lower_bound = !is_array_positive_size_guard_trivial(array);
+	if (need_lower_bound)
+		p = isl_ast_op_type_print_macro(isl_ast_op_max, p);
+
 	p = ppcg_start_block(p);
 
 	p = isl_printer_start_line(p);
@@ -272,7 +274,6 @@ static __isl_give isl_printer *allocate_device_array(__isl_take isl_printer *p,
 	p = isl_printer_print_str(p, " = clCreateBuffer(context, ");
 	p = isl_printer_print_str(p, "CL_MEM_READ_WRITE, ");
 
-	need_lower_bound = !is_array_positive_size_guard_trivial(array);
 	if (need_lower_bound) {
 		p = isl_printer_print_str(p, ppcg_max);
 		p = isl_printer_print_str(p, "(sizeof(");
