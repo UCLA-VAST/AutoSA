@@ -2175,16 +2175,16 @@ static __isl_give isl_union_map *remove_local_accesses_group(
  * If the mark is called "kernel", store the kernel pointer in data->kernel
  * for use in at_domain.
  */
-static int before_mark(__isl_keep isl_id *mark,
+static isl_stat before_mark(__isl_keep isl_id *mark,
 	__isl_keep isl_ast_build *build, void *user)
 {
 	struct ppcg_at_domain_data *data = user;
 
 	if (!mark)
-		return -1;
+		return isl_stat_error;
 	if (!strcmp(isl_id_get_name(mark), "kernel"))
 		data->kernel = isl_id_get_user(mark);
-	return 0;
+	return isl_stat_ok;
 }
 
 /* This function is called after the AST generator has finished traversing
