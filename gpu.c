@@ -1971,6 +1971,7 @@ struct ppcg_at_domain_data {
  * create_domain_leaf.  Otherwise, we check if it is a copy or synchronization
  * statement and call the appropriate functions.  Statements that copy an array
  * to/from the device do not need any further treatment.
+ * Neither do "init_device" and "clear_device".
  */
 static __isl_give isl_ast_node *at_domain(__isl_take isl_ast_node *node,
 	__isl_keep isl_ast_build *build, void *user)
@@ -1999,6 +2000,8 @@ static __isl_give isl_ast_node *at_domain(__isl_take isl_ast_node *node,
 		return create_domain_leaf(data->kernel, node, build, gpu_stmt);
 
 	if (!prefixcmp(name, "to_device_") || !prefixcmp(name, "from_device_"))
+		return node;
+	if (!strcmp(name, "init_device") || !strcmp(name, "clear_device"))
 		return node;
 	if (is_sync < 0)
 		return isl_ast_node_free(node);
@@ -4966,11 +4969,41 @@ static __isl_give isl_schedule_node *add_to_from_device(
 	return node;
 }
 
+/* Add nodes for initializing ("init_device") and clearing ("clear_device")
+ * the device before and after "node".
+ */
+static __isl_give isl_schedule_node *add_init_clear_device(
+	__isl_take isl_schedule_node *node)
+{
+	isl_ctx *ctx;
+	isl_space *space;
+	isl_union_set *domain;
+	isl_schedule_node *graft;
+
+	ctx = isl_schedule_node_get_ctx(node);
+
+	space = isl_space_set_alloc(ctx, 0, 0);
+	space = isl_space_set_tuple_name(space, isl_dim_set, "init_device");
+	domain = isl_union_set_from_set(isl_set_universe(space));
+	graft = isl_schedule_node_from_domain(domain);
+
+	node = isl_schedule_node_graft_before(node, graft);
+
+	space = isl_space_set_alloc(ctx, 0, 0);
+	space = isl_space_set_tuple_name(space, isl_dim_set, "clear_device");
+	domain = isl_union_set_from_set(isl_set_universe(space));
+	graft = isl_schedule_node_from_domain(domain);
+
+	node = isl_schedule_node_graft_after(node, graft);
+
+	return node;
+}
+
 /* Update "schedule" for mapping to a GPU device.
  *
  * In particular, insert a context node, create kernels for
  * each outermost tilable band and introduce nodes for copying arrays
- * in and out of the device.
+ * in and out of the device and for initializing and clearing the device.
  * If the child of the initial root points to a set node,
  * then children of this node that do not contain any tilable bands
  * are separated from the other children and are not mapped to
@@ -4997,6 +5030,10 @@ static __isl_give isl_schedule *map_to_device(struct gpu_gen *gen,
 	prefix = isl_schedule_node_get_prefix_schedule_union_map(node);
 	node = mark_kernels(gen, node);
 	node = add_to_from_device(node, domain, prefix, gen->prog);
+	node = isl_schedule_node_root(node);
+	node = isl_schedule_node_child(node, 0);
+	node = isl_schedule_node_child(node, 0);
+	node = add_init_clear_device(node);
 	schedule = isl_schedule_node_get_schedule(node);
 	isl_schedule_node_free(node);
 
