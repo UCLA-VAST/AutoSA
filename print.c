@@ -31,28 +31,12 @@ __isl_give isl_printer *ppcg_end_block(__isl_take isl_printer *p)
 	return p;
 }
 
-static int print_macro(enum isl_ast_op_type type, void *user)
-{
-	isl_printer **p = user;
-
-	if (type == isl_ast_op_fdiv_q)
-		return 0;
-
-	*p = isl_ast_op_type_print_macro(type, *p);
-
-	return 0;
-}
-
-/* Print the required macros for "node", except one for floord.
- * The caller is assumed to have printed a macro for floord already
- * as it may also appear in the declarations and the statements.
+/* Print the required macros for "node".
  */
 __isl_give isl_printer *ppcg_print_macros(__isl_take isl_printer *p,
 	__isl_keep isl_ast_node *node)
 {
-	if (isl_ast_node_foreach_ast_op_type(node, &print_macro, &p) < 0)
-		return isl_printer_free(p);
-	return p;
+	return isl_ast_node_print_macros(node, p);
 }
 
 /* Names used for the macros that may appear in a printed isl AST.
