@@ -354,6 +354,7 @@ static void free_array_info(struct gpu_prog *prog)
 		isl_ast_expr_free(prog->array[i].bound_expr);
 		isl_space_free(prog->array[i].space);
 		isl_set_free(prog->array[i].extent);
+		isl_ast_expr_free(prog->array[i].declared_size);
 		free(prog->array[i].refs);
 		isl_union_map_free(prog->array[i].dep_order);
 	}
@@ -1894,7 +1895,9 @@ static __isl_give isl_ast_node *create_sync_leaf(
 }
 
 /* Build AST expressions for the device array sizes of all arrays in "prog"
- * that require allocation on the device using "build".
+ * that require allocation on the device using "build", as well as
+ * for the original array sizes of all arrays that need to be declared
+ * on the host.
  * "node" is freed in case of error.
  */
 static __isl_give isl_ast_node *build_array_bounds(
@@ -1914,6 +1917,21 @@ static __isl_give isl_ast_node *build_array_bounds(
 		size = isl_multi_pw_aff_copy(array->bound);
 		expr = ppcg_build_size_expr(size, build);
 		array->bound_expr = expr;
+		if (!expr)
+			return isl_ast_node_free(node);
+	}
+
+	for (i = 0; i < prog->n_array; ++i) {
+		struct gpu_array_info *array = &prog->array[i];
+		struct pet_array *pet_array = prog->scop->pet->arrays[i];
+		isl_multi_pw_aff *size;
+		isl_ast_expr *expr;
+
+		if (!array->declare_local)
+			continue;
+		size = ppcg_size_from_extent(isl_set_copy(pet_array->extent));
+		expr = ppcg_build_size_expr(size, build);
+		array->declared_size = expr;
 		if (!expr)
 			return isl_ast_node_free(node);
 	}

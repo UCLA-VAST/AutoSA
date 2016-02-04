@@ -57,6 +57,8 @@ struct gpu_array_info {
 	int size;
 	/* Name of the array. */
 	char *name;
+	/* AST expression for declared size of original array. */
+	isl_ast_expr *declared_size;
 	/* Extent of the array that needs to be copied. */
 	isl_set *extent;
 	/* Number of indices. */
