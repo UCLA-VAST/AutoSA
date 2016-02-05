@@ -112,6 +112,13 @@ struct ppcg_macros {
 	const char *max;
 };
 
+/* Free the memory allocated by a struct ppcg_macros.
+ */
+static void ppcg_macros_free(void *user)
+{
+	free(user);
+}
+
 /* Default macro definitions (when GNU extensions are allowed).
  */
 struct ppcg_macros ppcg_macros_default = {
@@ -123,19 +130,91 @@ struct ppcg_macros ppcg_macros_default = {
 		"_x > _y ? _x : _y; })",
 };
 
-/* Print the default macro definition for ppcg_max.
+/* Name used for the note that keeps track of macro definitions.
+ */
+static const char *ppcg_macros = "ppcg_macros";
+
+/* Set the macro definitions for isl_ast_op_min and isl_ast_op_max
+ * to "min" and "max" and store them in "p".
+ *
+ * In particular, create a ppcg_macros object and attach it
+ * as a note to the printer.
+ */
+__isl_give isl_printer *ppcg_set_macros(__isl_take isl_printer *p,
+	const char *min, const char *max)
+{
+	isl_ctx *ctx;
+	isl_id *id, *macros_id;
+	struct ppcg_macros *macros;
+
+	if (!p)
+		return NULL;
+
+	ctx = isl_printer_get_ctx(p);
+	macros = isl_alloc_type(ctx, struct ppcg_macros);
+	if (!macros)
+		return isl_printer_free(p);
+	macros->min = min;
+	macros->max = max;
+	id = isl_id_alloc(ctx, ppcg_macros, NULL);
+	macros_id = isl_id_alloc(ctx, NULL, macros);
+	if (!macros_id)
+		ppcg_macros_free(macros);
+	else
+		macros_id = isl_id_set_free_user(macros_id, &ppcg_macros_free);
+
+	p = isl_printer_set_note(p, id, macros_id);
+
+	return p;
+}
+
+/* Return the ppcg_macros object that holds the currently active
+ * macro definitions in "p".
+ * If "p" has a note with macro definitions, then return those.
+ * Otherwise, return the default macro definitions.
+ */
+static struct ppcg_macros *get_macros(__isl_keep isl_printer *p)
+{
+	isl_id *id;
+	isl_bool has_macros;
+	struct ppcg_macros *macros;
+
+	id = isl_id_alloc(isl_printer_get_ctx(p), ppcg_macros, NULL);
+	has_macros = isl_printer_has_note(p, id);
+	if (has_macros < 0 || !has_macros) {
+		isl_id_free(id);
+		if (has_macros < 0)
+			return NULL;
+		return &ppcg_macros_default;
+	}
+	id = isl_printer_get_note(p, id);
+	macros = isl_id_get_user(id);
+	isl_id_free(id);
+
+	return macros;
+}
+
+/* Print the currently active macro definition for ppcg_max.
  */
 static __isl_give isl_printer *print_max(__isl_take isl_printer *p)
 {
-	struct ppcg_macros *macros = &ppcg_macros_default;
+	struct ppcg_macros *macros;
+
+	macros = get_macros(p);
+	if (!macros)
+		return isl_printer_free(p);
 	return print_ppcg_macro(p, ppcg_max, macros->max, ppcg_max_printed);
 }
 
-/* Print the default macro definition for ppcg_min.
+/* Print the currently active macro definition for ppcg_min.
  */
 static __isl_give isl_printer *print_min(__isl_take isl_printer *p)
 {
-	struct ppcg_macros *macros = &ppcg_macros_default;
+	struct ppcg_macros *macros;
+
+	macros = get_macros(p);
+	if (!macros)
+		return isl_printer_free(p);
 	return print_ppcg_macro(p, ppcg_min, macros->min, ppcg_min_printed);
 }
 
