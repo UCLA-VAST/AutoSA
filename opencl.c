@@ -882,6 +882,26 @@ static __isl_give isl_printer *opencl_enable_double_support(
 	return p;
 }
 
+/* Macro definitions for ppcg_min and ppcg_max for use
+ * in OpenCL kernel code.
+ * These macro definitions essentially call the corresponding
+ * OpenCL macros/functions, but first ensure that the two arguments
+ * have the same type, since the OpenCL versions are only defined
+ * in case those arguments have the same type.
+ */
+static const char *opencl_min =
+	"(x,y)    min((__typeof__(x + y)) x, (__typeof__(x + y)) y)";
+static const char *opencl_max =
+	"(x,y)    max((__typeof__(x + y)) x, (__typeof__(x + y)) y)";
+
+/* Set the macro definitions for ppcg_min and ppcg_max to
+ * OpenCL specific versions.
+ */
+static __isl_give isl_printer *set_opencl_macros(__isl_take isl_printer *p)
+{
+	return ppcg_set_macros(p, opencl_min, opencl_max);
+}
+
 static __isl_give isl_printer *opencl_print_kernel(struct gpu_prog *prog,
 	struct ppcg_kernel *kernel, __isl_take isl_printer *p)
 {
@@ -901,6 +921,7 @@ static __isl_give isl_printer *opencl_print_kernel(struct gpu_prog *prog,
 	p = opencl_print_kernel_vars(p, kernel);
 	p = isl_printer_end_line(p);
 	p = ppcg_set_macro_names(p);
+	p = set_opencl_macros(p);
 	p = gpu_print_macros(p, kernel->tree);
 	p = isl_ast_node_print(kernel->tree, p, print_options);
 	p = isl_printer_indent(p, -4);
