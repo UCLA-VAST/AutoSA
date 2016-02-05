@@ -136,6 +136,7 @@ __isl_give isl_printer *ppcg_print_declaration_with_size(
 	if (!array || !size)
 		return isl_printer_free(p);
 
+	p = isl_ast_expr_print_macros(size, p);
 	p = isl_printer_start_line(p);
 	p = isl_printer_print_str(p, array->element_type);
 	p = isl_printer_print_str(p, " ");

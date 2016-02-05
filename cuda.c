@@ -93,8 +93,11 @@ static __isl_give isl_printer *allocate_device_arrays(
 	int i;
 
 	for (i = 0; i < prog->n_array; ++i) {
+		struct gpu_array_info *array = &prog->array[i];
+
 		if (!gpu_array_requires_device_allocation(&prog->array[i]))
 			continue;
+		p = isl_ast_expr_print_macros(array->bound_expr, p);
 		p = isl_printer_start_line(p);
 		p = isl_printer_print_str(p,
 			"cudaCheckReturn(cudaMalloc((void **) &dev_");
@@ -675,7 +678,7 @@ static __isl_give isl_printer *print_host_code(__isl_take isl_printer *p,
 	print_options = isl_ast_print_options_set_print_user(print_options,
 						&print_host_user, &data);
 
-	p = ppcg_print_macros(p, tree);
+	p = gpu_print_macros(p, tree);
 	p = isl_ast_node_print(tree, p, print_options);
 
 	return p;
