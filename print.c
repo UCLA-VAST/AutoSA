@@ -31,6 +31,167 @@ __isl_give isl_printer *ppcg_end_block(__isl_take isl_printer *p)
 	return p;
 }
 
+/* Names of notes that keep track of whether min/max
+ * macro definitions have already been printed.
+ */
+static const char *ppcg_max_printed = "ppcg_max_printed";
+static const char *ppcg_min_printed = "ppcg_min_printed";
+
+/* Has the macro definition corresponding to "note_name" been printed
+ * to "p" before?
+ * That is, does "p" have an associated "note_name" note?
+ */
+static isl_bool printed_before(__isl_keep isl_printer *p, const char *note_name)
+{
+	isl_ctx *ctx;
+	isl_id *id;
+	isl_bool printed;
+
+	if (!p)
+		return isl_bool_error;
+
+	ctx = isl_printer_get_ctx(p);
+	id = isl_id_alloc(ctx, note_name, NULL);
+	printed = isl_printer_has_note(p, id);
+	isl_id_free(id);
+
+	return printed;
+}
+
+/* Keep track of the fact that the macro definition corresponding
+ * to "note_name" has been printed to "p" by attaching a note with
+ * that name.  The value of the note is of no importance, but it
+ * has to be a valid isl_id, so the note identifier is reused
+ * as the note.
+ */
+static __isl_give isl_printer *mark_printed(__isl_take isl_printer *p,
+	const char *note_name)
+{
+	isl_ctx *ctx;
+	isl_id *id;
+
+	if (!p)
+		return NULL;
+
+	ctx = isl_printer_get_ctx(p);
+	id = isl_id_alloc(ctx, note_name, NULL);
+	return isl_printer_set_note(p, id, isl_id_copy(id));
+}
+
+/* Print a macro definition "def" for the macro "name" to "p",
+ * unless such a macro definition has been printed to "p" before.
+ * "note_name" is used as the name of the note that keeps track
+ * of whether this printing has happened.
+ */
+static __isl_give isl_printer *print_ppcg_macro(__isl_take isl_printer *p,
+	const char *name, const char *def, const char *note_name)
+{
+	isl_bool printed;
+
+	printed = printed_before(p, note_name);
+	if (printed < 0)
+		return isl_printer_free(p);
+	if (printed)
+		return p;
+
+	p = isl_printer_start_line(p);
+	p = isl_printer_print_str(p, "#define ");
+	p = isl_printer_print_str(p, name);
+	p = isl_printer_print_str(p, def);
+	p = isl_printer_end_line(p);
+
+	p = mark_printed(p, note_name);
+
+	return p;
+}
+
+/* Structure for keeping track of definitions of some macros.
+ */
+struct ppcg_macros {
+	const char *min;
+	const char *max;
+};
+
+/* Default macro definitions (when GNU extensions are allowed).
+ */
+struct ppcg_macros ppcg_macros_default = {
+	.min = "(x,y)    "
+		"({ __typeof__(x) _x = (x); __typeof__(y) _y = (y); "
+		"_x < _y ? _x : _y; })",
+	.max = "(x,y)    "
+		"({ __typeof__(x) _x = (x); __typeof__(y) _y = (y); "
+		"_x > _y ? _x : _y; })",
+};
+
+/* Print the default macro definition for ppcg_max.
+ */
+static __isl_give isl_printer *print_max(__isl_take isl_printer *p)
+{
+	struct ppcg_macros *macros = &ppcg_macros_default;
+	return print_ppcg_macro(p, ppcg_max, macros->max, ppcg_max_printed);
+}
+
+/* Print the default macro definition for ppcg_min.
+ */
+static __isl_give isl_printer *print_min(__isl_take isl_printer *p)
+{
+	struct ppcg_macros *macros = &ppcg_macros_default;
+	return print_ppcg_macro(p, ppcg_min, macros->min, ppcg_min_printed);
+}
+
+/* Print a macro definition for "type" to "p".
+ * If GNU extensions are allowed, then print a specialized definition
+ * for isl_ast_op_min and isl_ast_op_max.
+ * Otherwise, use the default isl definition.
+ */
+__isl_give isl_printer *ppcg_print_macro(enum isl_ast_op_type type,
+	__isl_take isl_printer *p)
+{
+	isl_ctx *ctx;
+	struct ppcg_options *options;
+
+	if (!p)
+		return NULL;
+
+	ctx = isl_printer_get_ctx(p);
+	options = isl_ctx_peek_options(ctx, &ppcg_options_args);
+	if (!options || !options->allow_gnu_extensions)
+		return isl_ast_op_type_print_macro(type, p);
+
+	switch (type) {
+	case isl_ast_op_max:
+		return print_max(p);
+	case isl_ast_op_min:
+		return print_min(p);
+	default:
+		return isl_ast_op_type_print_macro(type, p);
+	}
+}
+
+/* isl_ast_expr_foreach_ast_op_type or isl_ast_node_foreach_ast_op_type
+ * callback that prints a macro definition for "type".
+ */
+static isl_stat print_macro(enum isl_ast_op_type type, void *user)
+{
+	isl_printer **p = user;
+
+	*p = ppcg_print_macro(type, *p);
+	if (!*p)
+		return isl_stat_error;
+
+	return isl_stat_ok;
+}
+
+/* Print the required macros for "expr".
+ */
+__isl_give isl_printer *ppcg_ast_expr_print_macros(
+	__isl_keep isl_ast_expr *expr, __isl_take isl_printer *p)
+{
+	if (isl_ast_expr_foreach_ast_op_type(expr, &print_macro, &p) < 0)
+		return isl_printer_free(p);
+	return p;
+}
+
 /* isl_id_to_ast_expr_foreach callback that prints the required
  * macro definitions for "val".
  */
@@ -39,7 +200,7 @@ static isl_stat print_expr_macros(__isl_take isl_id *key,
 {
 	isl_printer **p = user;
 
-	*p = isl_ast_expr_print_macros(val, *p);
+	*p = ppcg_ast_expr_print_macros(val, *p);
 	isl_id_free(key);
 	isl_ast_expr_free(val);
 
@@ -65,7 +226,9 @@ __isl_give isl_printer *ppcg_print_body_macros(__isl_take isl_printer *p,
 __isl_give isl_printer *ppcg_print_macros(__isl_take isl_printer *p,
 	__isl_keep isl_ast_node *node)
 {
-	return isl_ast_node_print_macros(node, p);
+	if (isl_ast_node_foreach_ast_op_type(node, &print_macro, &p) < 0)
+		return isl_printer_free(p);
+	return p;
 }
 
 /* Names used for the macros that may appear in a printed isl AST.
@@ -136,7 +299,7 @@ __isl_give isl_printer *ppcg_print_declaration_with_size(
 	if (!array || !size)
 		return isl_printer_free(p);
 
-	p = isl_ast_expr_print_macros(size, p);
+	p = ppcg_ast_expr_print_macros(size, p);
 	p = isl_printer_start_line(p);
 	p = isl_printer_print_str(p, array->element_type);
 	p = isl_printer_print_str(p, " ");

@@ -13,6 +13,10 @@ __isl_give isl_printer *ppcg_start_block(__isl_take isl_printer *p);
 __isl_give isl_printer *ppcg_end_block(__isl_take isl_printer *p);
 
 __isl_give isl_printer *ppcg_set_macro_names(__isl_take isl_printer *p);
+__isl_give isl_printer *ppcg_print_macro(enum isl_ast_op_type type,
+	__isl_take isl_printer *p);
+__isl_give isl_printer *ppcg_ast_expr_print_macros(
+	__isl_keep isl_ast_expr *expr, __isl_take isl_printer *p);
 __isl_give isl_printer *ppcg_print_body_macros(__isl_take isl_printer *p,
 	__isl_keep isl_id_to_ast_expr *ref2expr);
 __isl_give isl_printer *ppcg_print_macros(__isl_take isl_printer *p,

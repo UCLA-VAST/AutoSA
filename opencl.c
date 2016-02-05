@@ -264,9 +264,9 @@ static __isl_give isl_printer *allocate_device_array(__isl_take isl_printer *p,
 
 	need_lower_bound = !is_array_positive_size_guard_trivial(array);
 	if (need_lower_bound)
-		p = isl_ast_op_type_print_macro(isl_ast_op_max, p);
+		p = ppcg_print_macro(isl_ast_op_max, p);
 
-	p = isl_ast_expr_print_macros(array->bound_expr, p);
+	p = ppcg_ast_expr_print_macros(array->bound_expr, p);
 	p = ppcg_start_block(p);
 
 	p = isl_printer_start_line(p);

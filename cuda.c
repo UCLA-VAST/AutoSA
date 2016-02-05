@@ -97,7 +97,7 @@ static __isl_give isl_printer *allocate_device_arrays(
 
 		if (!gpu_array_requires_device_allocation(&prog->array[i]))
 			continue;
-		p = isl_ast_expr_print_macros(array->bound_expr, p);
+		p = ppcg_ast_expr_print_macros(array->bound_expr, p);
 		p = isl_printer_start_line(p);
 		p = isl_printer_print_str(p,
 			"cudaCheckReturn(cudaMalloc((void **) &dev_");

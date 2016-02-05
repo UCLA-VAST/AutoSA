@@ -232,10 +232,10 @@ static isl_bool at_node(__isl_keep isl_ast_node *node, void *user)
 		return isl_bool_error;
 
 	if (is_kernel) {
-		*p = isl_ast_expr_print_macros(kernel->grid_size_expr, *p);
+		*p = ppcg_ast_expr_print_macros(kernel->grid_size_expr, *p);
 	} else if (stmt->type == ppcg_kernel_copy) {
-		*p = isl_ast_expr_print_macros(stmt->u.c.index, *p);
-		*p = isl_ast_expr_print_macros(stmt->u.c.local_index, *p);
+		*p = ppcg_ast_expr_print_macros(stmt->u.c.index, *p);
+		*p = ppcg_ast_expr_print_macros(stmt->u.c.local_index, *p);
 	} else if (stmt->type == ppcg_kernel_domain) {
 		*p = ppcg_print_body_macros(*p, stmt->u.d.ref2expr);
 	}
