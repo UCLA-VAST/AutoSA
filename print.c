@@ -72,6 +72,48 @@ __isl_give isl_printer *ppcg_set_macro_names(__isl_take isl_printer *p)
 	return p;
 }
 
+/* Given a multi affine expression "mpa" without domain, modify it to have
+ * the schedule space of "build" as domain.
+ *
+ * If the schedule space of "build" is a parameter space, then nothing
+ * needs to be done.
+ * Otherwise, "mpa" is first given a 0D domain and then it is combined
+ * with a mapping from the schedule space of "build" to the same 0D domain.
+ */
+__isl_give isl_multi_pw_aff *ppcg_attach_multi_pw_aff(
+	__isl_take isl_multi_pw_aff *mpa, __isl_keep isl_ast_build *build)
+{
+	isl_bool params;
+	isl_space *space;
+	isl_multi_aff *ma;
+
+	space = isl_ast_build_get_schedule_space(build);
+	params = isl_space_is_params(space);
+	if (params < 0 || params) {
+		isl_space_free(space);
+		if (params < 0)
+			return isl_multi_pw_aff_free(mpa);
+		return mpa;
+	}
+	space = isl_space_from_domain(space);
+	ma = isl_multi_aff_zero(space);
+	mpa = isl_multi_pw_aff_from_range(mpa);
+	mpa = isl_multi_pw_aff_pullback_multi_aff(mpa, ma);
+
+	return mpa;
+}
+
+/* Build an access AST expression from "size" using "build".
+ * "size" does not have a domain, but "build" may have a proper schedule space.
+ * First modify "size" to have that schedule space as domain.
+ */
+__isl_give isl_ast_expr *ppcg_build_size_expr(__isl_take isl_multi_pw_aff *size,
+	__isl_keep isl_ast_build *build)
+{
+	size = ppcg_attach_multi_pw_aff(size, build);
+	return isl_ast_build_access_from_multi_pw_aff(build, size);
+}
+
 /* Print a declaration for array "array" to "p", using "build"
  * to simplify any size expressions.
  *
