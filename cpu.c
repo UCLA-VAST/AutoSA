@@ -443,6 +443,50 @@ static isl_bool update_depth(__isl_keep isl_schedule_node *node, void *user)
 	return isl_bool_false;
 }
 
+/* This function is called for each node in a CPU AST.
+ * In case of a user node, print the macro definitions required
+ * for printing the AST expressions in the annotation, if any.
+ * For other nodes, return true such that descendants are also
+ * visited.
+ *
+ * In particular, print the macro definitions needed for the substitutions
+ * of the original user statements.
+ */
+static isl_bool at_node(__isl_keep isl_ast_node *node, void *user)
+{
+	struct ppcg_stmt *stmt;
+	isl_id *id;
+	isl_printer **p = user;
+
+	if (isl_ast_node_get_type(node) != isl_ast_node_user)
+		return isl_bool_true;
+
+	id = isl_ast_node_get_annotation(node);
+	stmt = isl_id_get_user(id);
+	isl_id_free(id);
+
+	if (!stmt)
+		return isl_bool_error;
+
+	*p = ppcg_print_body_macros(*p, stmt->ref2expr);
+	if (!*p)
+		return isl_bool_error;
+
+	return isl_bool_false;
+}
+
+/* Print the required macros for the CPU AST "node" to "p",
+ * including those needed for the user statements inside the AST.
+ */
+static __isl_give isl_printer *cpu_print_macros(__isl_take isl_printer *p,
+	__isl_keep isl_ast_node *node)
+{
+	if (isl_ast_node_foreach_descendant_top_down(node, &at_node, &p) < 0)
+		return isl_printer_free(p);
+	p = ppcg_print_macros(p, node);
+	return p;
+}
+
 /* Code generate the scop 'scop' using "schedule"
  * and print the corresponding C code to 'p'.
  */
@@ -490,7 +534,7 @@ static __isl_give isl_printer *print_scop(struct ppcg_scop *scop,
 	print_options = isl_ast_print_options_set_print_for(print_options,
 							&print_for, NULL);
 
-	p = ppcg_print_macros(p, tree);
+	p = cpu_print_macros(p, tree);
 	p = isl_ast_node_print(tree, p, print_options);
 
 	isl_ast_node_free(tree);
@@ -680,7 +724,6 @@ static __isl_give isl_printer *print_cpu_with_schedule(
 	p = isl_printer_end_line(p);
 
 	p = ppcg_set_macro_names(p);
-	p = isl_ast_op_type_print_macro(isl_ast_op_fdiv_q, p);
 	p = ppcg_print_exposed_declarations(p, ps);
 	hidden = ppcg_scop_any_hidden_declarations(ps);
 	if (hidden) {
