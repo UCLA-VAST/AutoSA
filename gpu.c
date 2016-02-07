@@ -1814,6 +1814,7 @@ static __isl_give isl_ast_node *create_domain_leaf(
  *
  * and store the corresponding expressions in stmt->index and stmt->local_index,
  * where stmt points to the ppcg_kernel_stmt that is attached to the node.
+ * stmt->index is linearized if the global memory array is linearized.
  */
 static __isl_give isl_ast_node *create_access_leaf(struct ppcg_kernel *kernel,
 	struct gpu_array_ref_group *group, __isl_take isl_ast_node *node,
@@ -1845,6 +1846,9 @@ static __isl_give isl_ast_node *create_access_leaf(struct ppcg_kernel *kernel,
 	pma2 = isl_pw_multi_aff_pullback_pw_multi_aff(pma2,
 						    isl_pw_multi_aff_copy(pma));
 	expr = isl_ast_build_access_from_pw_multi_aff(build, pma2);
+	if (group->array->linearize)
+		expr = gpu_local_array_info_linearize_index(group->local_array,
+							    expr);
 	stmt->u.c.index = expr;
 
 	tile = gpu_array_ref_group_tile(group);

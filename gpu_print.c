@@ -132,9 +132,6 @@ static __isl_give isl_printer *stmt_print_local_index(__isl_take isl_printer *p,
 /* Print an access to the element in the global memory copy
  * described by "stmt".  The index of the copy is recorded in
  * stmt->index as an access to the array.
- *
- * The copy in global memory has been linearized, so we need to take
- * the array size into account.
  */
 static __isl_give isl_printer *stmt_print_global_index(
 	__isl_take isl_printer *p, struct ppcg_kernel_stmt *stmt)
@@ -152,8 +149,6 @@ static __isl_give isl_printer *stmt_print_global_index(
 	}
 
 	index = isl_ast_expr_copy(stmt->u.c.index);
-	if (array->linearize)
-		index = gpu_local_array_info_linearize_index(local, index);
 
 	p = isl_printer_print_ast_expr(p, index);
 	isl_ast_expr_free(index);
