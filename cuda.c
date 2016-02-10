@@ -105,6 +105,24 @@ static __isl_give isl_printer *allocate_device_arrays(
 	return p;
 }
 
+static __isl_give isl_printer *free_device_arrays(__isl_take isl_printer *p,
+	struct gpu_prog *prog)
+{
+	int i;
+
+	for (i = 0; i < prog->n_array; ++i) {
+		if (!gpu_array_requires_device_allocation(&prog->array[i]))
+			continue;
+		p = isl_printer_start_line(p);
+		p = isl_printer_print_str(p, "cudaCheckReturn(cudaFree(dev_");
+		p = isl_printer_print_str(p, prog->array[i].name);
+		p = isl_printer_print_str(p, "));");
+		p = isl_printer_end_line(p);
+	}
+
+	return p;
+}
+
 /* Print code to "p" for copying "array" from the host to the device
  * in its entirety.  The bounds on the extent of "array" have
  * been precomputed in extract_array_info and are used in
@@ -620,24 +638,6 @@ static __isl_give isl_printer *print_host_code(__isl_take isl_printer *p,
 
 	p = ppcg_print_macros(p, tree);
 	p = isl_ast_node_print(tree, p, print_options);
-
-	return p;
-}
-
-static __isl_give isl_printer *free_device_arrays(__isl_take isl_printer *p,
-	struct gpu_prog *prog)
-{
-	int i;
-
-	for (i = 0; i < prog->n_array; ++i) {
-		if (!gpu_array_requires_device_allocation(&prog->array[i]))
-			continue;
-		p = isl_printer_start_line(p);
-		p = isl_printer_print_str(p, "cudaCheckReturn(cudaFree(dev_");
-		p = isl_printer_print_str(p, prog->array[i].name);
-		p = isl_printer_print_str(p, "));");
-		p = isl_printer_end_line(p);
-	}
 
 	return p;
 }
