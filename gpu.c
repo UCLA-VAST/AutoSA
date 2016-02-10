@@ -1676,10 +1676,10 @@ static __isl_give isl_ast_expr *dereference(__isl_take isl_ast_expr *expr)
  * element while the default linearized expression would refer to
  * a single element, we return the expression
  *
- *	A + (..((i_0 * b_1 + i_1) ... ) * b_n]
+ *	A + (..((i_0 * b_1 + i_1) ... ) * b_l + i_l)
  *
  * instead.  Note that because of the special case handling above,
- * we can assume here that here that there is at least one index expression.
+ * we can assume here that there is at least one index expression.
  */
 __isl_give isl_ast_expr *gpu_local_array_info_linearize_index(
 	struct gpu_local_array_info *array, __isl_take isl_ast_expr *expr)
@@ -4969,7 +4969,7 @@ static __isl_give isl_schedule_node *add_to_from_device(
 /* Update "schedule" for mapping to a GPU device.
  *
  * In particular, insert a context node, create kernels for
- * each outermost tilable band and introduce node for copying array
+ * each outermost tilable band and introduce nodes for copying arrays
  * in and out of the device.
  * If the child of the initial root points to a set node,
  * then children of this node that do not contain any tilable bands
