@@ -314,6 +314,124 @@ static __isl_give isl_printer *opencl_allocate_device_arrays(
 	return p;
 }
 
+/* Free the device array corresponding to "array"
+ */
+static __isl_give isl_printer *release_device_array(__isl_take isl_printer *p,
+	struct gpu_array_info *array)
+{
+	p = isl_printer_start_line(p);
+	p = isl_printer_print_str(p, "openclCheckReturn("
+					"clReleaseMemObject(dev_");
+	p = isl_printer_print_str(p, array->name);
+	p = isl_printer_print_str(p, "));");
+	p = isl_printer_end_line(p);
+
+	return p;
+}
+
+/* Free the accessed device arrays.
+ */
+static __isl_give isl_printer *opencl_release_device_arrays(
+	__isl_take isl_printer *p, struct gpu_prog *prog)
+{
+	int i;
+
+	for (i = 0; i < prog->n_array; ++i) {
+		struct gpu_array_info *array = &prog->array[i];
+		if (!gpu_array_requires_device_allocation(array))
+			continue;
+
+		p = release_device_array(p, array);
+	}
+	return p;
+}
+
+/* Create an OpenCL device, context, command queue and build the kernel.
+ * input is the name of the input file provided to ppcg.
+ */
+static __isl_give isl_printer *opencl_setup(__isl_take isl_printer *p,
+	const char *input, struct opencl_info *info)
+{
+	p = isl_printer_start_line(p);
+	p = isl_printer_print_str(p, "cl_device_id device;");
+	p = isl_printer_end_line(p);
+	p = isl_printer_start_line(p);
+	p = isl_printer_print_str(p, "cl_context context;");
+	p = isl_printer_end_line(p);
+	p = isl_printer_start_line(p);
+	p = isl_printer_print_str(p, "cl_program program;");
+	p = isl_printer_end_line(p);
+	p = isl_printer_start_line(p);
+	p = isl_printer_print_str(p, "cl_command_queue queue;");
+	p = isl_printer_end_line(p);
+	p = isl_printer_start_line(p);
+	p = isl_printer_print_str(p, "cl_int err;");
+	p = isl_printer_end_line(p);
+	p = isl_printer_start_line(p);
+	p = isl_printer_print_str(p, "device = opencl_create_device(");
+	p = isl_printer_print_int(p, info->options->opencl_use_gpu);
+	p = isl_printer_print_str(p, ");");
+	p = isl_printer_end_line(p);
+	p = isl_printer_start_line(p);
+	p = isl_printer_print_str(p, "context = clCreateContext(NULL, 1, "
+		"&device, NULL, NULL, &err);");
+	p = isl_printer_end_line(p);
+	p = isl_printer_start_line(p);
+	p = isl_printer_print_str(p, "openclCheckReturn(err);");
+	p = isl_printer_end_line(p);
+	p = isl_printer_start_line(p);
+	p = isl_printer_print_str(p, "queue = clCreateCommandQueue"
+					"(context, device, 0, &err);");
+	p = isl_printer_end_line(p);
+	p = isl_printer_start_line(p);
+	p = isl_printer_print_str(p, "openclCheckReturn(err);");
+	p = isl_printer_end_line(p);
+
+	p = isl_printer_start_line(p);
+	p = isl_printer_print_str(p, "program = ");
+
+	if (info->options->opencl_embed_kernel_code) {
+		p = isl_printer_print_str(p, "opencl_build_program_from_string("
+						"context, device, kernel_code, "
+						"sizeof(kernel_code), \"");
+	} else {
+		p = isl_printer_print_str(p, "opencl_build_program_from_file("
+						"context, device, \"");
+		p = isl_printer_print_str(p, info->kernel_c_name);
+		p = isl_printer_print_str(p, "\", \"");
+	}
+
+	if (info->options->opencl_compiler_options)
+		p = isl_printer_print_str(p,
+					info->options->opencl_compiler_options);
+
+	p = isl_printer_print_str(p, "\");");
+	p = isl_printer_end_line(p);
+	p = isl_printer_start_line(p);
+	p = isl_printer_end_line(p);
+
+	return p;
+}
+
+static __isl_give isl_printer *opencl_release_cl_objects(
+	__isl_take isl_printer *p, struct opencl_info *info)
+{
+	p = isl_printer_start_line(p);
+	p = isl_printer_print_str(p, "openclCheckReturn(clReleaseCommandQueue"
+					"(queue));");
+	p = isl_printer_end_line(p);
+	p = isl_printer_start_line(p);
+	p = isl_printer_print_str(p, "openclCheckReturn(clReleaseProgram"
+					"(program));");
+	p = isl_printer_end_line(p);
+	p = isl_printer_start_line(p);
+	p = isl_printer_print_str(p, "openclCheckReturn(clReleaseContext"
+					"(context));");
+	p = isl_printer_end_line(p);
+
+	return p;
+}
+
 /* Print a call to the OpenCL clSetKernelArg() function which sets
  * the arguments of the kernel.  arg_name and arg_index are the name and the
  * index of the kernel argument.  The index of the leftmost argument of
@@ -1097,124 +1215,6 @@ static __isl_give isl_printer *opencl_print_host_code(
 	p = ppcg_print_macros(p, tree);
 	p = isl_ast_node_print(tree, p, print_options);
 
-	return p;
-}
-
-/* Create an OpenCL device, context, command queue and build the kernel.
- * input is the name of the input file provided to ppcg.
- */
-static __isl_give isl_printer *opencl_setup(__isl_take isl_printer *p,
-	const char *input, struct opencl_info *info)
-{
-	p = isl_printer_start_line(p);
-	p = isl_printer_print_str(p, "cl_device_id device;");
-	p = isl_printer_end_line(p);
-	p = isl_printer_start_line(p);
-	p = isl_printer_print_str(p, "cl_context context;");
-	p = isl_printer_end_line(p);
-	p = isl_printer_start_line(p);
-	p = isl_printer_print_str(p, "cl_program program;");
-	p = isl_printer_end_line(p);
-	p = isl_printer_start_line(p);
-	p = isl_printer_print_str(p, "cl_command_queue queue;");
-	p = isl_printer_end_line(p);
-	p = isl_printer_start_line(p);
-	p = isl_printer_print_str(p, "cl_int err;");
-	p = isl_printer_end_line(p);
-	p = isl_printer_start_line(p);
-	p = isl_printer_print_str(p, "device = opencl_create_device(");
-	p = isl_printer_print_int(p, info->options->opencl_use_gpu);
-	p = isl_printer_print_str(p, ");");
-	p = isl_printer_end_line(p);
-	p = isl_printer_start_line(p);
-	p = isl_printer_print_str(p, "context = clCreateContext(NULL, 1, "
-		"&device, NULL, NULL, &err);");
-	p = isl_printer_end_line(p);
-	p = isl_printer_start_line(p);
-	p = isl_printer_print_str(p, "openclCheckReturn(err);");
-	p = isl_printer_end_line(p);
-	p = isl_printer_start_line(p);
-	p = isl_printer_print_str(p, "queue = clCreateCommandQueue"
-					"(context, device, 0, &err);");
-	p = isl_printer_end_line(p);
-	p = isl_printer_start_line(p);
-	p = isl_printer_print_str(p, "openclCheckReturn(err);");
-	p = isl_printer_end_line(p);
-
-	p = isl_printer_start_line(p);
-	p = isl_printer_print_str(p, "program = ");
-
-	if (info->options->opencl_embed_kernel_code) {
-		p = isl_printer_print_str(p, "opencl_build_program_from_string("
-						"context, device, kernel_code, "
-						"sizeof(kernel_code), \"");
-	} else {
-		p = isl_printer_print_str(p, "opencl_build_program_from_file("
-						"context, device, \"");
-		p = isl_printer_print_str(p, info->kernel_c_name);
-		p = isl_printer_print_str(p, "\", \"");
-	}
-
-	if (info->options->opencl_compiler_options)
-		p = isl_printer_print_str(p,
-					info->options->opencl_compiler_options);
-
-	p = isl_printer_print_str(p, "\");");
-	p = isl_printer_end_line(p);
-	p = isl_printer_start_line(p);
-	p = isl_printer_end_line(p);
-
-	return p;
-}
-
-static __isl_give isl_printer *opencl_release_cl_objects(
-	__isl_take isl_printer *p, struct opencl_info *info)
-{
-	p = isl_printer_start_line(p);
-	p = isl_printer_print_str(p, "openclCheckReturn(clReleaseCommandQueue"
-					"(queue));");
-	p = isl_printer_end_line(p);
-	p = isl_printer_start_line(p);
-	p = isl_printer_print_str(p, "openclCheckReturn(clReleaseProgram"
-					"(program));");
-	p = isl_printer_end_line(p);
-	p = isl_printer_start_line(p);
-	p = isl_printer_print_str(p, "openclCheckReturn(clReleaseContext"
-					"(context));");
-	p = isl_printer_end_line(p);
-
-	return p;
-}
-
-/* Free the device array corresponding to "array"
- */
-static __isl_give isl_printer *release_device_array(__isl_take isl_printer *p,
-	struct gpu_array_info *array)
-{
-	p = isl_printer_start_line(p);
-	p = isl_printer_print_str(p, "openclCheckReturn("
-					"clReleaseMemObject(dev_");
-	p = isl_printer_print_str(p, array->name);
-	p = isl_printer_print_str(p, "));");
-	p = isl_printer_end_line(p);
-
-	return p;
-}
-
-/* Free the accessed device arrays.
- */
-static __isl_give isl_printer *opencl_release_device_arrays(
-	__isl_take isl_printer *p, struct gpu_prog *prog)
-{
-	int i;
-
-	for (i = 0; i < prog->n_array; ++i) {
-		struct gpu_array_info *array = &prog->array[i];
-		if (!gpu_array_requires_device_allocation(array))
-			continue;
-
-		p = release_device_array(p, array);
-	}
 	return p;
 }
 
