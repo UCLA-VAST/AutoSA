@@ -4991,8 +4991,7 @@ static __isl_give isl_schedule *map_to_device(struct gpu_gen *gen,
 	node = isl_schedule_get_root(schedule);
 	isl_schedule_free(schedule);
 	node = isl_schedule_node_child(node, 0);
-	if (isl_schedule_node_get_type(node) == isl_schedule_node_context)
-		node = isl_schedule_node_child(node, 0);
+	node = isl_schedule_node_child(node, 0);
 	node = isolate_permutable_subtrees(node, gen->prog);
 	domain = isl_schedule_node_get_domain(node);
 	prefix = isl_schedule_node_get_prefix_schedule_union_map(node);
