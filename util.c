@@ -9,6 +9,8 @@
 
 #include <isl/space.h>
 #include <isl/val.h>
+#include <isl/aff.h>
+#include <isl/set.h>
 
 #include "util.h"
 
@@ -34,4 +36,34 @@ __isl_give isl_multi_val *ppcg_multi_val_from_int(__isl_take isl_space *space,
 	isl_val_free(v);
 
 	return mv;
+}
+
+/* Compute the size of a bounding box around the origin and "set",
+ * where "set" is assumed to contain only non-negative elements.
+ * In particular, compute the maximal value of "set" in each direction
+ * and add one.
+ */
+__isl_give isl_multi_pw_aff *ppcg_size_from_extent(__isl_take isl_set *set)
+{
+	int i, n;
+	isl_multi_pw_aff *mpa;
+
+	n = isl_set_dim(set, isl_dim_set);
+	mpa = isl_multi_pw_aff_zero(isl_set_get_space(set));
+	for (i = 0; i < n; ++i) {
+		isl_space *space;
+		isl_aff *one;
+		isl_pw_aff *bound;
+
+		bound = isl_set_dim_max(isl_set_copy(set), i);
+
+		space = isl_pw_aff_get_domain_space(bound);
+		one = isl_aff_zero_on_domain(isl_local_space_from_space(space));
+		one = isl_aff_add_constant_si(one, 1);
+		bound = isl_pw_aff_add(bound, isl_pw_aff_from_aff(one));
+		mpa = isl_multi_pw_aff_set_pw_aff(mpa, i, bound);
+	}
+	isl_set_free(set);
+
+	return mpa;
 }
