@@ -157,7 +157,7 @@ static void print_reverse_list(FILE *out, int len, int *list)
 {
 	int i;
 
-	if (len == 0)
+	if (!out || len == 0)
 		return;
 
 	fprintf(out, "(");
