@@ -209,15 +209,12 @@ static int extract_array_info(struct gpu_prog *prog,
 		isl_pw_aff *bound;
 
 		dom = isl_set_copy(extent);
-		dom = isl_set_project_out(dom, isl_dim_set, i + 1,
-					    n_index - (i + 1));
-		dom = isl_set_project_out(dom, isl_dim_set, 0, i);
-		if (!isl_set_dim_has_upper_bound(dom, isl_dim_set, 0)) {
+		if (!isl_set_dim_has_upper_bound(dom, isl_dim_set, i)) {
 			fprintf(stderr, "unable to determine extent of '%s' "
 				"in dimension %d\n", info->name, i);
 			dom = isl_set_free(dom);
 		}
-		bound = isl_set_dim_max(dom, 0);
+		bound = isl_set_dim_max(dom, i);
 		dom = isl_pw_aff_domain(isl_pw_aff_copy(bound));
 		ls = isl_local_space_from_space(isl_set_get_space(dom));
 		one = isl_aff_zero_on_domain(ls);
