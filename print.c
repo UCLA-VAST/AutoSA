@@ -11,6 +11,7 @@
 #include <isl/ast_build.h>
 
 #include "print.h"
+#include "util.h"
 
 __isl_give isl_printer *ppcg_start_block(__isl_take isl_printer *p)
 {
@@ -71,65 +72,28 @@ __isl_give isl_printer *ppcg_set_macro_names(__isl_take isl_printer *p)
 	return p;
 }
 
-/* Print "extent" as a sequence of
- *
- *	[1 + maximal_value]
- *
- * one for each dimension.
- * "build" is used to simplify the size expressions, if any.
- */
-static __isl_give isl_printer *print_extent(__isl_take isl_printer *p,
-	__isl_keep isl_set *extent, __isl_keep isl_ast_build *build)
-{
-	int i, n;
-
-	n = isl_set_dim(extent, isl_dim_set);
-	if (n == 0)
-		return p;
-
-	for (i = 0; i < n; ++i) {
-		isl_set *dom;
-		isl_local_space *ls;
-		isl_aff *one;
-		isl_pw_aff *bound;
-		isl_ast_expr *expr;
-
-		bound = isl_set_dim_max(isl_set_copy(extent), i);
-		dom = isl_pw_aff_domain(isl_pw_aff_copy(bound));
-		ls = isl_local_space_from_space(isl_set_get_space(dom));
-		one = isl_aff_zero_on_domain(ls);
-		one = isl_aff_add_constant_si(one, 1);
-		bound = isl_pw_aff_add(bound, isl_pw_aff_alloc(dom, one));
-
-		p = isl_printer_print_str(p, "[");
-		expr = isl_ast_build_expr_from_pw_aff(build, bound);
-		p = isl_printer_print_ast_expr(p, expr);
-		p = isl_printer_print_str(p, "]");
-
-		isl_ast_expr_free(expr);
-	}
-
-	return p;
-}
-
 /* Print a declaration for array "array" to "p", using "build"
  * to simplify any size expressions.
+ *
+ * The size is computed from the extent of the array and is
+ * subsequently converted to an "access expression" by "build".
  */
 __isl_give isl_printer *ppcg_print_declaration(__isl_take isl_printer *p,
 	struct pet_array *array, __isl_keep isl_ast_build *build)
 {
-	const char *name;
+	isl_multi_pw_aff *size;
+	isl_ast_expr *expr;
 
 	if (!array)
 		return isl_printer_free(p);
 
-	name = isl_set_get_tuple_name(array->extent);
-
 	p = isl_printer_start_line(p);
 	p = isl_printer_print_str(p, array->element_type);
 	p = isl_printer_print_str(p, " ");
-	p = isl_printer_print_str(p, name);
-	p = print_extent(p, array->extent, build);
+	size = ppcg_size_from_extent(isl_set_copy(array->extent));
+	expr = isl_ast_build_access_from_multi_pw_aff(build, size);
+	p = isl_printer_print_ast_expr(p, expr);
+	isl_ast_expr_free(expr);
 	p = isl_printer_print_str(p, ";");
 	p = isl_printer_end_line(p);
 
