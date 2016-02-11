@@ -55,6 +55,15 @@ __isl_give isl_multi_pw_aff *ppcg_size_from_extent(__isl_take isl_set *set)
 		isl_aff *one;
 		isl_pw_aff *bound;
 
+		if (!isl_set_dim_has_upper_bound(set, isl_dim_set, i)) {
+			const char *name;
+			name = isl_set_get_tuple_name(set);
+			if (!name)
+				name = "";
+			fprintf(stderr, "unable to determine extent of '%s' "
+				"in dimension %d\n", name, i);
+			set = isl_set_free(set);
+		}
 		bound = isl_set_dim_max(isl_set_copy(set), i);
 
 		space = isl_pw_aff_get_domain_space(bound);

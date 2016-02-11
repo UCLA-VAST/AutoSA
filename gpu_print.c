@@ -47,9 +47,12 @@ __isl_give isl_printer *gpu_array_info_print_size(__isl_take isl_printer *prn,
 	int i;
 
 	for (i = 0; i < array->n_index; ++i) {
+		isl_pw_aff *bound;
+		bound = isl_multi_pw_aff_get_pw_aff(array->bound, i);
 		prn = isl_printer_print_str(prn, "(");
-		prn = isl_printer_print_pw_aff(prn, array->bound[i]);
+		prn = isl_printer_print_pw_aff(prn, bound);
 		prn = isl_printer_print_str(prn, ") * ");
+		isl_pw_aff_free(bound);
 	}
 	prn = isl_printer_print_str(prn, "sizeof(");
 	prn = isl_printer_print_str(prn, array->type);
@@ -71,9 +74,12 @@ static __isl_give isl_printer *print_non_linearized_declaration_argument(
 	p = isl_printer_print_str(p, array->name);
 
 	for (i = 0; i < array->n_index; i++) {
+		isl_pw_aff *bound;
+		bound = isl_multi_pw_aff_get_pw_aff(array->bound, i);
 		p = isl_printer_print_str(p, "[");
-		p = isl_printer_print_pw_aff(p, array->bound[i]);
+		p = isl_printer_print_pw_aff(p, bound);
 		p = isl_printer_print_str(p, "]");
+		isl_pw_aff_free(bound);
 	}
 
 	return p;

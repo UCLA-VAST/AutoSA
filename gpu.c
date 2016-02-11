@@ -169,22 +169,18 @@ static int extract_array_info(struct gpu_prog *prog,
 	struct gpu_array_info *info, struct pet_array *pa,
 	__isl_keep isl_union_set *arrays)
 {
-	int i, empty;
+	int empty;
 	const char *name;
 	int n_index;
-	isl_pw_aff **bounds;
+	isl_multi_pw_aff *bounds;
 	isl_set *accessed, *extent;
 
 	n_index = isl_set_dim(pa->extent, isl_dim_set);
 	name = isl_set_get_tuple_name(pa->extent);
-	bounds = isl_alloc_array(prog->ctx, isl_pw_aff *, n_index);
-	if (!bounds)
-		return -1;
 
 	info->space = isl_set_get_space(pa->extent);
 	info->name = strdup(name);
 	info->n_index = n_index;
-	info->bound = bounds;
 	info->linearize = prog->scop->options->linearize_device_arrays;
 
 	info->type = strdup(pa->element_type);
@@ -202,30 +198,13 @@ static int extract_array_info(struct gpu_prog *prog,
 	if (empty < 0)
 		return -1;
 	info->accessed = !empty;
-	for (i = 0; i < n_index; ++i) {
-		isl_set *dom;
-		isl_local_space *ls;
-		isl_aff *one;
-		isl_pw_aff *bound;
-
-		dom = isl_set_copy(extent);
-		if (!isl_set_dim_has_upper_bound(dom, isl_dim_set, i)) {
-			fprintf(stderr, "unable to determine extent of '%s' "
-				"in dimension %d\n", info->name, i);
-			dom = isl_set_free(dom);
-		}
-		bound = isl_set_dim_max(dom, i);
-		dom = isl_pw_aff_domain(isl_pw_aff_copy(bound));
-		ls = isl_local_space_from_space(isl_set_get_space(dom));
-		one = isl_aff_zero_on_domain(ls);
-		one = isl_aff_add_constant_si(one, 1);
-		bound = isl_pw_aff_add(bound, isl_pw_aff_alloc(dom, one));
-		bound = isl_pw_aff_gist(bound, isl_set_copy(prog->context));
-
-		bounds[i] = bound;
-		if (!isl_pw_aff_is_cst(bound))
-			info->linearize = 1;
-	}
+	bounds = ppcg_size_from_extent(isl_set_copy(extent));
+	bounds = isl_multi_pw_aff_gist(bounds, isl_set_copy(prog->context));
+	if (!bounds)
+		return -1;
+	if (!isl_multi_pw_aff_is_cst(bounds))
+		info->linearize = 1;
+	info->bound = bounds;
 
 	collect_references(prog, info);
 
@@ -365,17 +344,15 @@ static int collect_array_info(struct gpu_prog *prog)
 
 static void free_array_info(struct gpu_prog *prog)
 {
-	int i, j;
+	int i;
 
 	for (i = 0; i < prog->n_array; ++i) {
 		int n_index = prog->array[i].n_index;
 		free(prog->array[i].type);
 		free(prog->array[i].name);
-		for (j = 0; j < n_index; ++j)
-			isl_pw_aff_free(prog->array[i].bound[j]);
+		isl_multi_pw_aff_free(prog->array[i].bound);
 		isl_space_free(prog->array[i].space);
 		isl_set_free(prog->array[i].extent);
-		free(prog->array[i].bound);
 		free(prog->array[i].refs);
 		isl_union_map_free(prog->array[i].dep_order);
 	}
@@ -435,7 +412,7 @@ __isl_give isl_set *gpu_array_positive_size_guard(struct gpu_array_info *array)
 		isl_pw_aff *bound;
 		isl_set *guard_i, *zero;
 
-		bound = isl_pw_aff_copy(array->bound[i]);
+		bound = isl_multi_pw_aff_get_pw_aff(array->bound, i);
 		guard_i = isl_pw_aff_nonneg_set(isl_pw_aff_copy(bound));
 		zero = isl_pw_aff_zero_set(bound);
 		guard_i = isl_set_subtract(guard_i, zero);
@@ -801,7 +778,7 @@ static __isl_give isl_set *array_extent(struct gpu_array_info *array)
 		aff = isl_aff_var_on_domain(isl_local_space_copy(ls),
 						isl_dim_set, i);
 		index = isl_pw_aff_from_aff(aff);
-		bound = isl_pw_aff_copy(array->bound[i]);
+		bound = isl_multi_pw_aff_get_pw_aff(array->bound, i);
 		bound = isl_pw_aff_from_range(bound);
 		bound = isl_pw_aff_add_dims(bound, isl_dim_in, array->n_index);
 		bound = isl_pw_aff_set_tuple_id(bound, isl_dim_in,
@@ -1294,10 +1271,11 @@ static void localize_bounds(struct ppcg_kernel *kernel,
 		bound = isl_pw_aff_list_alloc(kernel->ctx, n_index);
 
 		for (j = 0; j < n_index; ++j) {
+			struct gpu_array_info *array = local->array;
 			isl_pw_aff *pwaff;
 			int empty;
 
-			pwaff = isl_pw_aff_copy(local->array->bound[j]);
+			pwaff = isl_multi_pw_aff_get_pw_aff(array->bound, j);
 			pwaff = isl_pw_aff_gist(pwaff, isl_set_copy(context));
 			empty = isl_pw_aff_is_empty(pwaff);
 			if (empty < 0)

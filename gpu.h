@@ -62,7 +62,7 @@ struct gpu_array_info {
 	/* Number of indices. */
 	unsigned n_index;
 	/* For each index, a bound on "extent" in that direction. */
-	isl_pw_aff **bound;
+	isl_multi_pw_aff *bound;
 
 	/* All references to this array; point to elements of a linked list. */
 	int n_ref;
