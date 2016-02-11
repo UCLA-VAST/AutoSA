@@ -1133,6 +1133,7 @@ struct ppcg_kernel *ppcg_kernel_free(struct ppcg_kernel *kernel)
 		free(array->groups);
 
 		isl_multi_pw_aff_free(array->bound);
+		isl_ast_expr_free(array->bound_expr);
 	}
 	free(kernel->array);
 
@@ -1632,12 +1633,9 @@ __isl_give isl_ast_expr *gpu_local_array_info_linearize_index(
 	struct gpu_local_array_info *array, __isl_take isl_ast_expr *expr)
 {
 	int i, n;
-	isl_ctx *ctx;
-	isl_set *context;
 	isl_ast_expr *arg0;
 	isl_ast_expr *res;
 	isl_ast_expr_list *list;
-	isl_ast_build *build;
 
 	arg0 = isl_ast_expr_get_op_arg(expr, 0);
 	if (isl_ast_expr_get_type(arg0) == isl_ast_expr_op &&
@@ -1656,18 +1654,12 @@ __isl_give isl_ast_expr *gpu_local_array_info_linearize_index(
 	if (isl_ast_expr_get_op_n_arg(expr) == 1)
 		return expr;
 
-	ctx = isl_ast_expr_get_ctx(expr);
-	context = isl_set_universe(isl_space_params_alloc(ctx, 0));
-	build = isl_ast_build_from_context(context);
-
 	n = isl_ast_expr_get_op_n_arg(expr);
 	res = isl_ast_expr_get_op_arg(expr, 1);
 	for (i = 1; i < array->n_index; ++i) {
-		isl_pw_aff *bound_i;
 		isl_ast_expr *expr_i;
 
-		bound_i = isl_multi_pw_aff_get_pw_aff(array->bound, i);
-		expr_i = isl_ast_build_expr_from_pw_aff(build, bound_i);
+		expr_i = isl_ast_expr_get_op_arg(array->bound_expr, 1 + i);
 		res = isl_ast_expr_mul(res, expr_i);
 
 		if (i + 1 >= n)
@@ -1675,8 +1667,6 @@ __isl_give isl_ast_expr *gpu_local_array_info_linearize_index(
 		expr_i = isl_ast_expr_get_op_arg(expr, i + 1);
 		res = isl_ast_expr_add(res, expr_i);
 	}
-
-	isl_ast_build_free(build);
 
 	if (1 + array->n_index > n) {
 		res = isl_ast_expr_add(isl_ast_expr_get_op_arg(expr, 0), res);
@@ -2236,11 +2226,49 @@ static isl_stat build_grid_size(struct ppcg_kernel *kernel,
 	return isl_stat_ok;
 }
 
+/* Build access AST expressions for the localized array sizes using "build".
+ * Store the result in local->bound_expr.
+ * Only do this for arrays for which localized bounds have been computed.
+ */
+static isl_stat build_local_array_sizes(struct ppcg_kernel *kernel,
+	__isl_keep isl_ast_build *build)
+{
+	int i;
+
+	for (i = 0; i < kernel->n_array; ++i) {
+		struct gpu_local_array_info *local = &kernel->array[i];
+		isl_multi_pw_aff *size;
+
+		if (local->n_group == 0)
+			continue;
+		size = isl_multi_pw_aff_copy(local->bound);
+		local->bound_expr = ppcg_build_size_expr(size, build);
+		if (!local->bound_expr)
+			return isl_stat_error;
+	}
+
+	return isl_stat_ok;
+}
+
+/* Build access AST expressions for the effective grid size and
+ * the localized array sizes using "build".
+ */
+static isl_stat build_grid_and_local_array_sizes(struct ppcg_kernel *kernel,
+	__isl_keep isl_ast_build *build)
+{
+	if (build_grid_size(kernel, build) < 0)
+		return isl_stat_error;
+	if (build_local_array_sizes(kernel, build) < 0)
+		return isl_stat_error;
+	return isl_stat_ok;
+}
+
 /* This function is called before the AST generator starts traversing
  * the schedule subtree of a node with mark "mark".
  *
  * If the mark is called "kernel", store the kernel pointer in data->kernel
- * for use in at_domain and build an AST expression for the grid size.
+ * for use in at_domain and build AST expressions for the grid size and
+ * the localized array sizes.
  */
 static isl_stat before_mark(__isl_keep isl_id *mark,
 	__isl_keep isl_ast_build *build, void *user)
@@ -2251,7 +2279,7 @@ static isl_stat before_mark(__isl_keep isl_id *mark,
 		return isl_stat_error;
 	if (!strcmp(isl_id_get_name(mark), "kernel")) {
 		data->kernel = isl_id_get_user(mark);
-		if (build_grid_size(data->kernel, build) < 0)
+		if (build_grid_and_local_array_sizes(data->kernel, build) < 0)
 			return isl_stat_error;
 	}
 	return isl_stat_ok;

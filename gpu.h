@@ -111,6 +111,7 @@ struct gpu_array_info {
  * "global" is set if the global device memory corresponding
  * to this array is accessed by the kernel.
  * "bound" is equal to array->bound specialized to the current kernel.
+ * "bound_expr" is the corresponding access AST expression.
  */
 struct gpu_local_array_info {
 	struct gpu_array_info *array;
@@ -123,6 +124,7 @@ struct gpu_local_array_info {
 
 	unsigned n_index;
 	isl_multi_pw_aff *bound;
+	isl_ast_expr *bound_expr;
 };
 
 __isl_give isl_ast_expr *gpu_local_array_info_linearize_index(
