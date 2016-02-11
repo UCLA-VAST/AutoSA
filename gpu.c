@@ -1132,7 +1132,7 @@ struct ppcg_kernel *ppcg_kernel_free(struct ppcg_kernel *kernel)
 			gpu_array_ref_group_free(array->groups[j]);
 		free(array->groups);
 
-		isl_pw_aff_list_free(array->bound);
+		isl_multi_pw_aff_free(array->bound);
 	}
 	free(kernel->array);
 
@@ -1264,28 +1264,27 @@ static void localize_bounds(struct ppcg_kernel *kernel,
 
 	for (i = 0; i < kernel->n_array; ++i) {
 		struct gpu_local_array_info *local = &kernel->array[i];
-		isl_pw_aff_list *bound;
+		isl_multi_pw_aff *bound;
 		int n_index;
 
 		if (local->n_group == 0)
 			continue;
 
 		n_index = local->array->n_index;
-		bound = isl_pw_aff_list_alloc(kernel->ctx, n_index);
+		bound = isl_multi_pw_aff_copy(local->array->bound);
 
 		for (j = 0; j < n_index; ++j) {
-			struct gpu_array_info *array = local->array;
 			isl_pw_aff *pwaff;
 			int empty;
 
-			pwaff = isl_multi_pw_aff_get_pw_aff(array->bound, j);
+			pwaff = isl_multi_pw_aff_get_pw_aff(bound, j);
 			pwaff = isl_pw_aff_gist(pwaff, isl_set_copy(context));
 			empty = isl_pw_aff_is_empty(pwaff);
 			if (empty < 0)
 				pwaff = isl_pw_aff_free(pwaff);
 			else if (empty)
 				pwaff = set_universally_zero(pwaff);
-			bound = isl_pw_aff_list_add(bound, pwaff);
+			bound = isl_multi_pw_aff_set_pw_aff(bound, j, pwaff);
 		}
 
 		local->n_index = n_index;
@@ -1667,7 +1666,7 @@ __isl_give isl_ast_expr *gpu_local_array_info_linearize_index(
 		isl_pw_aff *bound_i;
 		isl_ast_expr *expr_i;
 
-		bound_i = isl_pw_aff_list_get_pw_aff(array->bound, i);
+		bound_i = isl_multi_pw_aff_get_pw_aff(array->bound, i);
 		expr_i = isl_ast_build_expr_from_pw_aff(build, bound_i);
 		res = isl_ast_expr_mul(res, expr_i);
 

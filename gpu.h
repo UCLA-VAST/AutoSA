@@ -110,8 +110,7 @@ struct gpu_array_info {
  * must be mapped to a register.
  * "global" is set if the global device memory corresponding
  * to this array is accessed by the kernel.
- * For each index i with 0 <= i < n_index,
- * bound[i] is equal to array->bound[i] specialized to the current kernel.
+ * "bound" is equal to array->bound specialized to the current kernel.
  */
 struct gpu_local_array_info {
 	struct gpu_array_info *array;
@@ -123,7 +122,7 @@ struct gpu_local_array_info {
 	int global;
 
 	unsigned n_index;
-	isl_pw_aff_list *bound;
+	isl_multi_pw_aff *bound;
 };
 
 __isl_give isl_ast_expr *gpu_local_array_info_linearize_index(
