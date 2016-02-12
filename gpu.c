@@ -1862,7 +1862,7 @@ static __isl_give isl_ast_node *create_access_leaf(struct ppcg_kernel *kernel,
 	stmt->u.c.local_array = group->local_array;
 	stmt->type = ppcg_kernel_copy;
 
-	id = isl_id_alloc(kernel->ctx, NULL, stmt);
+	id = isl_id_alloc(kernel->ctx, "copy", stmt);
 	id = isl_id_set_free_user(id, &ppcg_kernel_stmt_free);
 	return isl_ast_node_set_annotation(node, id);
 }
@@ -1882,7 +1882,7 @@ static __isl_give isl_ast_node *create_sync_leaf(
 		return isl_ast_node_free(node);
 
 	stmt->type = ppcg_kernel_sync;
-	id = isl_id_alloc(kernel->ctx, NULL, stmt);
+	id = isl_id_alloc(kernel->ctx, "sync", stmt);
 	id = isl_id_set_free_user(id, &ppcg_kernel_stmt_free);
 	return isl_ast_node_set_annotation(node, id);
 }
