@@ -621,10 +621,7 @@ static __isl_give isl_printer *print_host_user(__isl_take isl_printer *p,
 	if (is_user)
 		return ppcg_kernel_print_domain(p, stmt);
 
-	p = isl_printer_start_line(p);
-	p = isl_printer_print_str(p, "{");
-	p = isl_printer_end_line(p);
-	p = isl_printer_indent(p, 2);
+	p = ppcg_start_block(p);
 
 	p = isl_printer_start_line(p);
 	p = isl_printer_print_str(p, "dim3 k");
@@ -653,10 +650,7 @@ static __isl_give isl_printer *print_host_user(__isl_take isl_printer *p,
 	p = isl_printer_print_str(p, "cudaCheckKernel();");
 	p = isl_printer_end_line(p);
 
-	p = isl_printer_indent(p, -2);
-	p = isl_printer_start_line(p);
-	p = isl_printer_print_str(p, "}");
-	p = isl_printer_end_line(p);
+	p = ppcg_end_block(p);
 
 	p = isl_printer_start_line(p);
 	p = isl_printer_end_line(p);
