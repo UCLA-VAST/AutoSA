@@ -1011,7 +1011,6 @@ static __isl_give isl_multi_pw_aff *extract_size(__isl_take isl_set *set,
 		isl_pw_aff *bound;
 
 		bound = isl_set_dim_max(isl_set_copy(set), i);
-		bound = isl_pw_aff_coalesce(bound);
 		bound = isl_pw_aff_gist(bound, isl_set_copy(context));
 
 		space = isl_pw_aff_get_domain_space(bound);
@@ -1068,6 +1067,7 @@ static __isl_give isl_multi_pw_aff *extract_grid_size(
 		grid = isl_set_project_out(grid, isl_dim_param, pos, 1);
 	}
 
+	grid = isl_set_coalesce(grid);
 	return extract_size(grid, isl_set_copy(kernel->context));
 }
 
