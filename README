@@ -30,8 +30,7 @@ automake, libtool and pkg-config.
 
 	git clone git://repo.or.cz/ppcg.git
 	cd ppcg
-	git submodule init
-	git submodule update
+	./get_submodules.sh
 	./autogen.sh
 
 
