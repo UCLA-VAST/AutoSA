@@ -565,7 +565,7 @@ static __isl_give isl_schedule_node *tile_band(
 	__isl_take isl_schedule_node *node, void *user)
 {
 	struct ppcg_scop *scop = user;
-	int i, n;
+	int n;
 	isl_space *space;
 	isl_multi_val *sizes;
 
