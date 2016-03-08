@@ -136,7 +136,6 @@ static __isl_give isl_printer *stmt_print_local_index(__isl_take isl_printer *p,
 static __isl_give isl_printer *stmt_print_global_index(
 	__isl_take isl_printer *p, struct ppcg_kernel_stmt *stmt)
 {
-	int i;
 	struct gpu_array_info *array = stmt->u.c.array;
 	isl_ast_expr *index;
 
