@@ -347,7 +347,6 @@ static void free_array_info(struct gpu_prog *prog)
 	int i;
 
 	for (i = 0; i < prog->n_array; ++i) {
-		int n_index = prog->array[i].n_index;
 		free(prog->array[i].type);
 		free(prog->array[i].name);
 		isl_multi_pw_aff_free(prog->array[i].bound);
