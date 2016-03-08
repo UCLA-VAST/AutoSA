@@ -126,7 +126,7 @@ struct ast_build_userinfo {
 static int ast_schedule_dim_is_parallel(__isl_keep isl_ast_build *build,
 	struct ppcg_scop *scop)
 {
-	isl_union_map *schedule_node, *schedule, *deps;
+	isl_union_map *schedule, *deps;
 	isl_map *schedule_deps, *test;
 	isl_space *schedule_space;
 	unsigned i, dimension, is_parallel;
