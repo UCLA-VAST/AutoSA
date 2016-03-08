@@ -4770,7 +4770,6 @@ static int update_may_persist_at_filter(__isl_keep isl_schedule_node *node,
 	isl_space *space;
 	isl_union_pw_multi_aff *contraction;
 	isl_union_set *before, *after, *filter;
-	isl_union_map *flow;
 
 	type = isl_schedule_node_get_parent_type(node);
 	if (type != isl_schedule_node_sequence && type != isl_schedule_node_set)
