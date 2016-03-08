@@ -3375,7 +3375,6 @@ static __isl_give isl_schedule_node *add_copies_group_shared(
 	struct gpu_array_tile *tile;
 	isl_union_map *access;
 	isl_union_set *domain;
-	isl_union_set *sync;
 	isl_multi_aff *ma;
 	isl_multi_aff *from_access;
 	isl_multi_pw_aff *mpa;
