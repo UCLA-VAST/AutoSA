@@ -138,7 +138,6 @@ static __isl_give isl_printer *stmt_print_global_index(
 {
 	int i;
 	struct gpu_array_info *array = stmt->u.c.array;
-	struct gpu_local_array_info *local = stmt->u.c.local_array;
 	isl_ast_expr *index;
 
 	if (gpu_array_is_scalar(array)) {
