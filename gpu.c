@@ -1345,7 +1345,6 @@ static struct gpu_stmt *find_stmt(struct gpu_prog *prog, __isl_keep isl_id *id)
 
 void ppcg_kernel_stmt_free(void *user)
 {
-	int i;
 	struct ppcg_kernel_stmt *stmt = user;
 
 	if (!stmt)
