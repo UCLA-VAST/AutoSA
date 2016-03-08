@@ -4869,7 +4869,6 @@ static __isl_give isl_union_set *node_may_persist(
 	__isl_keep isl_schedule_node *node, struct gpu_prog *prog)
 {
 	struct ppcg_may_persist_data data;
-	isl_schedule_node *root;
 	isl_union_pw_multi_aff *contraction;
 	isl_union_set *domain;
 	isl_union_set *persist;
