@@ -1713,7 +1713,6 @@ void gpu_array_ref_group_compute_tiling(struct gpu_array_ref_group *group)
 {
 	int i;
 	struct gpu_array_tile *tile;
-	struct gpu_array_info *array = group->array;
 	isl_space *space;
 	isl_multi_aff *tiling, *lb, *insert_array;
 	isl_printer *p;
