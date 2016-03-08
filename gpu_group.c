@@ -1362,7 +1362,7 @@ static int group_common_shared_memory_tile(struct ppcg_kernel *kernel,
 static void set_array_groups(struct gpu_local_array_info *array,
 	int n, struct gpu_array_ref_group **groups)
 {
-	int i, j;
+	int i;
 
 	array->n_group = n;
 	array->groups = groups;
