@@ -1311,7 +1311,6 @@ static int group_common_shared_memory_tile(struct ppcg_kernel *kernel,
 {
 	int i, j;
 	int recompute_overlap = 0;
-	isl_ctx *ctx = isl_space_get_ctx(array->space);
 
 	for (i = 0; i < n; ++i) {
 		if (!groups[i]->shared_tile)
