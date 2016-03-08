@@ -337,7 +337,6 @@ static __isl_give isl_printer *print_for(__isl_take isl_printer *p,
 	__isl_take isl_ast_print_options *print_options,
 	__isl_keep isl_ast_node *node, void *user)
 {
-	struct ppcg_print_info *print_info;
 	isl_id *id;
 	int openmp;
 
