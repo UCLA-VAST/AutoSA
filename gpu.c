@@ -4952,7 +4952,7 @@ static __isl_give isl_schedule_node *add_to_from_device(
 	__isl_take isl_union_map *prefix, struct gpu_prog *prog)
 {
 	isl_union_set *local;
-	isl_union_set *to_device, *from_device, *may_persist;
+	isl_union_set *may_persist;
 	isl_union_map *may_write, *must_write, *copy_out, *not_written;
 	isl_union_map *read, *copy_in;
 	isl_union_map *tagged;
