@@ -47,7 +47,6 @@ struct ppcg_stmt {
 static void ppcg_stmt_free(void *user)
 {
 	struct ppcg_stmt *stmt = user;
-	int i;
 
 	if (!stmt)
 		return;
