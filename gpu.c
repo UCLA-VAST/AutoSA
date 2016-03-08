@@ -1163,7 +1163,6 @@ static void create_kernel_var(isl_ctx *ctx, struct gpu_array_ref_group *group,
 	int j;
 	struct gpu_array_tile *tile;
 	isl_printer *p;
-	char *name;
 
 	var->array = group->array;
 
