@@ -182,7 +182,6 @@ __isl_give isl_id_list *ppcg_scop_generate_names(struct ppcg_scop *scop,
 	int n, const char *prefix)
 {
 	int i;
-	char name[10];
 	isl_ctx *ctx;
 	isl_id_list *names;
 
