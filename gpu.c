@@ -3225,7 +3225,6 @@ static __isl_give isl_schedule_node *add_copies_group_private(
 {
 	struct gpu_array_tile *tile;
 	isl_union_map *access;
-	isl_union_map *prefix;
 	isl_union_set *domain;
 	isl_space *space;
 	isl_multi_aff *from_access;
