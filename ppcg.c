@@ -381,7 +381,6 @@ static void compute_live_out(struct ppcg_scop *ps)
 	isl_union_map *kills;
 	isl_union_map *exposed;
 	isl_union_map *covering;
-	isl_union_set *accessed;
 	isl_union_access_info *access;
 	isl_union_flow *flow;
 
