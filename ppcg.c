@@ -1031,7 +1031,9 @@ int main(int argc, char **argv)
 	ppcg_options_set_target_defaults(options->ppcg);
 	isl_options_set_ast_build_detect_min_max(ctx, 1);
 	isl_options_set_ast_print_macro_once(ctx, 1);
+	isl_options_set_schedule_whole_component(ctx, 0);
 	isl_options_set_schedule_maximize_band_depth(ctx, 1);
+	isl_options_set_schedule_maximize_coincidence(ctx, 1);
 	pet_options_set_encapsulate_dynamic_control(ctx, 1);
 	argc = options_parse(options, argc, argv, ISL_ARG_ALL);
 
