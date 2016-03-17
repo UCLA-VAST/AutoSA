@@ -16,6 +16,9 @@ struct ppcg_options {
 	struct isl_options *isl;
 	struct ppcg_debug_options *debug;
 
+	/* Group chains of consecutive statements before scheduling. */
+	int group_chains;
+
 	/* Use isl to compute a schedule replacing the original schedule. */
 	int reschedule;
 	int scale_tile_loops;

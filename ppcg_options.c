@@ -79,6 +79,9 @@ ISL_ARGS_START(struct ppcg_options, ppcg_options_args)
 ISL_ARG_CHILD(struct ppcg_options, isl, "isl", &isl_options_args, "isl options")
 ISL_ARG_CHILD(struct ppcg_options, debug, NULL, &ppcg_debug_options_args,
 	"debugging options")
+ISL_ARG_BOOL(struct ppcg_options, group_chains, 0, "group-chains", 1,
+	"group chains of interdependent statements that are executed "
+	"consecutively in the original schedule before scheduling")
 ISL_ARG_BOOL(struct ppcg_options, reschedule, 0, "reschedule", 1,
 	"replace original schedule by isl computed schedule")
 ISL_ARG_BOOL(struct ppcg_options, scale_tile_loops, 0,

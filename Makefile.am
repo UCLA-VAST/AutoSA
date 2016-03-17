@@ -44,6 +44,7 @@ ppcg_SOURCES = \
 	gpu_print.h \
 	gpu_tree.c \
 	gpu_tree.h \
+	grouping.c \
 	schedule.c \
 	schedule.h \
 	ppcg_options.c \

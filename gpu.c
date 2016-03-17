@@ -4324,6 +4324,8 @@ static __isl_give isl_schedule_constraints *construct_schedule_constraints(
  * We derive schedule constraints from the dependences in gen->prog->scop
  * and then use isl to compute a schedule that has a parallel loop
  * in each tilable band.
+ * During the schedule construction, some statement instances
+ * may be grouped first based on the input schedule.
  */
 static __isl_give isl_schedule *compute_schedule(struct gpu_gen *gen)
 {
@@ -4331,7 +4333,8 @@ static __isl_give isl_schedule *compute_schedule(struct gpu_gen *gen)
 	isl_schedule *schedule;
 
 	sc = construct_schedule_constraints(gen->prog);
-	schedule = isl_schedule_constraints_compute_schedule(sc);
+	schedule = gen->prog->scop->schedule;
+	schedule = ppcg_compute_schedule(sc, schedule, gen->options);
 
 	return schedule;
 }

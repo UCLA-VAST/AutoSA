@@ -649,7 +649,8 @@ static __isl_give isl_schedule_constraints *construct_cpu_schedule_constraints(
 /* Compute a schedule for the scop "ps".
  *
  * First derive the appropriate schedule constraints from the dependences
- * in "ps" and then compute a schedule from those schedule constraints.
+ * in "ps" and then compute a schedule from those schedule constraints,
+ * possibly grouping statement instances based on the input schedule.
  */
 static __isl_give isl_schedule *compute_cpu_schedule(struct ppcg_scop *ps)
 {
@@ -663,7 +664,7 @@ static __isl_give isl_schedule *compute_cpu_schedule(struct ppcg_scop *ps)
 
 	if (ps->options->debug->dump_schedule_constraints)
 		isl_schedule_constraints_dump(sc);
-	schedule = isl_schedule_constraints_compute_schedule(sc);
+	schedule = ppcg_compute_schedule(sc, ps->schedule, ps->options);
 
 	return schedule;
 }

@@ -117,4 +117,8 @@ int ppcg_transform(isl_ctx *ctx, const char *input, FILE *out,
 	__isl_give isl_printer *(*fn)(__isl_take isl_printer *p,
 		struct ppcg_scop *scop, void *user), void *user);
 
+__isl_give isl_schedule *ppcg_compute_schedule(
+	__isl_take isl_schedule_constraints *sc,
+	__isl_keep isl_schedule *schedule, struct ppcg_options *options);
+
 #endif
