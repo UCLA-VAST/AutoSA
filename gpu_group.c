@@ -451,6 +451,9 @@ static int can_tile(__isl_keep isl_map *access, struct gpu_array_tile *tile)
  * thread_sched contains the first (thread_depth + n_thread) dimensions
  * of the kernel schedule.
  * full_sched is a union_map representation of the entire kernel schedule.
+ * The schedules are all formulated in terms of the original statement
+ * instances, i.e., those that appear in the domains of the access
+ * relations.
  */
 struct gpu_group_data {
 	struct ppcg_scop *scop;
@@ -1569,6 +1572,7 @@ int gpu_group_references(struct ppcg_kernel *kernel,
 {
 	int i;
 	int r = 0;
+	isl_union_pw_multi_aff *contraction;
 	struct gpu_group_data data;
 
 	check_can_be_private_live_ranges(kernel, node);
@@ -1591,6 +1595,15 @@ int gpu_group_references(struct ppcg_kernel *kernel,
 	data.thread_sched = isl_union_map_flat_range_product(data.thread_sched,
 		isl_schedule_node_band_get_partial_schedule_union_map(node));
 	data.thread_sched = isl_union_map_detect_equalities(data.thread_sched);
+
+	contraction = isl_union_pw_multi_aff_copy(kernel->contraction);
+	data.host_sched = isl_union_map_preimage_domain_union_pw_multi_aff(
+		data.host_sched, isl_union_pw_multi_aff_copy(contraction));
+	data.shared_sched = isl_union_map_preimage_domain_union_pw_multi_aff(
+		data.shared_sched, isl_union_pw_multi_aff_copy(contraction));
+	data.thread_sched = isl_union_map_preimage_domain_union_pw_multi_aff(
+		data.thread_sched, contraction);
+
 	node = isl_schedule_node_child(node, 0);
 	data.full_sched = isl_union_map_copy(data.thread_sched);
 	data.full_sched = isl_union_map_flat_range_product(data.full_sched,
