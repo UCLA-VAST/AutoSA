@@ -2860,6 +2860,8 @@ static __isl_give isl_set *extract_context(__isl_keep isl_schedule_node *node,
 
 /* Return the set of outer array elements accessed by
  * by the statement instances in "domain" in "prog".
+ * The instances in "domain" are those that appear
+ * in the domains of the access relations in "prog".
  */
 static __isl_give isl_union_set *accessed_by_domain(
 	__isl_take isl_union_set *domain, struct gpu_prog *prog)
@@ -3809,8 +3811,9 @@ static __isl_give isl_schedule_node *create_kernel(struct gpu_gen *gen,
 	isl_id *id;
 	isl_schedule_node *node_thread;
 	isl_union_map *host_schedule;
+	isl_union_pw_multi_aff *contraction;
 	isl_set *host_domain;
-	isl_union_set *domain;
+	isl_union_set *domain, *expanded;
 	int single_statement;
 
 	kernel = isl_calloc_type(gen->ctx, struct ppcg_kernel);
@@ -3826,8 +3829,11 @@ static __isl_give isl_schedule_node *create_kernel(struct gpu_gen *gen,
 	kernel->options = gen->options;
 	kernel->context = extract_context(node, gen->prog);
 	kernel->core = isl_union_set_universe(isl_union_set_copy(domain));
-	kernel->arrays = accessed_by_domain(isl_union_set_copy(domain),
-						gen->prog);
+	contraction = isl_schedule_node_get_subtree_contraction(node);
+	expanded = isl_union_set_copy(domain);
+	expanded = isl_union_set_preimage_union_pw_multi_aff(expanded,
+						contraction);
+	kernel->arrays = accessed_by_domain(expanded, gen->prog);
 	kernel->n_grid = n_outer_coincidence(node);
 	node_thread = isl_schedule_node_copy(node);
 	node_thread = gpu_tree_move_down_to_thread(node_thread, kernel->core);
@@ -4097,12 +4103,16 @@ static __isl_give isl_schedule_node *declare_accessed_local_variables(
 	__isl_take isl_schedule_node *node, struct gpu_prog *prog,
 	__isl_keep isl_union_set *domain)
 {
+	isl_union_pw_multi_aff *contraction;
 	isl_union_set *arrays;
 	int i;
 
 	if (!ppcg_scop_any_hidden_declarations(prog->scop))
 		return node;
-	arrays = accessed_by_domain(isl_union_set_copy(domain), prog);
+	contraction = isl_schedule_node_get_subtree_contraction(node);
+	domain = isl_union_set_copy(domain);
+	domain = isl_union_set_preimage_union_pw_multi_aff(domain, contraction);
+	arrays = accessed_by_domain(domain, prog);
 
 	for (i = 0; i < prog->n_array; ++i) {
 		isl_space *space;
