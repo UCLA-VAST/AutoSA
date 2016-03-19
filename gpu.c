@@ -2149,6 +2149,8 @@ static __isl_give isl_union_map *wrapped_reference_to_access(
  * remove those reads if ("read" is 1) or writes (if "read" is 0)
  * that are only needed to communicate data within
  * the same iteration of "sched".
+ * The domain of "sched" corresponds to the original statement instances,
+ * i.e., those that appear in the domains of the access relations.
  * "tagged" contains all tagged access relations to all
  * the array reference groups accessed by "access" from statement
  * instances scheduled by "sched".
@@ -2293,6 +2295,8 @@ static __isl_give isl_union_map *remove_local_accesses(
  * at the position where the copying of the group is inserted.
  * That is, the output dimension of "prefix"
  * is equal to tile->depth.
+ * The domain of "prefix" corresponds to the original statement instances,
+ * i.e., those that appear in the domains of the access relations.
  *
  * Extract the tagged access relation of "group" and
  * then call remove_local_accesses.
@@ -3197,6 +3201,8 @@ static __isl_give isl_union_map *anchored_non_local_accesses(
 	isl_union_map *prefix;
 
 	prefix = isl_schedule_node_get_prefix_schedule_relation(node);
+	prefix = isl_union_map_preimage_domain_union_pw_multi_aff(prefix,
+			    isl_union_pw_multi_aff_copy(kernel->contraction));
 	access = gpu_array_ref_group_access_relation(group, read, !read);
 	access = remove_local_accesses_group(kernel, group, access, prefix,
 						read);
