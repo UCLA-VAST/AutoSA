@@ -3339,6 +3339,7 @@ static __isl_give isl_schedule_node *add_copies_group_private(
 	isl_multi_aff *from_access;
 	isl_multi_pw_aff *mpa;
 	isl_multi_union_pw_aff *mupa;
+	isl_union_pw_multi_aff *contraction;
 	isl_schedule_node *graft;
 	isl_union_set *filter;
 	int kernel_depth;
@@ -3365,6 +3366,8 @@ static __isl_give isl_schedule_node *add_copies_group_private(
 	access = isl_union_map_preimage_range_multi_aff(access, from_access);
 
 	filter = isl_union_set_copy(kernel->thread_filter);
+	contraction = isl_union_pw_multi_aff_copy(kernel->contraction);
+	filter = isl_union_set_preimage_union_pw_multi_aff(filter, contraction);
 	filter = isl_union_set_apply(filter, isl_union_map_copy(access));
 	filter = isl_union_set_detect_equalities(filter);
 	filter = isl_union_set_coalesce(filter);
