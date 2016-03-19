@@ -2289,18 +2289,17 @@ static __isl_give isl_union_map *remove_local_accesses(
 
 /* Given an access relation "access" from "group", remove those reads
  * if ("read" is 1) or writes (if "read" is 0) that are only needed to
- * communicate data within the same iteration of the schedule at the
- * position where the copying of the group is inserted.
- * "node" points to this position, i.e., the depth at "node"
+ * communicate data within the same iteration of the schedule "prefix"
+ * at the position where the copying of the group is inserted.
+ * That is, the output dimension of "prefix"
  * is equal to tile->depth.
  *
- * Extract the tagged access relation of "group" and a schedule that
- * picks out the iterations of the outer tile->depth dimensions and
+ * Extract the tagged access relation of "group" and
  * then call remove_local_accesses.
  */
 static __isl_give isl_union_map *remove_local_accesses_group(
 	struct ppcg_kernel *kernel, struct gpu_array_ref_group *group,
-	__isl_take isl_union_map *access, __isl_keep isl_schedule_node *node,
+	__isl_take isl_union_map *access, __isl_keep isl_union_map *prefix,
 	int read)
 {
 	isl_union_map *sched, *tagged;
@@ -2309,7 +2308,7 @@ static __isl_give isl_union_map *remove_local_accesses_group(
 		return access;
 
 	tagged = group_tagged_access_relation(group);
-	sched = isl_schedule_node_get_prefix_schedule_relation(node);
+	sched = isl_union_map_copy(prefix);
 
 	return remove_local_accesses(kernel->prog, tagged, access, sched, read);
 }
@@ -3197,9 +3196,10 @@ static __isl_give isl_union_map *anchored_non_local_accesses(
 	isl_union_map *access;
 	isl_union_map *prefix;
 
-	access = gpu_array_ref_group_access_relation(group, read, !read);
-	access = remove_local_accesses_group(kernel, group, access, node, read);
 	prefix = isl_schedule_node_get_prefix_schedule_relation(node);
+	access = gpu_array_ref_group_access_relation(group, read, !read);
+	access = remove_local_accesses_group(kernel, group, access, prefix,
+						read);
 	access = isl_union_map_range_product(prefix, access);
 
 	return access;
