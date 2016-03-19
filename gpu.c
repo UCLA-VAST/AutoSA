@@ -3939,6 +3939,10 @@ static __isl_give isl_schedule_node *create_kernel(struct gpu_gen *gen,
 	kernel->copy_schedule_dim = isl_schedule_node_get_schedule_depth(node);
 	kernel->copy_schedule =
 		isl_schedule_node_get_prefix_schedule_union_pw_multi_aff(node);
+	contraction = isl_union_pw_multi_aff_copy(kernel->contraction);
+	kernel->copy_schedule =
+		isl_union_pw_multi_aff_pullback_union_pw_multi_aff(
+					    kernel->copy_schedule, contraction);
 
 	node = gpu_tree_move_up_to_kernel(node);
 

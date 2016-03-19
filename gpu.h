@@ -356,6 +356,8 @@ struct ppcg_kernel_var {
  * copy_schedule corresponds to the schedule dimensions of
  * the (tiled) schedule for this kernel that have been taken into account
  * for computing private/shared memory tiles.
+ * The domain corresponds to the original statement instances, i.e.,
+ * those that appear in the leaves of the schedule tree.
  * copy_schedule_dim is the dimension of this schedule.
  *
  * sync_writes contains write references that require synchronization.
