@@ -1467,6 +1467,7 @@ static void check_can_be_private_live_ranges(struct ppcg_kernel *kernel,
 	isl_union_map *sched;
 	isl_union_set *domain;
 	isl_multi_union_pw_aff *prefix;
+	isl_union_pw_multi_aff *contraction;
 
 	if (!kernel->options->live_range_reordering)
 		return;
@@ -1474,7 +1475,11 @@ static void check_can_be_private_live_ranges(struct ppcg_kernel *kernel,
 	kernel->any_force_private = 0;
 
 	prefix = isl_schedule_node_get_prefix_schedule_multi_union_pw_aff(node);
-	domain = isl_union_set_copy(kernel->core);
+	contraction = isl_union_pw_multi_aff_copy(kernel->contraction);
+	prefix = isl_multi_union_pw_aff_pullback_union_pw_multi_aff(prefix,
+								contraction);
+	domain = isl_union_set_copy(kernel->expanded_domain);
+	domain = isl_union_set_universe(domain);
 
 	for (i = 0; i < kernel->n_array; ++i) {
 		struct gpu_local_array_info *local = &kernel->array[i];
