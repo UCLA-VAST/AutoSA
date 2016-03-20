@@ -1055,7 +1055,7 @@ static void extract_fixed_size(__isl_take isl_set *set, int *size)
  * to the smallest block size that ensures that all threads
  * that actually execute code are included in the block.
  *
- * The possible values of the thread ids is obtained from
+ * The set of possible values of the thread ids is obtained from
  * the domain elements "domain" and kernel->thread_filter.
  * The current implementation eliminates all parameters, ensuring
  * that the size is a fixed constant in each dimension.
@@ -2758,7 +2758,7 @@ static __isl_give isl_set *extract_context(__isl_keep isl_schedule_node *node,
 }
 
 /* Return the set of outer array elements accessed by
- * by the statement instance in "domain" in "prog".
+ * by the statement instances in "domain" in "prog".
  */
 static __isl_give isl_union_set *accessed_by_domain(
 	__isl_take isl_union_set *domain, struct gpu_prog *prog)
@@ -5161,7 +5161,7 @@ error:
  * exact only if it appears in a single expression statement and
  * if its may access relation is equal to its must access relation.
  *
- * The combined set of may accesses may be union if member accesses
+ * The combined set of may accesses may be a union if member accesses
  * are involved, but the entire set is derived from a single reference and
  * therefore from a single index expression.  These accesses therefore
  * all map to the same outer array.
