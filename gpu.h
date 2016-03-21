@@ -23,6 +23,8 @@ struct gpu_stmt_access {
 	int write;
 	/* All writes are definite writes. */
 	int exact_write;
+	/* Is a single, fixed element being accessed? */
+	isl_bool fixed_element;
 	/* The number of index expressions specified in the access. */
 	int n_index;
 

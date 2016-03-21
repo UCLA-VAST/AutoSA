@@ -5240,6 +5240,81 @@ error:
 	return NULL;
 }
 
+/* Does the index expression "index" of "expr" represent an access
+ * to a single element?
+ * That is, is "index" completely specified?
+ *
+ * If "expr" accesses elements from different spaces (i.e., fields
+ * of a structure), then it does not access a single element.
+ * Otherwise, if the single space of the access matches the space
+ * of "index", then the index expression is completely specified
+ * (no pointer to a lower-dimensional slice of the accessed array)
+ * and a single element is being accessed.
+ */
+static isl_bool complete_index(__isl_keep pet_expr *expr,
+	__isl_keep isl_multi_pw_aff *index)
+{
+	isl_union_map *read, *write, *all;
+	isl_map *map;
+	isl_space *space1, *space2;
+	isl_bool complete;
+
+	read = pet_expr_access_get_may_read(expr);
+	write = pet_expr_access_get_may_write(expr);
+	all = isl_union_map_union(read, write);
+	if (!all)
+		return isl_bool_error;
+	if (isl_union_map_n_map(all) != 1) {
+		isl_union_map_free(all);
+		return isl_bool_false;
+	}
+	map = isl_map_from_union_map(all);
+	space1 = isl_map_get_space(map);
+	isl_map_free(map);
+	space2 = isl_multi_pw_aff_get_space(index);
+	complete = isl_space_tuple_is_equal(space1, isl_dim_out,
+					    space2, isl_dim_out);
+	isl_space_free(space1);
+	isl_space_free(space2);
+
+	return complete;
+}
+
+/* Does "expr" access a single, fixed element (independently of the statement
+ * instance)?
+ * That is, does it have a completely specified constant index expression?
+ *
+ * Note that it is not sufficient for the index expression to be
+ * piecewise constant.  isl_multi_pw_aff_is_cst can therefore not be used.
+ */
+static isl_bool accesses_fixed_element(__isl_keep pet_expr *expr)
+{
+	int i, n;
+	isl_multi_pw_aff *index;
+	isl_bool fixed = isl_bool_true;
+
+	index = pet_expr_access_get_index(expr);
+	if (index < 0)
+		return isl_bool_error;
+	n = isl_multi_pw_aff_dim(index, isl_dim_out);
+	for (i = 0; i < n; ++i) {
+		isl_pw_aff *pa;
+
+		pa = isl_multi_pw_aff_get_pw_aff(index, 0);
+		fixed = isl_pw_aff_n_piece(pa) == 1;
+		if (fixed)
+			fixed = isl_pw_aff_is_cst(pa);
+		isl_pw_aff_free(pa);
+		if (fixed < 0 || !fixed)
+			break;
+	}
+	if (fixed >= 0 && fixed)
+		fixed = complete_index(expr, index);
+	isl_multi_pw_aff_free(index);
+
+	return fixed;
+}
+
 /* Extract a gpu_stmt_access from "expr", append it to the list
  * that ends in *data->next_access and update the end of the list.
  * If the access expression performs a write, then it is considered
@@ -5289,11 +5364,12 @@ static int extract_access(__isl_keep pet_expr *expr, void *user)
 	access->tagged_access = extract_single_tagged_access(tagged, expr);
 	access->access = isl_map_copy(access->tagged_access);
 	access->access = isl_map_domain_factor_domain(access->access);
+	access->fixed_element = accesses_fixed_element(expr);
 
 	*data->next_access = access;
 	data->next_access = &(*data->next_access)->next;
 
-	if (!access->access)
+	if (!access->access || access->fixed_element < 0)
 		return -1;
 
 	return 0;
