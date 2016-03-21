@@ -401,13 +401,14 @@ int gpu_array_is_scalar(struct gpu_array_info *array)
 }
 
 /* Can "array" be mapped to private memory?
- * That is, is it a scalar that is not an entire structure?
+ * That is, is it only accessed as individual elements with
+ * constant index expressions?
  */
 isl_bool gpu_array_can_be_private(struct gpu_array_info *array)
 {
 	if (!array)
 		return isl_bool_error;
-	return gpu_array_is_scalar(array) && !array->has_compound_element;
+	return array->only_fixed_element;
 }
 
 /* Is "array" a read-only scalar?
