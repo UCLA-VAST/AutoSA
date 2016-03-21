@@ -5011,11 +5011,11 @@ static __isl_give isl_union_set *node_may_persist(
 
 /* Add nodes for copying outer arrays in and out of the device
  * before and after the subtree "node", which contains one or more kernels.
- * "domain" contains the original reaching domain elements before
- * the kernels were created, i.e., before the contraction that
- * may have been performed in creating the kernels has been applied.
+ * "domain" contains the original statement instances, i.e.,
+ * those that correspond to the domains of the access relations in "prog".
+ * In particular, the domain has not been contracted in any way.
  * "prefix" contains the prefix schedule at that point, in terms
- * of the same original reaching domain elements.
+ * of the same original statement instances.
  *
  * We first compute the sets of outer array elements that need
  * to be copied in and out and then graft in the nodes for
@@ -5169,6 +5169,7 @@ static __isl_give isl_schedule *map_to_device(struct gpu_gen *gen,
 	isl_set *guard;
 	isl_union_set *domain;
 	isl_union_map *prefix;
+	isl_union_pw_multi_aff *contraction;
 	struct gpu_prog *prog;
 
 	context = isl_set_copy(gen->prog->context);
@@ -5186,7 +5187,12 @@ static __isl_give isl_schedule *map_to_device(struct gpu_gen *gen,
 	node = isl_schedule_node_child(node, 0);
 	node = isolate_permutable_subtrees(node, gen->prog);
 	domain = isl_schedule_node_get_domain(node);
+	contraction = isl_schedule_node_get_subtree_contraction(node);
+	domain = isl_union_set_preimage_union_pw_multi_aff(domain,
+				    isl_union_pw_multi_aff_copy(contraction));
 	prefix = isl_schedule_node_get_prefix_schedule_union_map(node);
+	prefix = isl_union_map_preimage_domain_union_pw_multi_aff(prefix,
+				    contraction);
 	node = mark_kernels(gen, node);
 	node = add_to_from_device(node, domain, prefix, gen->prog);
 	node = isl_schedule_node_root(node);
