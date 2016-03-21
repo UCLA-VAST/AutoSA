@@ -5317,7 +5317,28 @@ static int pet_stmt_extract_accesses(struct gpu_stmt *stmt,
 						&extract_access, &data);
 }
 
+/* Has statement "stmt" been killed from "scop"?
+ * That is, is the instance set of "scop" free from any
+ * instances of "stmt"?
+ */
+static isl_bool is_stmt_killed(struct ppcg_scop *scop, struct pet_stmt *stmt)
+{
+	isl_space *space;
+	isl_set *left;
+	isl_bool empty;
+
+	if (!scop || !stmt)
+		return isl_bool_error;
+	space = isl_set_get_space(stmt->domain);
+	left = isl_union_set_extract_set(scop->domain, space);
+	empty = isl_set_plain_is_empty(left);
+	isl_set_free(left);
+
+	return empty;
+}
+
 /* Return an array of gpu_stmt representing the statements in "scop".
+ * Do not collect array accesses for statements that have been killed.
  */
 static struct gpu_stmt *extract_stmts(isl_ctx *ctx, struct ppcg_scop *scop,
 	__isl_keep isl_set *context, __isl_keep isl_union_map *any_to_outer)
@@ -5331,9 +5352,15 @@ static struct gpu_stmt *extract_stmts(isl_ctx *ctx, struct ppcg_scop *scop,
 
 	for (i = 0; i < scop->pet->n_stmt; ++i) {
 		struct gpu_stmt *s = &stmts[i];
+		isl_bool killed;
 
 		s->id = isl_set_get_tuple_id(scop->pet->stmts[i]->domain);
 		s->stmt = scop->pet->stmts[i];
+		killed = is_stmt_killed(scop, scop->pet->stmts[i]);
+		if (killed < 0)
+			return free_stmts(stmts, i + 1);
+		if (killed)
+			continue;
 		if (pet_stmt_extract_accesses(s, any_to_outer) < 0)
 			return free_stmts(stmts, i + 1);
 	}

@@ -38,11 +38,18 @@ struct gpu_stmt_access {
 	struct gpu_stmt_access *next;
 };
 
+/* A representation of a user statement.
+ * "stmt" points to the corresponding pet statement.
+ * "id" is the identifier of the instance set of the statement.
+ * "accesses" is a linked list of accesses performed by the statement.
+ * If the statement has been killed, i.e., if it will not be scheduled,
+ * then this linked list may be empty even if the actual statement does
+ * perform accesses.
+ */
 struct gpu_stmt {
 	isl_id *id;
 	struct pet_stmt *stmt;
 
-	/* Linked list of accesses. */
 	struct gpu_stmt_access *accesses;
 };
 
