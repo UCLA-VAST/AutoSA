@@ -157,6 +157,20 @@ static int is_read_only_scalar(struct gpu_array_info *array,
 	return empty;
 }
 
+/* Is "array" only accessed as individual, fixed elements?
+ * That is, does each access to "array" access a single, fixed element?
+ */
+static isl_bool only_fixed_element_accessed(struct gpu_array_info *array)
+{
+	int i;
+
+	for (i = 0; i < array->n_ref; ++i)
+		if (!array->refs[i]->fixed_element)
+			return isl_bool_false;
+
+	return isl_bool_true;
+}
+
 /* Compute bounds on the host array "pa" based on the corresponding
  * accessed elements in "arrays"
  * and collect all references to the array.
@@ -209,6 +223,7 @@ static int extract_array_info(struct gpu_prog *prog,
 	info->bound = bounds;
 
 	collect_references(prog, info);
+	info->only_fixed_element = only_fixed_element_accessed(info);
 
 	return 0;
 }

@@ -94,6 +94,9 @@ struct gpu_array_info {
 	/* Are the elements of the array structures? */
 	int has_compound_element;
 
+	/* Are the elements only accessed through constant index expressions? */
+	int only_fixed_element;
+
 	/* Is the array local to the scop? */
 	int local;
 	/* Is the array local and should it be declared on the host? */
