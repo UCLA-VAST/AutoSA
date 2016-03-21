@@ -1517,19 +1517,23 @@ static void check_scalar_live_ranges(struct ppcg_kernel *kernel,
 
 /* Create a set of dimension data->thread_depth + data->n_thread
  * that equates the residue of the final data->n_thread dimensions
- * modulo the "sizes" to the thread identifiers.
- * "space" is a parameter space containing the thread identifiers.
+ * modulo the kernel->block_dim sizes to the thread identifiers.
  * Store the computed set in data->privatization.
+ *
+ * The construction starts with the space of kernel->thread_filter,
+ * which is known to reference all thread identifiers.
  */
 static void compute_privatization(struct gpu_group_data *data,
-	__isl_take isl_space *space, int *sizes)
+	struct ppcg_kernel *kernel)
 {
 	int i;
 	isl_ctx *ctx;
+	isl_space *space;
 	isl_local_space *ls;
 	isl_set *set;
 
 	ctx = isl_union_map_get_ctx(data->shared_sched);
+	space = isl_union_set_get_space(kernel->thread_filter);
 	space = isl_space_set_from_params(space);
 	space = isl_space_add_dims(space, isl_dim_set,
 				    data->thread_depth + data->n_thread);
@@ -1546,7 +1550,7 @@ static void compute_privatization(struct gpu_group_data *data,
 
 		aff = isl_aff_var_on_domain(isl_local_space_copy(ls),
 					isl_dim_set, data->thread_depth + i);
-		v = isl_val_int_from_si(ctx, sizes[i]);
+		v = isl_val_int_from_si(ctx, kernel->block_dim[i]);
 		aff = isl_aff_mod_val(aff, v);
 		snprintf(name, sizeof(name), "t%d", i);
 		pos = isl_set_find_dim_by_name(set, isl_dim_param, name);
@@ -1573,7 +1577,6 @@ int gpu_group_references(struct ppcg_kernel *kernel,
 {
 	int i;
 	int r = 0;
-	isl_space *space;
 	struct gpu_group_data data;
 
 	check_scalar_live_ranges(kernel, node);
@@ -1602,8 +1605,7 @@ int gpu_group_references(struct ppcg_kernel *kernel,
 		isl_schedule_node_get_subtree_schedule_union_map(node));
 	isl_schedule_node_free(node);
 
-	space = isl_union_set_get_space(kernel->thread_filter);
-	compute_privatization(&data, space, kernel->block_dim);
+	compute_privatization(&data, kernel);
 
 	for (i = 0; i < kernel->n_array; ++i) {
 		r = group_array_references(kernel, &kernel->array[i], &data);
