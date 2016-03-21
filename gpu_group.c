@@ -1545,15 +1545,16 @@ static void compute_privatization(struct gpu_group_data *data,
 		isl_aff *aff, *aff2;
 		isl_constraint *c;
 		isl_val *v;
-		char name[20];
+		isl_id *id;
 		int pos;
 
 		aff = isl_aff_var_on_domain(isl_local_space_copy(ls),
 					isl_dim_set, data->thread_depth + i);
 		v = isl_val_int_from_si(ctx, kernel->block_dim[i]);
 		aff = isl_aff_mod_val(aff, v);
-		snprintf(name, sizeof(name), "t%d", i);
-		pos = isl_set_find_dim_by_name(set, isl_dim_param, name);
+		id = isl_id_list_get_id(kernel->thread_ids, i);
+		pos = isl_set_find_dim_by_id(set, isl_dim_param, id);
+		isl_id_free(id);
 		aff2 = isl_aff_var_on_domain(isl_local_space_copy(ls),
 					isl_dim_param, pos);
 		aff = isl_aff_sub(aff, aff2);
