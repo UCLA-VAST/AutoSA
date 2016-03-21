@@ -1448,14 +1448,18 @@ static int group_array_references(struct ppcg_kernel *kernel,
 	return -1;
 }
 
-/* For each scalar in the input program, check if there are any
- * order dependences active inside the current kernel, within
- * the same iteration of the host schedule, i.e., the prefix
+/* For each array in the input program that can be mapped to private memory,
+ * check if there are any order dependences active inside the current kernel,
+ * within the same iteration of the host schedule, i.e., the prefix
  * schedule at "node".
- * If so, mark the scalar as force_private so that it will be
- * mapped to a register.
+ * If so, mark the array as force_private so that its reference groups will be
+ * mapped to a registers.
+ *
+ * Note that the arrays that cannot be mapped to private memory have
+ * had their order dependences added to prog->array_order and
+ * subsequently to the coincidence constraints.
  */
-static void check_scalar_live_ranges(struct ppcg_kernel *kernel,
+static void check_can_be_private_live_ranges(struct ppcg_kernel *kernel,
 	__isl_keep isl_schedule_node *node)
 {
 	int i;
@@ -1476,7 +1480,7 @@ static void check_scalar_live_ranges(struct ppcg_kernel *kernel,
 		isl_union_map *order;
 
 		local->force_private = 0;
-		if (local->array->n_index != 0)
+		if (!gpu_array_can_be_private(local->array))
 			continue;
 		order = isl_union_map_copy(local->array->dep_order);
 		order = isl_union_map_intersect_domain(order,
@@ -1561,7 +1565,7 @@ int gpu_group_references(struct ppcg_kernel *kernel,
 	int r = 0;
 	struct gpu_group_data data;
 
-	check_scalar_live_ranges(kernel, node);
+	check_can_be_private_live_ranges(kernel, node);
 
 	data.scop = kernel->prog->scop;
 
