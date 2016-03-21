@@ -254,7 +254,7 @@ static __isl_give isl_union_map *remove_independences(struct gpu_prog *prog,
  * the same array, the target of these order dependences will also
  * be one of these references.)
  * Additionally, store the union of these array->dep_order relations
- * for all non-scalar arrays in prog->array_order.
+ * for all arrays that cannot be mapped to private memory in prog->array_order.
  */
 void collect_order_dependences(struct gpu_prog *prog)
 {
@@ -290,7 +290,7 @@ void collect_order_dependences(struct gpu_prog *prog)
 		order = remove_independences(prog, array, order);
 		array->dep_order = order;
 
-		if (gpu_array_is_scalar(array) && !array->has_compound_element)
+		if (gpu_array_can_be_private(array))
 			continue;
 
 		prog->array_order = isl_union_map_union(prog->array_order,
@@ -382,6 +382,16 @@ static void free_array_info(struct gpu_prog *prog)
 int gpu_array_is_scalar(struct gpu_array_info *array)
 {
 	return array->n_index == 0;
+}
+
+/* Can "array" be mapped to private memory?
+ * That is, is it a scalar that is not an entire structure?
+ */
+isl_bool gpu_array_can_be_private(struct gpu_array_info *array)
+{
+	if (!array)
+		return isl_bool_error;
+	return gpu_array_is_scalar(array) && !array->has_compound_element;
 }
 
 /* Is "array" a read-only scalar?
