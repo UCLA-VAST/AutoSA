@@ -4148,17 +4148,11 @@ static __isl_give isl_schedule_node *isolate_permutable_subtrees(
 	type = isl_schedule_node_get_type(node);
 	if (type == isl_schedule_node_set) {
 		filter = get_all_non_parallel_subtree_filters(node);
-		if (!filter)
-			node = isl_schedule_node_free(node);
-
 		if (declare_accessed_local_variables(prog, filter) < 0)
 			node = isl_schedule_node_free(node);
 		node = isl_schedule_node_order_after(node, filter);
 	} else if (type == isl_schedule_node_sequence) {
 		filter = get_initial_non_parallel_subtree_filters(node);
-		if (!filter)
-			node = isl_schedule_node_free(node);
-
 		if (declare_accessed_local_variables(prog, filter) < 0)
 			node = isl_schedule_node_free(node);
 		node = isl_schedule_node_order_before(node, filter);
