@@ -4088,15 +4088,20 @@ static __isl_give isl_union_set *get_initial_non_parallel_subtree_filters(
 
 /* Mark all variables that are accessed by the statement instances in "domain"
  * and that are local to "prog" as requiring a declaration in the host code.
+ * The statement instances in "domain" correspond to (a subset of)
+ * the active instances at "node".
+ * "node" is not modified by this function, except that NULL is returned
+ * in case of error.
  */
-static int declare_accessed_local_variables(struct gpu_prog *prog,
+static __isl_give isl_schedule_node *declare_accessed_local_variables(
+	__isl_take isl_schedule_node *node, struct gpu_prog *prog,
 	__isl_keep isl_union_set *domain)
 {
 	isl_union_set *arrays;
 	int i;
 
 	if (!ppcg_scop_any_hidden_declarations(prog->scop))
-		return 0;
+		return node;
 	arrays = accessed_by_domain(isl_union_set_copy(domain), prog);
 
 	for (i = 0; i < prog->n_array; ++i) {
@@ -4117,10 +4122,10 @@ static int declare_accessed_local_variables(struct gpu_prog *prog,
 	}
 
 	isl_union_set_free(arrays);
-	return 0;
+	return node;
 error:
 	isl_union_set_free(arrays);
-	return -1;
+	return isl_schedule_node_free(node);
 }
 
 /* If "node" points to a set node, then separate its children
@@ -4148,13 +4153,11 @@ static __isl_give isl_schedule_node *isolate_permutable_subtrees(
 	type = isl_schedule_node_get_type(node);
 	if (type == isl_schedule_node_set) {
 		filter = get_all_non_parallel_subtree_filters(node);
-		if (declare_accessed_local_variables(prog, filter) < 0)
-			node = isl_schedule_node_free(node);
+		node = declare_accessed_local_variables(node, prog, filter);
 		node = isl_schedule_node_order_after(node, filter);
 	} else if (type == isl_schedule_node_sequence) {
 		filter = get_initial_non_parallel_subtree_filters(node);
-		if (declare_accessed_local_variables(prog, filter) < 0)
-			node = isl_schedule_node_free(node);
+		node = declare_accessed_local_variables(node, prog, filter);
 		node = isl_schedule_node_order_before(node, filter);
 	}
 
