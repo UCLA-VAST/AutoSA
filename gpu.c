@@ -3702,13 +3702,21 @@ static __isl_give isl_union_set *compute_sync_writes(
 	isl_union_map *equal;
 	isl_union_set *wrap;
 	isl_union_set *domain;
+	isl_union_pw_multi_aff *contraction;
 
-	domain = isl_schedule_node_get_universe_domain(node);
 	kernel_prefix = isl_schedule_node_get_prefix_schedule_union_map(node);
 	node = isl_schedule_node_copy(node);
 	node = gpu_tree_move_down_to_thread(node, kernel->core);
 	thread_prefix = isl_schedule_node_get_prefix_schedule_union_map(node);
 	isl_schedule_node_free(node);
+
+	contraction = kernel->contraction;
+	kernel_prefix = isl_union_map_preimage_domain_union_pw_multi_aff(
+		    kernel_prefix, isl_union_pw_multi_aff_copy(contraction));
+	thread_prefix = isl_union_map_preimage_domain_union_pw_multi_aff(
+		    thread_prefix, isl_union_pw_multi_aff_copy(contraction));
+	domain = isl_union_set_copy(kernel->expanded_domain);
+	domain = isl_union_set_universe(domain);
 
 	may_writes = isl_union_map_copy(kernel->prog->scop->tagged_may_writes);
 	may_writes = isl_union_map_curry(may_writes);
