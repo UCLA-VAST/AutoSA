@@ -369,18 +369,19 @@ __isl_give isl_ast_expr *ppcg_build_size_expr(__isl_take isl_multi_pw_aff *size,
 	return isl_ast_build_access_from_multi_pw_aff(build, size);
 }
 
-/* Print a declaration for array "array" with size "size" to "p".
+/* Print a declaration for an array with element type "base_type" and
+ * size "size" to "p".
  */
 __isl_give isl_printer *ppcg_print_declaration_with_size(
-	__isl_take isl_printer *p, struct pet_array *array,
+	__isl_take isl_printer *p, const char *base_type,
 	__isl_keep isl_ast_expr *size)
 {
-	if (!array || !size)
+	if (!base_type || !size)
 		return isl_printer_free(p);
 
 	p = ppcg_ast_expr_print_macros(size, p);
 	p = isl_printer_start_line(p);
-	p = isl_printer_print_str(p, array->element_type);
+	p = isl_printer_print_str(p, base_type);
 	p = isl_printer_print_str(p, " ");
 	p = isl_printer_print_ast_expr(p, size);
 	p = isl_printer_print_str(p, ";");
@@ -406,7 +407,7 @@ __isl_give isl_printer *ppcg_print_declaration(__isl_take isl_printer *p,
 
 	size = ppcg_size_from_extent(isl_set_copy(array->extent));
 	expr = isl_ast_build_access_from_multi_pw_aff(build, size);
-	p = ppcg_print_declaration_with_size(p, array, expr);
+	p = ppcg_print_declaration_with_size(p, array->element_type, expr);
 	isl_ast_expr_free(expr);
 
 	return p;

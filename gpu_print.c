@@ -27,13 +27,13 @@ __isl_give isl_printer *gpu_print_local_declarations(__isl_take isl_printer *p,
 		return isl_printer_free(p);
 
 	for (i = 0; i < prog->n_array; ++i) {
+		struct gpu_array_info *array = &prog->array[i];
 		isl_ast_expr *size;
 
-		if (!prog->array[i].declare_local)
+		if (!array->declare_local)
 			continue;
-		size = prog->array[i].declared_size;
-		p = ppcg_print_declaration_with_size(p,
-					    prog->scop->pet->arrays[i], size);
+		size = array->declared_size;
+		p = ppcg_print_declaration_with_size(p, array->type, size);
 	}
 
 	return p;

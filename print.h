@@ -28,7 +28,7 @@ __isl_give isl_ast_expr *ppcg_build_size_expr(__isl_take isl_multi_pw_aff *size,
 	__isl_keep isl_ast_build *build);
 
 __isl_give isl_printer *ppcg_print_declaration_with_size(
-	__isl_take isl_printer *p, struct pet_array *array,
+	__isl_take isl_printer *p, const char *base_type,
 	__isl_keep isl_ast_expr *size);
 __isl_give isl_printer *ppcg_print_declaration(__isl_take isl_printer *p,
 	struct pet_array *array, __isl_keep isl_ast_build *build);
