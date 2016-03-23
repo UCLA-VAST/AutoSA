@@ -1404,7 +1404,8 @@ static int join_all_groups(int n, struct gpu_array_ref_group **groups)
  * If the array contains structures, then we compute a single
  * reference group without trying to find any tiles
  * since we do not map such arrays to private or shared
- * memory.
+ * memory.  The only exception is when those arrays of structures
+ * are required to be mapped to private memory.
  */
 static int group_array_references(struct ppcg_kernel *kernel,
 	struct gpu_local_array_info *local, struct gpu_group_data *data)
@@ -1421,7 +1422,7 @@ static int group_array_references(struct ppcg_kernel *kernel,
 
 	n = populate_array_references(local, groups, data);
 
-	if (local->array->has_compound_element) {
+	if (local->array->has_compound_element && !local->force_private) {
 		n = join_all_groups(n, groups);
 		set_array_groups(local, n, groups);
 		return 0;
