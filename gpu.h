@@ -169,7 +169,7 @@ struct gpu_prog {
 	/* A mapping from the outer arrays to all corresponding inner arrays. */
 	isl_union_map *to_inner;
 	/* A mapping from all intermediate arrays to their outer arrays,
-	 * including an identity mapping from the anoymous 1D space to itself.
+	 * including an identity mapping from the anonymous 1D space to itself.
 	 */
 	isl_union_map *any_to_outer;
 
