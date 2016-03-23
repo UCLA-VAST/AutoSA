@@ -307,6 +307,7 @@ void collect_order_dependences(struct gpu_prog *prog)
  * elements by "prog".
  * If there are any member accesses involved, then they are first mapped
  * to the outer arrays of structs.
+ * Only extract gpu_array_info entries for these outer arrays.
  *
  * If we are allowing live range reordering, then also set
  * the dep_order field.  Otherwise leave it NULL.
@@ -330,10 +331,21 @@ static int collect_array_info(struct gpu_prog *prog)
 	prog->array = isl_calloc_array(prog->ctx,
 				     struct gpu_array_info, prog->n_array);
 	assert(prog->array);
-	for (i = 0; i < prog->scop->pet->n_array; ++i)
-		if (extract_array_info(prog, &prog->array[i],
+	prog->n_array = 0;
+	for (i = 0; i < prog->scop->pet->n_array; ++i) {
+		isl_bool field;
+
+		field = isl_set_is_wrapping(prog->scop->pet->arrays[i]->extent);
+		if (field < 0)
+			break;
+		if (field)
+			continue;
+		if (extract_array_info(prog, &prog->array[prog->n_array++],
 					prog->scop->pet->arrays[i], arrays) < 0)
 			r = -1;
+	}
+	if (i < prog->scop->pet->n_array)
+		r = -1;
 
 	isl_union_set_free(arrays);
 
