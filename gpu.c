@@ -189,6 +189,7 @@ static int extract_array_info(struct gpu_prog *prog,
 	info->has_compound_element = pa->element_is_record;
 	info->read_only_scalar = is_read_only_scalar(info, prog);
 
+	info->declared_extent = isl_set_copy(pa->extent);
 	accessed = isl_union_set_extract_set(arrays,
 					    isl_space_copy(info->space));
 	empty = isl_set_is_empty(accessed);
@@ -352,6 +353,7 @@ static void free_array_info(struct gpu_prog *prog)
 		isl_multi_pw_aff_free(prog->array[i].bound);
 		isl_ast_expr_free(prog->array[i].bound_expr);
 		isl_space_free(prog->array[i].space);
+		isl_set_free(prog->array[i].declared_extent);
 		isl_set_free(prog->array[i].extent);
 		isl_ast_expr_free(prog->array[i].declared_size);
 		free(prog->array[i].refs);
@@ -1913,13 +1915,14 @@ static __isl_give isl_ast_node *build_array_bounds(
 
 	for (i = 0; i < prog->n_array; ++i) {
 		struct gpu_array_info *array = &prog->array[i];
-		struct pet_array *pet_array = prog->scop->pet->arrays[i];
+		isl_set *extent;
 		isl_multi_pw_aff *size;
 		isl_ast_expr *expr;
 
 		if (!array->declare_local)
 			continue;
-		size = ppcg_size_from_extent(isl_set_copy(pet_array->extent));
+		extent = isl_set_copy(array->declared_extent);
+		size = ppcg_size_from_extent(extent);
 		expr = ppcg_build_size_expr(size, build);
 		array->declared_size = expr;
 		if (!expr)
