@@ -22,7 +22,7 @@ struct gpu_array_bound {
 	isl_aff *shift;
 };
 
-/* A tile of an array.
+/* A tile of an outer array.
  *
  * requires_unroll is set if the schedule dimensions that are mapped
  * to threads need to be unrolled for this (private) tile to be used.
