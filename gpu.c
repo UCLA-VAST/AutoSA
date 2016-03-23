@@ -1,6 +1,7 @@
 /*
  * Copyright 2010-2011 INRIA Saclay
  * Copyright 2012-2013 Ecole Normale Superieure
+ * Copyright 2016      Sven Verdoolaege
  *
  * Use of this software is governed by the MIT license
  *
@@ -1465,6 +1466,66 @@ static struct gpu_array_ref_group *find_ref_group(
 	return NULL;
 }
 
+/* Given an index expression "index" of the form
+ *
+ *	L -> F(A),
+ *
+ * with F(A) either A or some subfield of A and L the AST loop iterators,
+ * and a tiling "tiling" of the form
+ *
+ *	[L -> A] -> T
+ *
+ * apply the tiling to the outer array in the index expression to obtain
+ *
+ *	L -> T(A)
+ *
+ * If F(A) is some subfield of A, then separate the member access
+ * into the base index expression and the field index expression,
+ * apply the tiling to the base index expression and combine the result
+ * with the field index expression.
+ *
+ * If F(A) is A, then modify index to keep track of the iterators
+ *
+ *	L -> [L -> A]
+ *
+ * and combine the result with the tiling to obtain a tiled index expression
+ * in terms of the AST loop iterators
+ *
+ *	L -> T
+ */
+static __isl_give isl_multi_pw_aff *tile_outer(
+	__isl_take isl_multi_pw_aff *index, __isl_take isl_multi_pw_aff *tiling)
+{
+	isl_bool is_wrapping;
+	isl_space *space;
+	isl_multi_pw_aff *mpa;
+
+	is_wrapping = isl_multi_pw_aff_range_is_wrapping(index);
+	if (is_wrapping < 0)
+		goto error;
+	if (is_wrapping) {
+		isl_multi_pw_aff *field;
+
+		field = isl_multi_pw_aff_copy(index);
+		field = isl_multi_pw_aff_range_factor_range(field);
+		index = isl_multi_pw_aff_range_factor_domain(index);
+		index = tile_outer(index, tiling);
+		return isl_multi_pw_aff_range_product(index, field);
+	}
+
+	space = isl_space_domain(isl_multi_pw_aff_get_space(index));
+	space = isl_space_map_from_set(space);
+	mpa = isl_multi_pw_aff_identity(space);
+	index = isl_multi_pw_aff_range_product(mpa, index);
+	index = isl_multi_pw_aff_pullback_multi_pw_aff(tiling, index);
+
+	return index;
+error:
+	isl_multi_pw_aff_free(index);
+	isl_multi_pw_aff_free(tiling);
+	return NULL;
+}
+
 /* Index transformation callback for pet_stmt_build_ast_exprs.
  *
  * "index" expresses the array indices in terms of statement iterators
@@ -1495,14 +1556,16 @@ static struct gpu_array_ref_group *find_ref_group(
  *
  *	[L -> A] -> T
  *
- * and modify index to keep track of those iterators
- *
- *	L -> [L -> A]
- *
- * Combining these two yields a tiled index expression in terms
+ * and combine it with the index to obtain a tiled index expression in terms
  * of the AST loop iterators
  *
  *	L -> T
+ *
+ * Note that while the tiling applies directly to an outer array.
+ * the index may refer to some subfield of this outer array.
+ * In such cases, the result will refer to the same subfield of the tile.
+ * That is, an index expression of the form  L -> F(A) will be transformed
+ * into an index expression of the form L -> F(T).
  */
 static __isl_give isl_multi_pw_aff *transform_index(
 	__isl_take isl_multi_pw_aff *index, __isl_keep isl_id *ref_id,
@@ -1556,7 +1619,8 @@ static __isl_give isl_multi_pw_aff *transform_index(
 	if (!tile)
 		return index;
 
-	space = isl_space_range(isl_multi_pw_aff_get_space(index));
+	space = isl_space_domain(isl_multi_aff_get_space(tile->tiling));
+	space = isl_space_range(isl_space_unwrap(space));
 	space = isl_space_map_from_set(space);
 	pma = isl_pw_multi_aff_identity(space);
 	sched2depth = isl_pw_multi_aff_copy(data->sched2copy);
@@ -1568,11 +1632,7 @@ static __isl_give isl_multi_pw_aff *transform_index(
 				    isl_multi_aff_copy(tile->tiling));
 	tiling = isl_multi_pw_aff_pullback_pw_multi_aff(tiling, pma);
 
-	space = isl_space_domain(isl_multi_pw_aff_get_space(index));
-	space = isl_space_map_from_set(space);
-	mpa = isl_multi_pw_aff_identity(space);
-	index = isl_multi_pw_aff_range_product(mpa, index);
-	index = isl_multi_pw_aff_pullback_multi_pw_aff(tiling, index);
+	index = tile_outer(index, tiling);
 
 	return index;
 }
