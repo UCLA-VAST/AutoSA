@@ -323,6 +323,13 @@ struct ppcg_kernel_var {
  * the tree during the construction of the device part of the schedule
  * tree in create_kernel.
  *
+ * expanded_domain contains the original statement instances,
+ * i.e., those that appear in the domains of access relations,
+ * that are involved in the kernel.
+ * contraction maps those original statement instances to
+ * the statement instances that are active at the point
+ * in the schedule tree where the kernel is created.
+ *
  * arrays is the set of possibly accessed outer array elements.
  *
  * space is the schedule space of the AST context.  That is, it represents
@@ -378,6 +385,9 @@ struct ppcg_kernel {
 	int n_sync;
 	isl_union_set *core;
 	isl_union_set *arrays;
+
+	isl_union_pw_multi_aff *contraction;
+	isl_union_set *expanded_domain;
 
 	isl_space *space;
 
