@@ -1450,20 +1450,26 @@ static int group_array_references(struct ppcg_kernel *kernel,
 
 /* For each scalar in the input program, check if there are any
  * order dependences active inside the current kernel, within
- * the same iteration of "host_schedule".
+ * the same iteration of the host schedule, i.e., the prefix
+ * schedule at "node".
  * If so, mark the scalar as force_private so that it will be
  * mapped to a register.
  */
-static void check_scalar_live_ranges_in_host(struct ppcg_kernel *kernel,
-	__isl_take isl_union_map *host_schedule)
+static void check_scalar_live_ranges(struct ppcg_kernel *kernel,
+	__isl_keep isl_schedule_node *node)
 {
 	int i;
 	isl_union_map *sched;
 	isl_union_set *domain;
+	isl_union_map *host_schedule;
 	isl_union_map *same_host_iteration;
+
+	if (!kernel->options->live_range_reordering)
+		return;
 
 	kernel->any_force_private = 0;
 
+	host_schedule = isl_schedule_node_get_prefix_schedule_union_map(node);
 	sched = isl_union_map_universe(isl_union_map_copy(host_schedule));
 	domain = isl_union_map_domain(sched);
 
@@ -1493,26 +1499,6 @@ static void check_scalar_live_ranges_in_host(struct ppcg_kernel *kernel,
 
 	isl_union_map_free(same_host_iteration);
 	isl_union_set_free(domain);
-}
-
-/* For each scalar in the input program, check if there are any
- * order dependences active inside the current kernel, within
- * the same iteration of the host schedule, i.e., the prefix
- * schedule at "node".
- * If so, mark the scalar as force_private so that it will be
- * mapped to a register.
- */
-static void check_scalar_live_ranges(struct ppcg_kernel *kernel,
-	__isl_keep isl_schedule_node *node)
-{
-	isl_union_map *sched;
-
-	if (!kernel->options->live_range_reordering)
-		return;
-
-	sched = isl_schedule_node_get_prefix_schedule_union_map(node);
-
-	check_scalar_live_ranges_in_host(kernel, sched);
 }
 
 /* Create a set of dimension data->thread_depth + data->n_thread
