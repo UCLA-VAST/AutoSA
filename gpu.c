@@ -2294,8 +2294,9 @@ static __isl_give isl_union_map *remove_local_accesses(
  * "node" points to this position, i.e., the depth at "node"
  * is equal to tile->depth.
  *
- * We extract a schedule that picks out the iterations of the outer
- * tile->depth dimensions and call remove_local_accesses.
+ * Extract the tagged access relation of "group" and a schedule that
+ * picks out the iterations of the outer tile->depth dimensions and
+ * then call remove_local_accesses.
  */
 static __isl_give isl_union_map *remove_local_accesses_group(
 	struct ppcg_kernel *kernel, struct gpu_array_ref_group *group,
