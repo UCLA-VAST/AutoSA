@@ -1461,20 +1461,15 @@ static void check_scalar_live_ranges(struct ppcg_kernel *kernel,
 	int i;
 	isl_union_map *sched;
 	isl_union_set *domain;
-	isl_union_map *host_schedule;
-	isl_union_map *same_host_iteration;
+	isl_multi_union_pw_aff *prefix;
 
 	if (!kernel->options->live_range_reordering)
 		return;
 
 	kernel->any_force_private = 0;
 
-	host_schedule = isl_schedule_node_get_prefix_schedule_union_map(node);
-	sched = isl_union_map_universe(isl_union_map_copy(host_schedule));
-	domain = isl_union_map_domain(sched);
-
-	same_host_iteration = isl_union_map_apply_range(host_schedule,
-		    isl_union_map_reverse(isl_union_map_copy(host_schedule)));
+	prefix = isl_schedule_node_get_prefix_schedule_multi_union_pw_aff(node);
+	domain = isl_union_set_copy(kernel->core);
 
 	for (i = 0; i < kernel->n_array; ++i) {
 		struct gpu_local_array_info *local = &kernel->array[i];
@@ -1488,8 +1483,8 @@ static void check_scalar_live_ranges(struct ppcg_kernel *kernel,
 						    isl_union_set_copy(domain));
 		order = isl_union_map_intersect_range(order,
 						    isl_union_set_copy(domain));
-		order = isl_union_map_intersect(order,
-				    isl_union_map_copy(same_host_iteration));
+		order = isl_union_map_eq_at_multi_union_pw_aff(order,
+					isl_multi_union_pw_aff_copy(prefix));
 		if (!isl_union_map_is_empty(order)) {
 			local->force_private = 1;
 			kernel->any_force_private = 1;
@@ -1497,7 +1492,7 @@ static void check_scalar_live_ranges(struct ppcg_kernel *kernel,
 		isl_union_map_free(order);
 	}
 
-	isl_union_map_free(same_host_iteration);
+	isl_multi_union_pw_aff_free(prefix);
 	isl_union_set_free(domain);
 }
 
