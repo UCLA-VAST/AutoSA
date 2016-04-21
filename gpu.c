@@ -5475,7 +5475,7 @@ static isl_bool is_stmt_killed(struct ppcg_scop *scop, struct pet_stmt *stmt)
  * Do not collect array accesses for statements that have been killed.
  */
 static struct gpu_stmt *extract_stmts(isl_ctx *ctx, struct ppcg_scop *scop,
-	__isl_keep isl_set *context, __isl_keep isl_union_map *any_to_outer)
+	__isl_keep isl_union_map *any_to_outer)
 {
 	int i;
 	struct gpu_stmt *stmts;
@@ -5714,8 +5714,7 @@ struct gpu_prog *gpu_prog_alloc(isl_ctx *ctx, struct ppcg_scop *scop)
 	space = isl_space_map_from_set(space);
 	id = isl_map_identity(space);
 	prog->any_to_outer = isl_union_map_add_map(prog->any_to_outer, id);
-	prog->stmts = extract_stmts(ctx, scop,
-					prog->context, prog->any_to_outer);
+	prog->stmts = extract_stmts(ctx, scop, prog->any_to_outer);
 	prog->read = isl_union_map_copy(scop->reads);
 	prog->may_write = isl_union_map_copy(scop->may_writes);
 	prog->must_write = isl_union_map_copy(scop->must_writes);
