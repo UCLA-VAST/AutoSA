@@ -1,3 +1,12 @@
+version: 0.06
+date: Fri May  6 12:08:50 CEST 2016
+changes:
+	- use PPCG specific macro names in generated code
+	- complete transition to schedule trees
+	- maximize coincidence by default
+	- map arrays with constant index expressions to private memory
+	- optionally group chains of statements
+---
 version: 0.05
 date: Fri Jan 15 09:30:23 CET 2016
 changes:
