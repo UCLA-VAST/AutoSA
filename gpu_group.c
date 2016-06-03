@@ -1513,6 +1513,17 @@ static void check_can_be_private_live_ranges(struct ppcg_kernel *kernel,
 	isl_union_set_free(domain);
 }
 
+/* Expand the domain of the schedule "s" by plugging in
+ * the contraction "contraction" and return the result.
+ */
+static __isl_give isl_union_map *expand(__isl_take isl_union_map *s,
+	__isl_keep isl_union_pw_multi_aff *contraction)
+{
+	contraction = isl_union_pw_multi_aff_copy(contraction);
+	s = isl_union_map_preimage_domain_union_pw_multi_aff(s, contraction);
+	return s;
+}
+
 /* Create a set of dimension data->thread_depth + data->n_thread
  * that equates the residue of the final data->n_thread dimensions
  * modulo the kernel->block_dim sizes to the thread identifiers.
@@ -1601,12 +1612,10 @@ int gpu_group_references(struct ppcg_kernel *kernel,
 	data.thread_sched = isl_union_map_detect_equalities(data.thread_sched);
 
 	contraction = isl_union_pw_multi_aff_copy(kernel->contraction);
-	data.host_sched = isl_union_map_preimage_domain_union_pw_multi_aff(
-		data.host_sched, isl_union_pw_multi_aff_copy(contraction));
-	data.shared_sched = isl_union_map_preimage_domain_union_pw_multi_aff(
-		data.shared_sched, isl_union_pw_multi_aff_copy(contraction));
-	data.thread_sched = isl_union_map_preimage_domain_union_pw_multi_aff(
-		data.thread_sched, contraction);
+	data.host_sched = expand(data.host_sched, contraction);
+	data.shared_sched = expand(data.shared_sched, contraction);
+	data.thread_sched = expand(data.thread_sched, contraction);
+	isl_union_pw_multi_aff_free(contraction);
 
 	node = isl_schedule_node_child(node, 0);
 	data.full_sched = isl_union_map_copy(data.thread_sched);
