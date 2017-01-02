@@ -1602,7 +1602,6 @@ static __isl_give isl_multi_pw_aff *transform_index(
 	isl_space *space;
 	isl_multi_pw_aff *tiling;
 	isl_pw_multi_aff *pma;
-	isl_multi_pw_aff *mpa;
 	isl_pw_multi_aff *sched2depth;
 
 	data->array = NULL;
