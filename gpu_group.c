@@ -1498,7 +1498,6 @@ static void check_can_be_private_live_ranges(struct ppcg_kernel *kernel,
 	__isl_keep isl_schedule_node *node)
 {
 	int i;
-	isl_union_map *sched;
 	isl_union_set *domain;
 	isl_multi_union_pw_aff *prefix;
 	isl_union_pw_multi_aff *contraction;
