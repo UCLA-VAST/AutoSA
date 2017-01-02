@@ -1082,7 +1082,7 @@ static __isl_give isl_map *shared_access(struct gpu_array_ref_group *group,
  * that are forcibly mapped to private memory.
  *
  * If the array is marked force_private, then we bypass all checks
- * and assume we can (and should) use registers.
+ * and assume we can (and should) use registers only.
  *
  * If it turns out we can (or have to) use registers, we compute
  * the private memory tile size using can_tile, after introducing a dependence
@@ -1097,7 +1097,7 @@ static int compute_group_bounds_core(struct ppcg_kernel *kernel,
 	int no_reuse, coalesced;
 	isl_map *acc;
 	int force_private = group->local_array->force_private;
-	int use_shared = kernel->options->use_shared_memory &&
+	int use_shared = !force_private && kernel->options->use_shared_memory &&
 				data->n_thread > 0;
 	int use_private = force_private || kernel->options->use_private_memory;
 	int r = 0;
