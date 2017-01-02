@@ -552,7 +552,6 @@ static isl_stat group_subsequence(__isl_keep isl_schedule_node *node,
 static isl_bool detect_groups(__isl_keep isl_schedule_node *node, void *user)
 {
 	int i, n, first;
-	isl_bool has_only_leaves;
 	struct ppcg_grouping *grouping = user;
 
 	if (isl_schedule_node_get_type(node) != isl_schedule_node_sequence)
