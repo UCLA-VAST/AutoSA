@@ -16,9 +16,17 @@
 #include <stdlib.h>
 #include <string.h>
 #include <isl/ctx.h>
+#include <isl/id.h>
+#include <isl/val.h>
+#include <isl/set.h>
+#include <isl/union_set.h>
+#include <isl/union_map.h>
+#include <isl/aff.h>
 #include <isl/flow.h>
 #include <isl/options.h>
 #include <isl/schedule.h>
+#include <isl/ast.h>
+#include <isl/id_to_ast_expr.h>
 #include <isl/ast_build.h>
 #include <isl/schedule.h>
 #include <pet.h>
