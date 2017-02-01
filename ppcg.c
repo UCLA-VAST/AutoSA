@@ -411,14 +411,15 @@ static void compute_live_out(struct ppcg_scop *ps)
 /* Compute the tagged flow dependences and the live_in accesses and store
  * the results in ps->tagged_dep_flow and ps->live_in.
  *
- * We allow both the must writes and the must kills to serve as
- * definite sources such that a subsequent read would not depend
- * on any earlier write.  The resulting flow dependences with
- * a must kill as source reflect possibly uninitialized reads.
+ * Both must-writes and must-kills are allowed to kill dependences
+ * from earlier writes to subsequent reads.
+ * The must-kills are not included in the potential sources, though.
+ * The flow dependences with a must-kill as source would
+ * reflect possibly uninitialized reads.
  * No dependences need to be introduced to protect such reads
  * (other than those imposed by potential flows from may writes
- * that follow the kill).  We therefore remove those flow dependences.
- * This is also useful for the dead code elimination, which assumes
+ * that follow the kill).  Those flow dependences are therefore not needed.
+ * The dead code elimination also assumes
  * the flow sources are non-kill instances.
  */
 static void compute_tagged_flow_dep_only(struct ppcg_scop *ps)
@@ -437,18 +438,15 @@ static void compute_tagged_flow_dep_only(struct ppcg_scop *ps)
 	schedule = isl_schedule_pullback_union_pw_multi_aff(schedule, tagger);
 	kills = isl_union_map_copy(ps->tagged_must_kills);
 	must_source = isl_union_map_copy(ps->tagged_must_writes);
-	must_source = isl_union_map_union(must_source,
-				isl_union_map_copy(kills));
+	kills = isl_union_map_union(kills, must_source);
 	access = isl_union_access_info_from_sink(
 				isl_union_map_copy(ps->tagged_reads));
-	access = isl_union_access_info_set_must_source(access, must_source);
+	access = isl_union_access_info_set_kill(access, kills);
 	access = isl_union_access_info_set_may_source(access,
 				isl_union_map_copy(ps->tagged_may_writes));
 	access = isl_union_access_info_set_schedule(access, schedule);
 	flow = isl_union_access_info_compute_flow(access);
 	tagged_flow = isl_union_flow_get_may_dependence(flow);
-	tagged_flow = isl_union_map_subtract_domain(tagged_flow,
-				isl_union_map_domain(kills));
 	ps->tagged_dep_flow = tagged_flow;
 	live_in = isl_union_flow_get_may_no_source(flow);
 	ps->live_in = project_out_tags(live_in);
@@ -687,7 +685,7 @@ static void compute_flow_dep(struct ppcg_scop *ps)
 	isl_union_flow *flow;
 
 	access = isl_union_access_info_from_sink(isl_union_map_copy(ps->reads));
-	access = isl_union_access_info_set_must_source(access,
+	access = isl_union_access_info_set_kill(access,
 				isl_union_map_copy(ps->must_writes));
 	access = isl_union_access_info_set_may_source(access,
 				isl_union_map_copy(ps->may_writes));
@@ -733,7 +731,7 @@ static void compute_dependences(struct ppcg_scop *scop)
 					isl_union_map_copy(scop->reads));
 	access = isl_union_access_info_from_sink(
 				isl_union_map_copy(scop->may_writes));
-	access = isl_union_access_info_set_must_source(access,
+	access = isl_union_access_info_set_kill(access,
 				isl_union_map_copy(scop->must_writes));
 	access = isl_union_access_info_set_may_source(access, may_source);
 	access = isl_union_access_info_set_schedule(access,
