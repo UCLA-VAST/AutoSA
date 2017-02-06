@@ -233,7 +233,7 @@ static int extract_array_info(struct gpu_prog *prog,
 /* Remove independence from the order constraints "order" on array "array".
  * Since the pairs of iterations in the filter relation of an independence
  * are guaranteed to be completely independent by the user, there is
- * no need to ensure that live ranges are ordered along thong pairs.
+ * no need to ensure that live ranges are ordered along those pairs.
  * We make an exception for local variables, though, as the independence
  * guarantee does not apply to those.
  *
