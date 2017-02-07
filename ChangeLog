@@ -1,3 +1,8 @@
+version: 0.07
+date: Tue Feb  7 17:23:22 CET 2017
+changes:
+	- support hybrid tiling
+---
 version: 0.06
 date: Fri May  6 12:08:50 CEST 2016
 changes:
