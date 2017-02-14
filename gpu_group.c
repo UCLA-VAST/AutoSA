@@ -1215,6 +1215,11 @@ static int compute_group_bounds(struct ppcg_kernel *kernel,
  * then merge the two groups into one.
  * If "compute_bounds" is set, then call compute_group_bounds
  * on the merged groups.
+ * If any group is merged into the current group, then its access
+ * relation may have changed or it may have been turned into a write.
+ * The combined group might therefore overlap with groups that
+ * the original group did not overlap with.  The groups therefore
+ * need to be checked again.
  *
  * Return the updated number of groups.
  * Return -1 on error.
@@ -1226,8 +1231,10 @@ static int group_writes(struct ppcg_kernel *kernel,
 	struct gpu_group_data *data)
 {
 	int i, j;
+	int any_merge;
 
-	for (i = 0; i < n; ++i) {
+	for (i = 0; i < n; i += !any_merge) {
+		any_merge = 0;
 		for (j = n - 1; j > i; --j) {
 			if (!groups[i]->write && !groups[j]->write)
 				continue;
@@ -1235,6 +1242,7 @@ static int group_writes(struct ppcg_kernel *kernel,
 			if (!overlap(groups[i], groups[j]))
 				continue;
 
+			any_merge = 1;
 			groups[i] = join_groups_and_free(groups[i], groups[j]);
 			if (j != n - 1)
 				groups[j] = groups[n - 1];
