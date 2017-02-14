@@ -1339,6 +1339,9 @@ static int smaller_tile(struct gpu_array_tile *tile,
  * if both have a shared memory tile, the merged group also has
  * a shared memory tile and the size of the tile for the merge group
  * is smaller than the sum of the tile sizes of the individual groups.
+ * If any group is merged into the current group, then it may become
+ * profitable to combine it with groups that were considered before
+ * the merge.  The groups are therefore checked again after a merge.
  *
  * If merging two groups decreases the depth of the tile of
  * one or both of the two groups, then we need to check for overlapping
@@ -1353,8 +1356,10 @@ static int group_common_shared_memory_tile(struct ppcg_kernel *kernel,
 {
 	int i, j;
 	int recompute_overlap = 0;
+	int any_merge;
 
-	for (i = 0; i < n; ++i) {
+	for (i = 0; i < n; i += !any_merge) {
+		any_merge = 0;
 		if (!groups[i]->shared_tile)
 			continue;
 		for (j = n - 1; j > i; --j) {
@@ -1379,6 +1384,7 @@ static int group_common_shared_memory_tile(struct ppcg_kernel *kernel,
 				continue;
 			}
 
+			any_merge = 1;
 			if (group->min_depth < groups[i]->min_depth ||
 			    group->min_depth < groups[j]->min_depth)
 				recompute_overlap = 1;
