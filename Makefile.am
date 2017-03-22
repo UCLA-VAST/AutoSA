@@ -66,6 +66,7 @@ EXTRA_TESTS = opencl_test.sh polybench_test.sh
 TEST_EXTENSIONS = .sh
 
 EXTRA_DIST = \
+	examples \
 	ocl_utilities.c \
 	ocl_utilities.h \
 	tests
