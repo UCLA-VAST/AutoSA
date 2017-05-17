@@ -678,15 +678,21 @@ static void compute_live_range_reordering_dependences(struct ppcg_scop *ps)
 
 /* Compute the potential flow dependences and the potential live in
  * accesses.
+ *
+ * Both must-writes and must-kills are allowed to kill dependences
+ * from earlier writes to subsequent reads, as in compute_tagged_flow_dep_only.
  */
 static void compute_flow_dep(struct ppcg_scop *ps)
 {
 	isl_union_access_info *access;
 	isl_union_flow *flow;
+	isl_union_map *kills, *must_writes;
 
 	access = isl_union_access_info_from_sink(isl_union_map_copy(ps->reads));
-	access = isl_union_access_info_set_kill(access,
-				isl_union_map_copy(ps->must_writes));
+	kills = isl_union_map_copy(ps->must_kills);
+	must_writes = isl_union_map_copy(ps->must_writes);
+	kills = isl_union_map_union(kills, must_writes);
+	access = isl_union_access_info_set_kill(access, kills);
 	access = isl_union_access_info_set_may_source(access,
 				isl_union_map_copy(ps->may_writes));
 	access = isl_union_access_info_set_schedule(access,
