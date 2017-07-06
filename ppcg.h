@@ -8,6 +8,7 @@
 #include <isl/id_to_ast_expr.h>
 #include <pet.h>
 
+#include "consecutivity.h"
 #include "ppcg_options.h"
 
 const char *ppcg_base_name(const char *filename);
@@ -66,6 +67,10 @@ int ppcg_extract_base_name(char *name, const char *input);
  *	set of anti and output dependences.
  * "schedule" represents the (original) schedule.
  *
+ * "consecutive" contains information needed to derive
+ * consecutivity constraints.
+ * It may be NULL if it hasn't been initialized yet.
+ *
  * "names" contains all variable names that are in use by the scop.
  * The names are mapped to a dummy value.
  *
@@ -102,6 +107,8 @@ struct ppcg_scop {
 	isl_union_map *dep_order;
 	isl_union_map *tagged_dep_order;
 	isl_schedule *schedule;
+
+	ppcg_consecutive *consecutive;
 
 	isl_id_to_ast_expr *names;
 

@@ -26,6 +26,8 @@ LDADD = $(LIB_PET) $(LIB_ISL)
 
 bin_PROGRAMS = ppcg
 ppcg_SOURCES = \
+	consecutivity.c \
+	consecutivity.h \
 	cpu.c \
 	cpu.h \
 	cuda.c \
@@ -52,6 +54,8 @@ ppcg_SOURCES = \
 	hybrid.h \
 	schedule.c \
 	schedule.h \
+	scop_consecutive.c \
+	scop_consecutive.h \
 	ppcg_options.c \
 	ppcg_options.h \
 	ppcg.c \
