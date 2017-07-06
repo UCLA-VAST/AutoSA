@@ -26,6 +26,8 @@
 
 #include "ppcg.h"
 #include "ppcg_options.h"
+#include "consecutivity.h"
+#include "scop_consecutive.h"
 #include "cpu.h"
 #include "print.h"
 #include "schedule.h"
@@ -646,23 +648,50 @@ static __isl_give isl_schedule_constraints *construct_cpu_schedule_constraints(
 	return sc;
 }
 
+/* Compute a schedule on the domain of "sc" that respects the schedule
+ * constraints in "sc", taking into account the arrays that are
+ * marked consecutive in "scop".
+ * Do not perform any grouping of statements because the grouping
+ * process does not take into account the consecutivity constraints.
+ */
+__isl_give isl_schedule *ppcg_compute_consecutive_schedule(
+	__isl_take isl_schedule_constraints *sc, struct ppcg_scop *scop)
+{
+	sc = ppcg_add_consecutivity_constraints(sc, scop);
+	return ppcg_compute_non_grouping_schedule(sc, scop->options);
+}
+
 /* Compute a schedule for the scop "ps".
  *
  * First derive the appropriate schedule constraints from the dependences
  * in "ps" and then compute a schedule from those schedule constraints,
  * possibly grouping statement instances based on the input schedule.
+ *
+ * Also extract an object representing the consecutive arrays in "ps".
+ * If the list of consecutive arrays is non-empty, then compute
+ * a schedule that takes them into account.
  */
 static __isl_give isl_schedule *compute_cpu_schedule(struct ppcg_scop *ps)
 {
+	isl_bool empty;
 	isl_schedule_constraints *sc;
 	isl_schedule *schedule;
 
 	if (!ps)
 		return NULL;
 
+	if (!ps->consecutive)
+		ps->consecutive = ppcg_scop_extract_consecutive(ps);
+	empty = ppcg_consecutive_is_empty(ps->consecutive);
+	if (empty < 0)
+		return NULL;
+
 	sc = construct_cpu_schedule_constraints(ps);
 
-	schedule = ppcg_compute_schedule(sc, ps->schedule, ps->options);
+	if (!empty)
+		schedule = ppcg_compute_consecutive_schedule(sc, ps);
+	else
+		schedule = ppcg_compute_schedule(sc, ps->schedule, ps->options);
 
 	return schedule;
 }

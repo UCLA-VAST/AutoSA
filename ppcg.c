@@ -861,6 +861,7 @@ static void *ppcg_scop_free(struct ppcg_scop *ps)
 	isl_schedule_free(ps->schedule);
 	isl_union_pw_multi_aff_free(ps->tagger);
 	isl_union_map_free(ps->independence);
+	ppcg_consecutive_free(ps->consecutive);
 	isl_id_to_ast_expr_free(ps->names);
 
 	free(ps);
