@@ -17,6 +17,13 @@ __isl_give ppcg_consecutive *ppcg_consecutive_set_tagged_reads(
 	__isl_take ppcg_consecutive *c, __isl_take isl_union_map *reads);
 __isl_give ppcg_consecutive *ppcg_consecutive_set_tagged_writes(
 	__isl_take ppcg_consecutive *c, __isl_take isl_union_map *writes);
+__isl_give ppcg_consecutive *ppcg_consecutive_set_tagged_kills(
+	__isl_take ppcg_consecutive *c, __isl_take isl_union_map *kills);
+__isl_give ppcg_consecutive *ppcg_consecutive_set_schedule(
+	__isl_take ppcg_consecutive *c, __isl_take isl_schedule *schedule);
+__isl_give ppcg_consecutive *ppcg_consecutive_set_untag(
+	__isl_take ppcg_consecutive *c,
+	__isl_take isl_union_pw_multi_aff *untag);
 __isl_null ppcg_consecutive *ppcg_consecutive_free(
 	__isl_take ppcg_consecutive *c);
 isl_bool ppcg_consecutive_is_empty(__isl_keep ppcg_consecutive *c);

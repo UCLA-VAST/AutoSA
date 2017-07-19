@@ -159,13 +159,15 @@ __isl_give ppcg_consecutive *ppcg_scop_extract_consecutive(
 }
 
 /* Add consecutivity constraints to "sc" based on the consecutive
- * arrays in scop->consecutive and the access relations in "scop".
- * Update scop->consecutive with those access relations and call
+ * arrays in scop->consecutive and the access relations and schedule
+ * in "scop".
+ * Update scop->consecutive with those access relations and schedule and call
  * ppcg_consecutive_add_consecutivity_constraints.
  */
 __isl_give isl_schedule_constraints *ppcg_add_consecutivity_constraints(
 	__isl_take isl_schedule_constraints *sc, struct ppcg_scop *scop)
 {
+	isl_union_map *kills;
 	ppcg_consecutive *c;
 
 	if (!scop)
@@ -175,6 +177,13 @@ __isl_give isl_schedule_constraints *ppcg_add_consecutivity_constraints(
 				isl_union_map_copy(scop->tagged_reads));
 	c = ppcg_consecutive_set_tagged_writes(c,
 				isl_union_map_copy(scop->tagged_may_writes));
+	kills = isl_union_map_copy(scop->tagged_must_kills);
+	kills = isl_union_map_union(kills,
+				isl_union_map_copy(scop->tagged_must_writes));
+	c = ppcg_consecutive_set_tagged_kills(c, kills);
+	c = ppcg_consecutive_set_schedule(c, isl_schedule_copy(scop->schedule));
+	c = ppcg_consecutive_set_untag(c,
+				isl_union_pw_multi_aff_copy(scop->tagger));
 	scop->consecutive = c;
 	return ppcg_consecutive_add_consecutivity_constraints(c, sc);
 }

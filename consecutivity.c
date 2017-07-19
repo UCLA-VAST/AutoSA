@@ -6,6 +6,8 @@
  * Written by Sven Verdoolaege.
  */
 
+#include <stdio.h>
+
 #include <isl/mat.h>
 #include <isl/space.h>
 #include <isl/aff.h>
@@ -13,12 +15,14 @@
 #include <isl/map.h>
 #include <isl/union_set.h>
 #include <isl/union_map.h>
+#include <isl/flow.h>
 
 #define ISL_TYPE	isl_multi_aff
 #include <isl/maybe_templ.h>
 #undef ISL_TYPE
 
 #include "consecutivity.h"
+#include "util.h"
 
 /* A ppcg_consecutive object contains the input to
  * ppcg_consecutive_add_consecutivity_constraints and mainly consists
@@ -51,6 +55,19 @@
  * This field may be NULL if it has not been set yet.
  * "accesses" is the union of "reads" and "writes".
  * This field may be NULL if it has not been (re)computed yet.
+ *
+ * "kills" are the tagged kill accesses.
+ * This field may be NULL if it has not been set yet.
+ *
+ * "untag" maps tagged instance sets to the corresponding untagged
+ *	instance set.
+ * This field may be NULL if it has not been set or computed yet.
+ *
+ * "schedule" represents the (original) schedule.
+ * This field may be NULL if it has not been set yet.
+ * "tagged_schedule" is the schedule formulated in terms of tagged
+ *	instance sets.
+ * This field may be NULL if it has not been (re)computed yet.
  */
 struct ppcg_consecutive {
 	isl_set_list *extent_list;
@@ -61,6 +78,12 @@ struct ppcg_consecutive {
 	isl_union_map *reads;
 	isl_union_map *writes;
 	isl_union_map *accesses;
+	isl_union_map *kills;
+
+	isl_union_pw_multi_aff *untag;
+
+	isl_schedule *schedule;
+	isl_schedule *tagged_schedule;
 };
 
 /* Initialize a ppcg_consecutive object from a list of array spaces
@@ -139,6 +162,12 @@ __isl_null ppcg_consecutive *ppcg_consecutive_free(
 	isl_union_map_free(c->reads);
 	isl_union_map_free(c->writes);
 	isl_union_map_free(c->accesses);
+	isl_union_map_free(c->kills);
+
+	isl_union_pw_multi_aff_free(c->untag);
+
+	isl_schedule_free(c->schedule);
+	isl_schedule_free(c->tagged_schedule);
 	free(c);
 
 	return NULL;
@@ -148,6 +177,8 @@ __isl_null ppcg_consecutive *ppcg_consecutive_free(
  * Each domain element needs to uniquely identify a reference to an array.
  * The "accesses" field is derived from "reads" (and "writes") and
  * therefore needs to be reset in case it had already been computed.
+ * Similarly, the "untag" and "tagged_schedule" fields may have been
+ * derived from the "accesses" field (among others).
  */
 __isl_give ppcg_consecutive *ppcg_consecutive_set_tagged_reads(
 	__isl_take ppcg_consecutive *c, __isl_take isl_union_map *reads)
@@ -155,6 +186,8 @@ __isl_give ppcg_consecutive *ppcg_consecutive_set_tagged_reads(
 	if (!c || !reads)
 		goto error;
 	c->accesses = isl_union_map_free(c->accesses);
+	c->untag = isl_union_pw_multi_aff_free(c->untag);
+	c->tagged_schedule = isl_schedule_free(c->tagged_schedule);
 	isl_union_map_free(c->reads);
 	c->reads = reads;
 	return c;
@@ -168,6 +201,8 @@ error:
  * Each domain element needs to uniquely identify a reference to an array.
  * The "accesses" field is derived from "writes" (and "reads") and
  * therefore needs to be reset in case it had already been computed.
+ * Similarly, the "untag" and "tagged_schedule" fields may have been
+ * derived from the "accesses" field (among others).
  */
 __isl_give ppcg_consecutive *ppcg_consecutive_set_tagged_writes(
 	__isl_take ppcg_consecutive *c, __isl_take isl_union_map *writes)
@@ -175,12 +210,77 @@ __isl_give ppcg_consecutive *ppcg_consecutive_set_tagged_writes(
 	if (!c || !writes)
 		goto error;
 	c->accesses = isl_union_map_free(c->accesses);
+	c->untag = isl_union_pw_multi_aff_free(c->untag);
+	c->tagged_schedule = isl_schedule_free(c->tagged_schedule);
 	isl_union_map_free(c->writes);
 	c->writes = writes;
 	return c;
 error:
 	ppcg_consecutive_free(c);
 	isl_union_map_free(writes);
+	return NULL;
+}
+
+/* Replace the tagged kill access relation of "c" by "kills".
+ * Each domain element needs to uniquely identify a reference to an array.
+ * The "untag" field may have been derived from "kills" (and "accesses") and
+ * therefore needs to be reset in case it had already been computed.
+ * Similarly, the "tagged_schedule" field may have been
+ * derived from the "untag" field.
+ */
+__isl_give ppcg_consecutive *ppcg_consecutive_set_tagged_kills(
+	__isl_take ppcg_consecutive *c, __isl_take isl_union_map *kills)
+{
+	if (!c || !kills)
+		goto error;
+	c->untag = isl_union_pw_multi_aff_free(c->untag);
+	c->tagged_schedule = isl_schedule_free(c->tagged_schedule);
+	isl_union_map_free(c->kills);
+	c->kills = kills;
+	return c;
+error:
+	ppcg_consecutive_free(c);
+	isl_union_map_free(kills);
+	return NULL;
+}
+
+/* Replace the schedule of "c" by "schedule".
+ * The domain of "schedule" is formed by untagged domain elements.
+ * The "tagged_schedule" field is derived from "schedule" (and "untag") and
+ * therefore needs to be reset in case it had already been computed.
+ */
+__isl_give ppcg_consecutive *ppcg_consecutive_set_schedule(
+	__isl_take ppcg_consecutive *c, __isl_take isl_schedule *schedule)
+{
+	if (!c || !schedule)
+		goto error;
+	c->tagged_schedule = isl_schedule_free(c->tagged_schedule);
+	isl_schedule_free(c->schedule);
+	c->schedule = schedule;
+	return c;
+error:
+	ppcg_consecutive_free(c);
+	isl_schedule_free(schedule);
+	return NULL;
+}
+
+/* Set the map from tagged instances to untagged instances of "c"
+ * to "untag".
+ * If this map is not set by the user, then it is computed
+ * from the access relations when needed.
+ */
+__isl_give ppcg_consecutive *ppcg_consecutive_set_untag(
+	__isl_take ppcg_consecutive *c,
+	__isl_take isl_union_pw_multi_aff *untag)
+{
+	if (!c || !untag)
+		goto error;
+	isl_union_pw_multi_aff_free(c->untag);
+	c->untag = untag;
+	return c;
+error:
+	ppcg_consecutive_free(c);
+	isl_union_pw_multi_aff_free(untag);
 	return NULL;
 }
 
@@ -360,6 +460,42 @@ static __isl_give isl_union_map *init_union_map(__isl_keep ppcg_consecutive *c,
 	return isl_union_map_empty(space);
 }
 
+/* Return the tagged read access relation of "c'.
+ * Take into account that the relation may not have been set (yet).
+ */
+__isl_give isl_union_map *ppcg_consecutive_get_reads(
+	__isl_keep ppcg_consecutive *c)
+{
+	if (!c)
+		return NULL;
+	c->reads = init_union_map(c, c->reads);
+	return isl_union_map_copy(c->reads);
+}
+
+/* Return the tagged write access relation of "c'.
+ * Take into account that the relation may not have been set (yet).
+ */
+__isl_give isl_union_map *ppcg_consecutive_get_writes(
+	__isl_keep ppcg_consecutive *c)
+{
+	if (!c)
+		return NULL;
+	c->writes = init_union_map(c, c->writes);
+	return isl_union_map_copy(c->writes);
+}
+
+/* Return the tagged kill access relation of "c'.
+ * Take into account that the relation may not have been set (yet).
+ */
+__isl_give isl_union_map *ppcg_consecutive_get_kills(
+	__isl_keep ppcg_consecutive *c)
+{
+	if (!c)
+		return NULL;
+	c->kills = init_union_map(c, c->kills);
+	return isl_union_map_copy(c->kills);
+}
+
 /* Return the tagged access relation of "c', the union of its read and write
  * access relations.
  * Take into account that the read and/or write access relation
@@ -383,6 +519,74 @@ __isl_give isl_union_map *ppcg_consecutive_get_accesses(
 						isl_union_map_copy(c->writes));
 
 	return isl_union_map_copy(c->accesses);
+}
+
+/* Has the user specified a schedule for "c"?
+ */
+isl_bool ppcg_consecutive_has_schedule(__isl_keep ppcg_consecutive *c)
+{
+	if (!c)
+		return isl_bool_error;
+	if (c->schedule)
+		return isl_bool_true;
+	return isl_bool_false;
+}
+
+/* Return the schedule associated to "c".
+ * Assume that such a schedule has been specified.
+ */
+__isl_give isl_schedule *ppcg_consecutive_get_schedule(
+	__isl_keep ppcg_consecutive *c)
+{
+	if (!c)
+		return NULL;
+	if (!c->schedule)
+		isl_die(ppcg_consecutive_get_ctx(c), isl_error_invalid,
+			"missing schedule", return NULL);
+	return isl_schedule_copy(c->schedule);
+}
+
+/* Return an affine function that drops the tags from tagged instances.
+ * If it was not set explicitly or computed before,
+ * then it is derived from the tagged statement instances
+ * involved in any of the accesses.
+ * Keep a copy of the result in c->untag for later reuse.
+ */
+__isl_give isl_union_pw_multi_aff *ppcg_consecutive_get_untag(
+	__isl_keep ppcg_consecutive *c)
+{
+	isl_union_map *accesses;
+
+	if (!c)
+		return NULL;
+	if (c->untag)
+		return isl_union_pw_multi_aff_copy(c->untag);
+	accesses = ppcg_consecutive_get_accesses(c);
+	accesses = isl_union_map_union(accesses, ppcg_consecutive_get_kills(c));
+	c->untag = ppcg_untag_from_tagged_accesses(accesses);
+	return isl_union_pw_multi_aff_copy(c->untag);
+}
+
+/* Return the schedule associated to "c", reformulated in terms
+ * of the tagged instances.
+ * Keep a copy of the result in c->tagged_schedule for later reuse.
+ */
+__isl_give isl_schedule *ppcg_consecutive_get_tagged_schedule(
+	__isl_keep ppcg_consecutive *c)
+{
+	isl_schedule *schedule;
+	isl_union_pw_multi_aff *untag;
+
+	if (!c)
+		return NULL;
+	if (c->tagged_schedule)
+		return isl_schedule_copy(c->tagged_schedule);
+
+	schedule = ppcg_consecutive_get_schedule(c);
+	untag = ppcg_consecutive_get_untag(c);
+	schedule = isl_schedule_pullback_union_pw_multi_aff(schedule, untag);
+	c->tagged_schedule = schedule;
+	return isl_schedule_copy(c->tagged_schedule);
 }
 
 /* isl_pw_multi_aff_foreach_piece callback for extracting
@@ -468,6 +672,31 @@ static __isl_give isl_maybe_isl_multi_aff map_try_extract_affine(
 	m.valid = isl_bool_not(any_local_or_denom(m.value));
 	if (m.valid < 0 || !m.valid)
 		m.value = isl_multi_aff_free(m.value);
+
+	return m;
+}
+
+/* Check if "umap" represents an integral affine function
+ * (on a single domain) and, if so, return it as an isl_multi_aff.
+ * A function is considered affine here if it is not piecewise and
+ * if the single possibly quasi-affine expression does not involve any
+ * local variables.
+ */
+static __isl_give isl_maybe_isl_multi_aff umap_try_extract_affine(
+	__isl_keep isl_union_map *umap)
+{
+	isl_maybe_isl_multi_aff m = { isl_bool_false };
+	isl_map *map;
+
+	if (!umap) {
+		m.valid = isl_bool_error;
+		return m;
+	}
+	if (isl_union_map_n_map(umap) != 1)
+		return m;
+	map = isl_map_from_union_map(isl_union_map_copy(umap));
+	m = map_try_extract_affine(map);
+	isl_map_free(map);
 
 	return m;
 }
@@ -707,6 +936,24 @@ static isl_bool ppcg_split_index_is_independent(__isl_keep ppcg_split_index *si)
 	if (!si)
 		return isl_bool_error;
 	return isl_mat_has_linearly_independent_rows(si->outer, si->inner);
+}
+
+/* Does "si" represent a valid split index expression?
+ * That is, are the affine expressions in the inner part
+ * linearly independent of each other and of those in the outer part?
+ */
+static isl_bool ppcg_split_index_is_valid(__isl_keep ppcg_split_index *si)
+{
+	int rank;
+
+	if (!si)
+		return isl_bool_error;
+	rank = isl_mat_rank(si->inner);
+	if (rank < 0)
+		return isl_bool_error;
+	if (rank != isl_mat_rows(si->inner))
+		return isl_bool_false;
+	return ppcg_split_index_is_independent(si);
 }
 
 /* Do "si1" and "si2" have the same outer and inner parts?
@@ -1439,8 +1686,566 @@ static __isl_give isl_schedule_constraints *add_intra_consecutivity_constraints(
 	return sc;
 }
 
+/* Return a set that selects the last element of "set"
+ * in the last "n_last" coordinates.
+ * "set" is assumed to be rectangular.
+ */
+static __isl_give isl_set *select_last(__isl_take isl_set *set, int n_last)
+{
+	int i, n;
+	isl_multi_pw_aff *mpa;
+
+	n = isl_set_dim(set, isl_dim_set);
+	mpa = isl_multi_pw_aff_zero(isl_set_get_space(set));
+	for (i = 1; i <= n_last; ++i) {
+		isl_pw_aff *bound;
+
+		bound = isl_set_dim_max(isl_set_copy(set), n - i);
+		mpa = isl_multi_pw_aff_set_pw_aff(mpa, i, bound);
+	}
+	isl_set_free(set);
+	set = isl_set_from_multi_pw_aff(mpa);
+	set = isl_set_eliminate(set, isl_dim_set, 0, n - n_last);
+	return set;
+}
+
+/* Construct a relation that maps each element in "extent"
+ * to the next element at the "level" innermost position.
+ * If d is the dimension of "extent", then the "level" innermost position
+ * is position d - level.
+ * At this position, the index expression is incremented by one.
+ * At previous positions, the index expressions is kept constant.
+ * At later positions, the source should refer to the last element
+ * in "extent" while the target should refer to the first (zero) element.
+ */
+static __isl_give isl_map *construct_next_element_set(
+	__isl_take isl_set *extent, int level)
+{
+	isl_space *space;
+	isl_set *last;
+	isl_map *map;
+	int i, dim;
+
+	space = isl_set_get_space(extent);
+	last = select_last(extent, level - 1);
+	dim = isl_space_dim(space, isl_dim_set);
+	map = ppcg_next(space, dim - level);
+	map = isl_map_eliminate(map, isl_dim_out, dim - (level - 1), level - 1);
+	for (i = 1; i < level; ++i)
+		map = isl_map_fix_si(map, isl_dim_out, dim - i, 0);
+	map = isl_map_intersect_domain(map, last);
+	return map;
+}
+
+/* Internal data structure for construct_next_element.
+ * "level" is the position at which the next element is computed.
+ * "next" collects the results.
+ */
+struct ppcg_next_element_data {
+	int level;
+	isl_union_map *next;
+};
+
+/* Construct a relation that maps each element in "set"
+ * to the next element at the data->level innermost position
+ * (provided there is such a position in "set") and
+ * add the result to data->next;
+ */
+static isl_stat array_next_element(__isl_take isl_set *set, void *user)
+{
+	struct ppcg_next_element_data *data = user;
+	isl_map *next;
+
+	if (data->level > isl_set_dim(set, isl_dim_set)) {
+		isl_set_free(set);
+		return isl_stat_ok;
+	}
+	next = construct_next_element_set(set, data->level);
+	data->next = isl_union_map_add_map(data->next, next);
+
+	if (!data->next)
+		return isl_stat_error;
+	return isl_stat_ok;
+}
+
+/* Construct a relation that maps each element in "extents"
+ * to the next element at the "level" innermost position.
+ */
+static __isl_give isl_union_map *construct_next_element(
+	__isl_keep isl_union_set *extents, int level)
+{
+	struct ppcg_next_element_data data = { level };
+	isl_space *space;
+
+	space = isl_union_set_get_space(extents);
+	data.next = isl_union_map_empty(space);
+
+	if (isl_union_set_foreach_set(extents, &array_next_element, &data) < 0)
+		data.next = isl_union_map_free(data.next);
+
+	return data.next;
+}
+
+/* Compute may-dependences from "source" to "sink" without an intermediate
+ * "kill" based on the schedule in "c".
+ * "source", "sink" and "kill" are tagged access relations.
+ */
+static __isl_give isl_union_map *compute_deps(__isl_keep ppcg_consecutive *c,
+	__isl_keep isl_union_map *source, __isl_keep isl_union_map *sink,
+	__isl_keep isl_union_map *kill)
+{
+	isl_schedule *schedule;
+	isl_union_access_info *info;
+	isl_union_flow *flow;
+	isl_union_map *dep;
+
+	info = isl_union_access_info_from_sink(isl_union_map_copy(sink));
+	info = isl_union_access_info_set_may_source(info,
+						isl_union_map_copy(source));
+	info = isl_union_access_info_set_kill(info, isl_union_map_copy(kill));
+	schedule = ppcg_consecutive_get_tagged_schedule(c);
+	info = isl_union_access_info_set_schedule(info, schedule);
+
+	flow = isl_union_access_info_compute_flow(info);
+	dep = isl_union_flow_get_may_dependence(flow);
+	isl_union_flow_free(flow);
+
+	return dep;
+}
+
+/* Compute pairs of statement instances such that the relation
+ * between the elements accessed through "accesses" is
+ * as specified by "next_element" and such that there is no intermediate "kill".
+ * "c" holds the schedule that determines whether a kill is intermediate.
+ * "accesses" and "kill" are tagged access relations.
+ * "kill" has been extended by the caller to kill both the original
+ * element and the next element.
+ *
+ * First compute an access relation that replaces the accessed
+ * array elements by their image in "next_element".
+ * This allows the pairs of statement instances to be computed
+ * using regular dependence analysis.
+ *
+ * The access to the source element of "next_element" may appear
+ * either before or after the access to the corresponding target element
+ * in the original schedule.
+ * Dependence analysis is therefore applied twice.
+ * In both cases, the kill access relation blocks dependences
+ * where either the element itself (the target of "next_element") or
+ * the previous element (the source of "next_element") is killed.
+ * The result of the dependence analysis where the access to the source
+ * element is executed after the one to the target element
+ * is reversed to ensure that the source access appears first
+ * in the final result.
+ */
+static __isl_give isl_union_map *compute_next_access(
+	__isl_keep ppcg_consecutive *c, __isl_keep isl_union_map *accesses,
+	__isl_keep isl_union_map *next_element, __isl_keep isl_union_map *kill)
+{
+	isl_union_map *accesses_next;
+	isl_union_map *dep, *dep2;
+
+	accesses_next = isl_union_map_copy(accesses);
+	accesses_next = isl_union_map_apply_range(accesses,
+					    isl_union_map_copy(next_element));
+	dep = compute_deps(c, accesses_next, accesses, kill);
+	dep2 = compute_deps(c, accesses, accesses_next, kill);
+	isl_union_map_free(accesses_next);
+	dep = isl_union_map_union(dep, isl_union_map_reverse(dep2));
+
+	return dep;
+}
+
+/* isl_union_map_remove_map_if callback that removes maps
+ * between a domain and itself.
+ * "map" relates tagged domain instances.
+ * The tags need to be removed before the domain and range
+ * spaces can be compared.
+ */
+static isl_bool is_internal(__isl_keep isl_map *map, void *user)
+{
+	isl_space *space;
+	isl_bool internal;
+
+	space = isl_map_get_space(map);
+	space = isl_space_factor_domain(space);
+	internal = isl_space_tuple_is_equal(space, isl_dim_in,
+					space, isl_dim_out);
+	isl_space_free(space);
+	return internal;
+}
+
+/* Set the name of the output tuple of "ma" to "intra_<n>".
+ */
+static __isl_give isl_multi_aff *set_name(__isl_take isl_multi_aff *ma, int n)
+{
+	char buffer[25];
+
+	snprintf(buffer, sizeof(buffer), "intra_%d", n);
+	return isl_multi_aff_set_tuple_name(ma, isl_dim_out, buffer);
+}
+
+/* Internal data structure for add_inter_consecutivity_constraints.
+ *
+ * "n" is the number of auxiliary intra-statement consecutivity constraints
+ * that have been constructed.  It is used to construct the name
+ * of the next such constraint.
+ * "intra" collects the auxiliary intra-statement consecutivity constraints
+ * that are needed for the constraints in "inter".
+ * "inter" collects the constructed inter-statement consecutivity constraints.
+ *
+ * Inside construct_inter_level, "level" is the level (starting
+ * from innermost at level=1) where inter-statement consecutivity
+ * is considered, i.e., where the index expression is increased by one.
+ * Inside collect_inter, "accesses" is the access relation from
+ * which the pairs of accesses to consecutive array elements were computed.
+ */
+struct ppcg_collect_inter_data {
+	int n;
+	isl_multi_aff_list *intra;
+	isl_map_list *inter;
+
+	int level;
+	isl_union_map *accesses;
+};
+
+/* Try and extract an affine expression from the "accesses" on "space" and
+ * split it into an outer and an inner part with "n_inner" inner expressions.
+ * The split is considered to fail if the result would be an invalid
+ * intra-statement consecutivity constraint.  That is, it fails
+ * if the rows of the inner part are not linearly independent or
+ * if they are not linearly independent of the outer part.
+ * "accesses" and "space" refer to tagged instances, but the tags
+ * are removed from the result.
+ *
+ * In order to perform the validity check, the isl_multi_aff
+ * is converted into an ppcg_split_index.  The final result is
+ * then reconstructed from this ppcg_split_index.
+ * An alternative would be to perform the split on the isl_multi_aff
+ * directly, but reconstructing the isl_multi_aff has the advantage
+ * that it will only contain the relevant parts (i.e., the linear parts)
+ * of the original expressions.
+ */
+static __isl_give isl_maybe_isl_multi_aff try_extract_split_affine_on_domain(
+	__isl_keep isl_union_map *accesses, __isl_take isl_space *space,
+	int n_inner)
+{
+	isl_union_set *uset;
+	isl_maybe_isl_multi_aff m;
+	ppcg_split_index *si;
+
+	uset = isl_union_set_from_set(isl_set_universe(space));
+	accesses = isl_union_map_copy(accesses);
+	accesses = isl_union_map_intersect_domain(accesses, uset);
+	accesses = isl_union_map_domain_factor_domain(accesses);
+	m = umap_try_extract_affine(accesses);
+	isl_union_map_free(accesses);
+
+	if (m.valid < 0 || !m.valid)
+		return m;
+
+	space = isl_multi_aff_get_domain_space(m.value);
+	si = ppcg_split_index_from_multi_aff(m.value, n_inner);
+	m.valid = ppcg_split_index_is_valid(si);
+
+	if (m.valid < 0 || !m.valid) {
+		isl_space_free(space);
+		ppcg_split_index_free(si);
+		m.value = NULL;
+		return m;
+	}
+
+	m.value = ppcg_split_index_construct_multi_aff(si, space);
+
+	return m;
+}
+
+/* Construct an inter-statement consecutivity constraint
+ * on "map" referencing the intra-statement consecutivity constraints
+ * "ma1" and "ma2".  Add the inter-statement consecutivity constraint
+ * to data->inter and the intra-statement consecutivity constraints
+ * to data->intra.
+ * "map" relates tagged instances, while "ma1" and "ma2"
+ * are formulated in terms of untagged instances.
+ *
+ * The intra-statement consecutivity constraints are given unique names and
+ * the corresponding identifiers are attached to domain and range of "map"
+ * to form the inter-statement consecutivity constraint.
+ */
+static isl_stat add_valid_inter(__isl_take isl_map *map,
+	__isl_take isl_multi_aff *ma1, __isl_take isl_multi_aff *ma2,
+	struct ppcg_collect_inter_data *data)
+{
+	isl_id *id;
+	isl_space *space;
+
+	ma1 = set_name(ma1, data->n++);
+	ma2 = set_name(ma2, data->n++);
+
+	space = isl_space_params(isl_map_get_space(map));
+	space = isl_space_map_from_set(isl_space_set_from_params(space));
+	id = isl_multi_aff_get_tuple_id(ma1, isl_dim_out);
+	space = isl_space_set_tuple_id(space, isl_dim_in, id);
+	id = isl_multi_aff_get_tuple_id(ma2, isl_dim_out);
+	space = isl_space_set_tuple_id(space, isl_dim_out, id);
+	map = isl_map_factor_domain(map);
+	map = isl_map_product(map, isl_map_universe(space));
+
+	data->intra = isl_multi_aff_list_add(data->intra, ma1);
+	data->intra = isl_multi_aff_list_add(data->intra, ma2);
+	data->inter = isl_map_list_add(data->inter, map);
+
+	if (!data->intra || !data->inter)
+		return isl_stat_error;
+	return isl_stat_ok;
+}
+
+/* Try and construct an inter-statement consecutivity constraint
+ * from pairs of statement instances "map" from different statements
+ * that access consecutive elements at the data->level innermost
+ * index expression.
+ * If successful, add it to data->list.
+ *
+ * Extract the (tagged) domain spaces from "map" and
+ * extract the corresponding split affine index expressions.
+ * Construct an inter-statement consecutivity constraint from "map"
+ * referencing these split affine index expressions and add them
+ * to data->inter and data->intra respectively.
+ */
+static isl_stat add_inter(__isl_take isl_map *map, void *user)
+{
+	struct ppcg_collect_inter_data *data = user;
+	isl_space *space, *space1, *space2;
+	isl_maybe_isl_multi_aff m1, m2;
+	isl_multi_aff *ma1, *ma2;
+	int level = data->level;
+
+	space = isl_map_get_space(map);
+	space1 = isl_space_domain(isl_space_copy(space));
+	space2 = isl_space_range(space);
+	m1 = try_extract_split_affine_on_domain(data->accesses, space1, level);
+	m2 = try_extract_split_affine_on_domain(data->accesses, space2, level);
+
+	if (m1.valid == isl_bool_true && m2.valid == isl_bool_true)
+		return add_valid_inter(map, m1.value, m2.value, data);
+
+	isl_multi_aff_free(m1.value);
+	isl_multi_aff_free(m2.value);
+	isl_map_free(map);
+	if (m1.valid < 0 || m2.valid < 0)
+		return isl_stat_error;
+	return isl_stat_ok;
+}
+
+/* Construct a list of inter-statement consecutivity constraints
+ * from pairs of statement instances "dep" from different statements
+ * that access consecutive elements at the data->level innermost
+ * index expression.
+ * data->accesses are the accesses from which "dep" was constructed.
+ *
+ * Consider each map in "dep" in turn.
+ */
+static isl_stat collect_inter(__isl_take isl_union_map *dep,
+	struct ppcg_collect_inter_data *data)
+{
+	isl_stat res;
+
+	res = isl_union_map_foreach_map(dep, &add_inter, data);
+	isl_union_map_free(dep);
+
+	return res;
+}
+
+/* Construct a list of inter-statement consecutivity constraints and
+ * corresponding referenced intra-statement consecutivity constraints
+ * for arrays with extents "extents", read access relation "reads",
+ * write access relation "writes" and the information in "c"
+ * for the index expression at the data->level innermost position.
+ * Add the constraints to data->inter and data->intra.
+ * data->level is set to 1 for the innermost index expression.
+ *
+ * First compute a relation between array elements and
+ * the next array element at the given position.
+ * Then extend the kill relation to not only kill the original elements
+ * but also the next element.  This ensures that it will block
+ * dependences to either the element itself or the next element.
+ * Use these relations to compute pairs of statement accesses
+ * that access consecutive elements (according to "next_element").
+ * Do this for the read and write access relations separately.
+ * Finally, construct inter-statement consecutivity constraints and
+ * corresponding intra-statement consecutivity constraints
+ * for each such relation between distinct statements.
+ */
+static isl_stat construct_inter_level(__isl_keep ppcg_consecutive *c,
+	__isl_keep isl_union_set *extents,
+	__isl_keep isl_union_map *reads, __isl_keep isl_union_map *writes,
+	struct ppcg_collect_inter_data *data)
+{
+	isl_stat res;
+	isl_union_map *kills, *kills_next;
+	isl_union_map *next_element;
+	isl_union_map *dep, *dep2;
+	isl_union_map *accesses;
+
+	kills = ppcg_consecutive_get_kills(c);
+	next_element = construct_next_element(extents, data->level);
+	kills_next = isl_union_map_apply_range(isl_union_map_copy(kills),
+					    isl_union_map_copy(next_element));
+	kills = isl_union_map_union(kills, kills_next);
+	dep = compute_next_access(c, writes, next_element, kills);
+	dep2 = compute_next_access(c, reads, next_element, kills);
+	isl_union_map_free(kills);
+	isl_union_map_free(next_element);
+	dep = isl_union_map_union(dep, dep2);
+	dep = isl_union_map_remove_map_if(dep, &is_internal, NULL);
+
+	accesses = isl_union_map_copy(reads);
+	accesses = isl_union_map_union(accesses, isl_union_map_copy(writes));
+	data->accesses = accesses;
+	res = collect_inter(dep, data);
+	isl_union_map_free(data->accesses);
+
+	return res;
+}
+
+/* isl_union_set_foreach_set callback that updates
+ * max_dim to the dimension of "set" if it is greater than
+ * the current value of max_dim.
+ */
+static isl_stat update_max_dim(__isl_take isl_set *set, void *user)
+{
+	int *max_dim = user;
+	int dim;
+
+	dim = isl_set_dim(set, isl_dim_set);
+	isl_set_free(set);
+	if (dim > *max_dim)
+		*max_dim = dim;
+
+	return isl_stat_ok;
+}
+
+/* Return the maximal dimension of the sets in "uset".
+ */
+static int max_dim(__isl_keep isl_union_set *uset)
+{
+	int max_dim = 0;
+
+	if (isl_union_set_foreach_set(uset, &update_max_dim, &max_dim) < 0)
+		max_dim = -1;
+
+	return max_dim;
+}
+
+/* Construct a list of inter-statement consecutivity constraints and
+ * corresponding referenced intra-statement consecutivity constraints
+ * for arrays with extents "extents", read access relation "reads",
+ * write access relation "writes" and the information in "c".
+ * Add the constraints to data->inter and data->intra.
+ *
+ * Inter-statement consecutivity is considered at different positions of
+ * the index expressions, starting from the innermost (level = 1)
+ * to the outermost (level = max).
+ */
+static isl_stat construct_inter(__isl_keep ppcg_consecutive *c,
+	__isl_keep isl_union_set *extents, __isl_keep isl_union_map *reads,
+	__isl_keep isl_union_map *writes, struct ppcg_collect_inter_data *data)
+{
+	int max;
+
+	max = max_dim(extents);
+	if (max < 0)
+		return isl_stat_error;
+
+	for (data->level = 1; data->level <= max; ++data->level) {
+		if (construct_inter_level(c, extents, reads, writes, data) < 0)
+			return isl_stat_error;
+	}
+
+	return isl_stat_ok;
+}
+
+/* isl_union_map_remove_map_if callback that checks
+ * whether "map" is not injective.
+ */
+static isl_bool not_injective(__isl_keep isl_map *map, void *user)
+{
+	return isl_bool_not(isl_map_is_injective(map));
+}
+
+/* Add inter-statement consecutivity constraints to "sc" based
+ * on the information in "c", along with
+ * corresponding referenced intra-statement consecutivity constraints.
+ * The list of consecutive arrays is assumed to be non-empty.
+ * The inter-statement consecutivity constraints replace the original
+ * inter-statement consecutivity constraints of "sc".
+ * The auxiliary intra-statement consecutivity constraints are added
+ * to those already referenced by "sc".
+ *
+ * First check if both a schedule and the array extents are available.
+ * If not, then no inter-statement consecutivity constraints can be computed.
+ *
+ * Inter-statement consecutivity is currently only considered
+ * between pairs of accesses that access each element only once.
+ *
+ * Construct a list of inter-statement consecutivity constraints and
+ * a list of corresponding intra-statement consecutivity constraints from
+ * the extents of the accessed arrays and the access relations and
+ * add them to "sc".
+ */
+static __isl_give isl_schedule_constraints *add_inter_consecutivity_constraints(
+	__isl_keep ppcg_consecutive *c, __isl_take isl_schedule_constraints *sc)
+{
+	struct ppcg_collect_inter_data data = { 0 };
+	isl_bool has_data;
+	isl_ctx *ctx;
+	isl_union_map *reads, *writes, *accesses;
+	isl_union_set *accessed, *extents;
+	isl_multi_aff_list *intra;
+
+	has_data = ppcg_consecutive_has_schedule(c);
+	if (has_data >= 0 && has_data)
+		has_data = ppcg_consecutive_has_extent_list(c);
+	if (has_data < 0)
+		return isl_schedule_constraints_free(sc);
+	if (!has_data)
+		return sc;
+
+	accesses = ppcg_consecutive_get_accesses(c);
+
+	accesses = isl_union_map_remove_map_if(accesses, &not_injective, NULL);
+	reads = ppcg_consecutive_get_reads(c);
+	writes = ppcg_consecutive_get_writes(c);
+	reads = isl_union_map_intersect(reads, isl_union_map_copy(accesses));
+	writes = isl_union_map_intersect(writes, isl_union_map_copy(accesses));
+
+	accessed = isl_union_map_range(isl_union_map_universe(accesses));
+	extents = ppcg_consecutive_get_extents(c);
+	extents = isl_union_set_intersect(extents, accessed);
+
+	ctx = ppcg_consecutive_get_ctx(c);
+	data.intra = isl_multi_aff_list_alloc(ctx, 0);
+	data.inter = isl_map_list_alloc(ctx, 0);
+	if (construct_inter(c, extents, reads, writes, &data) < 0)
+		sc = isl_schedule_constraints_free(sc);
+	isl_union_set_free(extents);
+	isl_union_map_free(reads);
+	isl_union_map_free(writes);
+
+	intra = isl_schedule_constraints_get_intra_consecutivity(sc);
+	intra = isl_multi_aff_list_concat(intra, data.intra);
+	sc = isl_schedule_constraints_set_intra_consecutivity(sc, intra);
+	sc = isl_schedule_constraints_set_inter_consecutivity(sc, data.inter);
+
+	return sc;
+}
+
 /* Add consecutivity constraints to "sc" based on the information in "c".
  * If there are no consecutive arrays, then no constraints need to be added.
+ *
+ * Inter-statement consecutivity constraints are only added
+ * if "c" was created using ppcg_consecutive_from_extent_list and
+ * if a schedule was specified.
  */
 __isl_give isl_schedule_constraints *
 ppcg_consecutive_add_consecutivity_constraints(__isl_keep ppcg_consecutive *c,
@@ -1454,5 +2259,6 @@ ppcg_consecutive_add_consecutivity_constraints(__isl_keep ppcg_consecutive *c,
 	if (empty)
 		return sc;
 	sc = add_intra_consecutivity_constraints(c, sc);
+	sc = add_inter_consecutivity_constraints(c, sc);
 	return sc;
 }
