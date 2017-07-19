@@ -11,6 +11,7 @@
 #include <isl/val.h>
 #include <isl/aff.h>
 #include <isl/set.h>
+#include <isl/map.h>
 
 #include "util.h"
 
@@ -102,4 +103,23 @@ __isl_give isl_multi_pw_aff *ppcg_size_from_extent(__isl_take isl_set *set)
 	isl_set_free(set);
 
 	return mpa;
+}
+
+/* Construct a map from domain_space to domain_space that increments
+ * the dimension at position "pos" and leaves all other dimensions
+ * constant.
+ */
+__isl_give isl_map *ppcg_next(__isl_take isl_space *domain_space, int pos)
+{
+	isl_space *space;
+	isl_aff *aff;
+	isl_multi_aff *next;
+
+	space = isl_space_map_from_set(domain_space);
+	next = isl_multi_aff_identity(space);
+	aff = isl_multi_aff_get_aff(next, pos);
+	aff = isl_aff_add_constant_si(aff, 1);
+	next = isl_multi_aff_set_aff(next, pos, aff);
+
+	return isl_map_from_multi_aff(next);
 }
