@@ -19,6 +19,7 @@
 #include "gpu_group.h"
 #include "gpu_tree.h"
 #include "schedule.h"
+#include "util.h"
 
 /* Print the name of the local copy of a given group of array references.
  */
@@ -304,25 +305,6 @@ struct gpu_group_data {
 	isl_union_map *full_sched;
 };
 
-/* Construct a map from domain_space to domain_space that increments
- * the dimension at position "pos" and leaves all other dimensions
- * constant.
- */
-static __isl_give isl_map *next(__isl_take isl_space *domain_space, int pos)
-{
-	isl_space *space;
-	isl_aff *aff;
-	isl_multi_aff *next;
-
-	space = isl_space_map_from_set(domain_space);
-	next = isl_multi_aff_identity(space);
-	aff = isl_multi_aff_get_aff(next, pos);
-	aff = isl_aff_add_constant_si(aff, 1);
-	next = isl_multi_aff_set_aff(next, pos, aff);
-
-	return isl_map_from_multi_aff(next);
-}
-
 /* Check if the given access is coalesced (or if there is no point
  * in trying to coalesce the access by mapping the array to shared memory).
  * That is, check whether incrementing the dimension that will get
@@ -362,7 +344,7 @@ static int access_is_coalesced(struct gpu_group_data *data,
 	if (dim == 0)
 		next_element = isl_map_empty(isl_space_map_from_set(space));
 	else
-		next_element = next(space, dim - 1);
+		next_element = ppcg_next(space, dim - 1);
 
 	accessed = isl_map_range(isl_map_copy(access_map));
 	map = isl_map_copy(next_element);
@@ -379,7 +361,8 @@ static int access_is_coalesced(struct gpu_group_data *data,
 
 	space = isl_map_get_space(access_map);
 	space = isl_space_domain(space);
-	next_thread_x = next(space, data->thread_depth + data->n_thread - 1);
+	next_thread_x = ppcg_next(space,
+				    data->thread_depth + data->n_thread - 1);
 
 	map = isl_map_apply_domain(next_thread_x, isl_map_copy(access_map));
 	map = isl_map_apply_range(map, access_map);

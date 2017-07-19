@@ -18,5 +18,6 @@ __isl_give isl_multi_val *ppcg_multi_val_from_int(__isl_take isl_space *space,
 __isl_give isl_multi_val *ppcg_multi_val_from_int_list(
 	__isl_take isl_space *space, int *list);
 __isl_give isl_multi_pw_aff *ppcg_size_from_extent(__isl_take isl_set *set);
+__isl_give isl_map *ppcg_next(__isl_take isl_space *domain_space, int pos);
 
 #endif
