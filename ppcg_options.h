@@ -62,6 +62,8 @@ struct ppcg_options {
 
 	/* List of consecutive array identifiers, as specified by the user */
 	char *consecutive_arrays;
+	/* The level at which consecutivity constraints should be applied */
+	int consecutivity_level;
 
 	/* Allow hybrid tiling whenever a suitable input pattern is found. */
 	int hybrid;
@@ -99,5 +101,8 @@ ISL_ARG_DECL(ppcg_options, struct ppcg_options, ppcg_options_args)
 #define		PPCG_TARGET_OPENCL      2
 
 void ppcg_options_set_target_defaults(struct ppcg_options *options);
+
+#define		PPCG_CONSECUTIVITY_GLOBAL	0
+#define		PPCG_CONSECUTIVITY_INTRA_TILE	1
 
 #endif

@@ -575,16 +575,68 @@ static __isl_give isl_schedule_node *tile(__isl_take isl_schedule_node *node,
 	return node;
 }
 
+/* Is "node" not a tilable band node?
+ */
+static isl_bool not_band(__isl_keep isl_schedule_node *node, void *user)
+{
+	return isl_bool_not(is_tilable_band(node));
+}
+
+/* Is the subtree rooted at "node" free of tilable band nodes?
+ */
+static isl_bool free_of_tilable_band_nodes(__isl_keep isl_schedule_node *node)
+{
+	return isl_schedule_node_every_descendant(node, &not_band, NULL);
+}
+
+/* Given a pointer "node" to a tiled band node, does the point band
+ * need to be rescheduled?
+ *
+ * In particular, are there any arrays marked consecutive,
+ * should the consecutivity constraints be applied within
+ * the innermost tile and is this the innermost tilable band?
+ */
+static isl_bool point_band_needs_rescheduling(struct ppcg_scop *scop,
+	__isl_keep isl_schedule_node *node)
+{
+	isl_bool empty, innermost;
+
+	if (scop->options->consecutivity_level != PPCG_CONSECUTIVITY_INTRA_TILE)
+		return isl_bool_false;
+
+	empty = ppcg_consecutive_is_empty(scop->consecutive);
+	if (empty < 0)
+		return isl_bool_error;
+	if (empty)
+		return isl_bool_false;
+
+	node = isl_schedule_node_copy(node);
+	node = isl_schedule_node_child(node, 0);
+	node = isl_schedule_node_child(node, 0);
+	innermost = free_of_tilable_band_nodes(node);
+	isl_schedule_node_free(node);
+
+	return innermost;
+}
+
+static __isl_give isl_schedule_constraints *construct_cpu_schedule_constraints(
+	struct ppcg_scop *ps);
+
 /* Tile "node", if it is a band node with at least 2 members.
  * The tile sizes are set from the "tile_size" option.
+ *
+ * If the tile band needs to be rescheduled for consecutivity purposes,
+ * then reconstruct the schedule constraints, add consecutivity constraints
+ * and reschedule the point band.
  */
 static __isl_give isl_schedule_node *tile_band(
 	__isl_take isl_schedule_node *node, void *user)
 {
 	struct ppcg_scop *scop = user;
-	isl_bool tilable;
+	isl_bool tilable, reschedule;
 	isl_space *space;
 	isl_multi_val *sizes;
+	isl_schedule_constraints *sc;
 
 	tilable = is_tilable_band(node);
 	if (tilable < 0)
@@ -595,7 +647,21 @@ static __isl_give isl_schedule_node *tile_band(
 	space = isl_schedule_node_band_get_space(node);
 	sizes = ppcg_multi_val_from_int(space, scop->options->tile_size);
 
-	return tile(node, sizes);
+	node = tile(node, sizes);
+
+	reschedule = point_band_needs_rescheduling(scop, node);
+	if (reschedule < 0)
+		return isl_schedule_node_free(node);
+	if (!reschedule)
+		return node;
+
+	node = isl_schedule_node_child(node, 0);
+	sc = construct_cpu_schedule_constraints(scop);
+	sc = ppcg_add_consecutivity_constraints(sc, scop);
+	node = isl_schedule_node_schedule(node, sc);
+	node = isl_schedule_node_parent(node);
+
+	return node;
 }
 
 /* Construct schedule constraints from the dependences in ps
@@ -666,14 +732,16 @@ static __isl_give isl_schedule_constraints *construct_cpu_schedule_constraints(
 
 /* Compute a schedule on the domain of "sc" that respects the schedule
  * constraints in "sc", taking into account the arrays that are
- * marked consecutive in "scop".
+ * marked consecutive in "scop" if consecutivity constraints
+ * should be considered at the global level.
  * Do not perform any grouping of statements because the grouping
  * process does not take into account the consecutivity constraints.
  */
-__isl_give isl_schedule *ppcg_compute_consecutive_schedule(
+__isl_give isl_schedule *ppcg_compute_global_consecutive_schedule(
 	__isl_take isl_schedule_constraints *sc, struct ppcg_scop *scop)
 {
-	sc = ppcg_add_consecutivity_constraints(sc, scop);
+	if (scop->options->consecutivity_level == PPCG_CONSECUTIVITY_GLOBAL)
+		sc = ppcg_add_consecutivity_constraints(sc, scop);
 	return ppcg_compute_non_grouping_schedule(sc, scop->options);
 }
 
@@ -705,7 +773,7 @@ static __isl_give isl_schedule *compute_cpu_schedule(struct ppcg_scop *ps)
 	sc = construct_cpu_schedule_constraints(ps);
 
 	if (!empty)
-		schedule = ppcg_compute_consecutive_schedule(sc, ps);
+		schedule = ppcg_compute_global_consecutive_schedule(sc, ps);
 	else
 		schedule = ppcg_compute_schedule(sc, ps->schedule, ps->options);
 
