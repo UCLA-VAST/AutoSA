@@ -17,6 +17,15 @@ static struct isl_arg_choice target[] = {
 	{0}
 };
 
+/* The level at which consecutivity constraints should be applied,
+ * either globally or within the innermost tiles.
+ */
+static struct isl_arg_choice consecutivity[] = {
+	{ "global",	PPCG_CONSECUTIVITY_GLOBAL },
+	{ "intra-tile",	PPCG_CONSECUTIVITY_INTRA_TILE },
+	{ 0 }
+};
+
 /* Set defaults that depend on the target.
  * In particular, set --schedule-outer-coincidence iff target is a GPU.
  */
@@ -122,6 +131,9 @@ ISL_ARG_BOOL(struct ppcg_options, live_range_reordering, 0,
 	"to be reordered")
 ISL_ARG_STR(struct ppcg_options, consecutive_arrays, 0, "consecutive-arrays",
 	"id-list", NULL, "list of consecutive array identifiers")
+ISL_ARG_CHOICE(struct ppcg_options, consecutivity_level, 0,
+	"consecutivity-level", consecutivity, PPCG_CONSECUTIVITY_GLOBAL,
+	"the level at which consecutivity constraints should be applied")
 ISL_ARG_BOOL(struct ppcg_options, hybrid, 0, "hybrid", 0,
 	"apply hybrid tiling whenever a suitable input pattern is found "
 	"(GPU targets)")
