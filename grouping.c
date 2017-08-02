@@ -18,7 +18,8 @@
 #include <isl/schedule.h>
 #include <isl/schedule_node.h>
 
-#include "ppcg.h"
+#include "grouping.h"
+#include "schedule.h"
 
 /* Internal data structure for use during the detection of statements
  * that can be grouped.
@@ -672,10 +673,10 @@ static void complete_grouping(struct ppcg_grouping *grouping)
 }
 
 /* Compute a schedule on the domain of "sc" that respects the schedule
- * constraints in "sc".
+ * constraints in "sc", after trying to combine groups of statements.
  *
- * "schedule" is a known correct schedule that is used to combine
- * groups of statements if options->group_chains is set.
+ * "schedule" is a known correct schedule that is used while combining
+ * groups of statements.
  * In particular, statements that are executed consecutively in a sequence
  * in this schedule and where all instances of the second depend on
  * the instance of the first that is executed in the same iteration
@@ -684,7 +685,7 @@ static void complete_grouping(struct ppcg_grouping *grouping)
  * and the resulting schedule is expanded again to refer to the original
  * statements.
  */
-__isl_give isl_schedule *ppcg_compute_schedule(
+__isl_give isl_schedule *ppcg_compute_grouping_schedule(
 	__isl_take isl_schedule_constraints *sc,
 	__isl_keep isl_schedule *schedule, struct ppcg_options *options)
 {
@@ -693,16 +694,13 @@ __isl_give isl_schedule *ppcg_compute_schedule(
 	isl_union_map *umap;
 	isl_schedule *res, *expansion;
 
-	if (!options->group_chains)
-		return isl_schedule_constraints_compute_schedule(sc);
-
 	grouping.group_id = 0;
 	if (isl_schedule_foreach_schedule_node_top_down(schedule,
 			&detect_groups, &grouping) < 0)
 		goto error;
 	if (!grouping.contraction) {
 		ppcg_grouping_clear(&grouping);
-		return isl_schedule_constraints_compute_schedule(grouping.sc);
+		return ppcg_compute_non_grouping_schedule(grouping.sc, options);
 	}
 	complete_grouping(&grouping);
 	contraction = isl_union_pw_multi_aff_copy(grouping.contraction);
@@ -710,7 +708,7 @@ __isl_give isl_schedule *ppcg_compute_schedule(
 
 	sc = isl_schedule_constraints_apply(grouping.sc, umap);
 
-	res = isl_schedule_constraints_compute_schedule(sc);
+	res = ppcg_compute_non_grouping_schedule(sc, options);
 
 	contraction = isl_union_pw_multi_aff_copy(grouping.contraction);
 	expansion = isl_schedule_copy(grouping.schedule);

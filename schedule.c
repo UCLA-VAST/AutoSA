@@ -17,6 +17,7 @@
 #include <isl/map.h>
 #include <isl/constraint.h>
 
+#include "grouping.h"
 #include "schedule.h"
 
 /* Add parameters with identifiers "ids" to "set".
@@ -123,6 +124,32 @@ static void save_schedule(__isl_keep isl_schedule *schedule,
 	p = isl_printer_print_schedule(p, schedule);
 	isl_printer_free(p);
 	fclose(file);
+}
+
+/* Compute a schedule on the domain of "sc" that respects the schedule
+ * constraints in "sc", without trying to combine groups of statements.
+ */
+__isl_give isl_schedule *ppcg_compute_non_grouping_schedule(
+	__isl_take isl_schedule_constraints *sc, struct ppcg_options *options)
+{
+	if (options->debug->dump_schedule_constraints)
+		isl_schedule_constraints_dump(sc);
+	return isl_schedule_constraints_compute_schedule(sc);
+}
+
+/* Compute a schedule on the domain of "sc" that respects the schedule
+ * constraints in "sc".
+ *
+ * "schedule" is a known correct schedule that is used to combine
+ * groups of statements if options->group_chains is set.
+ */
+__isl_give isl_schedule *ppcg_compute_schedule(
+	__isl_take isl_schedule_constraints *sc,
+	__isl_keep isl_schedule *schedule, struct ppcg_options *options)
+{
+	if (options->group_chains)
+		return ppcg_compute_grouping_schedule(sc, schedule, options);
+	return ppcg_compute_non_grouping_schedule(sc, options);
 }
 
 /* Obtain a schedule, either by reading it form a file

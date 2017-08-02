@@ -662,8 +662,6 @@ static __isl_give isl_schedule *compute_cpu_schedule(struct ppcg_scop *ps)
 
 	sc = construct_cpu_schedule_constraints(ps);
 
-	if (ps->options->debug->dump_schedule_constraints)
-		isl_schedule_constraints_dump(sc);
 	schedule = ppcg_compute_schedule(sc, ps->schedule, ps->options);
 
 	return schedule;
