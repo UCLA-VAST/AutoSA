@@ -60,6 +60,9 @@ struct ppcg_options {
 	/* Allow live range to be reordered. */
 	int live_range_reordering;
 
+	/* List of consecutive array identifiers, as specified by the user */
+	char *consecutive_arrays;
+
 	/* Allow hybrid tiling whenever a suitable input pattern is found. */
 	int hybrid;
 

@@ -120,6 +120,8 @@ ISL_ARG_BOOL(struct ppcg_options, live_range_reordering, 0,
 	"live-range-reordering", 1,
 	"allow successive live ranges on the same memory element "
 	"to be reordered")
+ISL_ARG_STR(struct ppcg_options, consecutive_arrays, 0, "consecutive-arrays",
+	"id-list", NULL, "list of consecutive array identifiers")
 ISL_ARG_BOOL(struct ppcg_options, hybrid, 0, "hybrid", 0,
 	"apply hybrid tiling whenever a suitable input pattern is found "
 	"(GPU targets)")
