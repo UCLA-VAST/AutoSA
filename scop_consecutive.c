@@ -6,6 +6,7 @@
  * Written by Sven Verdoolaege.
  */
 
+#include <isl/id.h>
 #include <isl/set.h>
 #include <isl/space.h>
 #include <isl/union_set.h>
@@ -14,6 +15,85 @@
 #include "ppcg.h"
 #include "consecutivity.h"
 #include "scop_consecutive.h"
+
+/* Look for an array with identifier "id".
+ * If found, return its index in pet->arrays.
+ * Otherwise, return pet->n_array.
+ * Return -1 on error.
+ */
+static int find_array_index(struct pet_scop *pet, __isl_keep isl_id *id)
+{
+	int i;
+
+	for (i = 0; i < pet->n_array; ++i) {
+		struct pet_array *array = pet->arrays[i];
+		isl_id *array_id = isl_set_get_tuple_id(array->extent);
+
+		if (!array_id)
+			return -1;
+		isl_id_free(array_id);
+		if (array_id == id)
+			return i;
+	}
+
+	return pet->n_array;
+}
+
+/* Internal data structure for extract_from_id_list.
+ *
+ * "pet" is the pet_scop containing information about the arrays.
+ * "arrays" is the list of spaces that is being constructed.
+ */
+struct ppcg_extract_list_data {
+	struct pet_scop *pet;
+	isl_space_list *arrays;
+};
+
+/* isl_id_list_foreach callback that looks for the array with
+ * identifier "id" and, if it can be found, adds its space to data->arrays.
+ */
+static isl_stat add_space(__isl_take isl_id *id, void *user)
+{
+	struct ppcg_extract_list_data *data = user;
+	struct pet_array *array;
+	int i;
+
+	i = find_array_index(data->pet, id);
+	isl_id_free(id);
+	if (i < 0)
+		return isl_stat_error;
+	if (i >= data->pet->n_array)
+		return isl_stat_ok;
+	array = data->pet->arrays[i];
+	data->arrays = isl_space_list_add(data->arrays,
+					isl_set_get_space(array->extent));
+	return isl_stat_ok;
+}
+
+/* Construct a ppcg_consecutive object that contains the list
+ * of arrays specified by the consecutive_arrays command line option.
+ *
+ * Extract a list of isl_id objects from the command line option,
+ * convert it to a list of array spaces and use that to construct
+ * a ppcg_consecutive object.
+ */
+static __isl_give ppcg_consecutive *extract_from_id_list(
+	struct ppcg_scop *scop)
+{
+	struct ppcg_extract_list_data data = { scop->pet };
+	isl_ctx *ctx;
+	isl_id_list *list;
+
+	ctx = isl_set_get_ctx(scop->context);
+	list = isl_id_list_read_from_str(ctx,
+					scop->options->consecutive_arrays);
+	data.arrays = isl_space_list_alloc(ctx, 0);
+	if (isl_id_list_foreach(list, &add_space, &data) < 0)
+		data.arrays = isl_space_list_free(data.arrays);
+	isl_id_list_free(list);
+
+	return ppcg_consecutive_from_array_list(data.arrays);
+}
 
 /* isl_space_list_sort callback that orders higher-dimensional spaces
  * before lower-dimensional spaces.
@@ -26,6 +106,9 @@ static int cmp_dim(__isl_keep isl_space *a, __isl_keep isl_space *b, void *user)
 /* Extract a ppcg_consecutive object that contains the list of
  * accessed arrays that are marked consecutive in "scop".
  * Put higher-dimensional arrays before lower-dimensional arrays.
+ *
+ * If the user has specified any consecutive arrays on the command line
+ * then use those arrays instead, in the order specified by the user.
  */
 __isl_give ppcg_consecutive *ppcg_scop_extract_consecutive(
 	struct ppcg_scop *scop)
@@ -35,6 +118,9 @@ __isl_give ppcg_consecutive *ppcg_scop_extract_consecutive(
 	isl_union_map *accesses;
 	isl_union_set *arrays;
 	isl_space_list *array_list;
+
+	if (scop->options->consecutive_arrays)
+		return extract_from_id_list(scop);
 
 	ctx = isl_set_get_ctx(scop->context);
 	array_list = isl_space_list_alloc(ctx, 0);
