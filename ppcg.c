@@ -35,6 +35,7 @@
 #include "cuda.h"
 #include "opencl.h"
 #include "cpu.h"
+#include "util.h"
 
 struct options {
 	struct pet_options *pet;
@@ -351,10 +352,7 @@ static void compute_tagger(struct ppcg_scop *ps)
 				isl_union_map_copy(ps->tagged_may_writes));
 	tagged = isl_union_map_union(tagged,
 				isl_union_map_copy(ps->tagged_must_kills));
-	tagged = isl_union_map_universe(tagged);
-	tagged = isl_union_set_unwrap(isl_union_map_domain(tagged));
-
-	tagger = isl_union_map_domain_map_union_pw_multi_aff(tagged);
+	tagger = ppcg_untag_from_tagged_accesses(tagged);
 
 	ps->tagger = tagger;
 }
