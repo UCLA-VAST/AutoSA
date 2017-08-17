@@ -12,6 +12,7 @@
 #include <isl/aff.h>
 #include <isl/set.h>
 #include <isl/map.h>
+#include <isl/union_map.h>
 
 #include "util.h"
 
@@ -103,6 +104,26 @@ __isl_give isl_multi_pw_aff *ppcg_size_from_extent(__isl_take isl_set *set)
 	isl_set_free(set);
 
 	return mpa;
+}
+
+/* Construct a function from tagged iteration domains to the corresponding
+ * untagged iteration domains with as range of the wrapped map in the domain
+ * the reference tags that appear in the domain of "accesses".
+ *
+ * For example, if "accesses" contains tagged accesses with as domains
+ * { [S[i,j] -> R_1[]] } and { [S[i,j] -> R_2[]] }, then the result contains
+ *
+ *	{ [S[i,j] -> R_1[]] -> S[i,j]; [S[i,j] -> R_2[]] -> S[i,j] }
+ */
+__isl_give isl_union_pw_multi_aff *ppcg_untag_from_tagged_accesses(
+	__isl_take isl_union_map *accesses)
+{
+	isl_union_map *tagged;
+
+	accesses = isl_union_map_universe(accesses);
+	tagged = isl_union_set_unwrap(isl_union_map_domain(accesses));
+
+	return isl_union_map_domain_map_union_pw_multi_aff(tagged);
 }
 
 /* Construct a map from domain_space to domain_space that increments
