@@ -41,17 +41,17 @@ static int find_array_index(struct pet_scop *pet, __isl_keep isl_id *id)
 /* Internal data structure for extract_from_id_list.
  *
  * "pet" is the pet_scop containing information about the arrays.
- * "arrays" is the list of spaces that is being constructed.
+ * "extents" is the list of extents that is being constructed.
  */
 struct ppcg_extract_list_data {
 	struct pet_scop *pet;
-	isl_space_list *arrays;
+	isl_set_list *extents;
 };
 
 /* isl_id_list_foreach callback that looks for the array with
- * identifier "id" and, if it can be found, adds its space to data->arrays.
+ * identifier "id" and, if it can be found, adds its extent to data->extents.
  */
-static isl_stat add_space(__isl_take isl_id *id, void *user)
+static isl_stat add_extent(__isl_take isl_id *id, void *user)
 {
 	struct ppcg_extract_list_data *data = user;
 	struct pet_array *array;
@@ -64,8 +64,8 @@ static isl_stat add_space(__isl_take isl_id *id, void *user)
 	if (i >= data->pet->n_array)
 		return isl_stat_ok;
 	array = data->pet->arrays[i];
-	data->arrays = isl_space_list_add(data->arrays,
-					isl_set_get_space(array->extent));
+	data->extents = isl_set_list_add(data->extents,
+					isl_set_copy(array->extent));
 	return isl_stat_ok;
 }
 
@@ -73,7 +73,7 @@ static isl_stat add_space(__isl_take isl_id *id, void *user)
  * of arrays specified by the consecutive_arrays command line option.
  *
  * Extract a list of isl_id objects from the command line option,
- * convert it to a list of array spaces and use that to construct
+ * convert it to a list of array extents and use that to construct
  * a ppcg_consecutive object.
  */
 static __isl_give ppcg_consecutive *extract_from_id_list(
@@ -86,24 +86,24 @@ static __isl_give ppcg_consecutive *extract_from_id_list(
 	ctx = isl_set_get_ctx(scop->context);
 	list = isl_id_list_read_from_str(ctx,
 					scop->options->consecutive_arrays);
-	data.arrays = isl_space_list_alloc(ctx, 0);
-	if (isl_id_list_foreach(list, &add_space, &data) < 0)
-		data.arrays = isl_space_list_free(data.arrays);
+	data.extents = isl_set_list_alloc(ctx, 0);
+	if (isl_id_list_foreach(list, &add_extent, &data) < 0)
+		data.extents = isl_set_list_free(data.extents);
 	isl_id_list_free(list);
 
-	return ppcg_consecutive_from_array_list(data.arrays);
+	return ppcg_consecutive_from_extent_list(data.extents);
 }
 
-/* isl_space_list_sort callback that orders higher-dimensional spaces
- * before lower-dimensional spaces.
+/* isl_set_list_sort callback that orders higher-dimensional sets
+ * before lower-dimensional sets.
  */
-static int cmp_dim(__isl_keep isl_space *a, __isl_keep isl_space *b, void *user)
+static int cmp_dim(__isl_keep isl_set *a, __isl_keep isl_set *b, void *user)
 {
-	return isl_space_dim(b, isl_dim_set) - isl_space_dim(a, isl_dim_set);
+	return isl_set_dim(b, isl_dim_set) - isl_set_dim(a, isl_dim_set);
 }
 
 /* Extract a ppcg_consecutive object that contains the list of
- * accessed arrays that are marked consecutive in "scop".
+ * extents of accessed arrays that are marked consecutive in "scop".
  * Put higher-dimensional arrays before lower-dimensional arrays.
  *
  * If the user has specified any consecutive arrays on the command line
@@ -116,13 +116,13 @@ __isl_give ppcg_consecutive *ppcg_scop_extract_consecutive(
 	isl_ctx *ctx;
 	isl_union_map *accesses;
 	isl_union_set *arrays;
-	isl_space_list *array_list;
+	isl_set_list *extents;
 
 	if (scop->options->consecutive_arrays)
 		return extract_from_id_list(scop);
 
 	ctx = isl_set_get_ctx(scop->context);
-	array_list = isl_space_list_alloc(ctx, 0);
+	extents = isl_set_list_alloc(ctx, 0);
 	accesses = isl_union_map_copy(scop->reads);
 	accesses = isl_union_map_union(accesses,
 					isl_union_map_copy(scop->may_writes));
@@ -142,19 +142,19 @@ __isl_give ppcg_consecutive *ppcg_scop_extract_consecutive(
 		isl_set_free(set);
 
 		if (empty < 0) {
-			array_list = isl_space_list_free(array_list);
+			extents = isl_set_list_free(extents);
 			break;
 		}
 		if (empty)
 			continue;
-		array_list = isl_space_list_add(array_list,
-					isl_set_get_space(array->extent));
+		extents = isl_set_list_add(extents,
+					isl_set_copy(array->extent));
 	}
 	isl_union_set_free(arrays);
 
-	array_list = isl_space_list_sort(array_list, &cmp_dim, NULL);
+	extents = isl_set_list_sort(extents, &cmp_dim, NULL);
 
-	return ppcg_consecutive_from_array_list(array_list);
+	return ppcg_consecutive_from_extent_list(extents);
 }
 
 /* Add consecutivity constraints to "sc" based on the consecutive
