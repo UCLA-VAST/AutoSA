@@ -22,12 +22,26 @@
 
 /* A ppcg_consecutive object contains the input to
  * ppcg_consecutive_add_consecutivity_constraints and mainly consists
- * of a list of consecutive arrays and
+ * of a list of consecutive arrays (possibly with their extents) and
  * lists of tagged read and write accesses.
+ *
+ * "extent_list" is a list of extents of the arrays.
+ * That is, each element in the list is the set of all elements
+ * in an array.  The sets need to be bounded in all but the first dimension.
+ * The order of the arrays in the list determines the priority of the arrays.
+ * This field is NULL if the ppcg_consecutive was created using
+ * ppcg_consecutive_from_array_list.
  *
  * "array_list" is a list of arrays.
  * Each array is represented by a universe set.
  * The order of the arrays in the list determines the priority of the arrays.
+ * If the ppcg_consecutive was created using ppcg_consecutive_from_extent_list,
+ * then "array_list" has the same length as "extent_list"
+ * with each element containing the universe of the corresponding element
+ * in "extent_list" and the field may be NULL if it has not been computed yet.
+ *
+ * "extents" is the union of the elements in "extent_list".
+ * This field may be NULL if it has not been computed yet.
  * "arrays" is the union of the elements in "array_list".
  * This field may be NULL if it has not been computed yet.
  *
@@ -39,7 +53,9 @@
  * This field may be NULL if it has not been (re)computed yet.
  */
 struct ppcg_consecutive {
+	isl_set_list *extent_list;
 	isl_set_list *array_list;
+	isl_union_set *extents;
 	isl_union_set *arrays;
 
 	isl_union_map *reads;
@@ -83,6 +99,31 @@ error:
 	return NULL;
 }
 
+/* Initialize a ppcg_consecutive object from a list of array extents
+ * for the arrays that should be considered consecutive.
+ * Each element in the list contains the elements of an array and
+ * needs to be bounded in all but the first dimension.
+ * The order of the arrays in the list determines the priority of the arrays.
+ */
+__isl_give ppcg_consecutive *ppcg_consecutive_from_extent_list(
+	__isl_take isl_set_list *extent_list)
+{
+	isl_ctx *ctx;
+	ppcg_consecutive *c;
+
+	if (!extent_list)
+		return NULL;
+	ctx = isl_set_list_get_ctx(extent_list);
+	c = isl_calloc_type(ctx, struct ppcg_consecutive);
+	if (!c)
+		goto error;
+	c->extent_list = extent_list;
+	return c;
+error:
+	isl_set_list_free(extent_list);
+	return NULL;
+}
+
 /* Free "c" and return NULL.
  */
 __isl_null ppcg_consecutive *ppcg_consecutive_free(
@@ -91,7 +132,9 @@ __isl_null ppcg_consecutive *ppcg_consecutive_free(
 	if (!c)
 		return NULL;
 
+	isl_set_list_free(c->extent_list);
 	isl_set_list_free(c->array_list);
+	isl_union_set_free(c->extents);
 	isl_union_set_free(c->arrays);
 	isl_union_map_free(c->reads);
 	isl_union_map_free(c->writes);
@@ -145,33 +188,97 @@ error:
  */
 isl_ctx *ppcg_consecutive_get_ctx(__isl_keep ppcg_consecutive *c)
 {
+	isl_set_list *list;
+
 	if (!c)
 		return NULL;
 
-	return isl_set_list_get_ctx(c->array_list);
+	list = c->extent_list ? c->extent_list : c->array_list;
+	return isl_set_list_get_ctx(list);
 }
 
 /* Is the list of consecutive arrays of "c" empty?
  */
 isl_bool ppcg_consecutive_is_empty(__isl_keep ppcg_consecutive *c)
 {
+	isl_set_list *list;
 	int n;
 
 	if (!c)
 		return isl_bool_error;
-	n = isl_set_list_n_set(c->array_list);
+	list = c->extent_list ? c->extent_list : c->array_list;
+	n = isl_set_list_n_set(list);
 	if (n < 0)
 		return isl_bool_error;
 	return n == 0 ? isl_bool_true : isl_bool_false;
 }
 
-/* Return the list of arrays of "c", each represented by a universe set.
+/* Was "c" created using ppcg_consecutive_from_extent_list?
+ * That is, are the extents available?
  */
-__isl_give isl_set_list *ppcg_consecutive_get_array_list(
+isl_bool ppcg_consecutive_has_extent_list(__isl_keep ppcg_consecutive *c)
+{
+	if (!c)
+		return isl_bool_error;
+	if (c->extent_list)
+		return isl_bool_true;
+	return isl_bool_false;
+}
+
+/* Return the list of array extents of "c".
+ */
+__isl_give isl_set_list *ppcg_consecutive_get_extent_list(
 	__isl_keep ppcg_consecutive *c)
 {
 	if (!c)
 		return NULL;
+	if (!c->extent_list)
+		isl_die(ppcg_consecutive_get_ctx(c), isl_error_invalid,
+			"ppcg_consecutive object not created from extent list",
+			return NULL);
+	return isl_set_list_copy(c->extent_list);
+}
+
+/* isl_set_list_foreach callback for adding the universe of "set"
+ * to the isl_set_list *list.
+ */
+static isl_stat add_universe(__isl_take isl_set *set, void *user)
+{
+	isl_set_list **list = user;
+	isl_space *space;
+
+	space = isl_set_get_space(set);
+	isl_set_free(set);
+	*list = isl_set_list_add(*list, isl_set_universe(space));
+	if (!*list)
+		return isl_stat_error;
+	return isl_stat_ok;
+}
+
+/* Return the list of arrays of "c", each represented by a universe set.
+ * Construct the list from the extent list if "c" was created
+ * using ppcg_consecutive_from_extent_list.
+ * Keep a copy of the result in c->array_list for later reuse.
+ */
+__isl_give isl_set_list *ppcg_consecutive_get_array_list(
+	__isl_keep ppcg_consecutive *c)
+{
+	isl_ctx *ctx;
+	int i, n;
+
+	if (!c)
+		return NULL;
+	if (c->array_list)
+		return isl_set_list_copy(c->array_list);
+	if (!c->extent_list)
+		return NULL;
+
+	n = isl_set_list_n_set(c->extent_list);
+	ctx = ppcg_consecutive_get_ctx(c);
+	c->array_list = isl_set_list_alloc(ctx, n);
+	if (isl_set_list_foreach(c->extent_list,
+				&add_universe, &c->array_list) < 0)
+		c->array_list = isl_set_list_free(c->array_list);
 	return isl_set_list_copy(c->array_list);
 }
 
@@ -203,6 +310,21 @@ static __isl_give isl_union_set *set_list_union(__isl_take isl_set_list *list)
 		uset = isl_union_set_free(uset);
 	isl_set_list_free(list);
 	return uset;
+}
+
+/* Return the union of the array extents of "c".
+ * Keep a copy of the result in c->extents for later reuse.
+ */
+__isl_give isl_union_set *ppcg_consecutive_get_extents(
+	__isl_keep ppcg_consecutive *c)
+{
+	if (!c)
+		return NULL;
+	if (c->extents)
+		return isl_union_set_copy(c->extents);
+
+	c->extents = set_list_union(ppcg_consecutive_get_extent_list(c));
+	return isl_union_set_copy(c->extents);
 }
 
 /* Return the union of the arrays of "c", where
