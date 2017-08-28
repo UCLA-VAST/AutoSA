@@ -11,6 +11,8 @@ typedef struct ppcg_consecutive ppcg_consecutive;
 
 __isl_give ppcg_consecutive *ppcg_consecutive_from_array_list(
 	__isl_take isl_space_list *array_list);
+__isl_give ppcg_consecutive *ppcg_consecutive_from_extent_list(
+	__isl_take isl_set_list *extent_list);
 __isl_give ppcg_consecutive *ppcg_consecutive_set_tagged_reads(
 	__isl_take ppcg_consecutive *c, __isl_take isl_union_map *reads);
 __isl_give ppcg_consecutive *ppcg_consecutive_set_tagged_writes(
