@@ -9,6 +9,7 @@
 
 #include <string.h>
 
+#include <isl/space.h>
 #include <isl/set.h>
 #include <isl/union_set.h>
 
