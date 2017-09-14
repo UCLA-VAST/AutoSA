@@ -2500,21 +2500,21 @@ __isl_give isl_union_map *extract_sizes_from_str(isl_ctx *ctx, const char *str)
 /* Can "node" be tiled and then mapped to block and thread identifiers?
  * That is, is it permutable with at least one coincident dimension?
  */
-static int is_permutable(__isl_keep isl_schedule_node *node)
+static isl_bool is_permutable(__isl_keep isl_schedule_node *node)
 {
 	if (!node)
-		return -1;
+		return isl_bool_error;
 
 	if (isl_schedule_node_get_type(node) != isl_schedule_node_band)
-		return 0;
+		return isl_bool_false;
 	if (!isl_schedule_node_band_get_permutable(node))
-		return 0;
+		return isl_bool_false;
 	if (isl_schedule_node_band_n_member(node) < 1)
-		return 0;
+		return isl_bool_false;
 	if (!isl_schedule_node_band_member_get_coincident(node, 0))
-		return 0;
+		return isl_bool_false;
 
-	return 1;
+	return isl_bool_true;
 }
 
 /* A isl_schedule_foreach_schedule_node_top_down callback
@@ -2525,7 +2525,7 @@ static int is_permutable(__isl_keep isl_schedule_node *node)
 static isl_bool set_permutable(__isl_keep isl_schedule_node *node, void *user)
 {
 	int *any_permutable = user;
-	int permutable;
+	isl_bool permutable;
 
 	permutable = is_permutable(node);
 	if (permutable < 0)
@@ -2579,7 +2579,7 @@ static int has_any_permutable_node(__isl_keep isl_schedule *schedule)
  */
 static int is_candidate(__isl_keep isl_schedule_node *node)
 {
-	int permutable;
+	isl_bool permutable;
 
 	if (isl_schedule_node_get_type(node) == isl_schedule_node_leaf)
 		return 1;
