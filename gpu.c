@@ -2517,25 +2517,11 @@ static isl_bool is_permutable(__isl_keep isl_schedule_node *node)
 	return isl_bool_true;
 }
 
-/* A isl_schedule_foreach_schedule_node_top_down callback
- * for setting *any_permutable and aborting the search
- * if "node" is a permutable band with coincident dimensions.
- * Otherwise, continue searching.
+/* Is "node" not a suitably permutable band?
  */
-static isl_bool set_permutable(__isl_keep isl_schedule_node *node, void *user)
+static isl_bool not_permutable(__isl_keep isl_schedule_node *node, void *user)
 {
-	int *any_permutable = user;
-	isl_bool permutable;
-
-	permutable = is_permutable(node);
-	if (permutable < 0)
-		return isl_bool_error;
-	if (!permutable)
-		return isl_bool_true;
-
-	*any_permutable = 1;
-
-	return isl_bool_error;
+	return isl_bool_not(is_permutable(node));
 }
 
 /* Does the subtree rooted at "node" have any suitably permutable band nodes?
@@ -2544,14 +2530,11 @@ static isl_bool set_permutable(__isl_keep isl_schedule_node *node, void *user)
  */
 static isl_bool subtree_has_permutable_bands(__isl_keep isl_schedule_node *node)
 {
-	int any_parallelism = 0;
+	isl_bool all_non_permutable;
 
-	if (isl_schedule_node_foreach_descendant_top_down(node, &set_permutable,
-						&any_parallelism) < 0 &&
-	    !any_parallelism)
-		return isl_bool_error;
-
-	return any_parallelism ? isl_bool_true : isl_bool_false;
+	all_non_permutable = isl_schedule_node_every_descendant(node,
+						&not_permutable, NULL);
+	return isl_bool_not(all_non_permutable);
 }
 
 /* Does "schedule" contain any permutable band with at least one coincident
