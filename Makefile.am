@@ -67,6 +67,8 @@ TEST_EXTENSIONS = .sh
 
 BUILT_SOURCES = gitversion.h
 
+CLEANFILES = gitversion.h
+
 EXTRA_DIST = \
 	examples \
 	ocl_utilities.c \
