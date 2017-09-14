@@ -64,7 +64,6 @@ AC_ARG_WITH([polybench],
 	])
 
 AX_DETECT_GIT_HEAD
-echo '#define GIT_HEAD_ID "'$GIT_HEAD_ID'"' > gitversion.h
 
 AC_CONFIG_FILES(Makefile)
 AC_CONFIG_FILES([polybench_test.sh], [chmod +x polybench_test.sh])
