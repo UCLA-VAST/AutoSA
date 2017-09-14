@@ -2542,25 +2542,25 @@ static isl_bool set_permutable(__isl_keep isl_schedule_node *node, void *user)
  * That is, does it have any nodes that are permutable and that
  * have a least one coincident dimension?
  */
-static int subtree_has_permutable_bands(__isl_keep isl_schedule_node *node)
+static isl_bool subtree_has_permutable_bands(__isl_keep isl_schedule_node *node)
 {
 	int any_parallelism = 0;
 
 	if (isl_schedule_node_foreach_descendant_top_down(node, &set_permutable,
 						&any_parallelism) < 0 &&
 	    !any_parallelism)
-		return -1;
+		return isl_bool_error;
 
-	return any_parallelism;
+	return any_parallelism ? isl_bool_true : isl_bool_false;
 }
 
 /* Does "schedule" contain any permutable band with at least one coincident
  * member?
  */
-static int has_any_permutable_node(__isl_keep isl_schedule *schedule)
+static isl_bool has_any_permutable_node(__isl_keep isl_schedule *schedule)
 {
 	isl_schedule_node *root;
-	int any_permutable;
+	isl_bool any_permutable;
 
 	root = isl_schedule_get_root(schedule);
 	any_permutable = subtree_has_permutable_bands(root);
@@ -5649,7 +5649,7 @@ static __isl_give isl_printer *generate(__isl_take isl_printer *p,
 	struct gpu_prog *prog;
 	isl_ctx *ctx;
 	isl_schedule *schedule;
-	int any_permutable;
+	isl_bool any_permutable;
 
 	if (!scop)
 		return isl_printer_free(p);
