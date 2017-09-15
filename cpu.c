@@ -546,6 +546,23 @@ error:
 	return NULL;
 }
 
+/* Is "node" a band that should be tiled?
+ * That is, is it a band node with at least 2 members?
+ */
+static isl_bool is_tilable_band(__isl_keep isl_schedule_node *node)
+{
+	int n;
+
+	if (isl_schedule_node_get_type(node) != isl_schedule_node_band)
+		return isl_bool_false;
+
+	n = isl_schedule_node_band_n_member(node);
+	if (n <= 1)
+		return isl_bool_false;
+
+	return isl_bool_true;
+}
+
 /* Tile the band node "node" with tile sizes "sizes" and
  * mark all members of the resulting tile node as "atomic".
  */
@@ -565,15 +582,14 @@ static __isl_give isl_schedule_node *tile_band(
 	__isl_take isl_schedule_node *node, void *user)
 {
 	struct ppcg_scop *scop = user;
-	int n;
+	isl_bool tilable;
 	isl_space *space;
 	isl_multi_val *sizes;
 
-	if (isl_schedule_node_get_type(node) != isl_schedule_node_band)
-		return node;
-
-	n = isl_schedule_node_band_n_member(node);
-	if (n <= 1)
+	tilable = is_tilable_band(node);
+	if (tilable < 0)
+		return isl_schedule_node_free(node);
+	if (!tilable)
 		return node;
 
 	space = isl_schedule_node_band_get_space(node);
