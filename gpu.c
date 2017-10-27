@@ -4507,7 +4507,7 @@ static __isl_give isl_schedule_node *band_set_coincident(
 /* If "node" is a band, then set its properties.
  *
  * In particular, if the band has exactly one member, then mark it permutable.
- * Mark the band member coincident based on the coincidence constraints
+ * Mark the band members coincident based on the coincidence constraints
  * of "sc".
  */
 static __isl_give isl_schedule_node *set_band_properties(
