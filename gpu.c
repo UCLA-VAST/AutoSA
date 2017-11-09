@@ -3449,11 +3449,11 @@ static __isl_give isl_schedule_node *add_copies_group_private(
  * this synchronization if we are at the outer level since then there
  * won't be a next load.
  * In the case of a write, we need to make sure there is some synchronization
- * after the core computation such taht we can put the write from shared
+ * after the core computation such that we can put the write from shared
  * memory to global memory after that synchronization.
  * Unless we are at the outer level, we also need a synchronization node
  * after the write to ensure the data is saved to global memory
- * before the next iteration write to the same shared memory.
+ * before the next iteration writes to the same shared memory.
  * It also makes sure the data has arrived in global memory before
  * it is read in a subsequent iteration.
  */
