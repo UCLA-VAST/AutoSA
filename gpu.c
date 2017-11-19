@@ -908,7 +908,7 @@ static __isl_give isl_map *group_tile(struct gpu_array_ref_group *group)
 }
 
 /* Given a mapping "iterator_map" from the AST schedule to a domain,
- * return the corresponding mapping from the AST schedule to
+ * return the corresponding mapping from the AST schedule
  * to the outer kernel->copy_schedule_dim dimensions of
  * the schedule computed by PPCG for this kernel.
  *
