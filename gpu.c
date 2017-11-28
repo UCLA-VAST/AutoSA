@@ -3960,6 +3960,8 @@ __isl_give isl_schedule_node *gpu_create_kernel(struct gpu_gen *gen,
 	node = isl_schedule_node_parent(node);
 
 	isl_id_free(id);
+	if (!id)
+		ppcg_kernel_free(kernel);
 	return node;
 }
 
