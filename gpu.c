@@ -1050,10 +1050,16 @@ static __isl_give isl_multi_pw_aff *extract_grid_size(
 		int pos;
 		isl_id *id;
 
+		if (!grid)
+			return NULL;
+
 		id = isl_id_list_get_id(kernel->block_ids, i);
 		pos = isl_set_find_dim_by_id(grid, isl_dim_param, id);
 		isl_id_free(id);
-		assert(pos >= 0);
+		if (pos < 0)
+			isl_die(isl_set_get_ctx(grid), isl_error_internal,
+				"missing constraints on block identifier",
+				grid = isl_set_free(grid));
 		grid = isl_set_equate(grid, isl_dim_param, pos, isl_dim_set, i);
 		grid = isl_set_project_out(grid, isl_dim_param, pos, 1);
 	}
