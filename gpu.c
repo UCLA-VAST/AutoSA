@@ -11,7 +11,6 @@
  * and Ecole Normale Superieure, 45 rue d’Ulm, 75230 Paris, France
  */
 
-#include <assert.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -5802,7 +5801,8 @@ struct gpu_prog *gpu_prog_alloc(isl_ctx *ctx, struct ppcg_scop *scop)
 		return NULL;
 
 	prog = isl_calloc_type(ctx, struct gpu_prog);
-	assert(prog);
+	if (!prog)
+		return NULL;
 
 	prog->ctx = ctx;
 	prog->scop = scop;
