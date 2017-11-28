@@ -530,14 +530,17 @@ static __isl_give isl_set *extract_sizes(__isl_keep isl_union_map *sizes,
 
 /* Given a singleton set, extract the first (at most *len) elements
  * of the single integer tuple into *sizes and update *len if needed.
+ *
+ * If "set" is NULL, then the "sizes" array is not updated.
  */
-static void read_sizes_from_set(__isl_take isl_set *set, int *sizes, int *len)
+static isl_stat read_sizes_from_set(__isl_take isl_set *set, int *sizes,
+	int *len)
 {
 	int i;
 	int dim;
 
 	if (!set)
-		return;
+		return isl_stat_ok;
 
 	dim = isl_set_dim(set, isl_dim_set);
 	if (dim < *len)
@@ -547,13 +550,17 @@ static void read_sizes_from_set(__isl_take isl_set *set, int *sizes, int *len)
 		isl_val *v;
 
 		v = isl_set_plain_get_val_if_fixed(set, isl_dim_set, i);
-		assert(v);
-
+		if (!v)
+			goto error;
 		sizes[i] = isl_val_get_num_si(v);
 		isl_val_free(v);
 	}
 
 	isl_set_free(set);
+	return isl_stat_ok;
+error:
+	isl_set_free(set);
+	return isl_stat_error;
 }
 
 /* Add the map { kernel[id] -> type[sizes] } to gen->used_sizes,
@@ -605,16 +612,20 @@ static int *read_tile_sizes(struct gpu_gen *gen, int *tile_len)
 		tile_size[n] = gen->options->tile_size;
 
 	size = extract_sizes(gen->sizes, "tile", gen->kernel_id);
-	read_sizes_from_set(size, tile_size, tile_len);
+	if (read_sizes_from_set(size, tile_size, tile_len) < 0)
+		goto error;
 	set_used_sizes(gen, "tile", gen->kernel_id, tile_size, *tile_len);
 
 	return tile_size;
+error:
+	free(tile_size);
+	return NULL;
 }
 
 /* Extract user specified "block" sizes from the "sizes" command line option,
  * after filling in some potentially useful defaults.
  */
-static void read_block_sizes(struct ppcg_kernel *kernel,
+static isl_stat read_block_sizes(struct ppcg_kernel *kernel,
 	__isl_keep isl_union_map *sizes)
 {
 	isl_set *size;
@@ -637,13 +648,13 @@ static void read_block_sizes(struct ppcg_kernel *kernel,
 	}
 
 	size = extract_sizes(sizes, "block", kernel->id);
-	read_sizes_from_set(size, kernel->block_dim, &kernel->n_block);
+	return read_sizes_from_set(size, kernel->block_dim, &kernel->n_block);
 }
 
 /* Extract user specified "grid" sizes from the "sizes" command line option,
  * after filling in some potentially useful defaults.
  */
-static void read_grid_sizes(struct ppcg_kernel *kernel,
+static isl_stat read_grid_sizes(struct ppcg_kernel *kernel,
 	__isl_keep isl_union_map *sizes)
 {
 	isl_set *size;
@@ -661,7 +672,7 @@ static void read_grid_sizes(struct ppcg_kernel *kernel,
 	}
 
 	size = extract_sizes(sizes, "grid", kernel->id);
-	read_sizes_from_set(size, kernel->grid_dim, &kernel->n_grid);
+	return read_sizes_from_set(size, kernel->grid_dim, &kernel->n_grid);
 }
 
 /* Extract user specified grid and block sizes from the gen->sizes
@@ -669,15 +680,18 @@ static void read_grid_sizes(struct ppcg_kernel *kernel,
  * Store the extracted sizes in "kernel".
  * Add the effectively used sizes to gen->used_sizes.
  */
-static void read_grid_and_block_sizes(struct ppcg_kernel *kernel,
+static isl_stat read_grid_and_block_sizes(struct ppcg_kernel *kernel,
 	struct gpu_gen *gen)
 {
-	read_block_sizes(kernel, gen->sizes);
-	read_grid_sizes(kernel, gen->sizes);
+	if (read_block_sizes(kernel, gen->sizes) < 0)
+		return isl_stat_error;
+	if (read_grid_sizes(kernel, gen->sizes) < 0)
+		return isl_stat_error;
 	set_used_sizes(gen, "block", kernel->id,
 					    kernel->block_dim, kernel->n_block);
 	set_used_sizes(gen, "grid", kernel->id,
 					    kernel->grid_dim, kernel->n_grid);
+	return isl_stat_ok;
 }
 
 static void *free_stmts(struct gpu_stmt *stmts, int n)
@@ -3872,7 +3886,8 @@ __isl_give isl_schedule_node *gpu_create_kernel(struct gpu_gen *gen,
 	kernel->n_block = n_outer_coincidence(node_thread);
 	isl_schedule_node_free(node_thread);
 	kernel->id = gen->kernel_id++;
-	read_grid_and_block_sizes(kernel, gen);
+	if (read_grid_and_block_sizes(kernel, gen) < 0)
+		node = isl_schedule_node_free(node);
 
 	kernel->sync_writes = compute_sync_writes(kernel, node);
 
