@@ -5473,7 +5473,8 @@ static int extract_access(__isl_keep pet_expr *expr, void *user)
 	isl_multi_pw_aff *index;
 
 	access = isl_alloc_type(ctx, struct gpu_stmt_access);
-	assert(access);
+	if (!access)
+		return -1;
 	access->next = NULL;
 	access->read = pet_expr_access_is_read(expr);
 	access->write = pet_expr_access_is_write(expr);
