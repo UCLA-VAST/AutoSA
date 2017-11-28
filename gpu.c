@@ -1243,10 +1243,10 @@ static isl_stat create_kernel_vars(struct ppcg_kernel *kernel)
 		}
 	}
 
-	kernel->n_var = n;
 	kernel->var = isl_calloc_array(kernel->ctx, struct ppcg_kernel_var, n);
 	if (!kernel->var)
 		return isl_stat_error;
+	kernel->n_var = n;
 
 	n = 0;
 	for (i = 0; i < kernel->n_array; ++i) {
