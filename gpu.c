@@ -1884,6 +1884,8 @@ static __isl_give isl_ast_node *create_domain_leaf(
 
 	id = isl_id_alloc(ctx, "user", stmt);
 	id = isl_id_set_free_user(id, &ppcg_kernel_stmt_free);
+	if (!id)
+		ppcg_kernel_stmt_free(stmt);
 	return isl_ast_node_set_annotation(node, id);
 }
 
