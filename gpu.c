@@ -58,7 +58,7 @@ static const char *get_outer_array_name(__isl_keep isl_map *access)
 /* Collect all references to the given array and store pointers to them
  * in array->refs.
  */
-static void collect_references(struct gpu_prog *prog,
+static isl_stat collect_references(struct gpu_prog *prog,
 	struct gpu_array_info *array)
 {
 	int i;
@@ -77,9 +77,10 @@ static void collect_references(struct gpu_prog *prog,
 		}
 	}
 
-	array->n_ref = n;
 	array->refs = isl_alloc_array(prog->ctx, struct gpu_stmt_access *, n);
-	assert(array->refs);
+	if (!array->refs)
+		return isl_stat_error;
+	array->n_ref = n;
 
 	n = 0;
 	for (i = 0; i < prog->n_stmts; ++i) {
@@ -95,6 +96,8 @@ static void collect_references(struct gpu_prog *prog,
 			array->refs[n++] = access;
 		}
 	}
+
+	return isl_stat_ok;
 }
 
 /* Compute and return the extent of "array", taking into account the set of
@@ -224,7 +227,8 @@ static isl_stat extract_array_info(struct gpu_prog *prog,
 		info->linearize = 1;
 	info->bound = bounds;
 
-	collect_references(prog, info);
+	if (collect_references(prog, info) < 0)
+		return isl_stat_error;
 	info->only_fixed_element = only_fixed_element_accessed(info);
 
 	return isl_stat_ok;
