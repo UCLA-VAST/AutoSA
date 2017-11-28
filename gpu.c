@@ -336,6 +336,12 @@ static isl_stat collect_array_info(struct gpu_prog *prog)
 	isl_stat r = isl_stat_ok;
 	isl_union_set *arrays;
 
+	prog->n_array = 0;
+	prog->array = isl_calloc_array(prog->ctx,
+			     struct gpu_array_info, prog->scop->pet->n_array);
+	if (!prog->array)
+		return isl_stat_error;
+
 	arrays = isl_union_map_range(isl_union_map_copy(prog->read));
 	arrays = isl_union_set_union(arrays,
 		    isl_union_map_range(isl_union_map_copy(prog->may_write)));
@@ -345,11 +351,6 @@ static isl_stat collect_array_info(struct gpu_prog *prog)
 
 	arrays = isl_union_set_coalesce(arrays);
 
-	prog->n_array = prog->scop->pet->n_array;
-	prog->array = isl_calloc_array(prog->ctx,
-				     struct gpu_array_info, prog->n_array);
-	assert(prog->array);
-	prog->n_array = 0;
 	for (i = 0; i < prog->scop->pet->n_array; ++i) {
 		isl_bool field;
 
