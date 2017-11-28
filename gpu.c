@@ -1349,6 +1349,9 @@ static struct ppcg_kernel *ppcg_kernel_create_local_arrays(
 	int i;
 	isl_ctx *ctx;
 
+	if (!kernel)
+		return NULL;
+
 	ctx = isl_set_get_ctx(prog->context);
 	kernel->array = isl_calloc_array(ctx,
 			    struct gpu_local_array_info, prog->n_array);
