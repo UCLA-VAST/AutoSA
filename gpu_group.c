@@ -846,8 +846,10 @@ static int populate_array_references(struct gpu_local_array_info *local,
 		map = isl_map_detect_equalities(map);
 
 		group = isl_calloc_type(ctx, struct gpu_array_ref_group);
-		if (!group)
+		if (!group) {
+			isl_map_free(map);
 			return -1;
+		}
 		group->local_array = local;
 		group->array = local->array;
 		group->access = map;
