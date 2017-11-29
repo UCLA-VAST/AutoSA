@@ -728,7 +728,7 @@ static int compute_accessed_by_single_thread_depth(struct gpu_group_data *data,
 		acc = isl_map_project_out(acc, isl_dim_in, i, 1);
 		sv = isl_map_is_single_valued(acc);
 		if (sv < 0)
-			return -1;
+			goto error;
 		if (!sv)
 			break;
 	}
@@ -736,6 +736,9 @@ static int compute_accessed_by_single_thread_depth(struct gpu_group_data *data,
 	isl_map_free(acc);
 
 	return ++i;
+error:
+	isl_map_free(acc);
+	return -1;
 }
 
 /* Adjust the fields of "tile" to reflect the new input dimension "depth".
