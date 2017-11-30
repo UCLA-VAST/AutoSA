@@ -330,10 +330,10 @@ void collect_order_dependences(struct gpu_prog *prog)
  * If we are allowing live range reordering, then also set
  * the dep_order field.  Otherwise leave it NULL.
  */
-static int collect_array_info(struct gpu_prog *prog)
+static isl_stat collect_array_info(struct gpu_prog *prog)
 {
 	int i;
-	int r = 0;
+	isl_stat r = isl_stat_ok;
 	isl_union_set *arrays;
 
 	arrays = isl_union_map_range(isl_union_map_copy(prog->read));
@@ -360,10 +360,10 @@ static int collect_array_info(struct gpu_prog *prog)
 			continue;
 		if (extract_array_info(prog, &prog->array[prog->n_array++],
 					prog->scop->pet->arrays[i], arrays) < 0)
-			r = -1;
+			r = isl_stat_error;
 	}
 	if (i < prog->scop->pet->n_array)
-		r = -1;
+		r = isl_stat_error;
 
 	isl_union_set_free(arrays);
 
