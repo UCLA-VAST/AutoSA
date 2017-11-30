@@ -182,7 +182,7 @@ static isl_bool only_fixed_element_accessed(struct gpu_array_info *array)
  * i.e., if the array is a scalar, we check whether it is read-only.
  * We also check whether the array is accessed at all.
  */
-static int extract_array_info(struct gpu_prog *prog,
+static isl_stat extract_array_info(struct gpu_prog *prog,
 	struct gpu_array_info *info, struct pet_array *pa,
 	__isl_keep isl_union_set *arrays)
 {
@@ -214,12 +214,12 @@ static int extract_array_info(struct gpu_prog *prog,
 	isl_set_free(accessed);
 	info->extent = extent;
 	if (empty < 0)
-		return -1;
+		return isl_stat_error;
 	info->accessed = !empty;
 	bounds = ppcg_size_from_extent(isl_set_copy(extent));
 	bounds = isl_multi_pw_aff_gist(bounds, isl_set_copy(prog->context));
 	if (!bounds)
-		return -1;
+		return isl_stat_error;
 	if (!isl_multi_pw_aff_is_cst(bounds))
 		info->linearize = 1;
 	info->bound = bounds;
@@ -227,7 +227,7 @@ static int extract_array_info(struct gpu_prog *prog,
 	collect_references(prog, info);
 	info->only_fixed_element = only_fixed_element_accessed(info);
 
-	return 0;
+	return isl_stat_ok;
 }
 
 /* Remove independence from the order constraints "order" on array "array".
