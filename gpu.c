@@ -1225,7 +1225,7 @@ static void create_kernel_var(isl_ctx *ctx, struct gpu_array_ref_group *group,
 					    isl_val_copy(tile->bound[j].size));
 }
 
-static int create_kernel_vars(struct ppcg_kernel *kernel)
+static isl_stat create_kernel_vars(struct ppcg_kernel *kernel)
 {
 	int i, j, n;
 
@@ -1246,7 +1246,7 @@ static int create_kernel_vars(struct ppcg_kernel *kernel)
 	kernel->n_var = n;
 	kernel->var = isl_calloc_array(kernel->ctx, struct ppcg_kernel_var, n);
 	if (!kernel->var)
-		return -1;
+		return isl_stat_error;
 
 	n = 0;
 	for (i = 0; i < kernel->n_array; ++i) {
@@ -1264,7 +1264,7 @@ static int create_kernel_vars(struct ppcg_kernel *kernel)
 		}
 	}
 
-	return 0;
+	return isl_stat_ok;
 }
 
 /* Replace "pa" by the zero function defined over the universe domain
