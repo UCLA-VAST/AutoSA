@@ -1602,6 +1602,9 @@ static void compute_privatization(struct gpu_group_data *data,
 		isl_id *id;
 		int pos;
 
+		if (!set)
+			break;
+
 		aff = isl_aff_var_on_domain(isl_local_space_copy(ls),
 					isl_dim_set, data->thread_depth + i);
 		v = isl_val_int_from_si(ctx, kernel->block_dim[i]);
