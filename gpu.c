@@ -1940,7 +1940,7 @@ static __isl_give isl_ast_node *create_access_leaf(struct ppcg_kernel *kernel,
 
 	access = isl_map_from_union_map(isl_ast_build_get_schedule(build));
 	type = isl_map_get_tuple_name(access, isl_dim_in);
-	stmt->u.c.read = !strcmp(type, "read");
+	stmt->u.c.read = type && !strcmp(type, "read");
 	access = isl_map_reverse(access);
 	pma = isl_pw_multi_aff_from_map(access);
 	pma = isl_pw_multi_aff_reset_tuple_id(pma, isl_dim_out);
