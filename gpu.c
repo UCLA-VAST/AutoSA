@@ -2486,7 +2486,7 @@ static __isl_give isl_ast_node *generate_code(struct gpu_gen *gen,
 	depth = 0;
 	if (isl_schedule_foreach_schedule_node_top_down(schedule, &update_depth,
 						&depth) < 0)
-		return NULL;
+		schedule = isl_schedule_free(schedule);
 	build = isl_ast_build_alloc(gen->prog->ctx);
 	iterators = ppcg_scop_generate_names(gen->prog->scop, depth, "c");
 	build = isl_ast_build_set_iterators(build, iterators);
