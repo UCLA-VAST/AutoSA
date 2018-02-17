@@ -1736,7 +1736,7 @@ static __isl_give isl_map *construct_tile_map(__isl_keep ppcg_ht_phase *phase)
  * in the original schedule tree where the tiling was applied.
  *
  * First construct a mapping from the input schedule dimensions
- * up to an including the original pair of bands to which hybrid tiling
+ * up to and including the original pair of bands to which hybrid tiling
  * was applied to schedule dimensions in which this original pair
  * has been replaced by the tiles.
  * This mapping is of the form
