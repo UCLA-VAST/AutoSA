@@ -83,7 +83,7 @@ run_tests () {
 		$CC -I $DIR/$dir $CPPFLAGS $source_opt -o $prog_opt \
 			$DIR/utilities/polybench.c $CFLAGS $cc_options || exit
 
-		$prog_opt 2> $output_opt
+		$prog_opt 2> $output_opt || exit
 		cmp $output_orig $output_opt || exit
 	done
 }
