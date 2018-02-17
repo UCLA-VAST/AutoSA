@@ -7,4 +7,5 @@ AC_DEFUN([AX_CHECK_OPENMP], [
 	if test $? -eq 0; then
 		HAVE_OPENMP=yes
 	fi
+	AC_MSG_RESULT($HAVE_OPENMP)
 ])
