@@ -163,7 +163,7 @@ static __isl_give isl_id *generate_name(struct ppcg_scop *scop,
 	const char *prefix, int i)
 {
 	int j;
-	char name[16];
+	char name[23];
 	isl_ctx *ctx;
 	isl_id *id;
 	int has_name;
