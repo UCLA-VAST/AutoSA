@@ -1,3 +1,8 @@
+version: 0.08
+date: Sat Mar  3 15:31:38 CET 2018
+changes:
+	- minor fixes
+---
 version: 0.07
 date: Tue Feb  7 17:23:22 CET 2017
 changes:
