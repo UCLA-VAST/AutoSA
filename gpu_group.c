@@ -223,6 +223,30 @@ static isl_stat check_stride_constraint(__isl_take isl_constraint *c,
  *
  *	a(p) + i = 0 mod g
  *
+ * If so, record the information in bound->stride and bound->shift.
+ * Otherwise, set bound->stride to NULL.
+ */
+static isl_stat set_stride(struct gpu_array_bound *bound,
+	__isl_take isl_basic_map *bounds)
+{
+	isl_basic_map *hull;
+
+	bound->stride = NULL;
+
+	hull = isl_basic_map_affine_hull(bounds);
+
+	isl_basic_map_foreach_constraint(hull, &check_stride_constraint, bound);
+
+	isl_basic_map_free(hull);
+
+	return isl_stat_ok;
+}
+
+/* Given constraints on an array index i, check if we can find
+ * a shift a(p) and a stride g such that
+ *
+ *	a(p) + i = 0 mod g
+ *
  * If so, record the information in bound and apply the mapping
  * i -> (i + a(p))/g to the array index in bounds and return
  * the new constraints.
@@ -261,19 +285,12 @@ static __isl_give isl_basic_map *check_stride(struct gpu_array_bound *bound,
 	__isl_take isl_basic_map *bounds)
 {
 	isl_space *space;
-	isl_basic_map *hull;
 	isl_basic_map *shift, *id, *bmap, *scale;
 	isl_basic_set *bset;
 	isl_aff *aff;
 
-	bound->stride = NULL;
-
-	hull = isl_basic_map_affine_hull(isl_basic_map_copy(bounds));
-
-	isl_basic_map_foreach_constraint(hull, &check_stride_constraint, bound);
-
-	isl_basic_map_free(hull);
-
+	if (set_stride(bound, isl_basic_map_copy(bounds)) < 0)
+		return isl_basic_map_free(bounds);
 	if (!bound->stride)
 		return bounds;
 
