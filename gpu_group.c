@@ -11,6 +11,8 @@
  * and Ecole Normale Superieure, 45 rue d'Ulm, 75230 Paris, France
  */
 
+#include <isl/aff.h>
+#include <isl/map.h>
 #include <isl/constraint.h>
 #include <isl/ilp.h>
 
@@ -117,107 +119,6 @@ int gpu_array_ref_group_requires_unroll(struct gpu_array_ref_group *group)
 	return tile->requires_unroll;
 }
 
-/* Given a constraint
- *
- *		a(p,i) + j = g f(e)
- *
- * or -a(p,i) - j = g f(e) if sign < 0,
- * store a(p,i) in bound->shift and g (stride) in bound->stride.
- * a(p,i) is assumed to be an expression in only the parameters
- * and the input dimensions.
- */
-static void extract_stride(__isl_keep isl_constraint *c,
-	struct gpu_array_bound *bound, __isl_keep isl_val *stride, int sign)
-{
-	int i;
-	isl_val *v;
-	isl_space *space;
-	unsigned nparam;
-	unsigned nvar;
-	isl_aff *aff;
-
-	isl_val_free(bound->stride);
-	bound->stride = isl_val_copy(stride);
-
-	space = isl_constraint_get_space(c);
-	space = isl_space_domain(space);
-
-	nparam = isl_space_dim(space, isl_dim_param);
-	nvar = isl_space_dim(space, isl_dim_set);
-
-	v = isl_constraint_get_constant_val(c);
-	if (sign < 0)
-		v = isl_val_neg(v);
-	aff = isl_aff_zero_on_domain(isl_local_space_from_space(space));
-	aff = isl_aff_set_constant_val(aff, v);
-
-	for (i = 0; i < nparam; ++i) {
-		if (!isl_constraint_involves_dims(c, isl_dim_param, i, 1))
-			continue;
-		v = isl_constraint_get_coefficient_val(c, isl_dim_param, i);
-		if (sign < 0)
-			v = isl_val_neg(v);
-		aff = isl_aff_add_coefficient_val(aff, isl_dim_param, i, v);
-	}
-
-	for (i = 0; i < nvar; ++i) {
-		if (!isl_constraint_involves_dims(c, isl_dim_in, i, 1))
-			continue;
-		v = isl_constraint_get_coefficient_val(c, isl_dim_in, i);
-		if (sign < 0)
-			v = isl_val_neg(v);
-		aff = isl_aff_add_coefficient_val(aff, isl_dim_in, i, v);
-	}
-
-	bound->shift = aff;
-}
-
-/* Given an equality constraint of a map with a single output dimension j,
- * check if the constraint is of the form
- *
- *		a(p,i) + j = g f(e)
- *
- * with a(p,i) an expression in the parameters and input dimensions
- * and f(e) an expression in the existentially quantified variables.
- * If so, and if g is larger than any such g from a previously considered
- * constraint, then call extract_stride to record the stride information
- * in bound.
- */
-static isl_stat check_stride_constraint(__isl_take isl_constraint *c,
-	void *user)
-{
-	int i;
-	isl_ctx *ctx;
-	isl_val *v;
-	unsigned n_div;
-	struct gpu_array_bound *bound = user;
-
-	ctx = isl_constraint_get_ctx(c);
-	n_div = isl_constraint_dim(c, isl_dim_div);
-	v = isl_constraint_get_coefficient_val(c, isl_dim_out, 0);
-
-	if (n_div && (isl_val_is_one(v) || isl_val_is_negone(v))) {
-		int s = isl_val_sgn(v);
-		isl_val *stride = isl_val_zero(ctx);
-
-		isl_val_free(v);
-		for (i = 0; i < n_div; ++i) {
-			v = isl_constraint_get_coefficient_val(c,
-								isl_dim_div, i);
-			stride = isl_val_gcd(stride, v);
-		}
-		if (!isl_val_is_zero(stride) &&
-		    isl_val_gt(stride, bound->stride))
-			extract_stride(c, bound, stride, s);
-
-		isl_val_free(stride);
-	} else
-		isl_val_free(v);
-
-	isl_constraint_free(c);
-	return isl_stat_ok;
-}
-
 /* Given constraints on an array index i, check if we can find
  * a shift a(p) and a stride g such that
  *
@@ -225,20 +126,41 @@ static isl_stat check_stride_constraint(__isl_take isl_constraint *c,
  *
  * If so, record the information in bound->stride and bound->shift.
  * Otherwise, set bound->stride to NULL.
+ *
+ * Note that the stride info returned by isl_map_get_range_stride_info
+ * is of the form
+ *
+ *	i = o(p) + g n
+ *
+ * a(p) can therefore be taken to be equal to -o(p).
  */
 static isl_stat set_stride(struct gpu_array_bound *bound,
 	__isl_take isl_basic_map *bounds)
 {
-	isl_basic_map *hull;
+	isl_map *map;
+	isl_stride_info *si;
+	isl_val *stride;
+	isl_bool has_stride;
+
+	map = isl_map_from_basic_map(bounds);
+	si = isl_map_get_range_stride_info(map, 0);
+	isl_map_free(map);
 
 	bound->stride = NULL;
 
-	hull = isl_basic_map_affine_hull(bounds);
+	stride = isl_stride_info_get_stride(si);
+	has_stride = isl_val_gt_si(stride, 1);
 
-	isl_basic_map_foreach_constraint(hull, &check_stride_constraint, bound);
+	if (has_stride >= 0 && has_stride) {
+		bound->stride = stride;
+		bound->shift = isl_aff_neg(isl_stride_info_get_offset(si));
+	} else {
+		isl_val_free(stride);
+	}
 
-	isl_basic_map_free(hull);
-
+	isl_stride_info_free(si);
+	if (has_stride < 0)
+		return isl_stat_error;
 	return isl_stat_ok;
 }
 
