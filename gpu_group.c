@@ -218,7 +218,7 @@ static isl_stat check_stride_constraint(__isl_take isl_constraint *c,
 	return isl_stat_ok;
 }
 
-/* Given contraints on an array index i, check if we can find
+/* Given constraints on an array index i, check if we can find
  * a shift a(p) and a stride g such that
  *
  *	a(p) + i = 0 mod g
