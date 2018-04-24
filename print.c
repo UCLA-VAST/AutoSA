@@ -7,8 +7,12 @@
  * Ecole Normale Superieure, 45 rue d’Ulm, 75230 Paris, France
  */
 
+#include <isl/ctx.h>
+#include <isl/id.h>
 #include <isl/aff.h>
+#include <isl/ast.h>
 #include <isl/ast_build.h>
+#include <isl/printer.h>
 
 #include "print.h"
 #include "util.h"
