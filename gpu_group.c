@@ -349,9 +349,13 @@ static int compute_array_dim_size(struct gpu_array_bound *bound,
  *
  * tile->depth is initialized to the input dimension of the computed bounds.
  */
-static int can_tile(__isl_keep isl_map *access, struct gpu_array_tile *tile)
+static isl_bool can_tile(__isl_keep isl_map *access,
+	struct gpu_array_tile *tile)
 {
 	int i;
+
+	if (!tile)
+		return isl_bool_error;
 
 	tile->depth = isl_map_dim(access, isl_dim_in);
 
@@ -366,10 +370,10 @@ static int can_tile(__isl_keep isl_map *access, struct gpu_array_tile *tile)
 		access_i = isl_map_compute_divs(access_i);
 		hull = isl_map_simple_hull(access_i);
 		if (compute_array_dim_size(&tile->bound[i], hull) < 0)
-			return 0;
+			return isl_bool_false;
 	}
 
-	return 1;
+	return isl_bool_true;
 }
 
 /* Internal data structure for gpu_group_references.
@@ -1045,6 +1049,7 @@ static isl_stat compute_group_bounds_core(struct ppcg_kernel *kernel,
 				data->n_thread > 0;
 	int use_private = force_private || kernel->options->use_private_memory;
 	isl_stat r = isl_stat_ok;
+	isl_bool ok;
 	int requires_unroll;
 	int unique_depth;
 
@@ -1074,9 +1079,10 @@ static isl_stat compute_group_bounds_core(struct ppcg_kernel *kernel,
 		group->shared_tile = gpu_array_tile_create(ctx,
 							group->array->n_index);
 		acc = shared_access(group, access, data);
-		if (!group->shared_tile)
+		ok = can_tile(acc, group->shared_tile);
+		if (ok < 0)
 			r = isl_stat_error;
-		else if (!can_tile(acc, group->shared_tile))
+		else if (!ok)
 			group->shared_tile =
 					gpu_array_tile_free(group->shared_tile);
 		isl_map_free(acc);
@@ -1110,15 +1116,13 @@ static isl_stat compute_group_bounds_core(struct ppcg_kernel *kernel,
 	}
 
 	group->private_tile = gpu_array_tile_create(ctx, n_index);
-	if (!group->private_tile) {
-		isl_map_free(acc);
-		return isl_stat_error;
-	}
 	group->private_tile->requires_unroll = requires_unroll;
-	if (!can_tile(acc, group->private_tile))
+	ok = can_tile(acc, group->private_tile);
+	if (ok >= 0 && !ok)
 		group->private_tile = gpu_array_tile_free(group->private_tile);
-
 	isl_map_free(acc);
+	if (ok < 0)
+		return isl_stat_error;
 
 	if (group->private_tile) {
 		struct gpu_array_tile *tile = group->private_tile;
