@@ -964,7 +964,7 @@ static __isl_give isl_map *shared_access(struct gpu_array_ref_group *group,
 
 /* Compute the private and/or shared memory tiles for the array
  * reference group "group" of array "array".
- * Return 0 on success and -1 on error.
+ * Return isl_stat_ok on success and isl_stat_error on error.
  *
  * If the array is a read-only scalar or if the user requested
  * not to use shared or private memory, then we do not need to do anything.
@@ -1032,7 +1032,7 @@ static __isl_give isl_map *shared_access(struct gpu_array_ref_group *group,
  * the private memory tile size using can_tile, after introducing a dependence
  * on the thread indices.
  */
-static int compute_group_bounds_core(struct ppcg_kernel *kernel,
+static isl_stat compute_group_bounds_core(struct ppcg_kernel *kernel,
 	struct gpu_array_ref_group *group, struct gpu_group_data *data)
 {
 	isl_ctx *ctx = isl_space_get_ctx(group->array->space);
@@ -1044,24 +1044,24 @@ static int compute_group_bounds_core(struct ppcg_kernel *kernel,
 	int use_shared = !force_private && kernel->options->use_shared_memory &&
 				data->n_thread > 0;
 	int use_private = force_private || kernel->options->use_private_memory;
-	int r = 0;
+	isl_stat r = isl_stat_ok;
 	int requires_unroll;
 	int unique_depth;
 
 	if (!use_shared && !use_private)
-		return 0;
+		return isl_stat_ok;
 	if (gpu_array_is_read_only_scalar(group->array))
-		return 0;
+		return isl_stat_ok;
 	if (!force_private && !group->exact_write)
-		return 0;
+		return isl_stat_ok;
 	if (group->slice)
-		return 0;
+		return isl_stat_ok;
 
 	access = gpu_array_ref_group_access_relation(group, 1, 1);
 	local = localize_access(data, isl_union_map_copy(access));
 	no_reuse = isl_union_map_is_injective(local);
 	if (no_reuse < 0)
-		r = -1;
+		r = isl_stat_error;
 	if (use_shared && no_reuse)
 		coalesced = access_is_coalesced(data, local);
 	isl_union_map_free(local);
@@ -1075,7 +1075,7 @@ static int compute_group_bounds_core(struct ppcg_kernel *kernel,
 							group->array->n_index);
 		acc = shared_access(group, access, data);
 		if (!group->shared_tile)
-			r = -1;
+			r = isl_stat_error;
 		else if (!can_tile(acc, group->shared_tile))
 			group->shared_tile =
 					gpu_array_tile_free(group->shared_tile);
@@ -1094,7 +1094,7 @@ static int compute_group_bounds_core(struct ppcg_kernel *kernel,
 
 	if (!force_private && !access_is_bijective(data, acc)) {
 		isl_map_free(acc);
-		return 0;
+		return isl_stat_ok;
 	}
 
 	unique_depth = compute_accessed_by_single_thread_depth(data, acc);
@@ -1106,13 +1106,13 @@ static int compute_group_bounds_core(struct ppcg_kernel *kernel,
 	if (unique_depth < 0 || requires_unroll < 0 ||
 	    (requires_unroll && kernel->any_force_private)) {
 		isl_map_free(acc);
-		return requires_unroll < 0 ? -1 : 0;
+		return requires_unroll < 0 ? isl_stat_error : isl_stat_ok;
 	}
 
 	group->private_tile = gpu_array_tile_create(ctx, n_index);
 	if (!group->private_tile) {
 		isl_map_free(acc);
-		return -1;
+		return isl_stat_error;
 	}
 	group->private_tile->requires_unroll = requires_unroll;
 	if (!can_tile(acc, group->private_tile))
@@ -1126,15 +1126,15 @@ static int compute_group_bounds_core(struct ppcg_kernel *kernel,
 		if (tile_depth < unique_depth)
 			tile_depth = unique_depth;
 		if (tile_adjust_depth(tile, tile_depth) < 0)
-			return -1;
+			return isl_stat_error;
 	}
 
 	if (force_private && !group->private_tile)
 		isl_die(ctx, isl_error_internal,
 			"unable to map array reference group to registers",
-			return -1);
+			return isl_stat_error);
 
-	return 0;
+	return isl_stat_ok;
 }
 
 /* Compute the private and/or shared memory tiles for the array
