@@ -14,7 +14,6 @@
 #include <isl/aff.h>
 #include <isl/map.h>
 #include <isl/constraint.h>
-#include <isl/ilp.h>
 
 #include "gpu_array_tile.h"
 #include "gpu_group.h"
@@ -208,119 +207,6 @@ static __isl_give isl_map *remove_strides(__isl_take isl_map *access,
 	return access;
 }
 
-/* Data used in compute_array_dim_size and compute_size_in_direction.
- *
- * pos is the position of the variable representing the array index,
- * i.e., the variable for which want to compute the size.  This variable
- * is also the last variable in the set.
- */
-struct gpu_size_info {
-	isl_basic_set *bset;
-	struct gpu_array_bound *bound;
-	int pos;
-};
-
-/* Is "c" a suitable bound on dimension "pos" for use as a lower bound
- * of a fixed-size range.
- * In particular, it needs to be a lower bound on "pos".
- * In order for the final offset not to be too complicated,
- * the constraint itself should also not involve any integer divisions.
- */
-static isl_bool is_suitable_bound(__isl_keep isl_constraint *c, unsigned pos)
-{
-	unsigned n_div;
-	isl_bool is_bound, any_divs;
-
-	is_bound = isl_constraint_is_lower_bound(c, isl_dim_set, pos);
-	if (is_bound < 0 || !is_bound)
-		return is_bound;
-
-	n_div = isl_constraint_dim(c, isl_dim_div);
-	any_divs = isl_constraint_involves_dims(c, isl_dim_div, 0, n_div);
-	return isl_bool_not(any_divs);
-}
-
-/* Given a constraint from the basic set describing the bounds on
- * an array index, check if it is a lower bound, say m i >= b(x), and,
- * if so, check whether the expression "i - ceil(b(x)/m) + 1" has a constant
- * upper bound.  If so, and if this bound is smaller than any bound
- * derived from earlier constraints, set the size to this bound on
- * the expression and the lower bound to ceil(b(x)/m).
- */
-static isl_stat compute_size_in_direction(__isl_take isl_constraint *c,
-	void *user)
-{
-	struct gpu_size_info *size = user;
-	isl_val *v;
-	isl_aff *aff;
-	isl_aff *lb;
-	isl_bool is_bound, better;
-
-	is_bound = is_suitable_bound(c, size->pos);
-	if (is_bound < 0 || !is_bound) {
-		isl_constraint_free(c);
-		return is_bound < 0 ? isl_stat_error : isl_stat_ok;
-	}
-
-	aff = isl_constraint_get_bound(c, isl_dim_set, size->pos);
-	aff = isl_aff_ceil(aff);
-
-	lb = isl_aff_copy(aff);
-
-	aff = isl_aff_neg(aff);
-	aff = isl_aff_add_coefficient_si(aff, isl_dim_in, size->pos, 1);
-
-	v = isl_basic_set_max_val(size->bset, aff);
-	isl_aff_free(aff);
-
-	v = isl_val_add_ui(v, 1);
-	better = isl_val_lt(v, size->bound->size);
-	if (better >= 0 && better) {
-		isl_val_free(size->bound->size);
-		size->bound->size = isl_val_copy(v);
-		lb = isl_aff_drop_dims(lb, isl_dim_in, size->pos, 1);
-		isl_aff_free(size->bound->lb);
-		size->bound->lb = isl_aff_copy(lb);
-	}
-	isl_val_free(v);
-	isl_aff_free(lb);
-
-	isl_constraint_free(c);
-
-	return better < 0 ? isl_stat_error : isl_stat_ok;
-}
-
-/* Given a basic map "bounds" that maps parameters and input dimensions
- * to a single output dimension, look for an expression in the parameters
- * and input dimensions such that the range of the output dimension shifted
- * by this expression is a constant.
- * Return isl_bool_true if a bound was found.
- *
- * In particular, we currently only consider lower bounds on the output
- * dimension as candidate expressions.
- */
-static isl_bool compute_array_dim_size(struct gpu_array_bound *bound,
-	__isl_take isl_basic_map *bounds)
-{
-	struct gpu_size_info size;
-	isl_ctx *ctx;
-
-	ctx = isl_basic_map_get_ctx(bounds);
-	bound->size = isl_val_infty(ctx);
-	bound->lb = NULL;
-
-	size.bound = bound;
-	size.pos = isl_basic_map_dim(bounds, isl_dim_in);
-	size.bset = isl_basic_map_wrap(bounds);
-	size.bset = isl_basic_set_flatten(size.bset);
-	size.bset = isl_set_simple_hull(isl_basic_set_compute_divs(size.bset));
-	isl_basic_set_foreach_constraint(size.bset, &compute_size_in_direction,
-					&size);
-	isl_basic_set_free(size.bset);
-
-	return isl_val_is_int(bound->size);
-}
-
 /* Check if we can find a memory tile for the given array
  * based on the given accesses, and if so, put the results in "tile".
  *
@@ -335,6 +221,9 @@ static isl_bool can_tile(__isl_keep isl_map *access,
 {
 	int i;
 	isl_bool has_strides, valid;
+	isl_fixed_box *box;
+	isl_multi_aff *offset;
+	isl_multi_val *size;
 
 	if (!tile)
 		return isl_bool_error;
@@ -351,22 +240,21 @@ static isl_bool can_tile(__isl_keep isl_map *access,
 	if (has_strides)
 		access = remove_strides(access, tile);
 
-	valid = isl_bool_true;
-	for (i = 0; i < tile->n; ++i) {
-		isl_map *access_i;
-		isl_basic_map *hull;
-
-		access_i = isl_map_copy(access);
-		access_i = isl_map_project_out(access_i, isl_dim_out, 0, i);
-		access_i = isl_map_project_out(access_i, isl_dim_out,
-					    1, tile->n - (i + 1));
-		access_i = isl_map_compute_divs(access_i);
-		hull = isl_map_simple_hull(access_i);
-		valid = compute_array_dim_size(&tile->bound[i], hull);
-		if (valid < 0 || !valid)
-			break;
-	}
+	box = isl_map_get_range_simple_fixed_box_hull(access);
 	isl_map_free(access);
+
+	valid = isl_fixed_box_is_valid(box);
+	if (valid >= 0 && valid) {
+		offset = isl_fixed_box_get_offset(box);
+		size = isl_fixed_box_get_size(box);
+		for (i = 0; i < tile->n; ++i) {
+			tile->bound[i].size = isl_multi_val_get_val(size, i);
+			tile->bound[i].lb = isl_multi_aff_get_aff(offset, i);
+		}
+		isl_multi_aff_free(offset);
+		isl_multi_val_free(size);
+	}
+	isl_fixed_box_free(box);
 
 	return valid;
 }
