@@ -124,8 +124,9 @@ int gpu_array_ref_group_requires_unroll(struct gpu_array_ref_group *group)
  *
  *	a(p) + i = 0 mod g
  *
- * If so, record the information in bound->stride and bound->shift.
- * Otherwise, set bound->stride to NULL.
+ * If so, record the information in bound->stride and bound->shift and
+ * return isl_bool_true.
+ * Otherwise, set bound->stride to NULL and return isl_bool_false.
  *
  * Note that the stride info returned by isl_map_get_range_stride_info
  * is of the form
@@ -134,7 +135,7 @@ int gpu_array_ref_group_requires_unroll(struct gpu_array_ref_group *group)
  *
  * a(p) can therefore be taken to be equal to -o(p).
  */
-static isl_stat set_stride(struct gpu_array_bound *bound,
+static isl_bool set_stride(struct gpu_array_bound *bound,
 	__isl_take isl_basic_map *bounds)
 {
 	isl_map *map;
@@ -159,9 +160,7 @@ static isl_stat set_stride(struct gpu_array_bound *bound,
 	}
 
 	isl_stride_info_free(si);
-	if (has_stride < 0)
-		return isl_stat_error;
-	return isl_stat_ok;
+	return has_stride;
 }
 
 /* Given constraints on an array index i, check if we can find
@@ -206,14 +205,16 @@ static isl_stat set_stride(struct gpu_array_bound *bound,
 static __isl_give isl_basic_map *check_stride(struct gpu_array_bound *bound,
 	__isl_take isl_basic_map *bounds)
 {
+	isl_bool has_stride;
 	isl_space *space;
 	isl_basic_map *shift, *id, *bmap, *scale;
 	isl_basic_set *bset;
 	isl_aff *aff;
 
-	if (set_stride(bound, isl_basic_map_copy(bounds)) < 0)
+	has_stride = set_stride(bound, isl_basic_map_copy(bounds));
+	if (has_stride < 0)
 		return isl_basic_map_free(bounds);
-	if (!bound->stride)
+	if (!has_stride)
 		return bounds;
 
 	shift = isl_basic_map_from_aff(isl_aff_copy(bound->shift));
