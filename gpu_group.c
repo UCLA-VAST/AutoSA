@@ -119,15 +119,15 @@ int gpu_array_ref_group_requires_unroll(struct gpu_array_ref_group *group)
 	return tile->requires_unroll;
 }
 
-/* Given constraints on an array index i, check if we can find
+/* Given an array access "access", check if for any index i there is
  * a shift a(p) and a stride g such that
  *
  *	a(p) + i = 0 mod g
  *
- * If so, record the information in bound->stride and bound->shift and
- * return isl_bool_true.
- * Otherwise, set bound->stride to 1 (and bound->shift to 0) and
- * return isl_bool_false.
+ * If so, record the information in tile->bound[i]->stride and
+ * tile->bound[i]->shift.
+ * Otherwise, set tile->bound[i]->stride to 1 (and tile->bound[i]->shift to 0).
+ * Return isl_bool_true if any non-trivial stride was found.
  *
  * Note that the stride info returned by isl_map_get_range_stride_info
  * is of the form
@@ -136,104 +136,76 @@ int gpu_array_ref_group_requires_unroll(struct gpu_array_ref_group *group)
  *
  * a(p) can therefore be taken to be equal to -o(p).
  */
-static isl_bool set_stride(struct gpu_array_bound *bound,
-	__isl_take isl_basic_map *bounds)
+static isl_bool detect_strides(struct gpu_array_tile *tile,
+	__isl_keep isl_map *access)
 {
-	isl_map *map;
-	isl_stride_info *si;
-	isl_bool has_stride;
+	int i;
+	isl_bool has_strides = isl_bool_false;
 
-	map = isl_map_from_basic_map(bounds);
-	si = isl_map_get_range_stride_info(map, 0);
-	isl_map_free(map);
+	for (i = 0; i < tile->n; ++i) {
+		struct gpu_array_bound *bound = &tile->bound[i];
+		isl_stride_info *si;
 
-	bound->stride = isl_stride_info_get_stride(si);
-	bound->shift = isl_aff_neg(isl_stride_info_get_offset(si));
-	has_stride = isl_val_gt_si(bound->stride, 1);
+		si = isl_map_get_range_stride_info(access, i);
+		bound->stride = isl_stride_info_get_stride(si);
+		bound->shift = isl_aff_neg(isl_stride_info_get_offset(si));
+		isl_stride_info_free(si);
 
-	isl_stride_info_free(si);
-	return has_stride;
+		if (!has_strides)
+			has_strides = isl_val_gt_si(bound->stride, 1);
+		if (has_strides < 0)
+			return isl_bool_error;
+	}
+
+	return has_strides;
 }
 
-/* Given constraints on an array index i, check if we can find
- * a shift a(p) and a stride g such that
+/* Given an array access "access", remove the strides based
+ * on the information in tile->bound[i]->stride and tile->bound[i]->shift.
  *
- *	a(p) + i = 0 mod g
+ * In particular let the access be A[a] and
+ * let the shifts s_i(p) and the strides g_i be such that
  *
- * If so, record the information in bound and apply the mapping
- * i -> (i + a(p))/g to the array index in bounds and return
- * the new constraints.
- * If not, simply return the original constraints.
+ *  S(p) + a = 0 mod G
  *
- * If bounds is a subset of the space
+ * Replace the access by
  *
- *	D -> i
+ *  A[(a + S(p))/G]
  *
- * then the bound recorded in bound->shift is of the form
- *
- *	D -> s(D)
- *
- * with s(D) equal to a(p) above.
- * Next, we construct a mapping of the form
- *
- *	[D -> i] -> [D -> (i + S(D))/g]
- *
- * This mapping is computed as follows.
- * We first introduce "i" in the domain through precomposition
- * with [D -> i] -> D obtaining
- *
- *	[D -> i] -> s(D)
- *
- * Adding [D -> i] -> i produces
- *
- *	[D -> i] -> i + s(D)
- *
- * and the domain product with [D -> i] -> D yields
- *
- *	[D -> i] -> [D -> i + s(D)]
- *
- * Composition with [D -> i] -> [D -> i/g] gives the desired result.
+ * First collect the shifts s_i into an isl_multi_aff and
+ * the strides into the scaling function A[i] -> A[G i].
+ * Then add the shifts to the original access and
+ * take the preimage over the scaling.
  */
-static __isl_give isl_basic_map *check_stride(struct gpu_array_bound *bound,
-	__isl_take isl_basic_map *bounds)
+static __isl_give isl_map *remove_strides(__isl_take isl_map *access,
+	struct gpu_array_tile *tile)
 {
-	isl_bool has_stride;
+	int i;
 	isl_space *space;
-	isl_basic_map *shift, *id, *bmap, *scale;
-	isl_basic_set *bset;
-	isl_aff *aff;
+	isl_multi_aff *shift, *scale;
+	isl_multi_val *stride;
 
-	has_stride = set_stride(bound, isl_basic_map_copy(bounds));
-	if (has_stride < 0)
-		return isl_basic_map_free(bounds);
-	if (!has_stride)
-		return bounds;
+	space = isl_map_get_space(access);
+	shift = isl_multi_aff_zero(isl_space_copy(space));
+	space = isl_space_range(space);
+	stride = isl_multi_val_zero(isl_space_copy(space));
+	scale = isl_multi_aff_identity(isl_space_map_from_set(space));
+	for (i = 0; i < tile->n; ++i) {
+		struct gpu_array_bound *bound = &tile->bound[i];
+		isl_aff *shift_i;
+		isl_val *stride_i;
 
-	shift = isl_basic_map_from_aff(isl_aff_copy(bound->shift));
-	space = isl_basic_map_get_space(bounds);
-	bmap = isl_basic_map_domain_map(isl_basic_map_universe(space));
-	shift = isl_basic_map_apply_range(bmap, shift);
-	space = isl_basic_map_get_space(bounds);
-	id = isl_basic_map_range_map(isl_basic_map_universe(space));
-	shift = isl_basic_map_sum(id, shift);
-	space = isl_basic_map_get_space(bounds);
-	id = isl_basic_map_domain_map(isl_basic_map_universe(space));
-	shift = isl_basic_map_range_product(id, shift);
+		shift_i = isl_aff_copy(bound->shift);
+		stride_i = isl_val_copy(bound->stride);
+		shift = isl_multi_aff_set_aff(shift, i, shift_i);
+		stride = isl_multi_val_set_val(stride, i, stride_i);
+	}
+	scale = isl_multi_aff_scale_multi_val(scale, stride);
 
-	space = isl_space_domain(isl_basic_map_get_space(bounds));
-	id = isl_basic_map_identity(isl_space_map_from_set(space));
-	space = isl_space_range(isl_basic_map_get_space(bounds));
-	aff = isl_aff_zero_on_domain(isl_local_space_from_space(space));
-	aff = isl_aff_add_coefficient_si(aff, isl_dim_in, 0, 1);
-	aff = isl_aff_scale_down_val(aff, isl_val_copy(bound->stride));
-	scale = isl_basic_map_from_aff(aff);
-	scale = isl_basic_map_product(id, scale);
+	access = isl_map_sum(access, isl_map_from_multi_aff(shift));
+	access = isl_map_preimage_range_multi_aff(access, scale);
 
-	bmap = isl_basic_map_apply_range(shift, scale);
-	bset = isl_basic_set_apply(isl_basic_map_wrap(bounds), bmap);
-	bounds = isl_basic_set_unwrap(bset);
-
-	return bounds;
+	return access;
 }
 
 /* Data used in compute_array_dim_size and compute_size_in_direction.
@@ -316,9 +288,6 @@ static int compute_array_dim_size(struct gpu_array_bound *bound,
 {
 	struct gpu_size_info size;
 
-	bounds = isl_basic_map_detect_equalities(bounds);
-	bounds = check_stride(bound, bounds);
-
 	bound->size = NULL;
 	bound->lb = NULL;
 
@@ -338,7 +307,8 @@ static int compute_array_dim_size(struct gpu_array_bound *bound,
  * based on the given accesses, and if so, put the results in "tile".
  *
  * We project the accesses on each index in turn and look for a parametric
- * offset such that the size is constant.
+ * offset such that the size is constant, after removing
+ * any stride that may appear in the accesses.
  *
  * tile->depth is initialized to the input dimension of the computed bounds.
  */
@@ -346,11 +316,22 @@ static isl_bool can_tile(__isl_keep isl_map *access,
 	struct gpu_array_tile *tile)
 {
 	int i;
+	isl_bool has_strides;
 
 	if (!tile)
 		return isl_bool_error;
 
+	isl_map_free(isl_map_detect_equalities(isl_map_copy(access)));
+
+	has_strides = detect_strides(tile, access);
+	if (has_strides < 0)
+		return isl_bool_error;
+
 	tile->depth = isl_map_dim(access, isl_dim_in);
+
+	access = isl_map_copy(access);
+	if (has_strides)
+		access = remove_strides(access, tile);
 
 	for (i = 0; i < tile->n; ++i) {
 		isl_map *access_i;
@@ -363,8 +344,11 @@ static isl_bool can_tile(__isl_keep isl_map *access,
 		access_i = isl_map_compute_divs(access_i);
 		hull = isl_map_simple_hull(access_i);
 		if (compute_array_dim_size(&tile->bound[i], hull) < 0)
-			return isl_bool_false;
+			break;
 	}
+	isl_map_free(access);
+	if (i < tile->n)
+		return isl_bool_false;
 
 	return isl_bool_true;
 }
