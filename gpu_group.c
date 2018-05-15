@@ -126,7 +126,8 @@ int gpu_array_ref_group_requires_unroll(struct gpu_array_ref_group *group)
  *
  * If so, record the information in bound->stride and bound->shift and
  * return isl_bool_true.
- * Otherwise, set bound->stride to NULL and return isl_bool_false.
+ * Otherwise, set bound->stride to 1 (and bound->shift to 0) and
+ * return isl_bool_false.
  *
  * Note that the stride info returned by isl_map_get_range_stride_info
  * is of the form
@@ -140,24 +141,15 @@ static isl_bool set_stride(struct gpu_array_bound *bound,
 {
 	isl_map *map;
 	isl_stride_info *si;
-	isl_val *stride;
 	isl_bool has_stride;
 
 	map = isl_map_from_basic_map(bounds);
 	si = isl_map_get_range_stride_info(map, 0);
 	isl_map_free(map);
 
-	bound->stride = NULL;
-
-	stride = isl_stride_info_get_stride(si);
-	has_stride = isl_val_gt_si(stride, 1);
-
-	if (has_stride >= 0 && has_stride) {
-		bound->stride = stride;
-		bound->shift = isl_aff_neg(isl_stride_info_get_offset(si));
-	} else {
-		isl_val_free(stride);
-	}
+	bound->stride = isl_stride_info_get_stride(si);
+	bound->shift = isl_aff_neg(isl_stride_info_get_offset(si));
+	has_stride = isl_val_gt_si(bound->stride, 1);
 
 	isl_stride_info_free(si);
 	return has_stride;
@@ -1704,14 +1696,8 @@ static __isl_give isl_multi_aff *strided_tile(
 		isl_val *stride_i;
 		isl_aff *shift_i;
 
-		if (tile->bound[i].shift) {
-			stride_i = isl_val_copy(bound->stride);
-			shift_i = isl_aff_copy(bound->shift);
-		} else {
-			stride_i = isl_val_one(ctx);
-			shift_i = isl_aff_zero_on_domain(
-					isl_local_space_copy(ls));
-		}
+		stride_i = isl_val_copy(bound->stride);
+		shift_i = isl_aff_copy(bound->shift);
 
 		stride = isl_multi_val_set_val(stride, i, stride_i);
 		shift = isl_multi_aff_set_aff(shift, i, shift_i);

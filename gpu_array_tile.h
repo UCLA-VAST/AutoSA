@@ -5,10 +5,9 @@
 #include <isl/map_type.h>
 #include <isl/val.h>
 
-/* The fields stride and shift only contain valid information
- * if shift != NULL.
- * If so, they express that current index is such that if you add shift,
- * then the result is always a multiple of stride.
+/* The current index is such that if you add "shift",
+ * then the result is always a multiple of "stride",
+ * where "stride" may be equal to 1.
  * Let D represent the initial tile->depth dimensions of the computed schedule.
  * The spaces of "lb" and "shift" are of the form
  *
