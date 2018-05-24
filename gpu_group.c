@@ -254,7 +254,7 @@ static isl_stat compute_size_in_direction(__isl_take isl_constraint *c,
 	isl_val *v;
 	isl_aff *aff;
 	isl_aff *lb;
-	isl_bool is_bound;
+	isl_bool is_bound, better;
 
 	is_bound = is_suitable_bound(c, size->pos);
 	if (is_bound < 0 || !is_bound) {
@@ -273,38 +273,40 @@ static isl_stat compute_size_in_direction(__isl_take isl_constraint *c,
 	v = isl_basic_set_max_val(size->bset, aff);
 	isl_aff_free(aff);
 
-	if (isl_val_is_int(v)) {
-		v = isl_val_add_ui(v, 1);
-		if (!size->bound->size || isl_val_lt(v, size->bound->size)) {
-			isl_val_free(size->bound->size);
-			size->bound->size = isl_val_copy(v);
-			lb = isl_aff_drop_dims(lb, isl_dim_in, size->pos, 1);
-			isl_aff_free(size->bound->lb);
-			size->bound->lb = isl_aff_copy(lb);
-		}
+	v = isl_val_add_ui(v, 1);
+	better = isl_val_lt(v, size->bound->size);
+	if (better >= 0 && better) {
+		isl_val_free(size->bound->size);
+		size->bound->size = isl_val_copy(v);
+		lb = isl_aff_drop_dims(lb, isl_dim_in, size->pos, 1);
+		isl_aff_free(size->bound->lb);
+		size->bound->lb = isl_aff_copy(lb);
 	}
 	isl_val_free(v);
 	isl_aff_free(lb);
 
 	isl_constraint_free(c);
 
-	return isl_stat_ok;
+	return better < 0 ? isl_stat_error : isl_stat_ok;
 }
 
 /* Given a basic map "bounds" that maps parameters and input dimensions
  * to a single output dimension, look for an expression in the parameters
  * and input dimensions such that the range of the output dimension shifted
  * by this expression is a constant.
+ * Return isl_bool_true if a bound was found.
  *
  * In particular, we currently only consider lower bounds on the output
  * dimension as candidate expressions.
  */
-static int compute_array_dim_size(struct gpu_array_bound *bound,
+static isl_bool compute_array_dim_size(struct gpu_array_bound *bound,
 	__isl_take isl_basic_map *bounds)
 {
 	struct gpu_size_info size;
+	isl_ctx *ctx;
 
-	bound->size = NULL;
+	ctx = isl_basic_map_get_ctx(bounds);
+	bound->size = isl_val_infty(ctx);
 	bound->lb = NULL;
 
 	size.bound = bound;
@@ -316,7 +318,7 @@ static int compute_array_dim_size(struct gpu_array_bound *bound,
 					&size);
 	isl_basic_set_free(size.bset);
 
-	return bound->size ? 0 : -1;
+	return isl_val_is_int(bound->size);
 }
 
 /* Check if we can find a memory tile for the given array
@@ -332,7 +334,7 @@ static isl_bool can_tile(__isl_keep isl_map *access,
 	struct gpu_array_tile *tile)
 {
 	int i;
-	isl_bool has_strides;
+	isl_bool has_strides, valid;
 
 	if (!tile)
 		return isl_bool_error;
@@ -349,6 +351,7 @@ static isl_bool can_tile(__isl_keep isl_map *access,
 	if (has_strides)
 		access = remove_strides(access, tile);
 
+	valid = isl_bool_true;
 	for (i = 0; i < tile->n; ++i) {
 		isl_map *access_i;
 		isl_basic_map *hull;
@@ -359,14 +362,13 @@ static isl_bool can_tile(__isl_keep isl_map *access,
 					    1, tile->n - (i + 1));
 		access_i = isl_map_compute_divs(access_i);
 		hull = isl_map_simple_hull(access_i);
-		if (compute_array_dim_size(&tile->bound[i], hull) < 0)
+		valid = compute_array_dim_size(&tile->bound[i], hull);
+		if (valid < 0 || !valid)
 			break;
 	}
 	isl_map_free(access);
-	if (i < tile->n)
-		return isl_bool_false;
 
-	return isl_bool_true;
+	return valid;
 }
 
 /* Internal data structure for gpu_group_references.
