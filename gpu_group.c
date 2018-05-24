@@ -220,6 +220,26 @@ struct gpu_size_info {
 	int pos;
 };
 
+/* Is "c" a suitable bound on dimension "pos" for use as a lower bound
+ * of a fixed-size range.
+ * In particular, it needs to be a lower bound on "pos".
+ * In order for the final offset not to be too complicated,
+ * the constraint itself should also not involve any integer divisions.
+ */
+static isl_bool is_suitable_bound(__isl_keep isl_constraint *c, unsigned pos)
+{
+	unsigned n_div;
+	isl_bool is_bound, any_divs;
+
+	is_bound = isl_constraint_is_lower_bound(c, isl_dim_set, pos);
+	if (is_bound < 0 || !is_bound)
+		return is_bound;
+
+	n_div = isl_constraint_dim(c, isl_dim_div);
+	any_divs = isl_constraint_involves_dims(c, isl_dim_div, 0, n_div);
+	return isl_bool_not(any_divs);
+}
+
 /* Given a constraint from the basic set describing the bounds on
  * an array index, check if it is a lower bound, say m i >= b(x), and,
  * if so, check whether the expression "i - ceil(b(x)/m) + 1" has a constant
@@ -231,17 +251,15 @@ static isl_stat compute_size_in_direction(__isl_take isl_constraint *c,
 	void *user)
 {
 	struct gpu_size_info *size = user;
-	unsigned n_div;
 	isl_val *v;
 	isl_aff *aff;
 	isl_aff *lb;
+	isl_bool is_bound;
 
-	n_div = isl_constraint_dim(c, isl_dim_div);
-
-	if (isl_constraint_involves_dims(c, isl_dim_div, 0, n_div) ||
-	    !isl_constraint_is_lower_bound(c, isl_dim_set, size->pos)) {
+	is_bound = is_suitable_bound(c, size->pos);
+	if (is_bound < 0 || !is_bound) {
 		isl_constraint_free(c);
-		return isl_stat_ok;
+		return is_bound < 0 ? isl_stat_error : isl_stat_ok;
 	}
 
 	aff = isl_constraint_get_bound(c, isl_dim_set, size->pos);
