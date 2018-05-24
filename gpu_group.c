@@ -231,13 +231,11 @@ static isl_stat compute_size_in_direction(__isl_take isl_constraint *c,
 	void *user)
 {
 	struct gpu_size_info *size = user;
-	unsigned nparam;
 	unsigned n_div;
 	isl_val *v;
 	isl_aff *aff;
 	isl_aff *lb;
 
-	nparam = isl_basic_set_dim(size->bset, isl_dim_param);
 	n_div = isl_constraint_dim(c, isl_dim_div);
 
 	if (isl_constraint_involves_dims(c, isl_dim_div, 0, n_div) ||
