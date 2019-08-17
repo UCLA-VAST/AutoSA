@@ -672,6 +672,27 @@ static void complete_grouping(struct ppcg_grouping *grouping)
 	grouping->contraction = upma;
 }
 
+/* Report that the given grouping is used during scheduling
+ * (if the verbose options is set).
+ */
+static void report_grouping(__isl_keep isl_union_pw_multi_aff *contraction,
+	struct ppcg_options *options)
+{
+	isl_ctx *ctx;
+	isl_printer *p;
+
+	if (!options->debug->verbose)
+		return;
+
+	ctx = isl_union_pw_multi_aff_get_ctx(contraction);
+	p = isl_printer_to_file(ctx, stdout);
+	p = isl_printer_print_str(p, "Scheduling performed with grouping ");
+	p = isl_printer_print_union_pw_multi_aff(p, contraction);
+	p = isl_printer_print_str(p, " (use --no-group-chains to disable)");
+	p = isl_printer_end_line(p);
+	isl_printer_free(p);
+}
+
 /* Compute a schedule on the domain of "sc" that respects the schedule
  * constraints in "sc", after trying to combine groups of statements.
  *
@@ -704,6 +725,7 @@ __isl_give isl_schedule *ppcg_compute_grouping_schedule(
 	}
 	complete_grouping(&grouping);
 	contraction = isl_union_pw_multi_aff_copy(grouping.contraction);
+	report_grouping(contraction, options);
 	umap = isl_union_map_from_union_pw_multi_aff(contraction);
 
 	sc = isl_schedule_constraints_apply(grouping.sc, umap);
