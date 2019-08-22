@@ -123,8 +123,9 @@ struct ast_build_userinfo {
  * with equal values for the current dimension.
  */
 static int ast_schedule_dim_is_parallel(__isl_keep isl_ast_build *build,
-	struct ppcg_scop *scop)
+	struct ast_build_userinfo *build_info)
 {
+	struct ppcg_scop *scop = build_info->scop;
 	isl_union_map *schedule, *deps;
 	isl_map *schedule_deps, *test;
 	isl_space *schedule_space;
@@ -177,7 +178,7 @@ static void mark_openmp_parallel(__isl_keep isl_ast_build *build,
 	if (build_info->in_parallel_for)
 		return;
 
-	if (ast_schedule_dim_is_parallel(build, build_info->scop)) {
+	if (ast_schedule_dim_is_parallel(build, build_info)) {
 		build_info->in_parallel_for = 1;
 		node_info->is_openmp = 1;
 	}
