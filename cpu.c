@@ -486,6 +486,19 @@ static __isl_give isl_printer *cpu_print_macros(__isl_take isl_printer *p,
 	return p;
 }
 
+/* Initialize the fields of "build_info".
+ *
+ * Initially, the AST generation is not inside any parallel for loop.
+ */
+static isl_stat init_build_info(struct ast_build_userinfo *build_info,
+	struct ppcg_scop *scop)
+{
+	build_info->scop = scop;
+	build_info->in_parallel_for = 0;
+
+	return isl_stat_ok;
+}
+
 /* Code generate the scop 'scop' using "schedule"
  * and print the corresponding C code to 'p'.
  */
@@ -512,8 +525,8 @@ static __isl_give isl_printer *print_scop(struct ppcg_scop *scop,
 	build = isl_ast_build_set_at_each_domain(build, &at_each_domain, scop);
 
 	if (options->openmp) {
-		build_info.scop = scop;
-		build_info.in_parallel_for = 0;
+		if (init_build_info(&build_info, scop) < 0)
+			build = isl_ast_build_free(build);
 
 		build = isl_ast_build_set_before_each_for(build,
 							&ast_build_before_for,
