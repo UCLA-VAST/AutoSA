@@ -104,12 +104,29 @@ struct ast_build_userinfo {
 
 	/* Are we currently in a parallel for loop? */
 	int in_parallel_for;
+
+	/* The contraction of the entire schedule tree. */
+	isl_union_pw_multi_aff *contraction;
 };
 
 /* Check if the current scheduling dimension is parallel.
  *
  * We check for parallelism by verifying that the loop does not carry any
  * dependences.
+ *
+ * If any expansion nodes are present in the schedule tree,
+ * then they are assumed to be situated near the leaves of the schedule tree,
+ * underneath any node that may result in a for loop.
+ * In particular, these expansions may have been introduced
+ * by the call to isl_schedule_expand inside ppcg_compute_grouping_schedule.
+ * The dependence relations are formulated in terms of the expanded
+ * domains, while, by assumption, the partial schedule returned
+ * by isl_ast_build_get_schedule refers to the contracted domains.
+ * Plug in the contraction such that the schedule would also
+ * refer to the expanded domains.
+ * Note that if the schedule tree does not contain any expansions,
+ * then the contraction is an identity function.
+ *
  * If the live_range_reordering option is set, then this currently
  * includes the order dependences.  In principle, non-zero order dependences
  * could be allowed, but this would require privatization and/or expansion.
@@ -132,6 +149,8 @@ static int ast_schedule_dim_is_parallel(__isl_keep isl_ast_build *build,
 	unsigned i, dimension, is_parallel;
 
 	schedule = isl_ast_build_get_schedule(build);
+	schedule = isl_union_map_preimage_domain_union_pw_multi_aff(schedule,
+		isl_union_pw_multi_aff_copy(build_info->contraction));
 	schedule_space = isl_ast_build_get_schedule_space(build);
 
 	dimension = isl_space_dim(schedule_space, isl_dim_out) - 1;
@@ -489,14 +508,31 @@ static __isl_give isl_printer *cpu_print_macros(__isl_take isl_printer *p,
 /* Initialize the fields of "build_info".
  *
  * Initially, the AST generation is not inside any parallel for loop.
+ *
+ * The contraction of the entire schedule tree is extracted
+ * right underneath the root node.
  */
 static isl_stat init_build_info(struct ast_build_userinfo *build_info,
-	struct ppcg_scop *scop)
+	struct ppcg_scop *scop, __isl_keep isl_schedule *schedule)
 {
+	isl_schedule_node *node = isl_schedule_get_root(schedule);
+	node = isl_schedule_node_child(node, 0);
+
 	build_info->scop = scop;
 	build_info->in_parallel_for = 0;
+	build_info->contraction =
+		isl_schedule_node_get_subtree_contraction(node);
 
-	return isl_stat_ok;
+	isl_schedule_node_free(node);
+
+	return isl_stat_non_null(build_info->contraction);
+}
+
+/* Clear all memory allocated by "build_info".
+ */
+static void clear_build_info(struct ast_build_userinfo *build_info)
+{
+	isl_union_pw_multi_aff_free(build_info->contraction);
 }
 
 /* Code generate the scop 'scop' using "schedule"
@@ -525,7 +561,7 @@ static __isl_give isl_printer *print_scop(struct ppcg_scop *scop,
 	build = isl_ast_build_set_at_each_domain(build, &at_each_domain, scop);
 
 	if (options->openmp) {
-		if (init_build_info(&build_info, scop) < 0)
+		if (init_build_info(&build_info, scop, schedule) < 0)
 			build = isl_ast_build_free(build);
 
 		build = isl_ast_build_set_before_each_for(build,
@@ -538,6 +574,9 @@ static __isl_give isl_printer *print_scop(struct ppcg_scop *scop,
 
 	tree = isl_ast_build_node_from_schedule(build, schedule);
 	isl_ast_build_free(build);
+
+	if (options->openmp)
+		clear_build_info(&build_info);
 
 	print_options = isl_ast_print_options_alloc(ctx);
 	print_options = isl_ast_print_options_set_print_user(print_options,
