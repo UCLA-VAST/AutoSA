@@ -37,7 +37,7 @@ The structure of this repo is as follows:
 
 
 ## Prerequisites
-AutoSA is build upon PPCG 0.08.3 (source repository: http://repo.or.cz/ppcg.git)
+AutoSA is build upon PPCG 0.08.3 (source repository: http://repo.or.cz/ppcg.git).
 Below are the requirements for installing PPCG:
 - automake, autoconf, libtool
 	(not needed when compiling a release)
@@ -63,13 +63,16 @@ install LLVM/clang from source.
 ## Getting Started
 ### Compilation
 ```bash
+./get_submodules.sh
+./autogen.sh
 ./configure
 make
 make check
 ```
 
 ### Use AutoSA to generate HLS code
-1. Annotate the code region to be transformed to HLS C
+1. Annotate the code region to be transformed to HLS C.
+
 Insert a line containing 
 ```c
 #pragma scop
@@ -80,12 +83,13 @@ before the fragment and add a line containing
 ```
 after the fragment.
 
-2. Generate HLS C and OpenCL host code
+2. Generate HLS C and OpenCL host code.
+
 Run
 ```c
-ppcg --target=autosa_hls --autosa file.c
+autosa --target=autosa_hls --autosa file.c
 ```
-where `file.c` is the file containing the fragment. The generated code can be found in `autosa.tmp/file_host.cpp` and `autosa.tmp/file_kernel.c`.
+where `file.c` is the file containing the fragment. The generated code can be found in `autosa.tmp/output/src/file_host.cpp` and `autosa.tmp/output/src/file_kernel.c`.
 
 ## Send Us Failure Cases and Feedback!
 AutoSA is open source for research purposes, and we would like to continously improve it! Please let us know if...
@@ -97,6 +101,7 @@ AutoSA is open source for research purposes, and we would like to continously im
 
 ## Authors and Contributors
 AutoSA is currently maintained by [Jie Wang](http://cadlab.cs.ucla.edu/~jaywang/).
+Besides, we gratefully acknowledge the authors of PPCG for developing and actively maintaining PPCG as an open-source project.
 
 ## Version History
 
