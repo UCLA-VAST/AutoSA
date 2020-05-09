@@ -25,7 +25,7 @@ AM_CPPFLAGS = @ISL_CFLAGS@ @PET_CFLAGS@
 LDADD = $(LIB_PET) $(LIB_ISL)
 
 bin_PROGRAMS = autosa
-ppcg_SOURCES = \
+autosa_SOURCES = \
 	ppcg_src/cpu.c \
 	ppcg_src/cpu.h \
 	ppcg_src/cuda.c \
@@ -61,8 +61,6 @@ ppcg_SOURCES = \
 	ppcg_src/util.c \
 	ppcg_src/util.h \
 	ppcg_src/version.c
-autosa_SOURCES = 
-  
 
 TESTS = @extra_tests@
 EXTRA_TESTS = opencl_test.sh polybench_test.sh

@@ -11,10 +11,9 @@ The structure of this repo is as follows:
 
 .
 |-- README.md: this file
-|-- ppcg_src: directory for PPCG source code
+|-- src: directory for AutoSA source code
     |-- isl: directory for Integer Set Library (isl)
     |-- pet: directory for Polyhedral Extraction Tool (pet)
-|-- autosa_src: directory for AutoSA source code
 |-- autosa_config: directory for AutoSA configuration files
 |-- autosa_scripts: directory for AutoSA scripts
 |-- autosa_tests: directory for AutoSA test code

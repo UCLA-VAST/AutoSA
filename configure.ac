@@ -1,8 +1,8 @@
 AC_INIT([autosa], [0.01], [jiewang@cs.ucla.edu])
-AC_CONFIG_AUX_DIR([.])
-AC_CONFIG_MACRO_DIR([m4])
-AM_INIT_AUTOMAKE([foreign])
-m4_ifdef([AM_SILENT_RULES],[AM_SILENT_RULES([yes])])
+AC_CONFIG_AUX_DIR([build])
+#AC_CONFIG_MACRO_DIR([ppcg_src/m4])
+AM_INIT_AUTOMAKE([foreign subdir-objects])
+#m4_ifdef([AM_SILENT_RULES],[AM_SILENT_RULES([yes])])
 
 AC_PROG_CC
 AC_PROG_LIBTOOL
@@ -69,10 +69,10 @@ AC_CONFIG_FILES(Makefile)
 AC_CONFIG_FILES([polybench_test.sh], [chmod +x polybench_test.sh])
 AC_CONFIG_FILES([opencl_test.sh], [chmod +x opencl_test.sh])
 if test $with_isl = bundled; then
-	AC_CONFIG_SUBDIRS(isl)
+	AC_CONFIG_SUBDIRS($top_builddir/ppcg_src/isl)
 fi
 if test $with_pet = bundled; then
-	AC_CONFIG_SUBDIRS(pet)
+	AC_CONFIG_SUBDIRS($top_builddir/ppcg_src/pet)
 fi
 AC_CONFIG_COMMANDS_POST([
 	dnl pass on arguments to subdir configures, but don't

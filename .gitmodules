@@ -1,6 +1,6 @@
-[submodule "ppcg_src/isl"]
-	path = ppcg_src/isl
-	url = git://repo.or.cz/isl.git
-[submodule "ppcg_src/pet"]
-	path = ppcg_src/pet
+[submodule "src/pet"]
+	path = src/pet
 	url = git://repo.or.cz/pet.git
+[submodule "src/isl"]
+	path = src/isl
+	url = git://repo.or.cz/isl.git
