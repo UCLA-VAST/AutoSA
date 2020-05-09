@@ -1,0 +1,38 @@
+start: 76
+end: 115
+indent: "\t"
+context: '{  :  }'
+schedule: '{ domain: "{ S_0[] }" }'
+arrays:
+- context: '{  :  }'
+  extent: '{ A[i0] : i0 >= 0 }'
+  element_type: const int
+  element_size: 4
+- context: '{  :  }'
+  extent: '{ B[i0] : i0 >= 0 }'
+  element_type: int
+  element_size: 4
+statements:
+- line: 6
+  domain: '{ S_0[] }'
+  body:
+    type: expression
+    expr:
+      type: call
+      name: f
+      arguments:
+      - type: access
+        index: '{ S_0[] -> A[] }'
+        depth: 1
+        reference: __pet_ref_0
+        read: 1
+        write: 0
+      - type: access
+        may_read: '{ S_0[] -> B[o0] }'
+        may_write: '{ S_0[] -> B[o0] }'
+        must_write: '{  }'
+        index: '{ S_0[] -> B[] }'
+        depth: 1
+        reference: __pet_ref_1
+        read: 1
+        write: 1

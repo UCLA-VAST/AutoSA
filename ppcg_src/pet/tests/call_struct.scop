@@ -1,0 +1,101 @@
+start: 295
+end: 407
+indent: "\t"
+context: '{  :  }'
+schedule: '{ domain: "{ S_0[]; S_2[]; S_1[i] : 0 < i <= 3 }", child: { sequence: [
+  { filter: "{ S_0[] }" }, { filter: "{ S_1[i] }", child: { schedule: "L_0[{ S_1[i]
+  -> [(i)] }]" } }, { filter: "{ S_2[] }" } ] } }'
+types:
+- name: s0
+  definition: "struct s0 {\n    struct {\n        int a[10];\n    } f[10];\n    int
+    b;\n}"
+- name: s
+  definition: "struct s {\n    struct s0 c[10];\n}"
+arrays:
+- context: '{  :  }'
+  extent: '{ s[i0] : 0 <= i0 <= 9 }'
+  element_type: struct s
+  element_size: 4040
+  element_is_record: 1
+  outer: 1
+- context: '{  :  }'
+  extent: '{ s_c[s[i0] -> c[i1]] : 0 <= i0 <= 9 and 0 <= i1 <= 9 }'
+  element_type: struct s0
+  element_size: 404
+  element_is_record: 1
+  outer: 1
+- context: '{  :  }'
+  extent: '{ s_c_b[s_c[s[i0] -> c[i1]] -> b[]] : 0 <= i0 <= 9 and 0 <= i1 <= 9 }'
+  element_type: int
+  element_size: 4
+- context: '{  :  }'
+  extent: '{ s_c_f[s_c[s[i0] -> c[i1]] -> f[i2]] : 0 <= i0 <= 9 and 0 <= i1 <= 9 and
+    0 <= i2 <= 9 }'
+  element_type: <subfield>
+  element_size: 40
+  element_is_record: 1
+  outer: 1
+- context: '{  :  }'
+  extent: '{ s_c_f_a[s_c_f[s_c[s[i0] -> c[i1]] -> f[i2]] -> a[i3]] : 0 <= i0 <= 9
+    and 0 <= i1 <= 9 and 0 <= i2 <= 9 and 0 <= i3 <= 9 }'
+  element_type: int
+  element_size: 4
+statements:
+- line: 30
+  domain: '{ S_0[] }'
+  body:
+    type: expression
+    expr:
+      type: call
+      name: bar
+      arguments:
+      - type: access
+        may_write: '{ S_0[] -> s_c_b[s_c[s[0] -> c[3]] -> b[]]; S_0[] -> s_c_f_a[s_c_f[s_c[s[0]
+          -> c[2]] -> f[o2]] -> a[o3]] : 0 <= o2 <= 9 and 0 <= o3 <= 9 }'
+        must_write: '{ S_0[] -> s_c_b[s_c[s[0] -> c[3]] -> b[]]; S_0[] -> s_c_f_a[s_c_f[s_c[s[0]
+          -> c[2]] -> f[o2]] -> a[o3]] : 0 <= o2 <= 9 and 0 <= o3 <= 9 }'
+        index: '{ S_0[] -> s_c[s[(0)] -> c[]] }'
+        depth: 2
+        reference: __pet_ref_0
+        read: 0
+        write: 1
+- line: 32
+  domain: '{ S_1[i] : 0 < i <= 3 }'
+  body:
+    type: expression
+    expr:
+      type: call
+      name: bar
+      arguments:
+      - type: op
+        operation: '&'
+        arguments:
+        - type: access
+          may_write: '{ S_1[i] -> s_c_f_a[s_c_f[s_c[s[1] -> c[2 + i]] -> f[o2]] ->
+            a[o3]] : 0 <= o2 <= 9 and 0 <= o3 <= 9; S_1[i] -> s_c_b[s_c[s[1] -> c[3
+            + i]] -> b[]] }'
+          must_write: '{ S_1[i] -> s_c_f_a[s_c_f[s_c[s[1] -> c[2 + i]] -> f[o2]] ->
+            a[o3]] : 0 <= o2 <= 9 and 0 <= o3 <= 9; S_1[i] -> s_c_b[s_c[s[1] -> c[3
+            + i]] -> b[]] }'
+          index: '{ S_1[i] -> s_c[s[(1)] -> c[(i)]] }'
+          reference: __pet_ref_1
+          read: 0
+          write: 1
+- line: 33
+  domain: '{ S_2[] }'
+  body:
+    type: expression
+    expr:
+      type: call
+      name: quux
+      arguments:
+      - type: op
+        operation: '&'
+        arguments:
+        - type: access
+          may_write: '{ S_2[] -> s_c_b[s_c[s[2] -> c[9]] -> b[]] }'
+          must_write: '{ S_2[] -> s_c_b[s_c[s[2] -> c[9]] -> b[]] }'
+          index: '{ S_2[] -> s_c_b[s_c[s[(2)] -> c[(9)]] -> b[]] }'
+          reference: __pet_ref_2
+          read: 0
+          write: 1

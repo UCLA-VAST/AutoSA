@@ -1,0 +1,37 @@
+start: 100
+end: 155
+indent: "\t"
+context: '[n] -> {  : 0 <= n <= 2147483647 }'
+schedule: '{ domain: "[n] -> { S_0[] : n > 0 }" }'
+types:
+- name: field
+  definition: typedef int field
+- name: a
+  definition: "typedef struct {\n    field a;\n} a"
+arrays:
+- context: '[n] -> {  : n >= 0 }'
+  extent: '[n] -> { s[i0] : 0 <= i0 < n }'
+  element_type: a
+  element_size: 4
+  element_is_record: 1
+  outer: 1
+- context: '[n] -> {  : n >= 0 }'
+  extent: '[n] -> { s_a[s[i0] -> a[]] : 0 <= i0 < n }'
+  element_type: field
+  element_size: 4
+statements:
+- line: 10
+  domain: '[n] -> { S_0[] : n > 0 }'
+  body:
+    type: expression
+    expr:
+      type: op
+      operation: =
+      arguments:
+      - type: access
+        index: '[n] -> { S_0[] -> s_a[s[(0)] -> a[]] }'
+        reference: __pet_ref_0
+        read: 0
+        write: 1
+      - type: int
+        value: 5

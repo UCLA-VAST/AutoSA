@@ -1,0 +1,64 @@
+start: 125
+end: 178
+indent: "\t"
+context: '{  :  }'
+schedule: '{ domain: "{ S_0[]; S_1[] }", child: { sequence: [ { filter: "{ S_0[] }"
+  }, { filter: "{ S_1[] }" } ] } }'
+types:
+- name: scomplex
+  definition: "typedef struct scomplex {\n    float re;\n    float im;\n} scomplex"
+- name: pair
+  definition: "struct pair {\n    scomplex c[2];\n}"
+arrays:
+- context: '{  :  }'
+  extent: '{ p[] }'
+  element_type: struct pair
+  element_size: 16
+  element_is_record: 1
+  outer: 1
+- context: '{  :  }'
+  extent: '{ p_c[p[] -> c[i0]] : 0 <= i0 <= 1 }'
+  element_type: struct scomplex
+  element_size: 8
+  element_is_record: 1
+  outer: 1
+- context: '{  :  }'
+  extent: '{ p_c_im[p_c[p[] -> c[i0]] -> im[]] : 0 <= i0 <= 1 }'
+  element_type: float
+  element_size: 4
+- context: '{  :  }'
+  extent: '{ p_c_re[p_c[p[] -> c[i0]] -> re[]] : 0 <= i0 <= 1 }'
+  element_type: float
+  element_size: 4
+statements:
+- line: 15
+  domain: '{ S_0[] }'
+  body:
+    type: expression
+    expr:
+      type: op
+      operation: =
+      arguments:
+      - type: access
+        index: '{ S_0[] -> p_c_re[p_c[p[] -> c[(0)]] -> re[]] }'
+        reference: __pet_ref_0
+        read: 0
+        write: 1
+      - type: access
+        index: '{ S_0[] -> p_c_im[p_c[p[] -> c[(1)]] -> im[]] }'
+        reference: __pet_ref_1
+        read: 1
+        write: 0
+- line: -1
+  domain: '{ S_1[] }'
+  body:
+    type: expression
+    expr:
+      type: op
+      operation: kill
+      arguments:
+      - type: access
+        killed: '{ S_1[] -> p[] }'
+        index: '{ S_1[] -> p[] }'
+        reference: __pet_ref_2
+        kill: 1

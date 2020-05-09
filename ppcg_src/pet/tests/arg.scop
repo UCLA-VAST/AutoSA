@@ -1,0 +1,124 @@
+start: 72
+end: 166
+indent: "\t"
+context: '{  :  }'
+schedule: '{ domain: "{ S_3[i] : 0 <= i <= 9; S_0[]; S_2[i] : 0 <= i <= 9; S_4[];
+  S_1[i] : 0 <= i <= 9 }", child: { sequence: [ { filter: "{ S_0[] }" }, { filter:
+  "{ S_3[i]; S_2[i]; S_1[i] }", child: { schedule: "L_0[{ S_2[i] -> [(i)]; S_3[i]
+  -> [(i)]; S_1[i] -> [(i)] }]", child: { sequence: [ { filter: "{ S_1[i] }" }, {
+  filter: "{ S_2[i] }" }, { filter: "{ S_3[i] }" } ] } } }, { filter: "{ S_4[] }"
+  } ] } }'
+arrays:
+- context: '{  :  }'
+  extent: '{ a[] }'
+  element_type: int
+  element_size: 4
+- context: '{  :  }'
+  extent: '{ b[i0] : 0 <= i0 <= 10 }'
+  element_type: int
+  element_size: 4
+- context: '{  :  }'
+  extent: '{ i[] }'
+  element_type: int
+  element_size: 4
+statements:
+- line: 10
+  domain: '{ S_0[] }'
+  body:
+    type: expression
+    expr:
+      type: op
+      operation: =
+      arguments:
+      - type: access
+        index: '{ S_0[] -> i[] }'
+        reference: __pet_ref_0
+        read: 0
+        write: 1
+      - type: int
+        value: 0
+- line: 11
+  domain: '{ S_1[i] : 0 <= i <= 9 }'
+  body:
+    type: expression
+    expr:
+      type: call
+      name: f
+      arguments:
+      - type: op
+        operation: '&'
+        arguments:
+        - type: access
+          index: '{ S_1[i] -> a[] }'
+          reference: __pet_ref_1
+          read: 1
+          write: 0
+      - type: op
+        operation: '&'
+        arguments:
+        - type: access
+          may_read: '{ S_1[i] -> a[] }'
+          may_write: '{ S_1[i] -> a[] }'
+          must_write: '{  }'
+          index: '{ S_1[i] -> a[] }'
+          reference: __pet_ref_2
+          read: 1
+          write: 1
+- line: 12
+  domain: '{ S_2[i] : 0 <= i <= 9 }'
+  body:
+    type: expression
+    expr:
+      type: call
+      name: f
+      arguments:
+      - type: op
+        operation: '&'
+        arguments:
+        - type: access
+          index: '{ S_2[i] -> b[(i)] }'
+          reference: __pet_ref_3
+          read: 1
+          write: 0
+      - type: op
+        operation: '&'
+        arguments:
+        - type: access
+          may_read: '{ S_2[i] -> b[1 + i] }'
+          may_write: '{ S_2[i] -> b[1 + i] }'
+          must_write: '{  }'
+          index: '{ S_2[i] -> b[(1 + i)] }'
+          reference: __pet_ref_4
+          read: 1
+          write: 1
+- line: 10
+  domain: '{ S_3[i] : 0 <= i <= 9 }'
+  body:
+    type: expression
+    expr:
+      type: op
+      operation: =
+      arguments:
+      - type: access
+        index: '{ S_3[i] -> i[] }'
+        reference: __pet_ref_5
+        read: 0
+        write: 1
+      - type: access
+        index: '{ S_3[i] -> [(1 + i)] }'
+        reference: __pet_ref_6
+        read: 1
+        write: 0
+- line: -1
+  domain: '{ S_4[] }'
+  body:
+    type: expression
+    expr:
+      type: op
+      operation: kill
+      arguments:
+      - type: access
+        killed: '{ S_4[] -> i[] }'
+        index: '{ S_4[] -> i[] }'
+        reference: __pet_ref_7
+        kill: 1

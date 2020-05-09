@@ -1,0 +1,43 @@
+start: 23
+end: 91
+indent: "\t"
+context: '[k] -> {  : 0 <= k <= 2147483647 }'
+schedule: '{ domain: "[k] -> { S_1[]; S_0[] }", child: { sequence: [ { filter: "[k]
+  -> { S_0[] }" }, { filter: "[k] -> { S_1[] }" } ] } }'
+arrays:
+- context: '{  :  }'
+  extent: '[k] -> { a[] }'
+  element_type: int
+  element_size: 4
+statements:
+- line: 5
+  domain: '[k] -> { S_0[] }'
+  body:
+    type: expression
+    expr:
+      type: op
+      operation: assume
+      arguments:
+      - type: access
+        index: '[k] -> { S_0[] -> [(1)] }'
+        reference: __pet_ref_0
+        read: 1
+        write: 0
+- line: 6
+  domain: '[k] -> { S_1[] }'
+  body:
+    type: expression
+    expr:
+      type: op
+      operation: =
+      arguments:
+      - type: access
+        index: '[k] -> { S_1[] -> a[] }'
+        reference: __pet_ref_1
+        read: 0
+        write: 1
+      - type: access
+        index: '[k] -> { S_1[] -> [(k - 16*floor((k)/16))] }'
+        reference: __pet_ref_2
+        read: 1
+        write: 0

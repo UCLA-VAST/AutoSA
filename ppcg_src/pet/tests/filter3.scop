@@ -1,0 +1,82 @@
+start: 51
+end: 125
+indent: "\t"
+context: '{  :  }'
+schedule: '{ domain: "{ S_0[]; S_2[]; S_1[] }", child: { sequence: [ { filter: "{
+  S_0[] }" }, { filter: "{ S_1[] }" }, { filter: "{ S_2[] }" } ] } }'
+arrays:
+- context: '{  :  }'
+  extent: '{ __pet_test_0[] }'
+  value_bounds: '{ [i0] : 0 <= i0 <= 1 }'
+  element_type: int
+  element_size: 4
+  uniquely_defined: 1
+- context: '{  :  }'
+  extent: '{ index[] }'
+  element_type: int
+  element_size: 4
+- context: '{  :  }'
+  extent: '{ test[i0] : i0 >= 0 }'
+  element_type: int
+  element_size: 4
+statements:
+- line: 6
+  domain: '{ S_0[] }'
+  body:
+    type: expression
+    expr:
+      type: op
+      operation: =
+      arguments:
+      - type: access
+        index: '{ S_0[] -> index[] }'
+        reference: __pet_ref_0
+        read: 0
+        write: 1
+      - type: call
+        name: f
+- line: 7
+  domain: '{ S_1[] }'
+  body:
+    type: expression
+    expr:
+      type: op
+      operation: =
+      arguments:
+      - type: access
+        index: '{ S_1[] -> __pet_test_0[] }'
+        reference: __pet_ref_1
+        read: 0
+        write: 1
+      - type: access
+        index: '{ [S_1[] -> [i0]] -> test[((i0) : i0 >= 0)] }'
+        reference: __pet_ref_3
+        read: 1
+        write: 0
+        arguments:
+        - type: access
+          index: '{ S_1[] -> index[] }'
+          reference: __pet_ref_2
+          read: 1
+          write: 0
+- line: 8
+  domain: '{ [S_2[] -> [__pet_test_0 = 1]] }'
+  body:
+    type: expression
+    expr:
+      type: op
+      operation: =
+      arguments:
+      - type: access
+        index: '{ S_2[] -> index[] }'
+        reference: __pet_ref_5
+        read: 0
+        write: 1
+      - type: int
+        value: 5
+  arguments:
+  - type: access
+    index: '{ S_2[] -> __pet_test_0[] }'
+    reference: __pet_ref_4
+    read: 1
+    write: 0

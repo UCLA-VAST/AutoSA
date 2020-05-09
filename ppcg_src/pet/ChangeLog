@@ -1,0 +1,96 @@
+version: 0.11.3
+date: Sat Nov  9 10:58:20 CET 2019
+changes:
+	- support recent versions of clang
+---
+version: 0.11.2
+date: Tue Mar 26 20:04:11 CET 2019
+changes:
+	- support recent versions of clang
+---
+version: 0.11.1
+date: Sat Jul 28 23:01:35 CEST 2018
+changes:
+	- update isl
+---
+version: 0.11
+date: Sat Mar  3 11:00:19 CET 2018
+changes:
+	- support bitwise assignment operators in statements
+	- support inlining of non-outermost call expressions
+	- support return statements in summary functions
+---
+version: 0.10
+date: Sun Dec 18 11:07:36 CET 2016
+changes:
+	- detect and report unbalanced pairs of scop/endscop pragmas
+	- take into account assumptions during extraction
+---
+version: 0.09
+date: Tue May  3 15:06:19 CEST 2016
+changes:
+	- push affine conditions into index expressions
+	- properly support undeclared loop iterators
+---
+version: 0.08
+date: Fri Jan 15 08:27:46 CET 2016
+changes:
+	- initialize compiler builtins
+	- support recent clangs
+	- rename pet_scop accessors
+	- support variable renaming
+	- support inlining of outermost call expressions
+	- add preliminary Python bindings
+---
+version: 0.07
+date: Sat Jun 13 08:47:22 CEST 2015
+changes:
+	- support recent clangs
+	- support __pencil_kill
+	- support schedule trees
+---
+version: 0.06
+date: Sun Oct 26 09:47:01 CET 2014
+changes:
+	- support recent clangs
+	- break up access relations into may_read/may_write/must_write
+	- analyze called function if body is available
+	- support summary functions
+---
+version: 0.05
+date: Mon Apr 14 11:14:39 CEST 2014
+changes:
+	- support recent clangs
+	- support more types of operations in statements
+	- add printing of (transformed) statement bodies
+	- add reference identifiers
+	- keep track of index expressions
+	- support multiple scops
+	- support member accesses
+	- improved support for autodetecting scops
+	- support macro statements
+	- support enum constants
+	- support pencil independent pragma
+---
+version: 0.04
+date: Wed Jun 26 10:25:53 CEST 2013
+changes:
+	- support recent clangs
+	- keep better track of doubles
+	- support cast expressions
+---
+version: 0.03
+date: Mon Dec  3 08:19:06 CET 2012
+changes:
+	- support recent clangs
+	- support (single) variable declarations inside a scop
+	- support modulo operation statements
+---
+version: 0.02
+date: Mon Jun  4 14:35:43 CEST 2012
+changes:
+	- support recent clangs
+	- take into account overflows on signed integers
+	- support increment and decrement operation statements
+	- support non-affine conditions in for loops
+	- support while, break and continue

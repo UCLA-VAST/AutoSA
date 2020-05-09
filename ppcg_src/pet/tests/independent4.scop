@@ -1,0 +1,41 @@
+start: 44
+end: 210
+indent: "\t"
+context: '[n] -> {  : 0 <= n <= 1073741824 }'
+schedule: '{ domain: "[n] -> { S_0[i, j] : 0 <= i < n and 0 <= j < n }", child: {
+  schedule: "[n] -> L_0[{ S_0[i, j] -> [(i)] }]", child: { schedule: "[n] -> L_1[{
+  S_0[i, j] -> [(j)] }]" } } }'
+arrays:
+- context: '[n] -> {  : n >= 0 }'
+  extent: '[n] -> { A[i0, i1] : i0 >= 0 and 0 <= i1 < n }'
+  element_type: int
+  element_size: 4
+- context: '[n] -> {  : n >= 0 }'
+  extent: '[n] -> { B[i0, i1] : i0 >= 0 and 0 <= i1 < n }'
+  element_type: int
+  element_size: 4
+statements:
+- line: 7
+  domain: '[n] -> { S_0[i, j] : 0 <= i < n and 0 <= j < n }'
+  body:
+    type: expression
+    expr:
+      type: op
+      operation: =
+      arguments:
+      - type: access
+        index: '[n] -> { [S_0[i, j] -> [i2]] -> B[(i), ((i2) : i2 >= 0)] }'
+        reference: __pet_ref_1
+        read: 0
+        write: 1
+        arguments:
+        - type: access
+          index: '[n] -> { S_0[i, j] -> A[(i), (j)] }'
+          reference: __pet_ref_0
+          read: 1
+          write: 0
+      - type: access
+        index: '[n] -> { S_0[i, j] -> [(i + j)] }'
+        reference: __pet_ref_2
+        read: 1
+        write: 0

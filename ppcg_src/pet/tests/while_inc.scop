@@ -1,0 +1,134 @@
+start: 31
+end: 109
+indent: "\t"
+context: '{  :  }'
+schedule: '{ domain: "{ S_3[t] : t >= 0; S_0[]; S_2[t] : t >= 0; S_4[]; S_1[t] : t
+  >= 0 }", child: { sequence: [ { filter: "{ S_0[] }" }, { filter: "{ S_3[t]; S_2[t];
+  S_1[t] }", child: { schedule: "L_0[{ S_2[t] -> [(t)]; S_3[t] -> [(t)]; S_1[t] ->
+  [(t)] }]", child: { sequence: [ { filter: "{ S_1[t] }" }, { filter: "{ S_2[t] }"
+  }, { filter: "{ S_3[t] }" } ] } } }, { filter: "{ S_4[] }" } ] } }'
+arrays:
+- context: '{  :  }'
+  extent: '{ __pet_test_0[t] : t >= 0 }'
+  value_bounds: '{ [i0] : 0 <= i0 <= 1 }'
+  element_type: int
+  element_size: 4
+  uniquely_defined: 1
+- context: '{  :  }'
+  extent: '{ T[i0] : i0 >= 0 }'
+  element_type: int
+  element_size: 4
+- context: '{  :  }'
+  extent: '{ i[] }'
+  element_type: int
+  element_size: 4
+statements:
+- line: 5
+  domain: '{ S_0[] }'
+  body:
+    type: expression
+    expr:
+      type: op
+      operation: =
+      arguments:
+      - type: access
+        index: '{ S_0[] -> i[] }'
+        reference: __pet_ref_0
+        read: 0
+        write: 1
+      - type: int
+        value: 0
+- line: 6
+  domain: '{ [S_1[t] -> [__pet_test_0 = 1]] : t >= 0 }'
+  body:
+    type: expression
+    expr:
+      type: op
+      operation: =
+      arguments:
+      - type: access
+        index: '{ S_1[t] -> __pet_test_0[(t)] }'
+        reference: __pet_ref_2
+        read: 0
+        write: 1
+      - type: op
+        operation: <
+        arguments:
+        - type: access
+          index: '{ S_1[t] -> i[] }'
+          reference: __pet_ref_3
+          read: 1
+          write: 0
+        - type: int
+          value: 100
+  arguments:
+  - type: access
+    index: '{ S_1[t] -> __pet_test_0[((-1 + t) : t > 0)] }'
+    reference: __pet_ref_1
+    read: 1
+    write: 0
+- line: 7
+  domain: '{ [S_2[t] -> [__pet_test_0 = 1]] : t >= 0 }'
+  body:
+    type: expression
+    expr:
+      type: op
+      operation: =
+      arguments:
+      - type: access
+        index: '{ [S_2[t] -> [i1]] -> T[((i1) : i1 >= 0)] }'
+        reference: __pet_ref_6
+        read: 0
+        write: 1
+        arguments:
+        - type: access
+          index: '{ S_2[t] -> i[] }'
+          reference: __pet_ref_5
+          read: 1
+          write: 0
+      - type: access
+        index: '{ S_2[t] -> i[] }'
+        reference: __pet_ref_7
+        read: 1
+        write: 0
+  arguments:
+  - type: access
+    index: '{ S_2[t] -> __pet_test_0[(t)] }'
+    reference: __pet_ref_4
+    read: 1
+    write: 0
+- line: 8
+  domain: '{ [S_3[t] -> [__pet_test_0 = 1]] : t >= 0 }'
+  body:
+    type: expression
+    expr:
+      type: op
+      operation: ++
+      arguments:
+      - type: access
+        index: '{ S_3[t] -> i[] }'
+        reference: __pet_ref_9
+        read: 1
+        write: 1
+  arguments:
+  - type: access
+    index: '{ S_3[t] -> __pet_test_0[(t)] }'
+    reference: __pet_ref_8
+    read: 1
+    write: 0
+- line: -1
+  domain: '{ S_4[] }'
+  body:
+    type: expression
+    expr:
+      type: op
+      operation: kill
+      arguments:
+      - type: access
+        killed: '{ S_4[] -> i[] }'
+        index: '{ S_4[] -> i[] }'
+        reference: __pet_ref_10
+        kill: 1
+implications:
+- satisfied: 1
+  extension: '{ __pet_test_0[t] -> __pet_test_0[t''] : 0 <= t'' <= t }'

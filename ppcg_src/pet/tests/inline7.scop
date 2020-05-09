@@ -1,0 +1,100 @@
+start: 286
+end: 356
+indent: "\t"
+context: '{  :  }'
+schedule: '{ domain: "{ S_3[i, i''] : 0 <= i <= 9 and 0 <= i'' <= 19; S_2[i] : 0 <=
+  i <= 9; S_0[i] : 0 <= i <= 9; S_1[i] : 0 <= i <= 9 }", child: { schedule: "L_0[{
+  S_3[i, i''] -> [(i)]; S_2[i] -> [(i)]; S_1[i] -> [(i)]; S_0[i] -> [(i)] }]", child:
+  { sequence: [ { filter: "{ S_0[i] }" }, { filter: "{ S_1[i] }" }, { filter: "{ S_3[i,
+  i''] }", child: { schedule: "L_1[{ S_3[i, i''] -> [(i'')] }]" } }, { filter: "{
+  S_2[i] }" } ] } } }'
+types:
+- name: s
+  definition: "struct s {\n    int a[30][40];\n    int b[50];\n}"
+arrays:
+- context: '{  :  }'
+  extent: '{ __pet_arg_0[] }'
+  element_type: int
+  element_size: 4
+  declared: 1
+- context: '{  :  }'
+  extent: '{ s[i0, i1] : 0 <= i0 <= 9 and 0 <= i1 <= 19 }'
+  element_type: struct s
+  element_size: 5000
+  element_is_record: 1
+  outer: 1
+- context: '{  :  }'
+  extent: '{ s_a[s[i0, i1] -> a[i2, i3]] : 0 <= i0 <= 9 and 0 <= i1 <= 19 and 0 <=
+    i2 <= 29 and 0 <= i3 <= 39 }'
+  element_type: int
+  element_size: 4
+- context: '{  :  }'
+  extent: '{ s_b[s[i0, i1] -> b[i2]] : 0 <= i0 <= 9 and 0 <= i1 <= 19 and 0 <= i2
+    <= 49 }'
+  element_type: int
+  element_size: 4
+statements:
+- line: -1
+  domain: '{ S_0[i] : 0 <= i <= 9 }'
+  body:
+    type: expression
+    expr:
+      type: op
+      operation: kill
+      arguments:
+      - type: access
+        killed: '{ S_0[i] -> __pet_arg_0[] }'
+        index: '{ S_0[i] -> __pet_arg_0[] }'
+        reference: __pet_ref_0
+        kill: 1
+- line: -1
+  domain: '{ S_1[i] : 0 <= i <= 9 }'
+  body:
+    type: expression
+    expr:
+      type: op
+      operation: =
+      arguments:
+      - type: access
+        index: '{ S_1[i] -> __pet_arg_0[] }'
+        reference: __pet_ref_1
+        read: 0
+        write: 1
+      - type: access
+        index: '{ S_1[i] -> [(i)] }'
+        reference: __pet_ref_2
+        read: 1
+        write: 0
+- line: 17
+  domain: '{ S_3[i, i''] : 0 <= i <= 9 and 0 <= i'' <= 19 }'
+  body:
+    type: expression
+    expr:
+      type: call
+      name: g
+      arguments:
+      - type: op
+        operation: '&'
+        arguments:
+        - type: access
+          may_write: '{ S_3[i, i''] -> s_a[s[i, i''] -> a[o2, o3]] : 10 <= o2 <= 19
+            and 20 <= o3 <= 29; S_3[i, i''] -> s_b[s[i, i''] -> b[5]] }'
+          must_write: '{ S_3[i, i''] -> s_a[s[i, i''] -> a[o2, o3]] : 10 <= o2 <=
+            19 and 20 <= o3 <= 29; S_3[i, i''] -> s_b[s[i, i''] -> b[5]] }'
+          index: '{ S_3[i, i''] -> s[(i), (i'')] }'
+          reference: __pet_ref_3
+          read: 0
+          write: 1
+- line: -1
+  domain: '{ S_2[i] : 0 <= i <= 9 }'
+  body:
+    type: expression
+    expr:
+      type: op
+      operation: kill
+      arguments:
+      - type: access
+        killed: '{ S_2[i] -> __pet_arg_0[] }'
+        index: '{ S_2[i] -> __pet_arg_0[] }'
+        reference: __pet_ref_4
+        kill: 1

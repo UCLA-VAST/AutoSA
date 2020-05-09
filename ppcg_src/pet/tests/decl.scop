@@ -1,0 +1,292 @@
+start: 95
+end: 282
+indent: "\t"
+context: '[N, K, M] -> {  : 0 <= N <= 2147483647 and 0 <= K <= 2147483647 and -2147483648
+  <= M <= 2147483647 }'
+schedule: '{ domain: "[N, K, M] -> { S_11[]; S_1[i] : 0 <= i < M; S_4[i, j, k] : 0
+  <= i < M and 0 <= j < N and 0 <= k < K; S_8[i, j, k] : 0 <= i < M and 0 <= j < N
+  and 0 <= k < K; S_9[i, j] : 0 <= i < M and 0 <= j < N; S_13[]; S_0[]; S_7[i, j,
+  k] : 0 <= i < M and 0 <= j < N and 0 <= k < K; S_2[i, j] : 0 <= i < M and 0 <= j
+  < N; S_12[]; S_10[i] : 0 <= i < M; S_6[i, j, k] : 0 <= i < M and 0 <= j < N and
+  0 <= k < K; S_5[i, j, k] : 0 <= i < M and 0 <= j < N and 0 <= k < K; S_3[i, j] :
+  0 <= i < M and 0 <= j < N }", child: { sequence: [ { filter: "[M, N, K] -> { S_0[]
+  }" }, { filter: "[M, N, K] -> { S_4[i, j, k]; S_5[i, j, k]; S_9[i, j]; S_6[i, j,
+  k]; S_2[i, j]; S_8[i, j, k]; S_7[i, j, k]; S_3[i, j]; S_1[i]; S_10[i] }", child:
+  { schedule: "[M, N, K] -> L_0[{ S_4[i, j, k] -> [(i)]; S_5[i, j, k] -> [(i)]; S_9[i,
+  j] -> [(i)]; S_6[i, j, k] -> [(i)]; S_2[i, j] -> [(i)]; S_8[i, j, k] -> [(i)]; S_7[i,
+  j, k] -> [(i)]; S_3[i, j] -> [(i)]; S_1[i] -> [(i)]; S_10[i] -> [(i)] }]", child:
+  { sequence: [ { filter: "[M, N, K] -> { S_1[i] }" }, { filter: "[M, N, K] -> { S_4[i,
+  j, k]; S_5[i, j, k]; S_9[i, j]; S_6[i, j, k]; S_2[i, j]; S_8[i, j, k]; S_7[i, j,
+  k]; S_3[i, j] }", child: { schedule: "[M, N, K] -> L_1[{ S_4[i, j, k] -> [(j)];
+  S_5[i, j, k] -> [(j)]; S_9[i, j] -> [(j)]; S_6[i, j, k] -> [(j)]; S_2[i, j] -> [(j)];
+  S_8[i, j, k] -> [(j)]; S_7[i, j, k] -> [(j)]; S_3[i, j] -> [(j)] }]", child: { sequence:
+  [ { filter: "[M, N, K] -> { S_2[i, j] }" }, { filter: "[M, N, K] -> { S_3[i, j]
+  }" }, { filter: "[M, N, K] -> { S_5[i, j, k]; S_4[i, j, k]; S_6[i, j, k]; S_8[i,
+  j, k]; S_7[i, j, k] }", child: { schedule: "[M, N, K] -> L_2[{ S_5[i, j, k] -> [(k)];
+  S_4[i, j, k] -> [(k)]; S_6[i, j, k] -> [(k)]; S_8[i, j, k] -> [(k)]; S_7[i, j, k]
+  -> [(k)] }]", child: { sequence: [ { filter: "[M, N, K] -> { S_4[i, j, k] }" },
+  { filter: "[M, N, K] -> { S_5[i, j, k] }" }, { filter: "[M, N, K] -> { S_7[i, j,
+  k] }" }, { filter: "[M, N, K] -> { S_6[i, j, k] }" }, { filter: "[M, N, K] -> {
+  S_8[i, j, k] }" } ] } } }, { filter: "[M, N, K] -> { S_9[i, j] }" } ] } } }, { filter:
+  "[M, N, K] -> { S_10[i] }" } ] } } }, { filter: "[M, N, K] -> { S_11[]; S_12[];
+  S_13[] }", child: { set: [ { filter: "{ S_11[] }" }, { filter: "{ S_12[] }" }, {
+  filter: "{ S_13[] }" } ] } } ] } }'
+arrays:
+- context: '{  :  }'
+  extent: '[N, K, M] -> { t[] }'
+  element_type: float
+  element_size: 4
+  declared: 1
+- context: '[K] -> {  : K >= 0 }'
+  extent: '[N, K, M] -> { A[i0, i1] : i0 >= 0 and 0 <= i1 < K }'
+  element_type: float
+  element_size: 4
+- context: '[N] -> {  : N >= 0 }'
+  extent: '[N, K, M] -> { B[i0, i1] : i0 >= 0 and 0 <= i1 < N }'
+  element_type: float
+  element_size: 4
+- context: '[N] -> {  : N >= 0 }'
+  extent: '[N, K, M] -> { C[i0, i1] : i0 >= 0 and 0 <= i1 < N }'
+  element_type: float
+  element_size: 4
+- context: '{  :  }'
+  extent: '[N, K, M] -> { i[] }'
+  element_type: int
+  element_size: 4
+- context: '{  :  }'
+  extent: '[N, K, M] -> { j[] }'
+  element_type: int
+  element_size: 4
+- context: '{  :  }'
+  extent: '[N, K, M] -> { k[] }'
+  element_type: int
+  element_size: 4
+statements:
+- line: 6
+  domain: '[N, K, M] -> { S_0[] }'
+  body:
+    type: expression
+    expr:
+      type: op
+      operation: =
+      arguments:
+      - type: access
+        index: '[N, K, M] -> { S_0[] -> i[] }'
+        reference: __pet_ref_0
+        read: 0
+        write: 1
+      - type: int
+        value: 0
+- line: 7
+  domain: '[N, K, M] -> { S_1[i] : 0 <= i < M }'
+  body:
+    type: expression
+    expr:
+      type: op
+      operation: =
+      arguments:
+      - type: access
+        index: '[N, K, M] -> { S_1[i] -> j[] }'
+        reference: __pet_ref_1
+        read: 0
+        write: 1
+      - type: int
+        value: 0
+- line: 8
+  domain: '[N, K, M] -> { S_2[i, j] : 0 <= i < M and 0 <= j < N }'
+  body:
+    type: expression
+    expr:
+      type: op
+      operation: =
+      arguments:
+      - type: access
+        index: '[N, K, M] -> { S_2[i, j] -> C[(i), (j)] }'
+        reference: __pet_ref_2
+        read: 0
+        write: 1
+      - type: int
+        value: 0
+- line: 9
+  domain: '[N, K, M] -> { S_3[i, j] : 0 <= i < M and 0 <= j < N }'
+  body:
+    type: expression
+    expr:
+      type: op
+      operation: =
+      arguments:
+      - type: access
+        index: '[N, K, M] -> { S_3[i, j] -> k[] }'
+        reference: __pet_ref_3
+        read: 0
+        write: 1
+      - type: int
+        value: 0
+- line: 10
+  domain: '[N, K, M] -> { S_4[i, j, k] : 0 <= i < M and 0 <= j < N and 0 <= k < K
+    }'
+  body:
+    type: expression
+    expr:
+      type: op
+      operation: kill
+      arguments:
+      - type: access
+        killed: '[N, K, M] -> { S_4[i, j, k] -> t[] }'
+        index: '[N, K, M] -> { S_4[i, j, k] -> t[] }'
+        reference: __pet_ref_4
+        kill: 1
+- line: 10
+  domain: '[N, K, M] -> { S_5[i, j, k] : 0 <= i < M and 0 <= j < N and 0 <= k < K
+    }'
+  body:
+    type: expression
+    expr:
+      type: op
+      operation: =
+      arguments:
+      - type: access
+        index: '[N, K, M] -> { S_5[i, j, k] -> t[] }'
+        reference: __pet_ref_5
+        read: 0
+        write: 1
+      - type: op
+        operation: '*'
+        arguments:
+        - type: access
+          index: '[N, K, M] -> { S_5[i, j, k] -> A[(i), (k)] }'
+          reference: __pet_ref_6
+          read: 1
+          write: 0
+        - type: access
+          index: '[N, K, M] -> { S_5[i, j, k] -> B[(k), (j)] }'
+          reference: __pet_ref_7
+          read: 1
+          write: 0
+- line: 11
+  domain: '[N, K, M] -> { S_7[i, j, k] : 0 <= i < M and 0 <= j < N and 0 <= k < K
+    }'
+  body:
+    type: expression
+    expr:
+      type: op
+      operation: +=
+      arguments:
+      - type: access
+        index: '[N, K, M] -> { S_7[i, j, k] -> C[(i), (j)] }'
+        reference: __pet_ref_8
+        read: 1
+        write: 1
+      - type: access
+        index: '[N, K, M] -> { S_7[i, j, k] -> t[] }'
+        reference: __pet_ref_9
+        read: 1
+        write: 0
+- line: 10
+  domain: '[N, K, M] -> { S_6[i, j, k] : 0 <= i < M and 0 <= j < N and 0 <= k < K
+    }'
+  body:
+    type: expression
+    expr:
+      type: op
+      operation: kill
+      arguments:
+      - type: access
+        killed: '[N, K, M] -> { S_6[i, j, k] -> t[] }'
+        index: '[N, K, M] -> { S_6[i, j, k] -> t[] }'
+        reference: __pet_ref_10
+        kill: 1
+- line: 9
+  domain: '[N, K, M] -> { S_8[i, j, k] : 0 <= i < M and 0 <= j < N and 0 <= k < K
+    }'
+  body:
+    type: expression
+    expr:
+      type: op
+      operation: =
+      arguments:
+      - type: access
+        index: '[N, K, M] -> { S_8[i, j, k] -> k[] }'
+        reference: __pet_ref_11
+        read: 0
+        write: 1
+      - type: access
+        index: '[N, K, M] -> { S_8[i, j, k] -> [(1 + k)] }'
+        reference: __pet_ref_12
+        read: 1
+        write: 0
+- line: 7
+  domain: '[N, K, M] -> { S_9[i, j] : 0 <= i < M and 0 <= j < N }'
+  body:
+    type: expression
+    expr:
+      type: op
+      operation: =
+      arguments:
+      - type: access
+        index: '[N, K, M] -> { S_9[i, j] -> j[] }'
+        reference: __pet_ref_13
+        read: 0
+        write: 1
+      - type: access
+        index: '[N, K, M] -> { S_9[i, j] -> [(1 + j)] }'
+        reference: __pet_ref_14
+        read: 1
+        write: 0
+- line: 6
+  domain: '[N, K, M] -> { S_10[i] : 0 <= i < M }'
+  body:
+    type: expression
+    expr:
+      type: op
+      operation: =
+      arguments:
+      - type: access
+        index: '[N, K, M] -> { S_10[i] -> i[] }'
+        reference: __pet_ref_15
+        read: 0
+        write: 1
+      - type: access
+        index: '[N, K, M] -> { S_10[i] -> [(1 + i)] }'
+        reference: __pet_ref_16
+        read: 1
+        write: 0
+- line: -1
+  domain: '[N, K, M] -> { S_11[] }'
+  body:
+    type: expression
+    expr:
+      type: op
+      operation: kill
+      arguments:
+      - type: access
+        killed: '[N, K, M] -> { S_11[] -> i[] }'
+        index: '[N, K, M] -> { S_11[] -> i[] }'
+        reference: __pet_ref_17
+        kill: 1
+- line: -1
+  domain: '[N, K, M] -> { S_12[] }'
+  body:
+    type: expression
+    expr:
+      type: op
+      operation: kill
+      arguments:
+      - type: access
+        killed: '[N, K, M] -> { S_12[] -> j[] }'
+        index: '[N, K, M] -> { S_12[] -> j[] }'
+        reference: __pet_ref_18
+        kill: 1
+- line: -1
+  domain: '[N, K, M] -> { S_13[] }'
+  body:
+    type: expression
+    expr:
+      type: op
+      operation: kill
+      arguments:
+      - type: access
+        killed: '[N, K, M] -> { S_13[] -> k[] }'
+        index: '[N, K, M] -> { S_13[] -> k[] }'
+        reference: __pet_ref_19
+        kill: 1

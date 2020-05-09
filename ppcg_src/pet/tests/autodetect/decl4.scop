@@ -1,0 +1,26 @@
+start: 28
+end: 39
+indent: "\t"
+context: '[N] -> {  : 0 <= N <= 2147483647 }'
+schedule: '{ domain: "[N] -> { S_0[] }" }'
+arrays:
+- context: '[N] -> {  : N >= 0 }'
+  extent: '[N] -> { A[i0] : 0 <= i0 < N }'
+  element_type: int
+  element_size: 4
+statements:
+- line: 4
+  domain: '[N] -> { S_0[] }'
+  body:
+    type: expression
+    expr:
+      type: op
+      operation: =
+      arguments:
+      - type: access
+        index: '[N] -> { S_0[] -> A[(0)] }'
+        reference: __pet_ref_0
+        read: 0
+        write: 1
+      - type: int
+        value: 1

@@ -1,0 +1,7 @@
+start: 13
+end: 45
+indent: "\t"
+context: '{  :  }'
+schedule: '{ domain: "{  }" }'
+arrays: []
+statements: []

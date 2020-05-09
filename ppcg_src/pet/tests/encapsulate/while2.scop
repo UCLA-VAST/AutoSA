@@ -1,0 +1,51 @@
+start: 27
+end: 89
+indent: 
+context: '{  :  }'
+schedule: '{ domain: "{ S_3[]; While[] }", child: { sequence: [ { filter: "{ While[]
+  }" }, { filter: "{ S_3[] }" } ] } }'
+arrays:
+- context: '{  :  }'
+  extent: '{ done[] }'
+  element_type: int
+  element_size: 4
+statements:
+- line: 6
+  domain: '{ While[] }'
+  body:
+    type: while
+    condition:
+      type: op
+      operation: '!'
+      arguments:
+      - type: access
+        index: '{ While[] -> done[] }'
+        reference: __pet_ref_0
+        read: 1
+        write: 0
+    body:
+      type: expression
+      expr:
+        type: op
+        operation: =
+        arguments:
+        - type: access
+          index: '{ While[] -> done[] }'
+          reference: __pet_ref_1
+          read: 0
+          write: 1
+        - type: int
+          value: 1
+- line: -1
+  domain: '{ S_3[] }'
+  body:
+    type: expression
+    expr:
+      type: op
+      operation: kill
+      arguments:
+      - type: access
+        killed: '{ S_3[] -> done[] }'
+        index: '{ S_3[] -> done[] }'
+        reference: __pet_ref_2
+        kill: 1

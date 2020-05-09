@@ -1,0 +1,56 @@
+start: 52
+end: 176
+indent: "\t"
+context: '[n, m] -> {  : -2147483648 <= n <= 2147483647 and -2147483648 <= m <= 2147483647
+  - n and m <= 2147483647 }'
+schedule: '{ domain: "[n, m] -> { S_0[i, j] : 0 <= i <= n and 0 <= j <= m }", child:
+  { schedule: "[n, m] -> L_0[{ S_0[i, j] -> [(i)] }]", child: { schedule: "[n, m]
+  -> L_1[{ S_0[i, j] -> [(j)] }]" } } }'
+arrays:
+- context: '{  :  }'
+  extent: '[n, m] -> { A[i0] : i0 >= 0 }'
+  element_type: int
+  element_size: 4
+- context: '{  :  }'
+  extent: '[n, m] -> { B[i0] : i0 >= 0 }'
+  element_type: int
+  element_size: 4
+- context: '{  :  }'
+  extent: '[n, m] -> { C[i0] : i0 >= 0 }'
+  element_type: int
+  element_size: 4
+statements:
+- line: 6
+  domain: '[n, m] -> { S_0[i, j] : 0 <= i <= n and 0 <= j <= m }'
+  body:
+    type: expression
+    expr:
+      type: op
+      operation: =
+      arguments:
+      - type: access
+        index: '[n, m] -> { S_0[i, j] -> C[(i + j)] }'
+        reference: __pet_ref_0
+        read: 0
+        write: 1
+      - type: op
+        operation: +
+        arguments:
+        - type: access
+          index: '[n, m] -> { S_0[i, j] -> C[(i + j)] }'
+          reference: __pet_ref_1
+          read: 1
+          write: 0
+        - type: op
+          operation: '*'
+          arguments:
+          - type: access
+            index: '[n, m] -> { S_0[i, j] -> A[(i)] }'
+            reference: __pet_ref_2
+            read: 1
+            write: 0
+          - type: access
+            index: '[n, m] -> { S_0[i, j] -> B[(j)] }'
+            reference: __pet_ref_3
+            read: 1
+            write: 0

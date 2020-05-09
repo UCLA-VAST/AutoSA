@@ -1,0 +1,42 @@
+start: 401
+end: 446
+indent: "\t"
+context: '[n] -> {  : 0 <= n <= 2147483647 }'
+schedule: '{ domain: "[n] -> { S_0[] }" }'
+types:
+- name: s
+  definition: "struct s {\n    int a;\n}"
+arrays:
+- context: '[n] -> {  : n >= 0 }'
+  extent: '[n] -> { A[i0] : 0 <= i0 < n }'
+  element_type: struct s
+  element_size: 4
+  element_is_record: 1
+  outer: 1
+- context: '[n] -> {  : n >= 0 }'
+  extent: '[n] -> { A_a[A[i0] -> a[]] : 0 <= i0 < n }'
+  element_type: int
+  element_size: 4
+statements:
+- line: 27
+  domain: '[n] -> { S_0[] }'
+  body:
+    type: expression
+    expr:
+      type: call
+      name: set_odd
+      arguments:
+      - type: access
+        index: '[n] -> { S_0[] -> [(n)] }'
+        reference: __pet_ref_0
+        read: 1
+        write: 0
+      - type: access
+        may_write: '[n] -> { S_0[] -> A_a[A[o0] -> a[]] : 2*floor((1 + o0)/2) = 1
+          + o0 and 0 < o0 < n }'
+        must_write: '[n] -> {  }'
+        index: '[n] -> { S_0[] -> A[] }'
+        depth: 1
+        reference: __pet_ref_1
+        read: 0
+        write: 1

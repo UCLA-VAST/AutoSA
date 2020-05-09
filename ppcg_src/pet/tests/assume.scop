@@ -1,0 +1,45 @@
+start: 64
+end: 206
+indent: '        '
+context: '[S, m, n] -> {  : 0 <= S <= 2147483647 and m <= 2147483647 and -2147483648
+  <= n <= 2147483648 - m and n < m }'
+schedule: '{ domain: "[S, m, n] -> { S_1[i] : 0 <= i < n; S_0[] }", child: { sequence:
+  [ { filter: "[m, n] -> { S_0[] }" }, { filter: "[m, n] -> { S_1[i] }", child: {
+  schedule: "[m, n] -> L_0[{ S_1[i] -> [(i)] }]" } } ] } }'
+arrays:
+- context: '[S] -> {  : S >= 0 }'
+  extent: '[S, m, n] -> { D[i0] : 0 <= i0 < S }'
+  element_type: int
+  element_size: 4
+statements:
+- line: 4
+  domain: '[S, m, n] -> { S_0[] }'
+  body:
+    type: expression
+    expr:
+      type: op
+      operation: assume
+      arguments:
+      - type: access
+        index: '[S, m, n] -> { S_0[] -> [(1)] }'
+        reference: __pet_ref_0
+        read: 1
+        write: 0
+- line: 6
+  domain: '[S, m, n] -> { S_1[i] : 0 <= i < n }'
+  body:
+    type: expression
+    expr:
+      type: op
+      operation: =
+      arguments:
+      - type: access
+        index: '[S, m, n] -> { S_1[i] -> D[(i)] }'
+        reference: __pet_ref_1
+        read: 0
+        write: 1
+      - type: access
+        index: '[S, m, n] -> { S_1[i] -> D[(m + i)] }'
+        reference: __pet_ref_2
+        read: 1
+        write: 0

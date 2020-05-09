@@ -1,0 +1,104 @@
+start: 30
+end: 113
+indent: "\t"
+context: '{  :  }'
+schedule: '{ domain: "{ S_0[]; S_6[]; S_1[] }", child: { sequence: [ { filter: "{
+  S_0[] }" }, { filter: "{ S_1[] }" }, { filter: "{ S_6[] }" } ] } }'
+arrays:
+- context: '{  :  }'
+  extent: '{ i[] }'
+  element_type: int
+  element_size: 4
+  declared: 1
+  exposed: 1
+- context: '{  :  }'
+  extent: '{ A[i0] : i0 >= 0 }'
+  element_type: int
+  element_size: 4
+statements:
+- line: 4
+  domain: '{ S_0[] }'
+  body:
+    type: expression
+    expr:
+      type: op
+      operation: kill
+      arguments:
+      - type: access
+        killed: '{ S_0[] -> i[] }'
+        index: '{ S_0[] -> i[] }'
+        reference: __pet_ref_0
+        kill: 1
+- line: 4
+  domain: '{ S_1[] }'
+  body:
+    type: expression
+    expr:
+      type: op
+      operation: =
+      arguments:
+      - type: access
+        index: '{ S_1[] -> i[] }'
+        reference: __pet_ref_1
+        read: 0
+        write: 1
+      - type: int
+        value: 0
+- line: 6
+  domain: '{ S_6[] }'
+  body:
+    type: for
+    declared: 0
+    variable:
+      type: access
+      index: '{ S_6[] -> i[] }'
+      reference: __pet_ref_2
+      read: 0
+      write: 1
+    initialization:
+      type: int
+      value: 0
+    condition:
+      type: op
+      operation: <
+      arguments:
+      - type: access
+        index: '{ S_6[] -> i[] }'
+        reference: __pet_ref_3
+        read: 1
+        write: 0
+      - type: op
+        operation: '*'
+        arguments:
+        - type: access
+          index: '[n] -> { S_6[] -> [(n)] }'
+          reference: __pet_ref_4
+          read: 1
+          write: 0
+        - type: access
+          index: '[n] -> { S_6[] -> [(n)] }'
+          reference: __pet_ref_5
+          read: 1
+          write: 0
+    increment:
+      type: int
+      value: 1
+    body:
+      type: expression
+      expr:
+        type: op
+        operation: =
+        arguments:
+        - type: access
+          index: '{ [S_6[] -> [i0]] -> A[((i0) : i0 >= 0)] }'
+          reference: __pet_ref_7
+          read: 0
+          write: 1
+          arguments:
+          - type: access
+            index: '{ S_6[] -> i[] }'
+            reference: __pet_ref_6
+            read: 1
+            write: 0
+        - type: int
+          value: 0

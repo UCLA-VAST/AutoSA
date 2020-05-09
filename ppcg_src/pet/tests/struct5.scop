@@ -1,0 +1,69 @@
+start: 77
+end: 191
+indent: "\t"
+context: '{  :  }'
+schedule: '{ domain: "{ S_0[i, j] : 0 <= i <= 9 and 0 <= j <= 9; S_1[] }", child:
+  { sequence: [ { filter: "{ S_0[i, j] }", child: { schedule: "L_0[{ S_0[i, j] ->
+  [(i)] }]", child: { schedule: "L_1[{ S_0[i, j] -> [(j)] }]" } } }, { filter: "{
+  S_1[] }" } ] } }'
+types:
+- name: s
+  definition: "struct s {\n    struct f {\n        int a[10];\n    };\n    struct
+    f f[10];\n}"
+arrays:
+- context: '{  :  }'
+  extent: '{ s[] }'
+  element_type: struct s
+  element_size: 400
+  element_is_record: 1
+  outer: 1
+- context: '{  :  }'
+  extent: '{ s_f[s[] -> f[i0]] : 0 <= i0 <= 9 }'
+  element_type: <subfield>
+  element_size: 40
+  element_is_record: 1
+  outer: 1
+- context: '{  :  }'
+  extent: '{ s_f_a[s_f[s[] -> f[i0]] -> a[i1]] : 0 <= i0 <= 9 and 0 <= i1 <= 9 }'
+  element_type: int
+  element_size: 4
+statements:
+- line: 14
+  domain: '{ S_0[i, j] : 0 <= i <= 9 and 0 <= j <= 9 }'
+  body:
+    type: expression
+    expr:
+      type: op
+      operation: =
+      arguments:
+      - type: access
+        index: '{ S_0[i, j] -> s_f_a[s_f[s[] -> f[(i)]] -> a[(j)]] }'
+        reference: __pet_ref_0
+        read: 0
+        write: 1
+      - type: op
+        operation: '*'
+        arguments:
+        - type: access
+          index: '{ S_0[i, j] -> [(i)] }'
+          reference: __pet_ref_1
+          read: 1
+          write: 0
+        - type: access
+          index: '{ S_0[i, j] -> [(j)] }'
+          reference: __pet_ref_2
+          read: 1
+          write: 0
+- line: -1
+  domain: '{ S_1[] }'
+  body:
+    type: expression
+    expr:
+      type: op
+      operation: kill
+      arguments:
+      - type: access
+        killed: '{ S_1[] -> s[] }'
+        index: '{ S_1[] -> s[] }'
+        reference: __pet_ref_3
+        kill: 1

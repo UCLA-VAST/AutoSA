@@ -1,0 +1,33 @@
+start: 110
+end: 151
+indent: "\t"
+context: '[n] -> {  : 0 <= n <= 2147483647 }'
+schedule: '{ domain: "[n] -> { S_0[] }" }'
+arrays:
+- context: '[n] -> {  : n >= 0 }'
+  extent: '[n] -> { A[i0, i1] : 0 <= i0 < n and 0 <= i1 < n }'
+  element_type: float
+  element_size: 4
+statements:
+- line: 6
+  domain: '[n] -> { S_0[] }'
+  body:
+    type: expression
+    expr:
+      type: call
+      name: foo
+      arguments:
+      - type: access
+        index: '[n] -> { S_0[] -> [(n)] }'
+        reference: __pet_ref_0
+        read: 1
+        write: 0
+      - type: access
+        may_read: '[n] -> { S_0[] -> A[o0, o1] }'
+        may_write: '[n] -> { S_0[] -> A[o0, o1] }'
+        must_write: '[n] -> {  }'
+        index: '[n] -> { S_0[] -> A[] }'
+        depth: 2
+        reference: __pet_ref_1
+        read: 1
+        write: 1

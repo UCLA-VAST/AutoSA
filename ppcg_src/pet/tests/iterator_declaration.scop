@@ -1,0 +1,45 @@
+start: 38
+end: 111
+indent: "\t"
+context: '[N] -> {  : 0 <= N <= 2147483647 }'
+schedule: '{ domain: "[N] -> { S_1[]; S_0[i] : 0 <= i < N }", child: { sequence: [
+  { filter: "[N] -> { S_0[i] }", child: { schedule: "[N] -> L_0[{ S_0[i] -> [(i)]
+  }]" } }, { filter: "[N] -> { S_1[] }" } ] } }'
+arrays:
+- context: '[N] -> {  : N >= 0 }'
+  extent: '[N] -> { a[i0] : 0 <= i0 < N }'
+  element_type: int
+  element_size: 4
+statements:
+- line: 8
+  domain: '[N] -> { S_0[i] : 0 <= i < N }'
+  body:
+    type: expression
+    expr:
+      type: op
+      operation: =
+      arguments:
+      - type: access
+        index: '[N] -> { S_0[i] -> a[(i)] }'
+        reference: __pet_ref_0
+        read: 0
+        write: 1
+      - type: access
+        index: '[N] -> { S_0[i] -> [(i)] }'
+        reference: __pet_ref_1
+        read: 1
+        write: 0
+- line: -1
+  domain: '[N] -> { S_1[] }'
+  body:
+    type: expression
+    expr:
+      type: op
+      operation: kill
+      arguments:
+      - type: access
+        killed: '[N] -> { S_1[] -> a[o0] : 0 <= o0 < N }'
+        index: '[N] -> { S_1[] -> a[] }'
+        depth: 1
+        reference: __pet_ref_2
+        kill: 1

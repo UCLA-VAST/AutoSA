@@ -1,0 +1,95 @@
+start: 13
+end: 46
+indent: "\t"
+context: '{  :  }'
+schedule: '{ domain: "{ S_3[]; S_0[]; S_2[]; S_1[]; S_4[] }", child: { sequence: [
+  { filter: "{ S_0[] }" }, { filter: "{ S_1[] }" }, { filter: "{ S_4[] }" }, { filter:
+  "{ S_3[]; S_2[] }", child: { set: [ { filter: "{ S_2[] }" }, { filter: "{ S_3[]
+  }" } ] } } ] } }'
+arrays:
+- context: '{  :  }'
+  extent: '{ a[] }'
+  element_type: int
+  element_size: 4
+  declared: 1
+  exposed: 1
+- context: '{  :  }'
+  extent: '{ b[] }'
+  element_type: int
+  element_size: 4
+  declared: 1
+  exposed: 1
+statements:
+- line: 3
+  domain: '{ S_0[] }'
+  body:
+    type: expression
+    expr:
+      type: op
+      operation: kill
+      arguments:
+      - type: access
+        killed: '{ S_0[] -> a[] }'
+        index: '{ S_0[] -> a[] }'
+        reference: __pet_ref_0
+        kill: 1
+- line: 3
+  domain: '{ S_1[] }'
+  body:
+    type: expression
+    expr:
+      type: op
+      operation: kill
+      arguments:
+      - type: access
+        killed: '{ S_1[] -> b[] }'
+        index: '{ S_1[] -> b[] }'
+        reference: __pet_ref_1
+        kill: 1
+- line: 6
+  domain: '{ [S_4[] -> [a]] : a > 0 }'
+  body:
+    type: expression
+    expr:
+      type: op
+      operation: =
+      arguments:
+      - type: access
+        index: '{ S_4[] -> b[] }'
+        reference: __pet_ref_3
+        read: 0
+        write: 1
+      - type: int
+        value: 5
+  arguments:
+  - type: access
+    index: '{ S_4[] -> a[] }'
+    reference: __pet_ref_2
+    read: 1
+    write: 0
+- line: 3
+  domain: '{ S_2[] }'
+  body:
+    type: expression
+    expr:
+      type: op
+      operation: kill
+      arguments:
+      - type: access
+        killed: '{ S_2[] -> a[] }'
+        index: '{ S_2[] -> a[] }'
+        reference: __pet_ref_4
+        kill: 1
+- line: 3
+  domain: '{ S_3[] }'
+  body:
+    type: expression
+    expr:
+      type: op
+      operation: kill
+      arguments:
+      - type: access
+        killed: '{ S_3[] -> b[] }'
+        index: '{ S_3[] -> b[] }'
+        reference: __pet_ref_5
+        kill: 1

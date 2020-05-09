@@ -1,0 +1,26 @@
+start: 69
+end: 80
+indent: "\t\t"
+context: '{  :  }'
+schedule: '{ domain: "{ S_0[] }" }'
+arrays:
+- context: '{  :  }'
+  extent: '{ s[] }'
+  element_type: int
+  element_size: 4
+statements:
+- line: 9
+  domain: '{ S_0[] }'
+  body:
+    type: expression
+    expr:
+      type: op
+      operation: =
+      arguments:
+      - type: access
+        index: '{ S_0[] -> s[] }'
+        reference: __pet_ref_0
+        read: 0
+        write: 1
+      - type: call
+        name: f

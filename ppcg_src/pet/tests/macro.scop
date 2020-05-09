@@ -1,0 +1,14 @@
+start: 39
+end: 74
+indent: "\t"
+context: '{  :  }'
+schedule: '{ domain: "{ S_0[] }" }'
+arrays: []
+statements:
+- line: 7
+  domain: '{ S_0[] }'
+  body:
+    type: expression
+    expr:
+      type: call
+      name: f

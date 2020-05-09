@@ -1,0 +1,42 @@
+start: 25
+end: 43
+indent: "\t\t"
+context: '{  :  }'
+schedule: '{ domain: "{ S_0[]; S_1[] }", child: { sequence: [ { filter: "{ S_0[] }"
+  }, { filter: "{ S_1[] }" } ] } }'
+arrays:
+- context: '{  :  }'
+  extent: '{ a[] }'
+  element_type: int
+  element_size: 4
+  declared: 1
+  exposed: 1
+statements:
+- line: 6
+  domain: '{ S_0[] }'
+  body:
+    type: expression
+    expr:
+      type: op
+      operation: kill
+      arguments:
+      - type: access
+        killed: '{ S_0[] -> a[] }'
+        index: '{ S_0[] -> a[] }'
+        reference: __pet_ref_0
+        kill: 1
+- line: 7
+  domain: '{ S_1[] }'
+  body:
+    type: expression
+    expr:
+      type: op
+      operation: =
+      arguments:
+      - type: access
+        index: '{ S_1[] -> a[] }'
+        reference: __pet_ref_1
+        read: 0
+        write: 1
+      - type: int
+        value: 5

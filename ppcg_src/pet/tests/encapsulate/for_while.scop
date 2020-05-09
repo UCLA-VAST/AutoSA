@@ -1,0 +1,143 @@
+start: 83
+end: 231
+indent: "\t"
+context: '[n] -> {  : -2147483648 <= n <= 2147483647 }'
+schedule: '{ domain: "[n] -> { S_7[]; S1[x1] : 0 <= x1 < n; S_4[x1] : 0 <= x1 < n;
+  S_3[x1] : 0 <= x1 < n; S_5[x1] : 0 <= x1 < n; R[x1] : 0 <= x1 < n }", child: { sequence:
+  [ { filter: "[n] -> { S1[x1]; S_4[x1]; S_3[x1]; S_5[x1]; R[x1] }", child: { schedule:
+  "[n] -> L_0[{ S1[x1] -> [(x1)]; S_4[x1] -> [(x1)]; S_3[x1] -> [(x1)]; S_5[x1] ->
+  [(x1)]; R[x1] -> [(x1)] }]", child: { sequence: [ { filter: "[n] -> { S1[x1] }"
+  }, { filter: "[n] -> { S_4[x1] }" }, { filter: "[n] -> { S_3[x1] }" }, { filter:
+  "[n] -> { S_5[x1] }" }, { filter: "[n] -> { R[x1] }" } ] } } }, { filter: "[n] ->
+  { S_7[] }" } ] } }'
+arrays:
+- context: '{  :  }'
+  extent: '[n] -> { x2[] }'
+  element_type: int
+  element_size: 4
+  declared: 1
+- context: '{  :  }'
+  extent: '[n] -> { s[] }'
+  element_type: int
+  element_size: 4
+statements:
+- line: 12
+  domain: '[n] -> { S1[x1] : 0 <= x1 < n }'
+  body:
+    type: expression
+    expr:
+      type: op
+      operation: =
+      arguments:
+      - type: access
+        index: '[n] -> { S1[x1] -> s[] }'
+        reference: __pet_ref_0
+        read: 0
+        write: 1
+      - type: call
+        name: f
+- line: 13
+  domain: '[n] -> { S_4[x1] : 0 <= x1 < n }'
+  body:
+    type: expression
+    expr:
+      type: op
+      operation: kill
+      arguments:
+      - type: access
+        killed: '[n] -> { S_4[x1] -> x2[] }'
+        index: '[n] -> { S_4[x1] -> x2[] }'
+        reference: __pet_ref_1
+        kill: 1
+- line: 13
+  domain: '[n] -> { S_3[x1] : 0 <= x1 < n }'
+  body:
+    type: for
+    declared: 1
+    variable:
+      type: access
+      index: '[n] -> { S_3[x1] -> x2[] }'
+      reference: __pet_ref_2
+      read: 0
+      write: 1
+    initialization:
+      type: int
+      value: 0
+    condition:
+      type: call
+      name: P
+      arguments:
+      - type: access
+        index: '[n] -> { S_3[x1] -> [(x1)] }'
+        reference: __pet_ref_3
+        read: 1
+        write: 0
+      - type: access
+        index: '[n] -> { S_3[x1] -> x2[] }'
+        reference: __pet_ref_4
+        read: 1
+        write: 0
+    increment:
+      type: int
+      value: 1
+    body:
+      type: block
+      block: 1
+      children:
+      - type: expression
+        expr:
+          type: op
+          operation: =
+          arguments:
+          - type: access
+            index: '[n] -> { S_3[x1] -> s[] }'
+            reference: __pet_ref_5
+            read: 0
+            write: 1
+          - type: call
+            name: g
+            arguments:
+            - type: access
+              index: '[n] -> { S_3[x1] -> s[] }'
+              reference: __pet_ref_6
+              read: 1
+              write: 0
+- line: 13
+  domain: '[n] -> { S_5[x1] : 0 <= x1 < n }'
+  body:
+    type: expression
+    expr:
+      type: op
+      operation: kill
+      arguments:
+      - type: access
+        killed: '[n] -> { S_5[x1] -> x2[] }'
+        index: '[n] -> { S_5[x1] -> x2[] }'
+        reference: __pet_ref_7
+        kill: 1
+- line: 16
+  domain: '[n] -> { R[x1] : 0 <= x1 < n }'
+  body:
+    type: expression
+    expr:
+      type: call
+      name: h
+      arguments:
+      - type: access
+        index: '[n] -> { R[x1] -> s[] }'
+        reference: __pet_ref_8
+        read: 1
+        write: 0
+- line: -1
+  domain: '[n] -> { S_7[] }'
+  body:
+    type: expression
+    expr:
+      type: op
+      operation: kill
+      arguments:
+      - type: access
+        killed: '[n] -> { S_7[] -> s[] }'
+        index: '[n] -> { S_7[] -> s[] }'
+        reference: __pet_ref_9
+        kill: 1

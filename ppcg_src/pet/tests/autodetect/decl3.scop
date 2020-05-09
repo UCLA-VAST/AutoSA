@@ -1,0 +1,39 @@
+start: 41
+end: 51
+indent: "\t"
+context: '{  :  }'
+schedule: '{ domain: "{ S_0[] }" }'
+types:
+- name: S
+  definition: "struct S {\n    int a;\n    int b;\n}"
+arrays:
+- context: '{  :  }'
+  extent: '{ s[] }'
+  element_type: struct S
+  element_size: 8
+  element_is_record: 1
+  outer: 1
+- context: '{  :  }'
+  extent: '{ s_a[s[] -> a[]] }'
+  element_type: int
+  element_size: 4
+- context: '{  :  }'
+  extent: '{ s_b[s[] -> b[]] }'
+  element_type: int
+  element_size: 4
+statements:
+- line: 5
+  domain: '{ S_0[] }'
+  body:
+    type: expression
+    expr:
+      type: op
+      operation: =
+      arguments:
+      - type: access
+        index: '{ S_0[] -> s_a[s[] -> a[]] }'
+        reference: __pet_ref_0
+        read: 0
+        write: 1
+      - type: int
+        value: 3

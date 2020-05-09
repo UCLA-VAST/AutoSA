@@ -1,0 +1,133 @@
+start: 83
+end: 234
+indent: "\t"
+context: '[n] -> {  : -2147483648 <= n <= 2147483647 }'
+schedule: '{ domain: "[n] -> { S2[x1, x2] : 3*floor((x2)/3) = x2 and 0 <= x1 < n and
+  x2 <= 9; S_4[]; S1[x1] : 0 <= x1 < n; S_1[x1, x2] : 3*floor((x2)/3) = x2 and 0 <=
+  x1 < n and x2 <= 9; R[x1] : 0 <= x1 < n }", child: { sequence: [ { filter: "[n]
+  -> { S2[x1, x2]; S1[x1]; S_1[x1, x2]; R[x1] }", child: { schedule: "[n] -> L_0[{
+  S2[x1, x2] -> [(x1)]; S1[x1] -> [(x1)]; S_1[x1, x2] -> [(x1)]; R[x1] -> [(x1)] }]",
+  child: { sequence: [ { filter: "[n] -> { S1[x1] }" }, { filter: "[n] -> { S2[x1,
+  x2]; S_1[x1, x2] }", child: { schedule: "[n] -> L_1[{ S2[x1, x2] -> [(-x2)]; S_1[x1,
+  x2] -> [(-x2)] }]", child: { sequence: [ { filter: "[n] -> { S_1[x1, x2] }" }, {
+  filter: "[n] -> { S2[x1, x2] }" } ] } } }, { filter: "[n] -> { R[x1] }" } ] } }
+  }, { filter: "[n] -> { S_4[] }" } ] } }'
+arrays:
+- context: '{  :  }'
+  extent: '[n] -> { __pet_test_0[x1, x2] : 3*floor((x2)/3) = x2 and 0 <= x1 < n and
+    x2 <= 9 }'
+  value_bounds: '{ [i0] : 0 <= i0 <= 1 }'
+  element_type: int
+  element_size: 4
+  uniquely_defined: 1
+- context: '{  :  }'
+  extent: '[n] -> { s[] }'
+  element_type: int
+  element_size: 4
+statements:
+- line: 12
+  domain: '[n] -> { S1[x1] : 0 <= x1 < n }'
+  body:
+    type: expression
+    expr:
+      type: op
+      operation: =
+      arguments:
+      - type: access
+        index: '[n] -> { S1[x1] -> s[] }'
+        reference: __pet_ref_0
+        read: 0
+        write: 1
+      - type: call
+        name: f
+- line: 13
+  domain: '[n] -> { [S_1[x1, x2] -> [__pet_test_0 = 1]] : 3*floor((x2)/3) = x2 and
+    0 <= x1 < n and x2 <= 9 }'
+  body:
+    type: expression
+    expr:
+      type: op
+      operation: =
+      arguments:
+      - type: access
+        index: '[n] -> { S_1[x1, x2] -> __pet_test_0[(x1), (x2)] }'
+        reference: __pet_ref_2
+        read: 0
+        write: 1
+      - type: call
+        name: P
+        arguments:
+        - type: access
+          index: '[n] -> { S_1[x1, x2] -> [(x1)] }'
+          reference: __pet_ref_3
+          read: 1
+          write: 0
+        - type: access
+          index: '[n] -> { S_1[x1, x2] -> [(x2)] }'
+          reference: __pet_ref_4
+          read: 1
+          write: 0
+  arguments:
+  - type: access
+    index: '[n] -> { S_1[x1, x2] -> __pet_test_0[(x1), ((3 + x2) : x2 <= 6)] }'
+    reference: __pet_ref_1
+    read: 1
+    write: 0
+- line: 14
+  domain: '[n] -> { [S2[x1, x2] -> [__pet_test_0 = 1]] : 3*floor((x2)/3) = x2 and
+    0 <= x1 < n and x2 <= 9 }'
+  body:
+    type: expression
+    expr:
+      type: op
+      operation: =
+      arguments:
+      - type: access
+        index: '[n] -> { S2[x1, x2] -> s[] }'
+        reference: __pet_ref_6
+        read: 0
+        write: 1
+      - type: call
+        name: g
+        arguments:
+        - type: access
+          index: '[n] -> { S2[x1, x2] -> s[] }'
+          reference: __pet_ref_7
+          read: 1
+          write: 0
+  arguments:
+  - type: access
+    index: '[n] -> { S2[x1, x2] -> __pet_test_0[(x1), (x2)] }'
+    reference: __pet_ref_5
+    read: 1
+    write: 0
+- line: 16
+  domain: '[n] -> { R[x1] : 0 <= x1 < n }'
+  body:
+    type: expression
+    expr:
+      type: call
+      name: h
+      arguments:
+      - type: access
+        index: '[n] -> { R[x1] -> s[] }'
+        reference: __pet_ref_8
+        read: 1
+        write: 0
+- line: -1
+  domain: '[n] -> { S_4[] }'
+  body:
+    type: expression
+    expr:
+      type: op
+      operation: kill
+      arguments:
+      - type: access
+        killed: '[n] -> { S_4[] -> s[] }'
+        index: '[n] -> { S_4[] -> s[] }'
+        reference: __pet_ref_9
+        kill: 1
+implications:
+- satisfied: 1
+  extension: '[n] -> { __pet_test_0[x1, x2] -> __pet_test_0[x1'' = x1, x2''] : 3*floor((x2'')/3)
+    = x2'' and 0 <= x1 < n and x2 <= x2'' <= 9 }'

@@ -1,0 +1,78 @@
+start: 132
+end: 179
+indent: "\t"
+context: '{  :  }'
+schedule: '{ domain: "{ S_0[]; S_1[] }", child: { sequence: [ { filter: "{ S_0[] }"
+  }, { filter: "{ S_1[] }" } ] } }'
+types:
+- name: scomplex
+  definition: "struct scomplex {\n    float re;\n    float im;\n}"
+- name: pair
+  definition: "struct pair {\n    struct scomplex a;\n    struct scomplex b;\n}"
+arrays:
+- context: '{  :  }'
+  extent: '{ p[] }'
+  element_type: struct pair
+  element_size: 16
+  element_is_record: 1
+  outer: 1
+- context: '{  :  }'
+  extent: '{ p_a[p[] -> a[]] }'
+  element_type: struct scomplex
+  element_size: 8
+  element_is_record: 1
+  outer: 1
+- context: '{  :  }'
+  extent: '{ p_a_im[p_a[p[] -> a[]] -> im[]] }'
+  element_type: float
+  element_size: 4
+- context: '{  :  }'
+  extent: '{ p_a_re[p_a[p[] -> a[]] -> re[]] }'
+  element_type: float
+  element_size: 4
+- context: '{  :  }'
+  extent: '{ p_b[p[] -> b[]] }'
+  element_type: struct scomplex
+  element_size: 8
+  element_is_record: 1
+  outer: 1
+- context: '{  :  }'
+  extent: '{ p_b_im[p_b[p[] -> b[]] -> im[]] }'
+  element_type: float
+  element_size: 4
+- context: '{  :  }'
+  extent: '{ p_b_re[p_b[p[] -> b[]] -> re[]] }'
+  element_type: float
+  element_size: 4
+statements:
+- line: 16
+  domain: '{ S_0[] }'
+  body:
+    type: expression
+    expr:
+      type: op
+      operation: =
+      arguments:
+      - type: access
+        index: '{ S_0[] -> p_a_re[p_a[p[] -> a[]] -> re[]] }'
+        reference: __pet_ref_0
+        read: 0
+        write: 1
+      - type: access
+        index: '{ S_0[] -> p_b_im[p_b[p[] -> b[]] -> im[]] }'
+        reference: __pet_ref_1
+        read: 1
+        write: 0
+- line: -1
+  domain: '{ S_1[] }'
+  body:
+    type: expression
+    expr:
+      type: op
+      operation: kill
+      arguments:
+      - type: access
+        killed: '{ S_1[] -> p[] }'
+        index: '{ S_1[] -> p[] }'
+        reference: __pet_ref_2
+        kill: 1

@@ -1,0 +1,48 @@
+start: 21
+end: 83
+indent: "\t"
+context: '{  :  }'
+schedule: '{ domain: "{ S_0[] }" }'
+arrays:
+- context: '{  :  }'
+  extent: '{ A[i0] : i0 >= 0 }'
+  element_type: int
+  element_size: 4
+statements:
+- line: 4
+  domain: '{ S_0[] }'
+  body:
+    type: expression
+    expr:
+      type: op
+      operation: =
+      arguments:
+      - type: access
+        index: '{ S_0[] -> A[(0)] }'
+        reference: __pet_ref_0
+        read: 0
+        write: 1
+      - type: op
+        operation: '||'
+        arguments:
+        - type: op
+          operation: '&&'
+          arguments:
+          - type: access
+            index: '{ S_0[] -> A[(1)] }'
+            reference: __pet_ref_1
+            read: 1
+            write: 0
+          - type: access
+            index: '{ S_0[] -> A[(2)] }'
+            reference: __pet_ref_2
+            read: 1
+            write: 0
+        - type: op
+          operation: '!'
+          arguments:
+          - type: access
+            index: '{ S_0[] -> A[(3)] }'
+            reference: __pet_ref_3
+            read: 1
+            write: 0
