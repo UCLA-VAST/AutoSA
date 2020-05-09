@@ -1,5 +1,0 @@
-version.o: version.c /usr/include/stdc-predef.h gitversion.h
-
-/usr/include/stdc-predef.h:
-
-gitversion.h:

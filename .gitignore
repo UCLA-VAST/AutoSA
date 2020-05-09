@@ -26,6 +26,8 @@ src/test-driver
 src/build
 src/opencl_test.sh
 src/polybench_test.sh
+src/.nfs*
 
 autosa
 autosa.tmp
+.nfs*
