@@ -23,8 +23,9 @@ src/m4/lt~obsolete.m4
 src/missing
 src/ppcg
 src/test-driver
-
+src/build
 src/opencl_test.sh
 src/polybench_test.sh
 
-build
+autosa
+autosa.tmp

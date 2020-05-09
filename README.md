@@ -62,11 +62,7 @@ install LLVM/clang from source.
 ## Getting Started
 ### Compilation
 ```bash
-./get_submodules.sh
-./autogen.sh
-./configure
-make
-make check
+./install.sh
 ```
 
 ### Use AutoSA to generate HLS code

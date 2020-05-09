@@ -24,8 +24,8 @@ LIB_PET = $(PET_LA) @PET_LIBS@
 AM_CPPFLAGS = @ISL_CFLAGS@ @PET_CFLAGS@
 LDADD = $(LIB_PET) $(LIB_ISL)
 
-bin_PROGRAMS = ppcg
-ppcg_SOURCES = \
+bin_PROGRAMS = autosa
+autosa_SOURCES = \
 	cpu.c \
 	cpu.h \
 	cuda.c \

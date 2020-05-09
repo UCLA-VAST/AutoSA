@@ -1,5 +1,6 @@
-AC_INIT([ppcg], [0.08.3], [isl-development@googlegroups.com])
-AC_CONFIG_AUX_DIR([.])
+AC_INIT([autosa], [0.01], [jiewang@cs.ucla.edu])
+#AC_INIT([ppcg], [0.08.3], [isl-development@googlegroups.com])
+AC_CONFIG_AUX_DIR([build])
 AC_CONFIG_MACRO_DIR([m4])
 AM_INIT_AUTOMAKE([foreign])
 m4_ifdef([AM_SILENT_RULES],[AM_SILENT_RULES([yes])])
