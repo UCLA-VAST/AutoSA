@@ -36,6 +36,7 @@ The structure of this repo is as follows:
 
 
 ## Prerequisites
+### PPCG
 AutoSA is build upon PPCG 0.08.3 (source repository: http://repo.or.cz/ppcg.git).
 Below are the requirements for installing PPCG:
 - automake, autoconf, libtool
@@ -58,6 +59,8 @@ Note that you need at least version 3.2 of libclang-dev (ubuntu raring).
 Older versions of this package did not include the required libraries.
 If you are using an older version of ubuntu, then you need to compile and
 install LLVM/clang from source.
+### Others
++ Python3.6+ and corresponding `pip`
 
 ## Getting Started
 ### Compilation

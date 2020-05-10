@@ -10,6 +10,10 @@
 
 #include "ppcg_options.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 const char *ppcg_base_name(const char *filename);
 int ppcg_extract_base_name(char *name, const char *input);
 
@@ -116,5 +120,11 @@ int ppcg_transform(isl_ctx *ctx, const char *input, FILE *out,
 	struct ppcg_options *options,
 	__isl_give isl_printer *(*fn)(__isl_take isl_printer *p,
 		struct ppcg_scop *scop, void *user), void *user);
+
+int autosa_main_wrap(int argc, char **argv);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

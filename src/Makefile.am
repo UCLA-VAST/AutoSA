@@ -60,7 +60,12 @@ autosa_SOURCES = \
 	print.h \
 	util.c \
 	util.h \
-	version.c
+	version.c \
+	main.cpp \
+	autosa_xilinx_hls_c.cpp \
+	autosa_intel_opencl.cpp \
+	autosa_cpu.cpp \
+	autosa_t2s.cpp
 
 TESTS = @extra_tests@
 EXTRA_TESTS = opencl_test.sh polybench_test.sh

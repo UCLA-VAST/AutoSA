@@ -1,0 +1,8 @@
+decorator>=4.3.0
+joblib>=0.14.1
+numpy>=1.18.2
+pandas>=1.0.3
+scipy>=1.4.1
+sklearn>=0.0
+sympy>=1.4
+xgboost>=0.81

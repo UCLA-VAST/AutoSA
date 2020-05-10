@@ -35,6 +35,7 @@
 #include "cuda.h"
 #include "opencl.h"
 #include "cpu.h"
+#include "autosa_xilinx_hls_c.h"
 
 struct options {
 	struct pet_options *pet;
@@ -1015,22 +1016,54 @@ int ppcg_transform(isl_ctx *ctx, const char *input, FILE *out,
  */
 static int check_options(isl_ctx *ctx)
 {
-	struct options *options;
-
+	struct options *options;//
 	options = isl_ctx_peek_options(ctx, &options_args);
 	if (!options)
 		isl_die(ctx, isl_error_internal,
-			"unable to find options", return -1);
-
+			"unable to find options", return -1);//
 	if (options->ppcg->openmp &&
 	    !isl_options_get_ast_build_atomic_upper_bound(ctx))
 		isl_die(ctx, isl_error_invalid,
-			"OpenMP requires atomic bounds", return -1);
-
+			"OpenMP requires atomic bounds", return -1);//
 	return 0;
 }
 
-int main(int argc, char **argv)
+//int main(int argc, char **argv)
+//{
+//	int r;
+//	isl_ctx *ctx;
+//	struct options *options;
+//
+//	options = options_new_with_defaults();
+//	assert(options);
+//
+//	ctx = isl_ctx_alloc_with_options(&options_args, options);
+//	ppcg_options_set_target_defaults(options->ppcg);
+//	isl_options_set_ast_build_detect_min_max(ctx, 1);
+//	isl_options_set_ast_print_macro_once(ctx, 1);
+//	isl_options_set_schedule_whole_component(ctx, 0);
+//	isl_options_set_schedule_maximize_band_depth(ctx, 1);
+//	isl_options_set_schedule_maximize_coincidence(ctx, 1);
+//	pet_options_set_encapsulate_dynamic_control(ctx, 1);
+//	argc = options_parse(options, argc, argv, ISL_ARG_ALL);
+//
+//	if (check_options(ctx) < 0)
+//		r = EXIT_FAILURE;
+//	else if (options->ppcg->target == PPCG_TARGET_CUDA)
+//		r = generate_cuda(ctx, options->ppcg, options->input);
+//	else if (options->ppcg->target == PPCG_TARGET_OPENCL)
+//		r = generate_opencl(ctx, options->ppcg, options->input,
+//				options->output);
+//	else
+//		r = generate_cpu(ctx, options->ppcg, options->input,
+//				options->output);
+//
+//	isl_ctx_free(ctx);
+//
+//	return r;
+//}
+
+int autosa_main_wrap(int argc, char **argv)
 {
 	int r;
 	isl_ctx *ctx;
@@ -1056,9 +1089,18 @@ int main(int argc, char **argv)
 	else if (options->ppcg->target == PPCG_TARGET_OPENCL)
 		r = generate_opencl(ctx, options->ppcg, options->input,
 				options->output);
-	else
+	else if (options->ppcg->target == PPCG_TARGET_C)
 		r = generate_cpu(ctx, options->ppcg, options->input,
 				options->output);
+	else if (options->ppcg->target == AUTOSA_TARGET_XILINX_HLS_C) 
+	  r = generate_autosa_xilinx_hls_c(ctx, options->ppcg, options->input); // TODO: to fix
+//	else if (options->ppcg->target == AUTOSA_TARGET_INTEL_OPENCL)
+//	  r = generate_autosa_intel_opencl(ctx, options->ppcg, options->input); // TODO: to fix
+//	else if (options->ppcg->target == AUTOSA_TARGET_T2S)
+//	  r = generate_autosa_t2s(ctx, options->ppcg, options->input, 
+//				options->output); // TODO: To fix
+//	else if (options->ppcg->target == AUTOSA_TARGET_C)
+//	  r = generate_autosa_cpu(ctx, options->ppcg, options->input); // TODO: to fix
 
 	isl_ctx_free(ctx);
 

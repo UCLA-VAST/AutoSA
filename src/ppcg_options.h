@@ -4,6 +4,10 @@
 #include <isl/arg.h>
 #include <isl/options.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 struct ppcg_debug_options {
 	int dump_schedule_constraints;
 	int dump_schedule;
@@ -91,10 +95,18 @@ ISL_ARG_DECL(ppcg_debug_options, struct ppcg_debug_options,
 	ppcg_debug_options_args)
 ISL_ARG_DECL(ppcg_options, struct ppcg_options, ppcg_options_args)
 
-#define		PPCG_TARGET_C		0
-#define		PPCG_TARGET_CUDA	1
-#define		PPCG_TARGET_OPENCL      2
+#define		PPCG_TARGET_C							 0
+#define		PPCG_TARGET_CUDA					 1
+#define		PPCG_TARGET_OPENCL         2
+#define   AUTOSA_TARGET_XILINX_HLS_C 3
+#define   AUTOSA_TARGET_INTEL_OPENCL 4
+#define   AUTOSA_TARGET_T2S					 5
+#define   AUTOSA_TARGET_C						 6
 
 void ppcg_options_set_target_defaults(struct ppcg_options *options);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif
