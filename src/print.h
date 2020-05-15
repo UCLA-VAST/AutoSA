@@ -5,6 +5,10 @@
 
 #include "ppcg.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 extern const char *ppcg_min;
 extern const char *ppcg_max;
 extern const char *ppcg_fdiv_q;
@@ -36,5 +40,9 @@ __isl_give isl_printer *ppcg_print_exposed_declarations(
 	__isl_take isl_printer *p, struct ppcg_scop *scop);
 __isl_give isl_printer *ppcg_print_hidden_declarations(
 	__isl_take isl_printer *p, struct ppcg_scop *scop);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

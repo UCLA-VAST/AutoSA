@@ -6,6 +6,10 @@
 #include <isl/space.h>
 #include <isl/val.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /* Compare the prefix of "s" to "prefix" up to the length of "prefix".
  */
 static inline int prefixcmp(const char *s, const char *prefix)
@@ -18,5 +22,9 @@ __isl_give isl_multi_val *ppcg_multi_val_from_int(__isl_take isl_space *space,
 __isl_give isl_multi_val *ppcg_multi_val_from_int_list(
 	__isl_take isl_space *space, int *list);
 __isl_give isl_multi_pw_aff *ppcg_size_from_extent(__isl_take isl_set *set);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

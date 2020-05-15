@@ -11,9 +11,19 @@
 #include "ppcg_options.h"
 
 static struct isl_arg_choice target[] = {
-	{"c",		PPCG_TARGET_C},
-	{"cuda",	PPCG_TARGET_CUDA},
-	{"opencl",      PPCG_TARGET_OPENCL},
+	{"c",							PPCG_TARGET_C},
+	{"cuda",					PPCG_TARGET_CUDA},
+	{"opencl",      	PPCG_TARGET_OPENCL},
+	{"autosa_c",		 	AUTOSA_TARGET_C},
+	{"autosa_hls_c", 	AUTOSA_TARGET_XILINX_HLS_C},
+	{"autosa_opencl",	AUTOSA_TARGET_INTEL_OPENCL},
+	{"autosa_t2s",		AUTOSA_TARGET_T2S},
+	{0}
+};
+
+static struct isl_arg_choice sa_type[] = {
+	{"sync",	AUTOSA_SA_TYPE_SYNC},
+	{"async",	AUTOSA_SA_TYPE_ASYNC},
 	{0}
 };
 
@@ -75,10 +85,56 @@ ISL_ARG_BOOL(struct ppcg_options, opencl_embed_kernel_code, 0,
 	"embed-kernel-code", 0, "embed kernel code into host code")
 ISL_ARGS_END
 
+ISL_ARGS_START(struct autosa_options, autosa_options_args)
+ISL_ARG_STR(struct autosa_options, config, 0, "config", "config", NULL, 
+  "AutoSA configuration file")
+ISL_ARG_STR(struct autosa_options, output_dir, 0, "output-dir", "dir", NULL, 
+  "AutoSA Output directory")
+ISL_ARG_BOOL(struct autosa_options, autosa, 0, "autosa", 1,
+  "Generate systolic arrays using AutoSA")
+ISL_ARG_BOOL(struct autosa_options, data_pack, 0, "data-pack", 1,
+  "Enable data packing for data transfer")
+ISL_ARG_BOOL(struct autosa_options, hbm, 0, "hbm", 0,
+  "Use multi-port DRAM/HBM")
+ISL_ARG_INT(struct autosa_options, n_hbm_port, 0, "hbm-port-num", "num", 2, 
+  "Default HBM port number")
+ISL_ARG_BOOL(struct autosa_options, double_buffer, 0, "double-buffer", 1,
+  "Enable double-buffering for data transfer")
+ISL_ARG_BOOL(struct autosa_options, two_level_buffer, 0, "two-level-buffer", 0,
+  "Enable two-level buffering in I/O modules")
+ISL_ARG_BOOL(struct autosa_options, credit_control, 0, "credit-control", 0,
+  "Enable credit control between different array partitions")
+ISL_ARG_INT(struct autosa_options, max_sa_dim, 0,
+  "max-sa-dim", "dim", 2, "maximal systolic array dimension")
+ISL_ARG_USER_OPT_CHOICE(struct autosa_options, sa_type, 0, "sa-type", sa_type,
+  NULL, AUTOSA_SA_TYPE_ASYNC, AUTOSA_SA_TYPE_ASYNC,
+  "systolic array type")
+ISL_ARG_INT(struct autosa_options, sa_tile_size, 0, "sa-tile-size", "size", 4, 
+  "Default tile size in PE optmization")
+ISL_ARG_STR(struct autosa_options, sa_sizes, 0, "sa-sizes", "sizes", NULL,
+	"Per kernel PE optimization tile sizes")
+ISL_ARG_BOOL(struct autosa_options, t2s_tile, 0, "t2s-tile", 0,
+  "Generate T2S code from tiled code")
+ISL_ARG_INT(struct autosa_options, t2s_tile_phase, 0,
+  "t2s-tile-phase", "phase", 0, "T2S tiled URE codegen phase")
+ISL_ARG_BOOL(struct autosa_options, use_local_memory, 0, "local-memory", 1, 
+  "use local memory in kernel code")
+ISL_ARG_INT(struct autosa_options, max_local_memory, 0,
+  "max-local-memory", "size", 8192, "maximal amount of local memory")
+ISL_ARG_BOOL(struct autosa_options, hls, 0, "hls", 0,
+  "Generate Xilinx HLS host")
+ISL_ARG_BOOL(struct autosa_options, uram, 0, "uram", 0,
+  "Use Xilinx FPGA URAM")
+ISL_ARG_BOOL(struct autosa_options, verbose, 'v', "verbose", 0, 
+  "Print verbose compilation information")
+ISL_ARGS_END
+
 ISL_ARGS_START(struct ppcg_options, ppcg_options_args)
 ISL_ARG_CHILD(struct ppcg_options, isl, "isl", &isl_options_args, "isl options")
 ISL_ARG_CHILD(struct ppcg_options, debug, NULL, &ppcg_debug_options_args,
 	"debugging options")
+ISL_ARG_CHILD(struct ppcg_options, autosa, "AutoSA", &autosa_options_args, 
+  "AutoSA options")
 ISL_ARG_BOOL(struct ppcg_options, group_chains, 0, "group-chains", 1,
 	"group chains of interdependent statements that are executed "
 	"consecutively in the original schedule before scheduling")

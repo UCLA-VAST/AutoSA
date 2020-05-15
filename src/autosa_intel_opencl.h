@@ -1,5 +1,5 @@
-#ifndef _AUTOSA_XILINX_HLS_C_H
-#define _AUTOSA_XILINX_HLS_C_H
+#ifndef _INTEL_OPENCL_H
+#define _INTEL_OPENCL_H
 
 #include <pet.h>
 #include "ppcg_options.h"
@@ -9,7 +9,7 @@
 extern "C" {
 #endif
 
-int generate_autosa_xilinx_hls_c(isl_ctx *ctx, struct ppcg_options *options,
+int generate_autosa_intel_opencl(isl_ctx *ctx, struct ppcg_options *options,
 	const char *input);
 
 #ifdef __cplusplus

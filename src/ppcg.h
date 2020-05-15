@@ -110,6 +110,13 @@ struct ppcg_scop {
 	isl_id_to_ast_expr *names;
 
 	struct pet_scop *pet;
+
+	/* AutoSA Extended */
+	isl_union_map *dep_rar;
+	isl_union_map *tagged_dep_rar;
+	isl_union_map *dep_waw;
+	isl_union_map *tagged_dep_waw;
+	/* AutoSA Extended */
 };
 
 int ppcg_scop_any_hidden_declarations(struct ppcg_scop *scop);

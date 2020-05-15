@@ -4,3 +4,6 @@
 [submodule "src/pet"]
 	path = src/pet
 	url = git://repo.or.cz/pet.git
+[submodule "src/cJSON"]
+	path = src/cJSON
+	url = https://github.com/DaveGamble/cJSON.git

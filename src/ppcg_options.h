@@ -16,9 +16,53 @@ struct ppcg_debug_options {
 	int verbose;
 };
 
+struct autosa_options {	
+  /* Generate systolic array using AutoSA. */
+  int autosa;
+  /* Use HBM memory. */
+  int hbm;
+  int n_hbm_port;
+  /* Enable double buffering. */
+  int double_buffer;
+  /* Maximal systolic array dimension. */
+  int max_sa_dim;
+  /* Systolic array type. */
+  int sa_type;
+  /* Universal tile size. */
+  int sa_tile_size;
+  /* Tile sizes for PE optimization. */
+  char *sa_sizes;
+  /* Generate T2S code from tiled program. */
+  int t2s_tile;
+  /* Phases of T2S codegen for tiled program. */
+  int t2s_tile_phase; 
+  /* Take advantage of FPGA local memory. */
+  int use_local_memory;
+  /* Maximal amount of local memory. */
+  int max_local_memory;
+  /* Enable data pack for transferring data */
+  int data_pack;
+  /* Enable credit control between different array partitions */
+  int credit_control;
+  /* Enable two-level buffering in I/O modules */
+  int two_level_buffer;
+  /* Configuration file */
+  char *config;
+  /* Output directory */
+  char *output_dir;
+  /* Generate HLS host instead of OpenCL host */
+  int hls;
+  /* Use URAM */
+  int uram;	
+	/* Print verbose information */
+	int verbose;
+};
+
 struct ppcg_options {
 	struct isl_options *isl;
 	struct ppcg_debug_options *debug;
+	/* Options to pass to the AutoSA compiler. */
+	struct autosa_options *autosa;
 
 	/* Group chains of consecutive statements before scheduling. */
 	int group_chains;
@@ -102,6 +146,9 @@ ISL_ARG_DECL(ppcg_options, struct ppcg_options, ppcg_options_args)
 #define   AUTOSA_TARGET_INTEL_OPENCL 4
 #define   AUTOSA_TARGET_T2S					 5
 #define   AUTOSA_TARGET_C						 6
+
+#define 	AUTOSA_SA_TYPE_SYNC 			 0
+#define 	AUTOSA_SA_TYPE_ASYNC			 1
 
 void ppcg_options_set_target_defaults(struct ppcg_options *options);
 

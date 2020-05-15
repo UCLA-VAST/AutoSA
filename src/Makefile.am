@@ -62,10 +62,18 @@ autosa_SOURCES = \
 	util.h \
 	version.c \
 	main.cpp \
-	autosa_xilinx_hls_c.cpp \
-	autosa_intel_opencl.cpp \
+	cJSON/cJSON.c \
+	autosa_codegen.cpp \
+	autosa_comm.cpp \
+	autosa_common.cpp \
 	autosa_cpu.cpp \
-	autosa_t2s.cpp
+	autosa_intel_opencl.cpp \
+	autosa_print.cpp \
+	autosa_schedule_tree.cpp \
+	autosa_t2s.cpp \
+	autosa_trans.cpp \
+	autosa_utils.cpp \
+	autosa_xilinx_hls_c.cpp 
 
 TESTS = @extra_tests@
 EXTRA_TESTS = opencl_test.sh polybench_test.sh

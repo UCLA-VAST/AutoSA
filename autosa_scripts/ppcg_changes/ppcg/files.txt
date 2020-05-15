@@ -2,5 +2,10 @@ cpu.h
 cuda.h
 opencl.h
 ppcg_options.h
+ppcg_options.c
 ppcg.c
 ppcg.h
+util.h
+print.h
+schedule.h
+gpu.h

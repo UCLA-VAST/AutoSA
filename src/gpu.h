@@ -10,6 +10,10 @@
 #include "ppcg.h"
 #include "ppcg_options.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /* An access to an outer array element or an iterator.
  * Accesses to iterators have an access relation that maps to an unnamed space.
  * An access may be both read and write.
@@ -431,5 +435,9 @@ int generate_gpu(isl_ctx *ctx, const char *input, FILE *out,
 __isl_give isl_schedule_node *gpu_create_kernel(struct gpu_gen *gen,
 	__isl_take isl_schedule_node *node, int scale,
 	__isl_keep isl_multi_val *sizes);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

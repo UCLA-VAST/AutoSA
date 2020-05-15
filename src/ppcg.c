@@ -29,6 +29,7 @@
 #include <isl/id_to_ast_expr.h>
 #include <isl/ast_build.h>
 #include <isl/schedule.h>
+#include <isl/constraint.h>
 #include <pet.h>
 #include "ppcg.h"
 #include "ppcg_options.h"
@@ -705,6 +706,342 @@ static void compute_flow_dep(struct ppcg_scop *ps)
 	isl_union_flow_free(flow);
 }
 
+/* Examine if the access "map" is an external access, i.e., it is not
+ * associated with flow deps.
+ */
+static isl_bool is_external_access(__isl_keep isl_map *map, void *user) 
+{
+  isl_map *read_access = (isl_map *)(user);
+  /* The read access is in the format of
+   * {[S1[] -> pet_ref1] -> A[]}
+   */
+  isl_space *read_access_space = isl_map_get_space(read_access);
+  /* Factor the read access to
+   * {pet_ref[] -> A[]}
+   */
+  read_access_space = isl_space_domain_factor_range(read_access_space);
+  const char *read_access_name = isl_space_get_tuple_name(read_access_space, isl_dim_in);
+
+  /* The flow dpendence is in the format of
+   * {[S1[] -> pet_ref1] -> [S1[] -> pet_ref2]}
+   * We factor it to
+   * {pet_ref1[] -> pet_ref2[]}
+   */
+  isl_map *dep = isl_map_factor_range(isl_map_copy(map));
+  isl_space *dep_space = isl_map_get_space(dep);
+  const char *dep_src_name = isl_space_get_tuple_name(dep_space, isl_dim_in);
+  const char *dep_sink_name = isl_space_get_tuple_name(dep_space, isl_dim_out);
+  isl_map_free(dep);
+
+  /* Compare if the read access name equals either source or sink access name
+   * in the flow dependence.
+   */
+  if (!strcmp(read_access_name, dep_src_name) || !strcmp(read_access_name, dep_sink_name)) {
+    isl_space_free(read_access_space);
+    isl_space_free(dep_space);
+    return isl_bool_false;
+  } else {
+    isl_space_free(read_access_space);
+    isl_space_free(dep_space);   
+    return isl_bool_true;
+  }
+}
+
+/* This function takes the tagged access relation in the format of
+ * {[S1[] -> pet_ref..] -> A[i,j]}
+ * and returns the access matrix.
+ */
+static __isl_give isl_mat *get_acc_mat_from_tagged_acc(__isl_keep isl_map *map) 
+{
+  isl_map *acc = isl_map_domain_factor_domain(isl_map_copy(map));
+  /* The parameters and constants are truncated. */
+  isl_mat *acc_mat = isl_mat_alloc(isl_map_get_ctx(acc), isl_map_dim(acc, isl_dim_out), isl_map_dim(acc, isl_dim_in));
+  /* Fill in the matrix. */
+  assert(isl_map_n_basic_map(acc) == 1);
+  isl_basic_map_list *bmap_list = isl_map_get_basic_map_list(acc);
+  isl_basic_map *bmap = isl_basic_map_list_get_basic_map(bmap_list, 0);
+
+  isl_mat *eq_mat = isl_basic_map_equalities_matrix(bmap, isl_dim_out, isl_dim_in, isl_dim_div, isl_dim_param, isl_dim_cst);
+  isl_mat *ieq_mat = isl_basic_map_inequalities_matrix(bmap, isl_dim_out, isl_dim_in, isl_dim_div, isl_dim_param, isl_dim_cst);
+
+  for (int row = 0; row < isl_mat_rows(eq_mat); row++) {
+    isl_val *sum = isl_val_zero(isl_basic_map_get_ctx(bmap));
+    int index;
+    for (int col = 0; col < isl_basic_map_dim(bmap, isl_dim_out); col++) {
+      sum = isl_val_add(sum, isl_val_abs(isl_mat_get_element_val(eq_mat, row, col)));
+      isl_val *mat_val = isl_mat_get_element_val(eq_mat, row, col);
+      if (isl_val_is_one(mat_val)) {
+        index = col;
+      }
+      isl_val_free(mat_val);
+    }
+    if (!isl_val_is_one(sum)) {
+      isl_val_free(sum);
+      continue;
+    }
+    for (int col = 0; col < isl_basic_map_dim(bmap, isl_dim_in); col++) {
+      isl_mat_set_element_val(acc_mat, index, col, isl_val_neg(isl_mat_get_element_val(eq_mat, row, col + isl_basic_map_dim(bmap, isl_dim_out))));
+    }
+    isl_val_free(sum);
+  }
+
+  isl_mat_free(eq_mat);
+  isl_mat_free(ieq_mat);
+  isl_map_free(acc);
+
+  isl_basic_map_list_free(bmap_list);
+  isl_basic_map_free(bmap);
+
+  return acc_mat;
+}
+
+/* There could be mulitple solutions (basis) in the null space. 
+ * This function finds one solution based on the heuristics below:
+ * Dependence distance with the simpler pattern is preferred.
+ *  
+ * We first count the non-zero components in the dependence vector, 
+ * and select those with the least non-zero components. 
+ * Then, among those with the same number of non-zero components, 
+ * we select ones with the least absolute value of the score computed by:
+ * sum(abs(ele_of_dep) * 2^(loop_depth)).
+ * We favor non-zero components at the upper level, since they are more likely
+ * to be carried by the space loops.
+ *
+ * For T2S only:
+ * At the second phase of tiled T2S code generation,
+ * the coefficients  at space loop dimensions should be no less than zero.
+ * For now, we will set any dependence vector with negative coefficient with a negative
+ * score -1.
+ */
+static int rar_sol_smart_pick(__isl_keep isl_mat *mat, struct ppcg_scop *ps) {
+  int score[isl_mat_cols(mat)];
+  int depth = isl_mat_rows(mat);
+  int pick_idx = -1;
+  int min_score = 0;  
+  int min_non_zero_cnt = -1;
+  int non_zero_cnts[isl_mat_cols(mat)];
+
+  for (int c = 0; c < isl_mat_cols(mat); c++) {
+    int non_zero_cnt = 0;
+    for (int r = 0; r < isl_mat_rows(mat); r++) {
+      isl_val *val = isl_mat_get_element_val(mat, r, c);
+      long val_int = isl_val_get_num_si(val);
+      isl_val_free(val);
+      if (val_int != 0)
+        non_zero_cnt++;
+    }
+    non_zero_cnts[c] = non_zero_cnt;
+    if (min_non_zero_cnt == -1) {
+      min_non_zero_cnt = non_zero_cnt;    
+    } else {
+      if (non_zero_cnt < min_non_zero_cnt)
+        min_non_zero_cnt = non_zero_cnt;
+    }
+  }
+
+  for (int c = 0; c < isl_mat_cols(mat); c++) {
+    score[c] = 0; 
+    for (int r = 0; r < isl_mat_rows(mat); r++) {
+      isl_val *val = isl_mat_get_element_val(mat, r, c);
+      long val_int = isl_val_get_num_si(val);
+      score[c] += abs(val_int) * pow(2, r);    
+      isl_val_free(val);
+      if (ps->options->autosa->t2s_tile && 
+						ps->options->autosa->t2s_tile_phase == 1) {
+        if (val_int < 0) {
+          score[c] = -1;
+          break;
+        }
+      }
+    }
+    if (score[c] >= 0 && non_zero_cnts[c] == min_non_zero_cnt) {
+      if (pick_idx == -1) {
+        pick_idx = c;
+        min_score = score[c];
+      } else {
+        if (min_score > score[c]) {
+          pick_idx = c;
+          min_score = score[c];
+        }
+      }
+    }
+  }
+
+  return pick_idx;
+}
+
+/* Construct the RAR dependence based on the dependence vector in "sol" and the 
+ * access relation "map".
+ */
+static __isl_give isl_map *construct_dep_rar(__isl_keep isl_vec *sol, 
+	__isl_keep isl_map *map) 
+{
+  /* Build the space. */
+  isl_space *space = isl_map_get_space(map);
+  space = isl_space_domain(space);
+  isl_space *space_d = isl_space_factor_domain(isl_space_copy(space));
+  isl_space *space_r = isl_space_factor_range(isl_space_copy(space));
+
+  isl_space *space_d_d = isl_space_map_from_domain_and_range(space_d, isl_space_copy(space_d));
+  isl_space *space_r_r = isl_space_map_from_domain_and_range(space_r, isl_space_copy(space_r));
+
+  isl_space_free(space);
+  space = isl_space_product(space_d_d, space_r_r);
+  isl_map *dep_map = isl_map_universe(isl_space_copy(space));
+
+  /* Add the dep vector constraint. */
+  isl_local_space *ls = isl_local_space_from_space(space);
+  for (int i = 0; i < isl_vec_size(sol); i++) {
+    isl_constraint *cst = isl_constraint_alloc_equality(isl_local_space_copy(ls));
+    isl_constraint_set_coefficient_si(cst, isl_dim_in, i, 1);
+    isl_constraint_set_coefficient_si(cst, isl_dim_out, i, -1);
+    isl_constraint_set_constant_val(cst, isl_vec_get_element_val(sol, i));
+    dep_map = isl_map_add_constraint(dep_map, cst);
+  }
+
+  /* Add the iteration domain constraints. */  
+  isl_set *domain = isl_map_domain(isl_map_copy(map));
+  isl_map *new_map = isl_map_from_domain_and_range(domain, isl_set_copy(domain));
+  dep_map = isl_map_intersect(dep_map, new_map);
+
+  isl_local_space_free(ls);
+
+  return dep_map;
+}
+
+/* Builds the RAR dependence for the given access "map".
+ * First we examine the access is an external access (not assoiciated with
+ * any flow dependence). Next, we compute the null space of the access matrix.
+ * At present, we will take one of the solutions in the null space as the 
+ * RAR dependence for the given array access. 
+ */
+static isl_stat build_rar_dep(__isl_take isl_map *map, void *user) {
+  struct ppcg_scop *ps = (struct ppcg_scop *)(user);
+  /* Examine if the read access is an external access. */
+  isl_union_map *tagged_dep_flow = ps->tagged_dep_flow;
+  isl_bool is_external = isl_union_map_every_map(tagged_dep_flow, &is_external_access, map);
+  if (!is_external) {
+    isl_map_free(map);
+    return isl_stat_ok;
+  }
+
+  /* Take the access function and compute the null space */
+  isl_mat *acc_mat = get_acc_mat_from_tagged_acc(map); 
+  isl_mat *acc_null_mat = isl_mat_right_kernel(acc_mat);
+  int nsol = isl_mat_cols(acc_null_mat);  
+  if (nsol > 0) {
+  	/* Build the RAR dependence.
+   	 * TODO: Temporary solution. We will construnct the RAR dep
+     * using one independent solution based on hueristics.
+     */
+    int col = rar_sol_smart_pick(acc_null_mat, ps);
+    assert(col >= 0);    
+    isl_vec *sol = isl_vec_alloc(isl_map_get_ctx(map), isl_mat_rows(acc_null_mat));
+    for (int row = 0; row < isl_mat_rows(acc_null_mat); row++) {
+      sol = isl_vec_set_element_val(sol, row, isl_mat_get_element_val(acc_null_mat, row, col));
+    }
+    isl_map *tagged_dep_rar = construct_dep_rar(sol, map);
+    isl_vec_free(sol);
+    isl_mat_free(acc_null_mat);
+
+    ps->tagged_dep_rar = isl_union_map_union(ps->tagged_dep_rar, isl_union_map_from_map(tagged_dep_rar));
+  } else {
+    isl_mat_free(acc_null_mat);
+  }
+
+  isl_map_free(map);
+  return isl_stat_ok;
+}
+
+/* Compute ps->dep_rar from ps->tagged_dep_rar
+ * by projecting out the reference tags.
+ */
+static void derive_rar_dep_from_tagged_rar_dep(struct ppcg_scop *ps)
+{
+  ps->dep_rar = isl_union_map_copy(ps->tagged_dep_rar);
+  ps->dep_rar = isl_union_map_factor_domain(ps->dep_rar);
+}
+
+/* Computed the tagged RAR dependence and store the results in
+ * ps->tagged_rar_flow.
+ */
+static void compute_tagged_rar_dep_only(struct ppcg_scop *ps)
+{
+  /* For each read access, if the read is an external read access,
+   * compute the null space of the access function, and 
+   * construct the RAR deps based on the independent solution in the null space.
+   */
+  isl_union_map *tagged_reads = ps->tagged_reads;
+  isl_union_map_foreach_map(tagged_reads, &build_rar_dep, ps);
+}
+
+/* Compute the RAR dependence for each externel read access.
+ * The results are stored in ps->dep_rar.
+ * A copy of the RAR dependences, tagged with the reference tags 
+ * is stored in ps->tagged_dep_rar.
+ *
+ * We first compute ps->tagged_dep_rar, i.e., the tagged RAR dependences
+ * and then project out the tags.
+ */
+static void compute_tagged_rar_dep(struct ppcg_scop *ps)
+{
+  isl_space *space = isl_union_map_get_space(ps->tagged_dep_flow);
+  ps->tagged_dep_rar = isl_union_map_empty(
+			isl_space_set_alloc(isl_union_map_get_ctx(ps->tagged_dep_flow),
+        isl_space_dim(space, isl_dim_param), 0));
+  isl_space_free(space);
+  compute_tagged_rar_dep_only(ps);
+  derive_rar_dep_from_tagged_rar_dep(ps);
+}
+
+static void compute_tagged_waw_dep_only(struct ppcg_scop *ps)
+{
+  isl_union_pw_multi_aff *tagger;
+  isl_schedule *schedule;
+  isl_union_map *kills;
+  isl_union_map *must_source;
+  isl_union_access_info *access;
+  isl_union_flow *flow;
+  isl_union_map *tagged_flow;
+
+  tagger = isl_union_pw_multi_aff_copy(ps->tagger);
+  schedule = isl_schedule_copy(ps->schedule);
+  schedule = isl_schedule_pullback_union_pw_multi_aff(schedule, tagger);
+  kills = isl_union_map_copy(ps->tagged_must_kills);
+  must_source = isl_union_map_copy(ps->tagged_must_writes);
+  kills = isl_union_map_union(kills, must_source);
+  access = isl_union_access_info_from_sink(
+      isl_union_map_copy(ps->tagged_may_writes));
+  access = isl_union_access_info_set_kill(access, kills);
+  access = isl_union_access_info_set_may_source(access, 
+      isl_union_map_copy(ps->tagged_may_writes));
+  access = isl_union_access_info_set_schedule(access, schedule);
+  flow = isl_union_access_info_compute_flow(access);
+  tagged_flow = isl_union_flow_get_may_dependence(flow);
+  ps->tagged_dep_waw = tagged_flow;
+  isl_union_flow_free(flow);
+}
+
+static void derive_waw_dep_from_tagged_waw_dep(struct ppcg_scop *ps)
+{
+  ps->dep_waw = isl_union_map_copy(ps->tagged_dep_waw);
+  ps->dep_waw = isl_union_map_factor_domain(ps->dep_waw);
+}
+
+/* Compute the WAW dependence for each intermediate write access.
+ * The results are stored in ps->dep_waw.
+ * A copy of the waw dependences, tagged with the reference tags 
+ * is stored in ps->tagged_dep_waw.
+ *
+ * We first compute ps->tagged_dep_waw, i.e., the tagged WAW dependences
+ * and then project out the tags. 
+ */
+static void compute_tagged_waw_dep(struct ppcg_scop *ps)
+{
+  compute_tagged_waw_dep_only(ps); 
+  derive_waw_dep_from_tagged_waw_dep(ps);
+}
+
 /* Compute the dependences of the program represented by "scop".
  * Store the computed potential flow dependences
  * in scop->dep_flow and the reads with potentially no corresponding writes in
@@ -715,6 +1052,8 @@ static void compute_flow_dep(struct ppcg_scop *ps)
  * If live range reordering is allowed, then we compute a separate
  * set of order dependences and a set of external false dependences
  * in compute_live_range_reordering_dependences.
+ * 
+ * Extended by AutoSA: Add analysis for WAW and RAR dependences.
  */
 static void compute_dependences(struct ppcg_scop *scop)
 {
@@ -748,6 +1087,13 @@ static void compute_dependences(struct ppcg_scop *scop)
 	scop->dep_false = isl_union_flow_get_may_dependence(flow);
 	scop->dep_false = isl_union_map_coalesce(scop->dep_false);
 	isl_union_flow_free(flow);
+
+	/* AutoSA Extended */
+	if (scop->options->autosa->autosa) {
+		compute_tagged_rar_dep(scop);
+		compute_tagged_waw_dep(scop);			
+	}
+	/* AutoSA Extended */
 }
 
 /* Eliminate dead code from ps->domain.
