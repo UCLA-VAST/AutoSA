@@ -28,6 +28,7 @@ src/opencl_test.sh
 src/polybench_test.sh
 src/.nfs*
 src/*.o
+src/.vscode
 
 autosa
 autosa.tmp
