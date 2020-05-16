@@ -1,0 +1,21 @@
+{
+    "space_time": {
+        "mode": "auto"
+    },
+    "array_part": {
+        "enable": 1,
+        "mode": "manual"
+    },
+    "array_part_L2": {
+        "enable": 1,
+        "mode": "manual"
+    },
+    "latency": {
+        "enable": 1,
+        "mode": "manual"
+    },
+    "simd": {
+        "enable": 1,
+        "mode": "manual"
+    }
+}

@@ -128,6 +128,10 @@ static void hls_open_files(struct hls_info *info, const char *input)
   strcpy(name + len, "_host.cpp");
   strcpy(dir + len_dir, name);
   info->host_c = fopen(dir, "w");
+  if (!info->host_c) {
+    printf("[AutoSA] Error: Can't open the file: %s\n", dir);
+    exit(1);
+  }
 
   if (!info->hls) {
     /* OpenCL host */
@@ -141,10 +145,18 @@ static void hls_open_files(struct hls_info *info, const char *input)
   strcpy(name + len, "_kernel.cpp");
   strcpy(dir + len_dir, name);
   info->kernel_c = fopen(dir, "w");
+  if (!info->kernel_c) {
+    printf("[AutoSA] Error: Can't open the file: %s\n", dir);
+    exit(1);
+  }
 
   strcpy(name + len, "_kernel.h");
   strcpy(dir + len_dir, name);
   info->kernel_h = fopen(dir, "w");
+  if (!info->kernel_h) {
+    printf("[AutoSA] Error: Can't open the file: %s\n", dir);
+    exit(1);
+  }
 
   fprintf(info->host_c, "#include <assert.h>\n");
   fprintf(info->host_c, "#include <stdio.h>\n");

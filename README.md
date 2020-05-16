@@ -102,4 +102,4 @@ AutoSA is currently maintained by [Jie Wang](http://cadlab.cs.ucla.edu/~jaywang/
 Besides, we gratefully acknowledge the authors of PPCG for developing and actively maintaining PPCG as an open-source project.
 
 ## Version History
-
++ [2020/5/15] Version 0.01 is released.

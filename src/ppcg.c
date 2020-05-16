@@ -1209,6 +1209,12 @@ static void *ppcg_scop_free(struct ppcg_scop *ps)
 	isl_union_pw_multi_aff_free(ps->tagger);
 	isl_union_map_free(ps->independence);
 	isl_id_to_ast_expr_free(ps->names);
+	/* AutoSA Extended */
+	isl_union_map_free(ps->tagged_dep_rar);
+	isl_union_map_free(ps->dep_rar);
+	isl_union_map_free(ps->tagged_dep_waw);
+	isl_union_map_free(ps->dep_waw);
+	/* AutoSA Extended */
 
 	free(ps);
 

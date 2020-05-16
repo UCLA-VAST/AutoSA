@@ -56,7 +56,8 @@ static cJSON *load_tuning_config(char *config_file)
     }
     fclose(f);
   } else {
-    printf("[AutoSA] Error: can't open file: %s\n", config_file);
+    printf("[AutoSA] Error: can't open configuration file: %s\n", config_file);
+    exit(1);
   }
 
   if (buffer) {
@@ -557,7 +558,19 @@ isl_stat sa_space_time_loop_setup(struct autosa_kernel *sa)
   } else if (sa->type == AUTOSA_SA_TYPE_ASYNC) {
     node = get_outermost_permutable_node(sa->schedule);
     for (int i = 0; i < sa->space_w; i++) {
+/* #ifdef _DEBUG    
+      isl_printer *pd = isl_printer_to_file(sa->ctx, stdout);
+      pd = isl_printer_set_yaml_style(pd, ISL_YAML_STYLE_BLOCK);
+      pd = isl_printer_print_schedule_node(pd, node);
+      isl_printer_free(pd);
+#endif    */   
       node = isl_schedule_node_band_member_set_space_time(node, i, autosa_loop_space);
+/* #ifdef _DEBUG    
+      pd = isl_printer_to_file(sa->ctx, stdout);
+      pd = isl_printer_set_yaml_style(pd, ISL_YAML_STYLE_BLOCK);
+      pd = isl_printer_print_schedule_node(pd, node);
+      isl_printer_free(pd);
+#endif */
     }
   }
 
@@ -713,6 +726,7 @@ struct autosa_kernel *sa_candidates_smart_pick(
     }
   }
 
+  //DBGVAR(std::cout, opt_id);
   sa_opt = autosa_kernel_copy(sa_list[opt_id]);
   for (int i = 0; i < num_sa; i++)
     autosa_kernel_free(sa_list[i]);
@@ -1428,7 +1442,7 @@ static __isl_give isl_schedule_node *autosa_latency_tile_band_loop(
        * the SA dimensions. 
        */      
       if (isl_schedule_node_band_member_get_space_time(node, i) == autosa_loop_space) {
-        /* Figure out the dim position */
+        /* Figure out the dim position. */
         int touched_space_loop = 0;
         for (int j = 0; j < i; j++) {
           if (isl_schedule_node_band_member_get_space_time(node, j) == autosa_loop_space)
@@ -1439,11 +1453,23 @@ static __isl_give isl_schedule_node *autosa_latency_tile_band_loop(
 
       /* Skip loop tile size as 1 */
       if (loop_tile_size > 1) {
+/* #ifdef _DEBUG
+        isl_printer *pd = isl_printer_to_file(data->sa->ctx, stdout);
+        pd = isl_printer_set_yaml_style(pd, ISL_YAML_STYLE_BLOCK);
+        pd = isl_printer_print_schedule_node(pd, node);
+        isl_printer_free(pd);
+#endif */
         /* Tile the current loop and permute it to be the innermost time loop.
          * Specifically, tile the loop in the band at "i"th position with the 
          * size "loop_tile_size".
          * The returned node points at the tile loop. */
         node = autosa_node_band_tile_loop(node, loop_tile_size, i); 
+/* #ifdef _DEBUG
+        pd = isl_printer_to_file(data->sa->ctx, stdout);
+        pd = isl_printer_set_yaml_style(pd, ISL_YAML_STYLE_BLOCK);
+        pd = isl_printer_print_schedule_node(pd, node);
+        isl_printer_free(pd);
+#endif     */    
         /* Reset the candidate loop in the tile loop the pe_opt property to default. */
         node = isl_schedule_node_band_member_set_pe_opt(node, i, autosa_loop_default);
         /* Reset the point loop space_time property to time loop. */
@@ -1453,7 +1479,12 @@ static __isl_give isl_schedule_node *autosa_latency_tile_band_loop(
         node = isl_schedule_node_band_member_set_pe_opt(node, 0, autosa_loop_default);
         /* Move the single loop node to the bottom of the time band. */
         node = autosa_latency_node_band_sink_time(node, data->sa); 
-
+/* #ifdef _DEBUG
+        pd = isl_printer_to_file(data->sa->ctx, stdout);
+        pd = isl_printer_set_yaml_style(pd, ISL_YAML_STYLE_BLOCK);
+        pd = isl_printer_print_schedule_node(pd, node);
+        isl_printer_free(pd);
+#endif */
         (data->n_tiled_loop)++;
         return node;
       } else {
@@ -2106,14 +2137,15 @@ static isl_schedule_node *detect_simd_vectorization_loop(
           printf("[AutoSA] Band member position: %d\n", i);
           printf("[AutoSA] Please input if the current loop is a reduction loop [y/n]: ");
           if (data->buffer == NULL) {
-            char *buffer = (char *)malloc(20 & sizeof(char));
+            char *buffer = (char *)malloc(bufsize * sizeof(char));
             data->buffer = buffer;
             data->buffer_offset = 0;
             characters = getline(&buffer, &bufsize, stdin);                      
           }
           printf("[AutoSA] Reduction property: %c\n", data->buffer[data->buffer_offset]);
           is_reduction = (data->buffer[data->buffer_offset] == 'y')? 1 : 0;
-          if (data->buffer[data->buffer_offset + 1] != '\n') {
+          if (data->buffer[data->buffer_offset + 1] == 'y' ||
+              data->buffer[data->buffer_offset + 1] == 'n') {
             data->buffer_offset += 1;
           } else {
             free(data->buffer);
@@ -2393,7 +2425,7 @@ isl_stat sa_simd_vectorization_optimize(struct autosa_kernel *sa, char *mode)
       node, &detect_simd_vectorization_loop, &data);
 
   if (data.n_loops == 0) {
-    printf("AutoSA] No candidate loops found!\n");
+    printf("[AutoSA] No candidate loops found!\n");
     isl_schedule_node_free(node);
     return isl_stat_ok;
   }
@@ -2507,6 +2539,14 @@ isl_stat sa_pe_optimize(struct autosa_kernel *sa, bool pass_en[], char *pass_mod
   sa_space_time_loop_setup(sa);
   /* Extract the communication pairs. */
   sa_io_update(sa);
+
+/* #ifdef _DEBUG
+  isl_printer *pd = isl_printer_to_file(sa->ctx, stdout);
+  pd = isl_printer_set_yaml_style(pd, ISL_YAML_STYLE_BLOCK);
+  pd = isl_printer_print_schedule(pd, sa->schedule);
+  isl_printer_free(pd);
+#endif */
+
   /* Extract the tile sizes. */
   sa->sizes = extract_sizes_from_str(sa->ctx, sa->scop->options->autosa->sa_sizes);
   /* Set the kernel id. */
@@ -2893,6 +2933,13 @@ static __isl_give isl_schedule_node *compute_and_comm_optimize(
       kernel = sa_candidates_manual_pick(sa_candidates, num_sa, kernel_id); 
     }
   }
+
+/* #ifdef _DEBUG
+  isl_printer *pd = isl_printer_to_file(kernel->ctx, stdout);
+  pd = isl_printer_set_yaml_style(pd, ISL_YAML_STYLE_BLOCK);
+  pd = isl_printer_print_schedule(pd, kernel->schedule);
+  isl_printer_free(pd);
+#endif */
 
   kernel->prog = gen->prog;
   kernel->options = gen->options;

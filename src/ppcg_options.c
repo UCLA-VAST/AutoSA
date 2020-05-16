@@ -88,7 +88,7 @@ ISL_ARGS_END
 ISL_ARGS_START(struct autosa_options, autosa_options_args)
 ISL_ARG_STR(struct autosa_options, config, 0, "config", "config", NULL, 
   "AutoSA configuration file")
-ISL_ARG_STR(struct autosa_options, output_dir, 0, "output-dir", "dir", NULL, 
+ISL_ARG_STR(struct autosa_options, output_dir, 0, "output-dir", "dir", "./autosa.tmp/output", 
   "AutoSA Output directory")
 ISL_ARG_BOOL(struct autosa_options, autosa, 0, "autosa", 1,
   "Generate systolic arrays using AutoSA")

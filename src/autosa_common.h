@@ -29,6 +29,9 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+#define _DEBUG
+
 #define DBGVAR( os, var ) \
    (os) << "DBG: " << __FILE__ << "(" << __LINE__ << ") "\
         << #var << " = [" << (var) << "]" << std::endl

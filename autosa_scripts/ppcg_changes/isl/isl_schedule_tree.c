@@ -2670,6 +2670,51 @@ static isl_bool any_coincident(__isl_keep isl_schedule_band *band)
 	return isl_bool_false;
 }
 
+/* AutoSA Extended */
+/* Is space_time property existed or are any members in "band" marked space/time?
+ */
+static isl_bool any_space_time(__isl_keep isl_schedule_band *band)
+{
+  int i;
+  isl_size n;
+
+  n = isl_schedule_band_n_member(band);
+  if (n < 0)
+    return isl_bool_error;
+  for (i = 0; i < n; ++i) {
+    enum autosa_loop_type space_time;
+    
+    space_time = isl_schedule_band_member_get_space_time(band, i);
+    if (space_time == autosa_loop_time || space_time == autosa_loop_space)
+      return isl_bool_true;
+  }
+
+  return isl_bool_false;
+}
+
+/* Is pe_opt property existed or are any members in "band" marked pe_opt?
+ */
+static isl_bool any_pe_opt(__isl_keep isl_schedule_band *band)
+{
+  int i;
+  isl_size n;
+
+  n = isl_schedule_band_n_member(band);
+  if (n < 0)
+    return isl_bool_error;
+  for (i = 0; i < n; ++i) {
+    enum autosa_loop_type pe_opt;
+    
+    pe_opt = isl_schedule_band_member_get_pe_opt(band, i);
+    if (pe_opt == autosa_loop_latency || pe_opt == autosa_loop_simd || 
+				pe_opt == autosa_loop_array_part)
+      return isl_bool_true;
+  }
+  
+  return isl_bool_false;
+}
+/* AutoSA Extended */
+
 /* Print the band node "band" to "p".
  *
  * The permutable and coincident properties are only printed if they
@@ -2682,6 +2727,10 @@ static __isl_give isl_printer *print_tree_band(__isl_take isl_printer *p,
 	isl_union_set *options;
 	isl_bool empty;
 	isl_bool coincident;
+	/* AutoSA Extended */
+	isl_bool pe_opt;
+	isl_bool space_time;
+	/* AutoSA Extended */
 
 	p = isl_printer_print_str(p, "schedule");
 	p = isl_printer_yaml_next(p);
@@ -2719,6 +2768,101 @@ static __isl_give isl_printer *print_tree_band(__isl_take isl_printer *p,
 		p = isl_printer_yaml_end_sequence(p);
 		p = isl_printer_set_yaml_style(p, style);
 	}
+	/* AutoSA Extended */
+  space_time = any_space_time(band);
+  if (space_time < 0)
+    return isl_printer_free(p);
+  if (space_time) {
+    int i;
+    isl_size n;
+    int style;
+
+    p = isl_printer_yaml_next(p);
+    p = isl_printer_print_str(p, "space_time");
+    p = isl_printer_yaml_next(p);
+    style = isl_printer_get_yaml_style(p);
+    p = isl_printer_set_yaml_style(p, ISL_YAML_STYLE_FLOW);
+    p = isl_printer_yaml_start_sequence(p);
+    n = isl_schedule_band_n_member(band);
+    if (n < 0)
+      return isl_printer_free(p);
+    for (i = 0; i < n; ++i) {
+      switch(isl_schedule_band_member_get_space_time(band, i)) {
+        case autosa_loop_default:
+          p = isl_printer_print_str(p, "default");
+          p = isl_printer_yaml_next(p);
+          break;
+        case autosa_loop_error:
+          p = isl_printer_print_str(p, "error");
+          p = isl_printer_yaml_next(p);
+          break;
+        case autosa_loop_time:
+          p = isl_printer_print_str(p, "time");
+          p = isl_printer_yaml_next(p);
+          break;
+        case autosa_loop_space:
+          p = isl_printer_print_str(p, "space");
+          p = isl_printer_yaml_next(p);
+          break;
+        default:
+          p = isl_printer_print_str(p, "unknown");
+          p = isl_printer_yaml_next(p);
+          break;
+      }
+    }
+    p = isl_printer_yaml_end_sequence(p);
+    p = isl_printer_set_yaml_style(p, style);
+  }
+  pe_opt = any_pe_opt(band);
+  if (pe_opt < 0)
+    return isl_printer_free(p);
+  if (pe_opt) {
+    int i;
+    isl_size n;
+    int style;
+
+    p = isl_printer_yaml_next(p);
+    p = isl_printer_print_str(p, "pe_opt");
+    p = isl_printer_yaml_next(p);
+    style = isl_printer_get_yaml_style(p);
+    p = isl_printer_set_yaml_style(p, ISL_YAML_STYLE_FLOW);
+    p = isl_printer_yaml_start_sequence(p);
+    n = isl_schedule_band_n_member(band);
+    if (n < 0)
+      return isl_printer_free(p);
+    for (i = 0; i < n; ++i) {
+      switch(isl_schedule_band_member_get_pe_opt(band, i)) {
+        case autosa_loop_default:
+          p = isl_printer_print_str(p, "default");
+          p = isl_printer_yaml_next(p);
+          break;
+        case autosa_loop_error:
+          p = isl_printer_print_str(p, "error");
+          p = isl_printer_yaml_next(p);
+          break;
+        case autosa_loop_latency:
+          p = isl_printer_print_str(p, "latency");
+          p = isl_printer_yaml_next(p);
+          break;
+        case autosa_loop_simd:
+          p = isl_printer_print_str(p, "simd");
+          p = isl_printer_yaml_next(p);
+          break;
+        case autosa_loop_array_part:
+          p = isl_printer_print_str(p, "array_part");
+          p = isl_printer_yaml_next(p);
+          break;
+        default:
+          p = isl_printer_print_str(p, "unknown");
+          p = isl_printer_yaml_next(p);
+          break;
+      }
+    }
+    p = isl_printer_yaml_end_sequence(p);
+    p = isl_printer_set_yaml_style(p, style);
+  }
+	/* AutoSA Extended */
+
 	options = isl_schedule_band_get_ast_build_options(band);
 	empty = isl_union_set_is_empty(options);
 	if (empty < 0)

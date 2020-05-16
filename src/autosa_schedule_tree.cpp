@@ -838,11 +838,9 @@ __isl_give isl_schedule_node *autosa_node_band_tile_loop(
   int n = isl_schedule_node_band_n_member(node);
   int size[1];
 
-  size[0] = tile_size;
-  if (pos > 0) {
-    node = isl_schedule_node_band_split(node, pos);
-    node = isl_schedule_node_child(node, 0);
-  }
+  size[0] = tile_size;  
+  node = isl_schedule_node_band_split(node, pos);
+  node = isl_schedule_node_child(node, 0);  
   node = isl_schedule_node_band_split(node, 1);
 
   tile_sizes = construct_band_tile_sizes(node, size);

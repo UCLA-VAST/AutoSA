@@ -19,5 +19,6 @@ cd src
 make
 #make check
 
+# Cleanup
 cd - 
-cp src/autosa ./
+cp ./autosa_scripts/autosa .
