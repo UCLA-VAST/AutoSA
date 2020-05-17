@@ -816,6 +816,8 @@ struct autosa_kernel_stmt {
       int nxt_data_pack;
       isl_ast_expr *local_index;
       isl_ast_expr *index;
+      int coalesce_depth;
+      int coalesce_bound;
       struct autosa_array_info *array;
       struct autosa_local_array_info *local_array;
       struct autosa_array_ref_group *group;

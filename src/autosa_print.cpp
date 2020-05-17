@@ -2555,6 +2555,7 @@ static __isl_give isl_printer *autosa_kernel_print_io_transfer_data_pack(
   p = isl_printer_end_line(p);
 
   /* [type] buf_data_split[]; */
+  // TODO: move it outside the loop.
   p = isl_printer_start_line(p);
   if (nxt_n_lane == 1) {
     p = isl_printer_print_str(p, "ap_uint<");
@@ -2574,7 +2575,18 @@ static __isl_give isl_printer *autosa_kernel_print_io_transfer_data_pack(
     p = isl_printer_print_str(p, "#pragma HLS ARRAY_PARTITION variable=buf_data_split complete");
     p = isl_printer_end_line(p);
   }
-    
+
+  if (stmt->u.i.in && stmt->u.i.coalesce_depth >= 0) {
+    p = isl_printer_start_line(p);
+    p = isl_printer_print_str(p, "if (c");
+    // TODO: print the iterator index.
+    p = isl_printer_print_int(p, stmt->u.i.coalesce_depth);
+    p = isl_printer_print_str(p, " % ");
+    p = isl_printer_print_int(p, n_lane / nxt_n_lane);
+    p = isl_printer_print_str(p, " == 0) {");
+    p = isl_printer_end_line(p);
+    p = isl_printer_indent(p, 4);
+  }  
   /* buf_data = local[]; */
   p = isl_printer_start_line(p);
   p = isl_printer_print_str(p, "buf_data = ");
@@ -2611,6 +2623,11 @@ static __isl_give isl_printer *autosa_kernel_print_io_transfer_data_pack(
   p = isl_printer_start_line(p);
   p = isl_printer_print_str(p, "}");
   p = isl_printer_end_line(p);
+
+  if (stmt->u.i.in && stmt->u.i.coalesce_depth >= 0) {
+    p = isl_printer_indent(p, -4);
+    p = print_str_new_line(p, "}");
+  }
 
   /* split_i = ... */
   expr = isl_ast_expr_copy(stmt->u.i.local_index);
@@ -2669,6 +2686,23 @@ static __isl_give isl_printer *autosa_kernel_print_io_transfer_data_pack(
     }
     p = isl_printer_end_line(p);
 
+    if (stmt->u.i.coalesce_depth >= 0) {
+      p = isl_printer_start_line(p);
+      p = isl_printer_print_str(p, "if (c");
+      p = isl_printer_print_int(p, stmt->u.i.coalesce_depth);
+      p = isl_printer_print_str(p, " % ");
+      p = isl_printer_print_int(p, n_lane / nxt_n_lane);
+      p = isl_printer_print_str(p, " == ");
+      p = isl_printer_print_int(p, n_lane / nxt_n_lane);
+      p = isl_printer_print_str(p, " - 1 || c");
+      p = isl_printer_print_int(p, stmt->u.i.coalesce_depth);
+      p = isl_printer_print_str(p, " == ");
+      p = isl_printer_print_int(p, stmt->u.i.coalesce_bound - 1);
+      p = isl_printer_print_str(p, ") {");
+      p = isl_printer_end_line(p);
+      p = isl_printer_indent(p, 4);
+    }
+
     /* buf_data = (buf_data_split[1], ...); */
     p = isl_printer_start_line(p);
     if (hls->target == XILINX_HW) {
@@ -2692,6 +2726,11 @@ static __isl_give isl_printer *autosa_kernel_print_io_transfer_data_pack(
     p = isl_printer_print_ast_expr(p, local_index_packed);
     p = isl_printer_print_str(p, " = buf_data;");
     p = isl_printer_end_line(p);
+
+    if (stmt->u.i.coalesce_depth >= 0) {
+      p = isl_printer_indent(p, -4);
+      p = print_str_new_line(p, "}");
+    }
 
     free(fifo_name);
   } else {

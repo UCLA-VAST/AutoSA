@@ -163,8 +163,8 @@ static void hls_open_files(struct hls_info *info, const char *input)
   if (info->hls)
     fprintf(info->host_c, "#include \"%s\"\n\n", name); 
 
-  if (info->hls)
-    fprintf(info->kernel_c, "#include \"%s\"\n", name);  
+//  if (info->hls)
+//    fprintf(info->kernel_c, "#include \"%s\"\n", name);  
 
   strcpy(name + len, "_top_gen.cpp");
   strcpy(dir + len_dir, name);
@@ -1223,10 +1223,11 @@ static __isl_give isl_printer *autosa_print_intra_trans_module(
   fprintf(hls->kernel_c, "{\n");
   if (hls->target == XILINX_HW)
     fprintf(hls->kernel_c, "#pragma HLS INLINE OFF\n");
-  print_module_iterators(hls->kernel_c, module);
-  
-  p = isl_printer_indent(p, 4);  
-  p = print_module_vars_xilinx(p, module, 0);  
+  p = isl_printer_indent(p, 4);      
+  p = print_str_new_line(p, "/* Variable Declaration */");
+  print_module_iterators(hls->kernel_c, module);    
+  p = print_module_vars_xilinx(p, module, 0);    
+  p = print_str_new_line(p, "/* Variable Declaration */");
   p = isl_printer_end_line(p);
 
   if (module->double_buffer) {
@@ -1276,11 +1277,12 @@ static __isl_give isl_printer *autosa_print_inter_trans_module(
     print_module_headers_xilinx(prog, module, hls, 1, boundary);   
   fprintf(hls->kernel_c, "{\n");
   fprintf(hls->kernel_c, "#pragma HLS INLINE OFF\n");
-  print_module_iterators(hls->kernel_c, module);
-  
   p = isl_printer_indent(p, 4);
+  p = print_str_new_line(p, "/* Variable Declaration */");
+  print_module_iterators(hls->kernel_c, module);    
   if (hls->target == XILINX_HW)
-    p = print_module_vars_xilinx(p, module, 1);  
+    p = print_module_vars_xilinx(p, module, 1);    
+  p = print_str_new_line(p, "/* Variable Declaration */");
   p = isl_printer_end_line(p);
 
   if (module->double_buffer) {
@@ -1409,11 +1411,12 @@ static __isl_give isl_printer *autosa_print_default_module(
     p = print_module_core_headers_xilinx(p, prog, module, hls, -1, boundary, 1);    
   fprintf(hls->kernel_c, "{\n");
   fprintf(hls->kernel_c, "#pragma HLS INLINE OFF\n");
-  print_module_iterators(hls->kernel_c, module);
-  
   p = isl_printer_indent(p, 4);
+  p = print_str_new_line(p, "/* Variable Declaration */");
+  print_module_iterators(hls->kernel_c, module);    
   if (hls->target == XILINX_HW)
-    p = print_module_vars_xilinx(p, module, -1);  
+    p = print_module_vars_xilinx(p, module, -1);    
+  p = print_str_new_line(p, "/* Variable Declaration */");
   p = isl_printer_end_line(p);
   
   if (module->credit && !module->in) {

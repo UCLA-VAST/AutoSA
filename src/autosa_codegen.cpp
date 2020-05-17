@@ -899,7 +899,10 @@ static __isl_give isl_schedule_node *add_io_copies_stmt_tile(
   int n_lane,
   int read,
   __isl_take char *stmt_name,
-  int before, int is_buffer)
+  int before, int is_buffer,
+  /* If it is proper to insert hls_pipeline for Xilinx platforms. */
+  int insert_dependence                 
+  )
 {
   isl_union_map *access = NULL;
   int empty;
@@ -912,6 +915,9 @@ static __isl_give isl_schedule_node *add_io_copies_stmt_tile(
   int n;
   isl_id *id;
   isl_ctx *ctx = kernel->ctx;
+  int coalesce_depth;
+  int coalesce_bound;
+  isl_val *coalesce_bound_val;
 
   access = io_comm_access(kernel, node, group, read);
 
@@ -975,8 +981,9 @@ static __isl_give isl_schedule_node *add_io_copies_stmt_tile(
     isl_printer *p_str;
     isl_union_map *umap;
     isl_union_set *filter;
+    int depth;
 
-    /* Tile the last dimension */
+    /* Tile the last dimension. */
     tile_size[0] = n_lane;
     graft = autosa_tile_band(graft, tile_size);
     graft = isl_schedule_node_child(graft, 0);
@@ -984,7 +991,7 @@ static __isl_give isl_schedule_node *add_io_copies_stmt_tile(
     filter = schedule_eq_lb(graft);
     graft = isl_schedule_node_insert_filter(graft, filter);
     /* Move to the tile loop */
-    graft = isl_schedule_node_parent(graft);
+    graft = isl_schedule_node_parent(graft);    
   }
   free(stmt_name);
   /* Insert a "pipeline" mark inside the band node. */
@@ -994,9 +1001,14 @@ static __isl_give isl_schedule_node *add_io_copies_stmt_tile(
   graft = isl_schedule_node_insert_mark(graft, id);
   graft = isl_schedule_node_parent(graft);
 
-  if (is_buffer && !read) {
-    // TODO: should not be inter_trans or intra_trans
-    /* Insert a "dependence" mark */
+  if (is_buffer && !read && insert_dependence) {    
+    // TODO: should not be inter_trans or intra_trans.
+    // TODO: only add this pragma for io_transfer statement which requires data packing.
+    /* Insert a "dependence" mark. 
+     * This is not safe. Currently only insert the mark when there is at least 
+     * one level of coalesce loop (coalesce_bound > 1) and
+     * when data_pack does not equal to the nxt_data_pack. 
+     */
     char *mark_name;
     isl_printer *p_str = isl_printer_to_str(ctx);
     p_str = isl_printer_print_str(p_str, "hls_dependence.");
@@ -1151,7 +1163,8 @@ static __isl_give isl_schedule *generate_io_module_inter_trans(
   /* Create a transfer statement with the format:
    * [in_trans/out_trans]_[dram]_[boundary].fifo_suffix_[local].
    * [is_filter].[is_buffer].[depth-1].[space_dim-io_level].
-   * [data_pack_inter].[data_pack_intra]
+   * [data_pack_inter].[data_pack_intra].
+   * [coalesce_depth].[coalesce_bound]
    */
   p = isl_printer_to_str(ctx);
   p = isl_printer_print_str(p, read? "in_trans" : "out_trans");
@@ -1188,16 +1201,32 @@ static __isl_give isl_schedule *generate_io_module_inter_trans(
     node = add_io_copies_stmt_acc(kernel, group, node, 
               buf->tile, buf->n_lane, read, stmt_name, read? 1: 0);
   } else {
+    int coalesce_depth;
+    isl_val *coalesce_bound_val;
+    int coalesce_bound;
+
     /* Add the I/O statement for the entire group. */
     module->data_pack_inter = buf->n_lane;
     module->data_pack_intra = buf->n_lane;
     p = isl_printer_print_str(p, ".");
     p = isl_printer_print_int(p, buf->n_lane);
+
+    /* Compute the coalesce loop depth and upper bounds. */
+    coalesce_depth = isl_schedule_node_get_schedule_depth(node) + buf->tile->n - 1;
+    coalesce_bound_val = buf->tile->bound[buf->tile->n - 1].size;
+    coalesce_bound = isl_val_get_num_si(coalesce_bound_val) / buf->n_lane;
+    p = isl_printer_print_str(p, ".");
+    p = isl_printer_print_int(p, coalesce_depth);
+    p = isl_printer_print_str(p, ".");
+    p = isl_printer_print_int(p, coalesce_bound);
+
     stmt_name = isl_printer_get_str(p);
     isl_printer_free(p);    
     node = add_io_copies_stmt_tile(kernel, group, node, 
               buf->tile, buf->tile, buf->n_lane, read, stmt_name, read? 1: 0, 
-              is_buffer & 0);
+              is_buffer & 0, 
+              coalesce_bound > 1 
+              && 0);
     node = isl_schedule_node_cut(node);
     /* Insert empty filter. */
     empty_filter = isl_union_set_from_set(isl_set_empty(
@@ -1424,18 +1453,34 @@ static __isl_give isl_schedule *generate_io_module_intra_trans(
     node = add_io_copies_stmt_acc(kernel, group, node, 
               cur_buf->tile, group->n_lane, read, stmt_name, read? 1: 0); 
   } else {
+    int coalesce_depth;
+    isl_val *coalesce_bound_val;
+    int coalesce_bound;
+
     p = isl_printer_print_str(p, ".");
     p = isl_printer_print_int(p, buf->n_lane);
+
+	  /* Compute the coalesce loop depth and upper bounds. */
+    coalesce_depth = isl_schedule_node_get_schedule_depth(node) + buf->tile->n - 1;
+    coalesce_bound_val = buf->tile->bound[buf->tile->n - 1].size;
+    coalesce_bound = isl_val_get_num_si(coalesce_bound_val) / buf->n_lane;
+    p = isl_printer_print_str(p, ".");
+    p = isl_printer_print_int(p, coalesce_depth);
+    p = isl_printer_print_str(p, ".");
+    p = isl_printer_print_int(p, coalesce_bound);    
+
     stmt_name = isl_printer_get_str(p);
     isl_printer_free(p);
     module->data_pack_intra = buf->n_lane;
     node = add_io_copies_stmt_tile(kernel, group, node, 
               cur_buf->tile, buf->tile, buf->n_lane, 
-              read, stmt_name, read? 1: 0, is_buffer & 0);
+              read, stmt_name, read? 1: 0, is_buffer & 0,
+              coalesce_bound > 1 && cur_buf->n_lane != buf->n_lane
+              );
     node = isl_schedule_node_cut(node);
     /* Insert empty filter. */
     empty_filter = isl_union_set_from_set(isl_set_empty(isl_set_get_space(kernel->context)));
-    node = isl_schedule_node_insert_filter(node, empty_filter);
+    node = isl_schedule_node_insert_filter(node, empty_filter);    
   }
 
   free(fifo_suffix);
@@ -1988,16 +2033,31 @@ static isl_stat generate_default_io_module_schedule(
     node = add_io_copies_stmt_acc(kernel, group, node, 
               buf->tile, buf->n_lane, read, stmt_name, read? 1: 0);
   } else {
+    int coalesce_depth;
+    isl_val *coalesce_bound_val;
+    int coalesce_bound;
+
     /* Add the I/O statement for the entire group. */
     module->data_pack_inter = buf->n_lane;
     module->data_pack_intra = buf->n_lane;
     p = isl_printer_print_str(p, ".");
     p = isl_printer_print_int(p, buf->n_lane);
+
+	  /* Compute the coalesce loop depth and upper bounds. */
+    coalesce_depth = isl_schedule_node_get_schedule_depth(node) + buf->tile->n - 1;
+    coalesce_bound_val = buf->tile->bound[buf->tile->n - 1].size;
+    coalesce_bound = isl_val_get_num_si(coalesce_bound_val) / buf->n_lane;
+    p = isl_printer_print_str(p, ".");
+    p = isl_printer_print_int(p, coalesce_depth);
+    p = isl_printer_print_str(p, ".");
+    p = isl_printer_print_int(p, coalesce_bound);    
+
     stmt_name = isl_printer_get_str(p);
     isl_printer_free(p);
     node = add_io_copies_stmt_tile(kernel, group, node, 
               buf->tile, buf->tile, buf->n_lane, read, 
-              stmt_name, read? 1: 0, is_buffer);
+              stmt_name, read? 1: 0, is_buffer,
+              coalesce_bound > 1 && 0);
     if (!is_buffer) {
       node = isl_schedule_node_cut(node);
       empty_filter = isl_union_set_from_set(isl_set_empty(isl_set_get_space(kernel->context)));
@@ -2046,13 +2106,28 @@ static isl_stat generate_default_io_module_schedule(
       node = add_io_copies_stmt_acc(kernel, group, node, cur_buf->tile, 
                 group->n_lane, read, stmt_name, read? 1 : 0); 
     } else {
+      int coalesce_depth;
+      isl_val *coalesce_bound_val;
+      int coalesce_bound;
+
       p = isl_printer_print_str(p, ".");
       p = isl_printer_print_int(p, buf->n_lane);
+
+      /* Compute the coalesce loop depth and upper bounds. */
+      coalesce_depth = isl_schedule_node_get_schedule_depth(node) + buf->tile->n - 1;
+      coalesce_bound_val = buf->tile->bound[buf->tile->n - 1].size;
+      coalesce_bound = isl_val_get_num_si(coalesce_bound_val) / buf->n_lane;
+      p = isl_printer_print_str(p, ".");
+      p = isl_printer_print_int(p, coalesce_depth);
+      p = isl_printer_print_str(p, ".");
+      p = isl_printer_print_int(p, coalesce_bound);
+
       stmt_name = isl_printer_get_str(p);
       isl_printer_free(p);
       module->data_pack_intra = buf->n_lane;
       node = add_io_copies_stmt_tile(kernel, group, node, cur_buf->tile, 
-              buf->tile, buf->n_lane, read, stmt_name, read? 1 : 0, is_buffer);
+              buf->tile, buf->n_lane, read, stmt_name, read? 1 : 0, is_buffer,
+              coalesce_bound > 1 && cur_buf->n_lane != buf->n_lane);
       node = isl_schedule_node_cut(node);
       empty_filter = isl_union_set_from_set(isl_set_empty(
               isl_set_get_space(kernel->context)));
@@ -6361,7 +6436,7 @@ static __isl_give isl_ast_node *create_domain_leaf_module(
 	return isl_ast_node_set_annotation(node, id);
 }
 
-/* Extract the filter field from the I/O statement type.
+/* Extract the is_filter field from the I/O statement type.
  * The I/O statement type is in the format of:
  * in/out_trans[_dram].[fifo_name].[is_filter].[is_buffer].[sched_depth].[param_id]
  */
@@ -6386,7 +6461,7 @@ static int extract_is_filter(const char *type)
   return val;
 }
 
-/* Extract the buffer field from the I/O statemnt type.
+/* Extract the is_buffer field from the I/O statemnt type.
  * The I/O statement type is in the format of:
  * in/out_trans[_dram].[fifo_name].[is_filter].[is_buffer].[sched_depth].[param_id].[pack_lane]
  * or 
@@ -6413,7 +6488,7 @@ static int extract_is_buffer(const char *type)
   return val;
 }
 
-/* Extract the filter field from the I/O statemnt type.
+/* Extract the sched_depth field from the I/O statemnt type.
  * The I/O statement type is in the format of:
  * in/out_trans[_dram].[fifo_name].[is_filter].[is_buffer].[sched_depth].[param_id].[pack_lane]
  * or 
@@ -6454,7 +6529,7 @@ static int extract_sched_depth(isl_ctx *ctx, const char *type)
   return depth;
 }
 
-/* Extract the filter field from the I/O statemnt type.
+/* Extract the param_id field from the I/O statemnt type.
  * The I/O statement type is in the format of:
  * in/out_trans[_dram].[fifo_name].[is_filter].[is_buffer].[sched_depth].[param_id].[pack_lane]
  * or 
@@ -6495,7 +6570,7 @@ static int extract_param_id(isl_ctx *ctx, const char *type)
   return depth;
 }
 
-/* Extract the filter field from the I/O statemnt type.
+/* Extract the data_pack field from the I/O statemnt type.
  * The I/O statement type is in the format of:
  * in/out_trans[_dram].[fifo_name].[is_filter].[is_buffer].[sched_depth].[param_id].[pack_lane].[nxt_pack_lane]
  * or 
@@ -6539,7 +6614,7 @@ static int extract_data_pack(isl_ctx *ctx, const char *type, int is_trans)
   return depth; 
 }
 
-/* Extract the filter field from the I/O statemnt type.
+/* Extract the next_data_pack field from the I/O statemnt type.
  * The I/O statement type is in the format of:
  * in/out_trans[_dram].[fifo_name].[is_filter].[is_buffer].[sched_depth].[param_id].[pack_lane]
  * or 
@@ -6581,6 +6656,102 @@ static int extract_next_data_pack(isl_ctx *ctx, const char *type, int is_trans)
   isl_printer_free(p_str);
 
   return depth; 
+}
+
+/* Extract the coalesce_depth field from the I/O statemnt type.
+ * The I/O statement type is in the format of:
+ * in/out_trans[_dram].[fifo_name].[is_filter].[is_buffer].[sched_depth].[param_id]
+ * .[pack_lane].[nxt_pack_lane].[coalesce_depth].[coalesce_bound]
+ * or 
+ * in/out.[fifo_name].[pack_lane].[nxt_pack_lane]
+ */
+static int extract_coalesce_depth(isl_ctx *ctx, const char *type, int is_trans)
+{
+  int loc = 0;
+  char ch;
+  int dot_time = 0;
+  isl_printer *p_str;
+  char *depth_str;
+  int depth;
+
+  if (!is_trans) 
+    return -1;
+
+  while ((ch = type[loc]) != '\0') {
+    if (ch == '.') 
+      dot_time++;
+    if (dot_time == 8)
+      break;
+    loc++;
+  }
+
+  if (dot_time < 8)
+    return -1;
+
+  p_str = isl_printer_to_str(ctx);
+  loc++;
+  while (((ch = type[loc]) != '\0') && ((ch = type[loc]) != '.')) {
+    char buf[2];
+    buf[0] = ch;
+    buf[1] = '\0';
+    p_str = isl_printer_print_str(p_str, buf);
+    loc++;
+  }
+
+  depth_str = isl_printer_get_str(p_str);
+  depth = atoi(depth_str);
+  free(depth_str);
+  isl_printer_free(p_str);
+
+  return depth;   
+}
+
+/* Extract the coalesce_bound field from the I/O statemnt type.
+ * The I/O statement type is in the format of:
+ * in/out_trans[_dram].[fifo_name].[is_filter].[is_buffer].[sched_depth].[param_id]
+ * .[pack_lane].[nxt_pack_lane].[coalesce_depth].[coalesce_bound]
+ * or 
+ * in/out.[fifo_name].[pack_lane].[nxt_pack_lane]
+ */
+static int extract_coalesce_bound(isl_ctx *ctx, const char *type, int is_trans)
+{
+  int loc = 0;
+  char ch;
+  int dot_time = 0;
+  isl_printer *p_str;
+  char *depth_str;
+  int depth;
+
+  if (!is_trans) 
+    return -1;
+
+  while ((ch = type[loc]) != '\0') {
+    if (ch == '.') 
+      dot_time++;
+    if (dot_time == 9)
+      break;
+    loc++;
+  }
+
+  if (dot_time < 9)
+    return -1;
+
+  p_str = isl_printer_to_str(ctx);
+  loc++;
+  while (((ch = type[loc]) != '\0') && ((ch = type[loc]) != '.')) {
+    char buf[2];
+    buf[0] = ch;
+    buf[1] = '\0';
+    p_str = isl_printer_print_str(p_str, buf);
+    loc++;
+  }
+
+  depth_str = isl_printer_get_str(p_str);
+  depth = atoi(depth_str);
+  free(depth_str);
+  isl_printer_free(p_str);
+
+  return depth;   
 }
 
 /* Given the fifo field from the I/O statement type.
@@ -6706,6 +6877,8 @@ static __isl_give isl_ast_node *create_io_leaf(struct autosa_kernel *kernel,
   stmt->u.i.filter = is_trans_filter;
   stmt->u.i.data_pack = extract_data_pack(ctx, type, is_trans);
   stmt->u.i.nxt_data_pack = extract_next_data_pack(ctx, type, is_trans);
+  stmt->u.i.coalesce_depth = extract_coalesce_depth(ctx, type, is_trans);
+  stmt->u.i.coalesce_bound = extract_coalesce_bound(ctx, type, is_trans);
     
   /* Compute the global index. */
   /* L -> type[D -> A] */

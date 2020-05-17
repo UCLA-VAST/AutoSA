@@ -171,8 +171,8 @@ def insert_xlnx_pragmas(lines):
   Args:
     lines: contains the codelines of the program
   """
-  # Temporarily disabled
-  handle_dep_pragma = 0
+  # Handle hls_dependence
+  handle_dep_pragma = 1
 
   code_len = len(lines)
   pos = 0
@@ -347,6 +347,40 @@ def shrink_bit_width(lines):
 
   return lines
 
+def lify_split_buffers(lines):
+  """ Lift the split buffers in the program
+
+  For each module, if we find any split buffers with the name "buf_data_split", 
+  we will lift them out of the for loops and put them in the variable declaration
+  section at the beginning of the module. 
+
+  Args:
+    lines: contains the codelines of the program
+  """
+  code_len = len(lines)
+  for pos in range(code_len):
+    line = lines[pos]
+    if line.find('variable=buf_data_split') != -1:
+      # Search for the variable declaration section
+      decl_pos = -1
+      prev_pos = pos - 1
+      while prev_pos >= 0:
+        prev_line = lines[prev_pos]
+        if prev_line.find('Variable Declaration') != -1:
+          decl_pos = prev_pos
+          break
+        prev_pos -= 1
+      # Move the two code lines at [pos - 1] and [pos] to [decl_pos] and [decl_pos + 1]
+      indent = lines[decl_pos].find('/*')
+      line1 = ' ' * indent + lines[pos - 1].lstrip()
+      line2 = ' ' * indent + lines[pos].lstrip()
+      del lines[pos - 1]
+      del lines[pos - 1]
+      lines.insert(decl_pos, line1)
+      lines.insert(decl_pos + 1, line2)
+  
+  return lines
+
 def reorder_module_calls(lines):
   """ Reorder the module calls in the program
 
@@ -464,6 +498,9 @@ def xilinx_run(kernel_call, kernel_def, kernel='autosa.tmp/output/src/kernel_ker
 
   # Insert the HLS pragmas
   lines = insert_xlnx_pragmas(lines)
+
+  # Lift the split_buffers
+  lines = lify_split_buffers(lines)
 
   kernel = str(kernel)
   print("Please find the generated file: " + kernel)
