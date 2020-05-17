@@ -50,6 +50,8 @@ struct autosa_options {
   char *config;
   /* Output directory */
   char *output_dir;
+	/* SIMD information file */
+	char *simd_info;
   /* Generate HLS host instead of OpenCL host */
   int hls;
   /* Use URAM */

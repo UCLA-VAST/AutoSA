@@ -4,18 +4,18 @@
     },
     "array_part": {
         "enable": 1,
-        "mode": "manual"
+        "mode": "auto"
     },
     "array_part_L2": {
         "enable": 1,
-        "mode": "manual"
+        "mode": "auto"
     },
     "latency": {
         "enable": 1,
-        "mode": "manual"
+        "mode": "auto"
     },
     "simd": {
         "enable": 1,
-        "mode": "manual"
+        "mode": "auto"
     }
 }

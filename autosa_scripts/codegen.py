@@ -265,7 +265,7 @@ def insert_xlnx_pragmas(lines):
 def index_simplify(matchobj):
   str_expr = matchobj.group(0)
   expr = sympy.sympify(str_expr[1 : len(str_expr) - 1])
-  """ 
+  """
   This will sometimes cause bugs due to the different semantics in C
   E.g., x = 9, (x+3)/4 != x/4+3/4.
   We could use cxxcode, but it will generate floating expressions which are
@@ -318,7 +318,7 @@ def shrink_bit_width(lines):
   """ Calculate the bitwidth of the iterator and shrink it to the proper size
 
   Args:
-    lines: contains the codelines of the program    
+    lines: contains the codelines of the program
   """
 
   code_len = len(lines)
@@ -351,7 +351,7 @@ def reorder_module_calls(lines):
   """ Reorder the module calls in the program
 
   For I/O module calls, we will reverse the sequence of calls for output modules.
-  Starting from the first module, enlist the module calls until the boundary module 
+  Starting from the first module, enlist the module calls until the boundary module
   is met.
   Reverse the list and output it.
 
@@ -574,5 +574,5 @@ if __name__ == "__main__":
   if args.target == 'autosa_opencl':
     print("Intel OpenCL is not supported!")
     # intel_run(args.kernel_call, args.kernel_def, args.output)
-  elif args.platform == 'autosa_hls_c':
+  elif args.target == 'autosa_hls_c':
     xilinx_run(args.kernel_call, args.kernel_def, args.output)

@@ -87,6 +87,7 @@ struct autosa_kernel *autosa_kernel_copy(struct autosa_kernel *kernel)
   kernel_dup->sizes = isl_union_map_copy(kernel->sizes);
   kernel_dup->used_sizes = isl_union_map_copy(kernel->used_sizes);
   kernel_dup->id = kernel->id;
+  kernel_dup->space_time_id = kernel->space_time_id;
   kernel_dup->core = isl_union_set_copy(kernel->core);
   kernel_dup->arrays = isl_union_set_copy(kernel->arrays);
   kernel_dup->n_array = kernel->n_array;

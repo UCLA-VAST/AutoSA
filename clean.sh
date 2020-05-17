@@ -1,6 +1,6 @@
 #!/bin/sh
 rm ./autosa
-rm ./autosa.tmp
+rm -rf ./autosa.tmp
 cd src
 make clean
 cd -

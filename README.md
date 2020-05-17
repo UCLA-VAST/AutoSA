@@ -85,9 +85,9 @@ after the fragment.
 
 Run
 ```c
-autosa --target=autosa_hls --autosa file.c
+./autosa ./autosa_tests/mm/kernel.c --AutoSA-config=./autosa_config/autosa_config.json --target=autosa_hls_c --AutoSA-autosa --AutoSA-two-level-buffer --AutoSA-uram --isl-schedule-whole-component --AutoSA-output-dir=./autosa.tmp/output --AutoSA-simd-info=./autosa_tests/mm/simd_info.json
 ```
-where `file.c` is the file containing the fragment. The generated code can be found in `autosa.tmp/output/src/file_host.cpp` and `autosa.tmp/output/src/file_kernel.c`.
+where `kernel.c` is the file containing the fragment. The generated code can be found in `autosa.tmp/output/src/kernel_host.cpp` and `autosa.tmp/output/src/kernel_kernel.cpp`.
 
 ## Send Us Failure Cases and Feedback!
 AutoSA is open source for research purposes, and we would like to continously improve it! Please let us know if...

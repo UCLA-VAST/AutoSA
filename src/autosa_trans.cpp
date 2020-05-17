@@ -1,3 +1,5 @@
+#include <string>
+
 #include "autosa_trans.h"
 #include "autosa_utils.h"
 #include "autosa_schedule_tree.h"
@@ -56,7 +58,7 @@ static cJSON *load_tuning_config(char *config_file)
     }
     fclose(f);
   } else {
-    printf("[AutoSA] Error: can't open configuration file: %s\n", config_file);
+    printf("[AutoSA] Error: Can't open configuration file: %s\n", config_file);
     exit(1);
   }
 
@@ -454,6 +456,7 @@ struct autosa_kernel **sa_space_time_transform(__isl_take isl_schedule *schedule
                   (n_sa + n_sa_dim) * sizeof(struct autosa_kernel *));
     for (int i = 0; i < n_sa_dim; i++) {
       sa_list[n_sa + i] = sa_dim_list[i];
+      sa_list[n_sa + i]->space_time_id = n_sa + i;
     }
     free(sa_dim_list);
     n_sa += n_sa_dim;
@@ -473,6 +476,7 @@ struct autosa_kernel **sa_space_time_transform(__isl_take isl_schedule *schedule
                   (n_sa + n_sa_dim) * sizeof(struct autosa_kernel *));
     for (int i = 0; i < n_sa_dim; i++) {
       sa_list[n_sa + i] = sa_dim_list[i];
+      sa_list[n_sa + i]->space_time_id = n_sa + i;
     }
     free(sa_dim_list);
     n_sa += n_sa_dim;
@@ -492,6 +496,7 @@ struct autosa_kernel **sa_space_time_transform(__isl_take isl_schedule *schedule
                   (n_sa + n_sa_dim) * sizeof(struct autosa_kernel *));
     for (int i = 0; i < n_sa_dim; i++) {
       sa_list[n_sa + i] = sa_dim_list[i];
+      sa_list[n_sa + i]->space_time_id = n_sa + i;
     }
     free(sa_dim_list);
     n_sa += n_sa_dim;
@@ -1023,7 +1028,7 @@ isl_stat sa_array_partitioning_optimize(struct autosa_kernel *sa,
     }   
   } else {
     /* Auto mode.
-     * Perform the array partitioning following the default policy */
+     * Perform the array partitioning following the default policy. */
     tile_size = read_default_array_part_tile_sizes(sa, tile_len);
   }
 
@@ -1154,11 +1159,18 @@ isl_stat sa_array_partitioning_optimize(struct autosa_kernel *sa,
           free(tuning_path);
           free(loop_coincident);
           isl_printer_free(p_str);
+          free(ubs);
           exit(0);
         }
       } else {
-        /* Perform second-level array partitioning following the default policy. */
-        tile_size = read_default_array_part_L2_tile_sizes(sa, tile_len);
+        /* Perform second-level array partitioning following the default policy. */        
+        // tile_size = read_default_array_part_L2_tile_sizes(sa, tile_len);
+        int *ubs = extract_band_upper_bounds(sa, node);
+        tile_size = isl_alloc_array(sa->ctx, int, tile_len);
+        for (int i = 0; i < tile_len; i++) {
+          tile_size[i] = ubs[i];
+        }
+        free(ubs);
       }
   
       if (!tile_size) {
@@ -2135,7 +2147,9 @@ static isl_schedule_node *detect_simd_vectorization_loop(
           size_t characters;  
           printf("[AutoSA] Detecting the reduction loop.\n");
           printf("[AutoSA] Band member position: %d\n", i);
-          printf("[AutoSA] Please input if the current loop is a reduction loop [y/n]: ");
+          /* If the SIMD info is pre-loaded, we don't ask for user inputs. */
+          if (data->buffer == NULL) 
+            printf("[AutoSA] Please input if the current loop is a reduction loop [y/n]: ");
           if (data->buffer == NULL) {
             char *buffer = (char *)malloc(bufsize * sizeof(char));
             data->buffer = buffer;
@@ -2154,7 +2168,7 @@ static isl_schedule_node *detect_simd_vectorization_loop(
           }
           isl_printer_free(p);
         } else {
-          is_parallel = 1;
+          is_parallel = isl_schedule_node_band_member_get_coincident(node, i);
         }
 
         /* Test if all the array references under the current loop 
@@ -2388,6 +2402,63 @@ static __isl_give isl_schedule_node *autosa_simd_tile_loop(
   return node;
 }
 
+/* Load the SIMD information for the kernel. 
+ */
+static __isl_give char *load_simd_info(struct autosa_kernel *sa)
+{
+  cJSON *simd_info;
+  FILE *f;
+  char *buffer = NULL;
+  long length;
+
+  if (sa->options->autosa->simd_info) {
+    f = fopen(sa->options->autosa->simd_info, "rb");
+    if (f) {
+      fseek(f, 0, SEEK_END);
+      length = ftell(f);
+      fseek(f, 0, SEEK_SET);
+      buffer = (char *)malloc(length + 1);
+      if (buffer) {
+        buffer[length] = '\0';
+        fread(buffer, 1, length, f);
+      }
+      fclose(f);
+    } else {
+      printf("[AutoSA] Error: Can't open SIMD information file: %s\n", 
+              sa->options->autosa->simd_info);
+      exit(1);
+    }    
+  }
+
+  if (buffer) {
+    simd_info = cJSON_Parse(buffer);
+    free(buffer);
+    /* Load the SIMD info into a string. */
+    cJSON *reduction = NULL;
+    cJSON *reductions = NULL;
+    int info_id = 0;    
+    char kernel_name[20];
+    sprintf(kernel_name, "kernel%d", sa->space_time_id);      
+    reductions = cJSON_GetObjectItemCaseSensitive(simd_info, kernel_name);
+    if (reductions) {
+      char *info = (char *)malloc(100 * sizeof(char));    
+      reductions = cJSON_GetObjectItemCaseSensitive(reductions, "reduction");
+      cJSON_ArrayForEach(reduction, reductions) 
+      {
+        char *info_i = reduction->valuestring;
+        sprintf(info + info_id, "%c", info_i[0]);
+        info_id++;
+      }    
+      cJSON_Delete(simd_info);
+      return info;
+    } else {
+      cJSON_Delete(simd_info);
+      return NULL;
+    }
+  }
+  return NULL;  
+}
+
 /* Apply SIMD vectorization. 
  * We go through all the loops, if there is any vectorizable loop 
  * (parallel or reduction loop with stride-0/1 access), such a loop will 
@@ -2421,6 +2492,8 @@ isl_stat sa_simd_vectorization_optimize(struct autosa_kernel *sa, char *mode)
   data.buffer = NULL;
   data.buffer_offset = 0;
   data.n_loops = n_loops;
+  /* Load the SIMD information. */
+  data.buffer = load_simd_info(sa);
   node = isl_schedule_node_map_descendant_bottom_up(
       node, &detect_simd_vectorization_loop, &data);
 

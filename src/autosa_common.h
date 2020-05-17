@@ -166,6 +166,7 @@ struct autosa_kernel {
 
   int n_sa_dim;
   int sa_dim[3];
+  int space_time_id;
   int array_part_w;
   int space_w;
   int time_w;
@@ -182,7 +183,7 @@ struct autosa_kernel {
 
   /* Identifier of the kernel. */
   int id;
-  /* The spaces of teh statement domains that form the core computation of the 
+  /* The spaces of the statement domains that form the core computation of the 
    * kernel. 
    */
   isl_union_set *core;

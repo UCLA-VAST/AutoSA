@@ -142,7 +142,7 @@ static void hls_open_files(struct hls_info *info, const char *input)
     fprintf(info->host_c, "#include \"%s\"\n", name);
   }
 
-  strcpy(name + len, "_kernel.cpp");
+  strcpy(name + len, "_kernel_modules.cpp");
   strcpy(dir + len_dir, name);
   info->kernel_c = fopen(dir, "w");
   if (!info->kernel_c) {
