@@ -439,7 +439,7 @@ def reorder_module_calls(lines):
 
   return lines
 
-def xilinx_run(kernel_call, kernel_def, kernel='autosa.tmp/output/src/kernel_autosa_hls_c.cpp'):
+def xilinx_run(kernel_call, kernel_def, kernel='autosa.tmp/output/src/kernel_kernel.cpp'):
   """ Generate the kernel file for Xilinx platform
 
   We will copy the content of kernel definitions before the kernel calls.
@@ -469,6 +469,15 @@ def xilinx_run(kernel_call, kernel_def, kernel='autosa.tmp/output/src/kernel_aut
   print("Please find the generated file: " + kernel)
 
   with open(kernel, 'w') as f:
+    # Load kernel header file
+    kernel_header = kernel.split('.')
+    kernel_header[-1] = 'h'
+    kernel_header = ".".join(kernel_header)
+    with open(kernel_header, 'r') as f2:
+      header_lines = f2.readlines()
+      f.writelines(header_lines)
+    f.write('\n')
+
     f.writelines(lines)
     # Load kernel call file
     with open(kernel_call, 'r') as f2:

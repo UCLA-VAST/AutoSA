@@ -160,11 +160,11 @@ static void hls_open_files(struct hls_info *info, const char *input)
 
   fprintf(info->host_c, "#include <assert.h>\n");
   fprintf(info->host_c, "#include <stdio.h>\n");
-  if (info->hls) {
+  if (info->hls)
     fprintf(info->host_c, "#include \"%s\"\n\n", name); 
-  }
 
-  fprintf(info->kernel_c, "#include \"%s\"\n", name);  
+  if (info->hls)
+    fprintf(info->kernel_c, "#include \"%s\"\n", name);  
 
   strcpy(name + len, "_top_gen.cpp");
   strcpy(dir + len_dir, name);
@@ -458,7 +458,11 @@ static __isl_give isl_printer *declare_and_allocate_device_arrays_xilinx(
     p = isl_printer_indent(p, -indent1);
   }
   p = isl_printer_end_line(p);
+
+  /* Insert profiling information. */
+  p = print_str_new_line(p, "auto host_begin = std::chrono::high_resolution_clock::now();");
   p = print_str_new_line(p, "auto fpga_begin = std::chrono::high_resolution_clock::now();");
+  p = print_str_new_line(p, "auto fpga_end = std::chrono::high_resolution_clock::now();");
   p = isl_printer_end_line(p);
 
   return p;
@@ -536,14 +540,17 @@ static __isl_give isl_printer *clear_device_xilinx(__isl_take isl_printer *p,
   if (hls) 
 	  p = autosa_free_cpu_arrays_xilinx(p, prog);
   else {
-    p = print_str_new_line(p, "q.finish();");
     p = isl_printer_end_line(p);
-    p = print_str_new_line(p, "auto fpga_end = std::chrono::high_resolution_clock::now();");
+    p = print_str_new_line(p, "q.finish();");    
+    p = print_str_new_line(p, "auto host_end = std::chrono::high_resolution_clock::now();");
     p = isl_printer_end_line(p);
     p = print_str_new_line(p, "// Calculate Time");
     p = print_str_new_line(p, "std::chrono::duration<double> fpga_duration = fpga_end - fpga_begin;");
     p = print_str_new_line(p, "std::cout << \"FPGA Time: \" << fpga_duration.count() << \" s\" << std::endl;");
+    p = print_str_new_line(p, "std::chrono::duration<double> host_duration = host_end - host_begin;");
+    p = print_str_new_line(p, "std::cout << \"Host Time: \" << host_duration.count() << \" s\" << std::endl;");    
     p = isl_printer_end_line(p);
+
     /* Restore buffer */
     p = print_str_new_line(p, "// Restore Data from Host Buffers");
     for (int i = 0; i < prog->n_array; i++) {
@@ -828,9 +835,14 @@ static __isl_give isl_printer *print_host_user_xilinx(__isl_take isl_printer *p,
     p = ppcg_start_block(p); 
   
     p = print_set_kernel_arguments_xilinx(p, data->prog, kernel);
-    p = print_str_new_line(p, "// Launch the kernel");
+    p = print_str_new_line(p, "q.finish();");
+    p = print_str_new_line(p, "fpga_begin = std::chrono::high_resolution_clock::now();");
+    p = isl_printer_end_line(p);
+    p = print_str_new_line(p, "// Launch the kernel");        
     p = print_str_new_line(p, "OCL_CHECK(err, err = q.enqueueTask(krnl));");
     p = isl_printer_end_line(p);
+    p = print_str_new_line(p, "q.finish();");
+    p = print_str_new_line(p, "fpga_end = std::chrono::high_resolution_clock::now();");    
   
     /* Print the top kernel generation function */
     /* Disabled by default */
