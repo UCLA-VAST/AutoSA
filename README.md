@@ -98,6 +98,47 @@ where `kernel.c` is the file containing the fragment. The generated code can be 
 ```
 or refer to [AutoSA compilation options](#autosa-compilation-options).
 
+3. Generate FPGA bitstream.
+
+Set up the Vitis development kit first, run the following commands.
+```
+# Set up Xilinx Vitis tools.
+source /opt/Xilinx/Vitis/2019.2/settings64.sh
+# Set up runtime.
+source /opt/xilinx/xrt/setup.sh
+```
+
+Execute the makefile to build the design.
+```
+cp autosa_scripts/vitis_scripts/Makefile autosa.tmp/output/
+cp autosa_scripts/vitis_scripts/connectivity.cfg autosa.tmp/output/
+cd autosa.tmp/output
+make all
+```
+>**Makefile Options Descriptions**
+>
+>* `MODE := hw_emu`: Set the build configuration mode to HW Emulation, other modes: sw_emu|hw
+>* `PLATFORM := xilinx_u200_qdma_201920_1`: Select the target platform
+>* `KERNEL_SRC := src/kernel_kernel.cpp`: List the kernel source files
+> * `HOST_SRC := src/kernel_host.cpp`: List the host source files
+
+The `connectivity.cfg` describes the DRAM port mapping. For more details about how to change the DRAM port mapping, please refer to the Xilinx tutorials: [Using Multiple DDR Banks](https://github.com/Xilinx/Vitis-Tutorials/blob/master/docs/mult-ddr-banks/README.md).
+
+4. Generate Xilinx HLS project.
+
+AutoSA also supports generate HLS projects. Add the option
+```
+--AutoSA-hls
+```
+to the command when compiling the program.
+
+AutoSA will generate an HLS host file `autosa.tmp/output/src/kernel_host.cpp` instead of the OpenCL host file generated in the previous step. To build the HLS project, run the following commands.
+```
+cp autosa_scripts/hls_scripts/hls_script.tcl autosa.tmp/output/
+cd autosa.tmp/output
+vivado_hls -f hls_script.tcl
+```
+
 ### Use AutoSA in Manual Mode
 The figure below depicts the overall compilation flow of AutoSA.
 <div align="center">
