@@ -31,9 +31,11 @@ The structure of this repo is as follows:
 3. [Getting Started](#getting-started)
    1. [Compilation](#compilation)
    2. [Use AutoSA to generate HLS code](#use-autosa-to-generate-hls-code)
-   2. [More details about AutoSA](#more-details-about-autosa)
-4. [Send Us Failure Cases and Feedback!](#send-us-failure-cases-and-feedback)
-5. [Authors and Contributors](#authors-and-contributors)
+   3. [Use AutoSA in manual mode](#user-autosa-in-manual-mode)
+   4. [AutoSA compilation options](#autosa-compilation-options)
+4. [Design Examples](#design-examples)
+5. [Send Us Failure Cases and Feedback!](#send-us-failure-cases-and-feedback)
+6. [Authors and Contributors](#authors-and-contributors)
 
 ## Latest Features
 
@@ -71,7 +73,7 @@ install LLVM/clang from source.
 ./install.sh
 ```
 
-### Use AutoSA to generate HLS code
+### Use AutoSA to Generate HLS Code
 1. Annotate the code region to be transformed to HLS C.
 
 Insert a line containing 
@@ -96,7 +98,7 @@ where `kernel.c` is the file containing the fragment. The generated code can be 
 ```
 or refer to xxx.
 
-### More details about AutoSA
+### Use AutoSA in Manual Mode
 The figure below depicts the overall compilation flow of AutoSA.
 
 1. **Model extraction**: This step extracts the polyhedral model from the input C code.
@@ -131,7 +133,7 @@ to execute this step in the manual mode.
 
 Below we explain how to use AutoSA in manual mode in detail.
 
-* __Space-time transformation__
+* __Space-time transformation__:
 In this step, multiple systolic arrays are generated for the input program. We will need to select one systolic array to proceed. We set this step to manual mode in the AutoSA configuration file. 
 ```json
 "space_time": {  
@@ -154,7 +156,111 @@ This tells the user that there are 6 different systolic array candidates that ar
 ```
 which tells AutoSA to select the fourth array (index starting from 0) during the sapce-time transformation.
 
-* __Latency hiding__
+* __Array partitioning__: In this step, we will tile the space loops to partition the original array into smaller ones. The computation is then scheduled onto the sub-arrays in sequence. We first set this step in manual mode. Then run the command:
+```c
+./autosa ./autosa_tests/mm/kernel.c --AutoSA-config=./autosa_config/autosa_config.json --target=autosa_hls_c --AutoSA-autosa --AutoSA-two-level-buffer --AutoSA-uram --isl-schedule-whole-component --AutoSA-output-dir=./autosa.tmp/output --AutoSA-simd-info=./autosa_tests/mm/simd_info.json --sa-sizes="{kernel[0]->space_time[3]}"
+```
+The `tuning.json` contains the content below:
+```json
+"array_part": {
+  "tilable_loops": [32, 32, 32]
+}
+```
+This tells users there are three candidate loops that can be tiled. The upper bounds of each loop is 32. We may select any tiling factor no greater than 32. Besides, AutoSA only supports tiling factors as sub-multiples of the loop bounds for now. If the user is interested to understand which three loops are selected as the candidate loops, add the option `--AutoSA-verbose` to the command and run again.
+```c
+./autosa ./autosa_tests/mm/kernel.c --AutoSA-config=./autosa_config/autosa_config.json --target=autosa_hls_c --AutoSA-autosa --AutoSA-two-level-buffer --AutoSA-uram --isl-schedule-whole-component --AutoSA-output-dir=./autosa.tmp/output --AutoSA-simd-info=./autosa_tests/mm/simd_info.json --sa-sizes="{kernel[0]->space_time[3]}" --AutoSA-verbose
+```
+AutoSA will print the schedule tree of the program and mark the candidate loops to be optimized. Please refer to the manual of [isl](http://isl.gforge.inria.fr/) for details of the schedule tree.
+
+As an example, we select the tiling factors `[16,16,16]`. Run the command below:
+```c
+./autosa ./autosa_tests/mm/kernel.c --AutoSA-config=./autosa_config/autosa_config.json --target=autosa_hls_c --AutoSA-autosa --AutoSA-two-level-buffer --AutoSA-uram --isl-schedule-whole-component --AutoSA-output-dir=./autosa.tmp/output --AutoSA-simd-info=./autosa_tests/mm/simd_info.json --sa-sizes="{kernel[0]->space_time[3];kernel[0]->array_part[16,16,16]}"
+```
+In this example, since we add the option `--AutoSA-two-level-buffer` to implement two-level on-chip buffers, AutoSA will apply a second-level array partitioning. Again, the new candidate loops and tiling factor choices are printed out in the `tuning.json`.
+```json
+"array_part_L2": {
+  "tilable_loops": [2, 2, 2]
+}
+```
+We select the tiling factors `[2,2,2]` to proceed. Run the command:
+```c
+./autosa ./autosa_tests/mm/kernel.c --AutoSA-config=./autosa_config/autosa_config.json --target=autosa_hls_c --AutoSA-autosa --AutoSA-two-level-buffer --AutoSA-uram --isl-schedule-whole-component --AutoSA-output-dir=./autosa.tmp/output --AutoSA-simd-info=./autosa_tests/mm/simd_info.json --sa-sizes="{kernel[0]->space_time[3];kernel[0]->array_part[16,16,16];kernel[0]->array_part_L2[2,2,2]}"
+```
+
+* __Latency hiding__: In this step, we will select parallel loops, tile them, permute them to the innermost to hide the computation latency. After the previous step, we will find the content below in the `tuning.json`:
+```json
+"latency": {
+  "tilable_loops": [16, 16]
+}
+```
+We select the tiling factors `[8,8]` to proceeed. Run the command:
+```c
+./autosa ./autosa_tests/mm/kernel.c --AutoSA-config=./autosa_config/autosa_config.json --target=autosa_hls_c --AutoSA-autosa --AutoSA-two-level-buffer --AutoSA-uram --isl-schedule-whole-component --AutoSA-output-dir=./autosa.tmp/output --AutoSA-simd-info=./autosa_tests/mm/simd_info.json --sa-sizes="{kernel[0]->space_time[3];kernel[0]->array_part[16,16,16];kernel[0]->array_part_L2[2,2,2];kernel[0]->latency[8,8]}"
+```
+
+* __SIMD vectorization__: In this step, we will select the vectorizable loop, tile them, permute them to the innermost. The point loop will be unrolled by HLS at last. In the current AutoSA, a loop is set as the target loop for vectorization if meeting the following criteria:
+  * It is a parallel loop or reduction loop annodated by users. 
+  * All array references within the loop are stride-one or stride-zero in regard to this loop.
+For the reduction loops, AutoSA requires users to annodate the loop manually. This is done by providing a `simd_info.json` file to the compiler. For our example, we can provide a `simd_info.json` file with the content below:
+```json
+"kernel3": {
+  "reduction": ["y"]
+}
+```
+AutoSA will examine each time loop in the program. For matrix multiplication example, we only have one time loop. This file tells AutoSA for the first non-parallel time loop it encounters, it is a reduction loop. By supplying this file to AutoSA, AutoSA will take this loop into consideration. Run the command below to proceed:
+```c
+./autosa ./autosa_tests/mm/kernel.c --AutoSA-config=./autosa_config/autosa_config.json --target=autosa_hls_c --AutoSA-autosa --AutoSA-two-level-buffer --AutoSA-uram --isl-schedule-whole-component --AutoSA-output-dir=./autosa.tmp/output --sa-sizes="{kernel[0]->space_time[3];kernel[0]->array_part[16,16,16];kernel[0]->array_part_L2[2,2,2];kernel[0]->latency[8,8]}" --AutoSA-simd-info=./autosa_tests/mm/simd_info.json
+```
+And we can find the updated `tuning.json`:
+```json
+"simd": {
+  "tilable_loops": [16],
+  "scores": [15],
+  "legal": [1]
+}
+```
+This tells us that the candidate loop has the upper bound of 16. We assign a score based on heuristics to each candidate loop. The higher the score is, the more hardware-friendly it is when selected as the SIMD loop. The last item `legal` indicates that this loop can be directly used for optimization. Otherwise, we will need to perform furhter layout transformation on the arrays used by the program to expose the SIMD opportunity. AutoSA will automatically print out how to perform the layout transformation for such loops.
+
+We select the tiling factor as `[2]` and proceed. Run the command:
+```c
+./autosa ./autosa_tests/mm/kernel.c --AutoSA-config=./autosa_config/autosa_config.json --target=autosa_hls_c --AutoSA-autosa --AutoSA-two-level-buffer --AutoSA-uram --isl-schedule-whole-component --AutoSA-output-dir=./autosa.tmp/output --sa-sizes="{kernel[0]->space_time[3];kernel[0]->array_part[16,16,16];kernel[0]->array_part_L2[2,2,2];kernel[0]->latency[8,8];kernel[0]->simd[2]}" --AutoSA-simd-info=./autosa_tests/mm/simd_info.json
+```
+After this step, you should be able to find the files of the generated arrays in `autosa.tmp/output/src`.
+
+### AutoSA Compilation Options
+* __`--AutoSA-autosa`__: Use AutoSA to generate systolic arrays. Default: yes.
+* __`--AutoSA-config=<config>`__: AutoSA configuration file.
+* __`--AutoSA-data-pack`__: Enable data packing for data transfer. Default: yes.
+* __`--AutoSA-double-buffer`__: Enable double-buffering for data transfer. Default: yes.
+* __`--AutoSA-hls`__: Generate Xilinx HLS host, otherwise, OpenCL host is generated. Default: no.
+* __`--AutoSA-max-sa-dim=<dim>`__: Maximal systolic array dimension. Default: 2.
+* __`--AutoSA-output-dir=<dir>`__: AutoSA output directory. Default: `./autosa.tmp/output`
+* __`--AutoSA-sa-sizes=<sizes>`__: Per kernel computation management options.
+* __`--AutoSA-sa-tile-size=<size>`__: Default tile size in computation management. Default: 4.
+* __`--AutoSA-sa-type=sync|async`__: Systolic array type. Default: async.
+* __`--AutoSA-simd-info=<info>`__: Per kernel SIMD information.
+* __`--AutoSA-two-level-buffer`__: Enable two-level buffering in I/O modules. Default: No.
+* __`--AutoSA-uram`__: Use Xilinx FPGA URAM. Default: No.
+* __`--AutoSA-verbose`__: Print verbose compilation information. Default: No.
+* __`--isl-schedule-whole-component`__: try and compute schedule for entire component first. Default: No.
+
+## Design Examples
+### Supported Platforms
+Board | Software Version
+------|-----------------
+Xilinx Alveo U200 | Xilinx Vitis 2019.2
+### Examples
+1. Matrix multiplication
+Files:
+```
+autosa_tests/mm/kernel.c
+autosa_tests/mm/kernel.h
+autosa_tests/mm/simd_info.json
+```
+Command:
+```c
+./autosa ./autosa_tests/mm/kernel.c --AutoSA-config=./autosa_config/autosa_config.json --target=autosa_hls_c --AutoSA-autosa --AutoSA-two-level-buffer --AutoSA-uram --isl-schedule-whole-component --AutoSA-output-dir=./autosa.tmp/output --sa-sizes="{kernel[0]->space_time[3];kernel[0]->array_part[16,16,16];kernel[0]->array_part_L2[2,2,2];kernel[0]->latency[8,8]}" --AutoSA-simd-info=./autosa_tests/mm/simd_info.json
+```
 
 ## Send Us Failure Cases and Feedback!
 AutoSA is open source for research purposes, and we would like to continously improve it! Please let us know if...
