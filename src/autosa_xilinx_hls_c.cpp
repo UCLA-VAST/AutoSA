@@ -188,6 +188,10 @@ static void hls_open_files(struct hls_info *info, const char *input)
  */
 static void hls_close_files(struct hls_info *info)
 {
+  isl_printer *p_str;
+  char *complete;
+  FILE *f;
+
   fclose(info->kernel_c);
   fclose(info->kernel_h);
   fclose(info->host_c);
@@ -195,7 +199,16 @@ static void hls_close_files(struct hls_info *info)
     fclose(info->host_h);
   }
   fclose(info->top_gen_c);
-  fclose(info->top_gen_h);
+  fclose(info->top_gen_h);  
+
+  p_str = isl_printer_to_str(info->ctx);
+  p_str = isl_printer_print_str(p_str, info->output_dir);
+  p_str = isl_printer_print_str(p_str, "/src/completed");
+  complete = isl_printer_get_str(p_str);
+  isl_printer_free(p_str);
+  f = fopen(complete, "w");
+  fclose(f);
+  free(complete);
 }
 
 /* Extract the data pack factors for each I/O buffer allocated for the current
