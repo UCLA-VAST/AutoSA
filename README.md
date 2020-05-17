@@ -29,8 +29,11 @@ The structure of this repo is as follows:
 1. [Latest Features](#latest-features)
 2. [Prerequisites](#prerequisites)
 3. [Getting Started](#getting-started)
+   1. [Compilation](#compilation)
+   2. [Use AutoSA to generate HLS code](#use-autosa-to-generate-hls-code)
+   2. [More details about AutoSA](#more-details-about-autosa)
 4. [Send Us Failure Cases and Feedback!](#send-us-failure-cases-and-feedback)
-5. [Authors and Contributions](#authors-and-contributions)
+5. [Authors and Contributors](#authors-and-contributors)
 
 ## Latest Features
 
@@ -87,7 +90,71 @@ Run
 ```c
 ./autosa ./autosa_tests/mm/kernel.c --AutoSA-config=./autosa_config/autosa_config.json --target=autosa_hls_c --AutoSA-autosa --AutoSA-two-level-buffer --AutoSA-uram --isl-schedule-whole-component --AutoSA-output-dir=./autosa.tmp/output --AutoSA-simd-info=./autosa_tests/mm/simd_info.json
 ```
-where `kernel.c` is the file containing the fragment. The generated code can be found in `autosa.tmp/output/src/kernel_host.cpp` and `autosa.tmp/output/src/kernel_kernel.cpp`.
+where `kernel.c` is the file containing the fragment. The generated code can be found in `autosa.tmp/output/src/kernel_host.cpp` and `autosa.tmp/output/src/kernel_kernel.cpp`. For detailed explaination of each AutoSA compilation option, please run
+```c
+./autosa --help
+```
+or refer to xxx.
+
+### More details about AutoSA
+The figure below depicts the overall compilation flow of AutoSA.
+
+1. **Model extraction**: This step extracts the polyhedral model from the input C code.
+2. **Scheduling**: This step leverages the [isl](http://isl.gforge.inria.fr/) scheduler to construct a new schedule using the extended Pluto algorithm.
+3. **Legality check**: This step checks if the generated schedule is legal to be mapped to systolic arrays.
+4. **Computation management**: This step constructs the PE arrays and optimizes the micro-architecture of PEs to improve the compute efficiency.
+   1. **Space-time transformation**: This step applies the space-time transformation to transform programs to systolic arrays.
+   2. **Array partitioning**: This step partitions the array into smaller sub-arrays.
+   3. **Latency hiding**: This step tiles and permutes the parallel loops to the innermost to hide the pipeline latency.
+   4. **SIMD vectorization**: This step vectorizes the computation inside PEs.
+5. **Communication management**: This step generates and optimizes the I/O system for communication between PEs and the external memory.
+6. **Code generation**: This step generates the HLS C code.
+7. **Design space exploration (optional)**: This step searches for the best design (with the least latency) given the hardware constraints.
+
+For step 4, AutoSA can apply the optimization in two modes: *auto* and *manual*. In the auto mode, AutoSA will proceed based on the pre-set policy. In the manual mode, AutoSA will dump out the optimization choices, take the user input, and apply the optimization based on the user specification. To switch between two different modes, modify the knobs in `autosa_config/autosa_config.json`.
+For example, modify the content in `autosa_config/autosa_config.json` to:
+```json
+"array_part": {
+  "enable": 1,
+  "mode": "auto"
+}
+```
+to enable the array partitioning and execute it in the auto mode.
+Modify the content to:
+```json
+"array_part": {
+  "enable": 1,
+  "mode": "manual"
+}
+```
+to execute this step in the manual mode.
+
+Below we explain how to use AutoSA in manual mode in detail.
+
+* __Space-time transformation__
+In this step, multiple systolic arrays are generated for the input program. We will need to select one systolic array to proceed. We set this step to manual mode in the AutoSA configuration file. 
+```json
+"space_time": {  
+  "mode": "manual"
+}
+```
+Then run the command:
+```c
+./autosa ./autosa_tests/mm/kernel.c --AutoSA-config=./autosa_config/autosa_config.json --target=autosa_hls_c --AutoSA-autosa --AutoSA-two-level-buffer --AutoSA-uram --isl-schedule-whole-component --AutoSA-output-dir=./autosa.tmp/output --AutoSA-simd-info=./autosa_tests/mm/simd_info.json
+```
+AutoSA will generate a file `autosa.tmp/output/tuning.json` which includes guidance information for further optimization. In this example, we have the content below:
+```json
+"space_time": {
+  "n_kernel": 6
+}
+```
+This tells the user that there are 6 different systolic array candidates that are generated. We may select one of them to proceed. For example, we could select the fourth candidate which is a 2D systolic array with the data from matrix `A` transferred horizontally, and data from matrix `B` transferred vertically. Each PE computes one element of `C[i][j]` locally, which is drained out at last to the external memory. The architecture of this array is depicted below. To guide AutoSA to select this design, we will provide AutoSA with the new argument
+```
+--sa-sizes="{kernel[0]->space_time[3]}"
+```
+which tells AutoSA to select the fourth array (index starting from 0) during the sapce-time transformation.
+
+* __Latency hiding__
 
 ## Send Us Failure Cases and Feedback!
 AutoSA is open source for research purposes, and we would like to continously improve it! Please let us know if...
