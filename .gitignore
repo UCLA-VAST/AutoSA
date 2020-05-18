@@ -31,6 +31,6 @@ src/*.o
 src/.vscode
 src/autosa
 
-./autosa
+autosa
 autosa.tmp
 .nfs*

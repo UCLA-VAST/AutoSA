@@ -21,4 +21,4 @@ make
 
 # Cleanup
 cd - 
-cp ./autosa_scripts/autosa .
+cp ./autosa_scripts/autosa.py ./autosa
