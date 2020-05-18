@@ -38,6 +38,8 @@
 #include "cpu.h"
 #include "autosa_xilinx_hls_c.h"
 
+//#define _DEBUG
+
 struct options {
 	struct pet_options *pet;
 	struct ppcg_options *ppcg;
@@ -940,6 +942,14 @@ static isl_stat build_rar_dep(__isl_take isl_map *map, void *user) {
     for (int row = 0; row < isl_mat_rows(acc_null_mat); row++) {
       sol = isl_vec_set_element_val(sol, row, isl_mat_get_element_val(acc_null_mat, row, col));
     }
+#ifdef _DEBUG
+		isl_printer *pd = isl_printer_to_file(isl_map_get_ctx(map), stdout);
+		pd = isl_printer_print_vec(pd, sol);
+		pd = isl_printer_end_line(pd);
+		pd = isl_printer_print_map(pd, map);
+		pd = isl_printer_end_line(pd);
+		pd = isl_printer_free(pd);
+#endif
     isl_map *tagged_dep_rar = construct_dep_rar(sol, map);
     isl_vec_free(sol);
     isl_mat_free(acc_null_mat);

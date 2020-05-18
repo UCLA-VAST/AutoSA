@@ -727,8 +727,12 @@ struct autosa_kernel *sa_candidates_smart_pick(
       data.score += 1;
     if (data.score > max_score) {
       opt_id = i;
-      max_score = data.score;
+      max_score = data.score;    
     }
+#ifdef _DEBUG    
+    DBGVAR(std::cout, i);
+    DBGVAR(std::cout, data.score);
+#endif    
   }
 
   //DBGVAR(std::cout, opt_id);
@@ -2438,7 +2442,10 @@ static __isl_give char *load_simd_info(struct autosa_kernel *sa)
     cJSON *reductions = NULL;
     int info_id = 0;    
     char kernel_name[20];
-    sprintf(kernel_name, "kernel%d", sa->space_time_id);      
+    sprintf(kernel_name, "kernel%d", sa->space_time_id); 
+#ifdef _DEBUG    
+    DBGVAR(std::cout, sa->space_time_id); 
+#endif
     reductions = cJSON_GetObjectItemCaseSensitive(simd_info, kernel_name);
     if (reductions) {
       char *info = (char *)malloc(100 * sizeof(char));    

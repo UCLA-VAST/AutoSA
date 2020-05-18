@@ -299,7 +299,9 @@ Board | Software Version
 ------|-----------------
 Xilinx Alveo U200 | Xilinx Vitis 2019.2
 ### Examples
-1. Matrix multiplication
+In the following examples, set space-time transformation in auto mode and the rest steps in manual mode.
+
+1. Matrix multiplication (small)
 
 Files:
 ```
@@ -309,7 +311,72 @@ autosa_tests/mm/simd_info.json
 ```
 Command:
 ```c
-./autosa ./autosa_tests/mm/kernel.c --AutoSA-config=./autosa_config/autosa_config.json --target=autosa_hls_c --AutoSA-autosa --AutoSA-two-level-buffer --AutoSA-uram --isl-schedule-whole-component --AutoSA-output-dir=./autosa.tmp/output --sa-sizes="{kernel[0]->space_time[3];kernel[0]->array_part[16,16,16];kernel[0]->array_part_L2[2,2,2];kernel[0]->latency[8,8];kernel[0]->simd[2]}" --AutoSA-simd-info=./autosa_tests/mm/simd_info.json
+./autosa ./autosa_tests/mm/kernel.c --AutoSA-config=./autosa_config/autosa_config.json --target=autosa_hls_c --AutoSA-autosa --AutoSA-two-level-buffer --AutoSA-uram --isl-schedule-whole-component --AutoSA-output-dir=./autosa.tmp/output --sa-sizes="{kernel[0]->array_part[16,16,16];kernel[0]->array_part_L2[2,2,2];kernel[0]->latency[8,8];kernel[0]->simd[2]}" --AutoSA-simd-info=./autosa_tests/mm/simd_info.json
+```
+
+2. Matrix multiplication (large)
+
+Files:
+```
+autosa_tests/mm_large/kernel.c
+autosa_tests/mm_large/kernel.h
+autosa_tests/mm_large/simd_info.json
+```
+Command:
+```c
+./autosa ./autosa_tests/mm_large/kernel.c --AutoSA-config=./autosa_config/autosa_config.json --target=autosa_hls_c --AutoSA-autosa --AutoSA-two-level-buffer --AutoSA-uram --isl-schedule-whole-component --AutoSA-output-dir=./autosa.tmp/output --sa-sizes="{kernel[0]->array_part[260,128,256];kernel[0]->array_part_L2[4,4,4];kernel[0]->latency[26,16];kernel[0]->simd[8]}" --AutoSA-simd-info=./autosa_tests/mm/simd_info.json
+```
+
+3. Convolutional neural network (single layer)
+
+Files:
+```
+autosa_tests/cnn/kernel.c
+autosa_tests/cnn/kernel.h
+autosa_tests/cnn/simd_info.json
+```
+Command:
+```c
+./autosa ./autosa_tests/cnn/kernel.c --AutoSA-config=./autosa_config/autosa_config.json --target=autosa_hls_c --AutoSA-autosa --AutoSA-two-level-buffer --AutoSA-uram --isl-schedule-whole-component --AutoSA-output-dir=./autosa.tmp/output --sa-sizes="{kernel[0]->array_part[64,60,14,64];kernel[0]->array_part_L2[1,1,1,8];kernel[0]->latency[8,6,7];kernel[0]->simd[-1,-1,8]}" --AutoSA-simd-info=./autosa_tests/cnn/simd_info.json
+```
+
+4. Tensor Times Matrix (TTM)
+
+Files:
+```
+autosa_tests/ttm/kernel.c
+autosa_tests/ttm/kernel.h
+autosa_tests/ttm/simd_info.json
+```
+Command:
+```c
+./autosa ./autosa_tests/ttm/kernel.c --AutoSA-config=./autosa_config/autosa_config.json --target=autosa_hls_c --AutoSA-autosa --AutoSA-two-level-buffer --AutoSA-uram --isl-schedule-whole-component --AutoSA-output-dir=./autosa.tmp/output --sa-sizes="{kernel[0]->array_part[20,256,4,128];kernel[0]->array_part_L2[13,2,16,4];kernel[0]->latency[2,32,2];kernel[0]->simd[8]}" --AutoSA-simd-info=./autosa_tests/ttm/simd_info.json
+```
+
+5. Chain of Tensor-matrix multiplications (TTMc)
+
+Files:
+```
+autosa_tests/ttmc/kernel.c
+autosa_tests/ttmc/kernel.h
+autosa_tests/ttmc/simd_info.json
+```
+Command:
+```c
+./autosa ./autosa_tests/ttmc/kernel.c --AutoSA-config=./autosa_config/autosa_config.json --target=autosa_hls_c --AutoSA-autosa --AutoSA-two-level-buffer --AutoSA-uram --isl-schedule-whole-component --AutoSA-output-dir=./autosa.tmp/output --sa-sizes="{kernel[0]->array_part[12,64,32,32];kernel[0]->array_part_L2[1,1,4,4];kernel[0]->latency[2,8,16];kernel[0]->simd[8,-1]}" --AutoSA-simd-info=./autosa_tests/ttmc/simd_info.json
+```
+
+6. Matricized Tensor Times Khatri-Rao Product (MTTKRP)
+
+Files:
+```
+autosa_tests/mttkrp/kernel.c
+autosa_tests/mttkrp/kernel.h
+autosa_tests/mttkrp/simd_info.json
+```
+Command:
+```c
+./autosa ./autosa_tests/mttkrp/kernel.c --AutoSA-config=./autosa_config/autosa_config.json --target=autosa_hls_c --AutoSA-autosa --AutoSA-two-level-buffer --AutoSA-uram --isl-schedule-whole-component --AutoSA-output-dir=./autosa.tmp/output --sa-sizes="{kernel[0]->array_part[12,512,16];kernel[0]->array_part_L2[1,1,32];kernel[0]->latency[2,64];kernel[0]->simd[8,-1]}" --AutoSA-simd-info=./autosa_tests/mttkrp/simd_info.json
 ```
 
 ## Send Us Failure Cases and Feedback!

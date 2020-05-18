@@ -1215,6 +1215,10 @@ static __isl_give isl_schedule *generate_io_module_inter_trans(
     coalesce_depth = isl_schedule_node_get_schedule_depth(node) + buf->tile->n - 1;
     coalesce_bound_val = buf->tile->bound[buf->tile->n - 1].size;
     coalesce_bound = isl_val_get_num_si(coalesce_bound_val) / buf->n_lane;
+    if (coalesce_bound <= 1) {
+      coalesce_depth = -1;
+    }
+
     p = isl_printer_print_str(p, ".");
     p = isl_printer_print_int(p, coalesce_depth);
     p = isl_printer_print_str(p, ".");
@@ -1464,6 +1468,10 @@ static __isl_give isl_schedule *generate_io_module_intra_trans(
     coalesce_depth = isl_schedule_node_get_schedule_depth(node) + buf->tile->n - 1;
     coalesce_bound_val = buf->tile->bound[buf->tile->n - 1].size;
     coalesce_bound = isl_val_get_num_si(coalesce_bound_val) / buf->n_lane;
+    if (coalesce_bound <= 1) {
+      coalesce_depth = -1;
+    }
+
     p = isl_printer_print_str(p, ".");
     p = isl_printer_print_int(p, coalesce_depth);
     p = isl_printer_print_str(p, ".");
@@ -2047,6 +2055,10 @@ static isl_stat generate_default_io_module_schedule(
     coalesce_depth = isl_schedule_node_get_schedule_depth(node) + buf->tile->n - 1;
     coalesce_bound_val = buf->tile->bound[buf->tile->n - 1].size;
     coalesce_bound = isl_val_get_num_si(coalesce_bound_val) / buf->n_lane;
+    if (coalesce_bound <= 1) {
+      coalesce_depth = -1;
+    }
+
     p = isl_printer_print_str(p, ".");
     p = isl_printer_print_int(p, coalesce_depth);
     p = isl_printer_print_str(p, ".");
@@ -2117,6 +2129,10 @@ static isl_stat generate_default_io_module_schedule(
       coalesce_depth = isl_schedule_node_get_schedule_depth(node) + buf->tile->n - 1;
       coalesce_bound_val = buf->tile->bound[buf->tile->n - 1].size;
       coalesce_bound = isl_val_get_num_si(coalesce_bound_val) / buf->n_lane;
+      if (coalesce_bound <= 1) {
+        coalesce_depth = -1;
+      }
+
       p = isl_printer_print_str(p, ".");
       p = isl_printer_print_int(p, coalesce_depth);
       p = isl_printer_print_str(p, ".");
