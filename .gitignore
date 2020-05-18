@@ -29,7 +29,8 @@ src/polybench_test.sh
 src/.nfs*
 src/*.o
 src/.vscode
+src/autosa
 
-autosa
+./autosa
 autosa.tmp
 .nfs*
