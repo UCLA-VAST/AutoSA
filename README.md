@@ -36,9 +36,10 @@ The structure of this repo is as follows:
 4. [Design Examples](#design-examples)
 5. [Send Us Failure Cases and Feedback!](#send-us-failure-cases-and-feedback)
 6. [Authors and Contributors](#authors-and-contributors)
+7. [Version History](#version-history)
 
 ## Latest Features
-
++ [2020/5/17] Version 0.01 is released.
 
 ## Prerequisites
 ### PPCG
