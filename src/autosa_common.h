@@ -30,7 +30,7 @@
 extern "C" {
 #endif
 
-#define _DEBUG
+//#define _DEBUG
 
 #define DBGVAR( os, var ) \
    (os) << "DBG: " << __FILE__ << "(" << __LINE__ << ") "\
@@ -976,6 +976,8 @@ struct autosa_kernel *autosa_kernel_from_schedule(__isl_take isl_schedule *sched
 struct autosa_kernel *autosa_kernel_alloc(isl_ctx *ctx, struct ppcg_scop *scop);
 
 /* AutoSA access */
+isl_bool access_is_stride_zero(__isl_keep isl_map *access, int pos);
+isl_bool access_is_stride_one(__isl_keep isl_map *access, int pos);
 void *autosa_acc_free(struct autosa_acc *acc);
 
 /* AutoSA dep */

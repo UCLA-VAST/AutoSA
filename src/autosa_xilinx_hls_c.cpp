@@ -163,8 +163,8 @@ static void hls_open_files(struct hls_info *info, const char *input)
   if (info->hls)
     fprintf(info->host_c, "#include \"%s\"\n\n", name); 
 
-//  if (info->hls)
-//    fprintf(info->kernel_c, "#include \"%s\"\n", name);  
+  if (info->hls)
+    fprintf(info->kernel_c, "#include \"%s\"\n", name);  
 
   strcpy(name + len, "_top_gen.cpp");
   strcpy(dir + len_dir, name);

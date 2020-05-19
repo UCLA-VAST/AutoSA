@@ -283,6 +283,7 @@ After this step, you should be able to find the files of the generated arrays in
 * __`--AutoSA-data-pack`__: Enable data packing for data transfer. Default: yes.
 * __`--AutoSA-double-buffer`__: Enable double-buffering for data transfer. Default: yes.
 * __`--AutoSA-hls`__: Generate Xilinx HLS host, otherwise, OpenCL host is generated. Default: no.
+* __`--AutoSA-insert-hls-dependence`__: Insert Xilinx HLS dependence pragma. Default: yes.
 * __`--AutoSA-max-sa-dim=<dim>`__: Maximal systolic array dimension. Default: 2.
 * __`--AutoSA-output-dir=<dir>`__: AutoSA output directory. Default: `./autosa.tmp/output`
 * __`--AutoSA-sa-sizes=<sizes>`__: Per kernel computation management options.
@@ -325,7 +326,7 @@ autosa_tests/mm_large/simd_info.json
 ```
 Command:
 ```c
-./autosa ./autosa_tests/mm_large/kernel.c --AutoSA-config=./autosa_config/autosa_config.json --target=autosa_hls_c --AutoSA-autosa --AutoSA-two-level-buffer --AutoSA-uram --isl-schedule-whole-component --AutoSA-output-dir=./autosa.tmp/output --sa-sizes="{kernel[0]->array_part[260,128,256];kernel[0]->array_part_L2[4,4,4];kernel[0]->latency[26,16];kernel[0]->simd[8]}" --AutoSA-simd-info=./autosa_tests/mm/simd_info.json
+./autosa ./autosa_tests/mm_large/kernel.c --AutoSA-config=./autosa_config/autosa_config.json --target=autosa_hls_c --AutoSA-autosa --AutoSA-two-level-buffer --AutoSA-uram --isl-schedule-whole-component --AutoSA-output-dir=./autosa.tmp/output --sa-sizes="{kernel[0]->array_part[260,128,256];kernel[0]->array_part_L2[4,4,4];kernel[0]->latency[26,16];kernel[0]->simd[8]}" --AutoSA-simd-info=./autosa_tests/mm_large/simd_info.json
 ```
 
 3. Convolutional neural network (single layer)

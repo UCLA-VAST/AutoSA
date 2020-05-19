@@ -670,6 +670,7 @@ struct add_io_copies_stmt_acc_data {
   int n_lane;
   int read;
   char *stmt_name;
+  int insert_dependence;
 };
 
 /* Create an IO statement. 
@@ -711,6 +712,41 @@ static __isl_give isl_multi_aff *autosa_create_io_access_stmt(
   return isl_multi_aff_identity(space);
 }
 
+/* Test if the array access "ref" is stride-0 or stride-1 under the current
+ * schedule node.
+ */
+static isl_bool is_acc_stride_one_at_node(
+  __isl_keep isl_schedule_node *node, struct autosa_stmt_access *ref)
+{
+  isl_union_set *domain;
+  isl_union_map *prefix;
+  isl_map *acc;
+  isl_bool is_zero = isl_bool_false, is_one = isl_bool_false;
+  
+  //domain = isl_schedule_node_get_domain(node);
+  prefix = isl_schedule_node_get_prefix_schedule_union_map(node);
+
+  /* Scalar access */
+  if (ref->n_index == 0)
+    return isl_bool_true;
+
+  /* Transform the domain of access function to scheduling domains. */
+  acc = isl_map_copy(ref->access);
+  acc = isl_map_from_union_map(
+          isl_union_map_apply_domain(isl_union_map_from_map(acc), prefix));  
+#ifdef _DEBUG
+  isl_printer *pd = isl_printer_to_file(isl_schedule_node_get_ctx(node), stdout);
+  pd = isl_printer_print_map(pd, acc);
+  pd = isl_printer_end_line(pd);
+  isl_printer_free(pd);
+#endif
+  is_one = access_is_stride_one(acc, ref->n_index - 1);
+
+  isl_map_free(acc);
+  //isl_union_set_free(domain);
+  return is_one;
+}
+
 /* Insert the copy statement at the statement level.
  */
 static __isl_give isl_schedule_node *add_io_copies_stmt_acc_single(
@@ -737,6 +773,8 @@ static __isl_give isl_schedule_node *add_io_copies_stmt_acc_single(
   int n_lane = data->n_lane;
   int is_simd;
   isl_id *hls_id;
+  isl_bool stride_one;
+  isl_bool insert_dependence = isl_bool_false;
 
   if (isl_schedule_node_get_type(node) != isl_schedule_node_leaf)
     return node;
@@ -775,12 +813,63 @@ static __isl_give isl_schedule_node *add_io_copies_stmt_acc_single(
     return node;
   }
 
+  /* Update the stmt_name. */
+  if (data->insert_dependence) {
+    isl_schedule_node *node2;
+    
+    node2 = isl_schedule_node_copy(node);
+    if (n_lane >= 1 && is_simd) {
+      node2 = isl_schedule_node_parent(node);      
+    }
+    /* Test if the access is stride one at the current loop. */    
+    stride_one = is_acc_stride_one_at_node(node2, ref);    
+    if (stride_one) {
+      /* Test if the loop bound/n_lane > 1. 
+       * If so, insert a hls_dep mark.
+       * Only do this when there is a single access in the group.
+       */
+      int *ubs = NULL;
+      isl_schedule_node *node_copy = isl_schedule_node_copy(node2);
+      while (node_copy && isl_schedule_node_has_parent(node_copy)) {
+        if (isl_schedule_node_get_type(node_copy) == isl_schedule_node_band)
+          break;
+        node_copy = isl_schedule_node_parent(node_copy);
+      }
+      if (isl_schedule_node_get_type(node_copy) == isl_schedule_node_band) {
+        int n = isl_schedule_node_band_n_member(node_copy);
+        ubs = extract_band_upper_bounds(data->kernel, node_copy);
+        if (ubs[n - 1] / n_lane > 1) {
+          insert_dependence = isl_bool_true;          
+          /* Update the stmt_name. */
+          int coalesce_depth;          
+          int coalesce_bound;
+
+          coalesce_depth = isl_schedule_node_get_schedule_depth(node_copy) - 1;
+          coalesce_bound = ubs[n - 1] / n_lane;
+
+          isl_printer *p_str = isl_printer_to_str(ctx);
+          p_str = isl_printer_print_str(p_str, stmt_name);
+          p_str = isl_printer_print_str(p_str, ".");
+          p_str = isl_printer_print_int(p_str, coalesce_depth);
+          p_str = isl_printer_print_str(p_str, ".");
+          p_str = isl_printer_print_int(p_str, coalesce_bound);
+          free(stmt_name);
+          stmt_name = isl_printer_get_str(p_str);
+          isl_printer_free(p_str);
+        }
+      }
+      free(ubs);
+      isl_schedule_node_free(node_copy);
+    }
+    isl_schedule_node_free(node2);
+  }  
+
   from_access = autosa_create_io_access_stmt(
     ctx, group, group, data->local_tile, 
     isl_schedule_node_get_schedule_depth(node), stmt_name);
   free(stmt_name);
 
-  /* Create a register tiling */
+  /* Create a register tiling. */
   tile = create_register_tiling(node, group, ref);
   ma = isl_multi_aff_copy(tile->tiling);
   ma = isl_multi_aff_pullback_multi_aff(ma, 
@@ -816,7 +905,7 @@ static __isl_give isl_schedule_node *add_io_copies_stmt_acc_single(
    */
   if (n_lane >= 1 && is_simd) {
     /* The loop above is the SIMD loop.
-     * Check the node is below the simd mark 
+     * Check the node is below the simd mark. 
      */
     int n_index;
     int tile_size[1];
@@ -842,6 +931,74 @@ static __isl_give isl_schedule_node *add_io_copies_stmt_acc_single(
   graft = isl_schedule_node_insert_mark(graft, hls_id);
   graft = isl_schedule_node_parent(graft);
 
+#ifdef _DEBUG
+  isl_printer *pd = isl_printer_to_file(ctx, stdout);
+  pd = isl_printer_set_yaml_style(pd, ISL_YAML_STYLE_BLOCK);
+  pd = isl_printer_print_schedule_node(pd, node);  
+  pd = isl_printer_print_map(pd, ref->access);
+  pd = isl_printer_end_line(pd);
+  isl_printer_free(pd);
+#endif
+
+  if (insert_dependence) {
+    char *mark_name;
+    isl_id *id;
+    isl_printer *p_str = isl_printer_to_str(ctx);
+    p_str = isl_printer_print_str(p_str, "hls_dependence.");
+    p_str = autosa_array_ref_group_print_name(group, p_str);
+    mark_name = isl_printer_get_str(p_str);
+    isl_printer_free(p_str);
+    id = isl_id_alloc(ctx, mark_name, NULL);
+    graft = isl_schedule_node_child(graft, 0);
+    graft = isl_schedule_node_child(graft, 0);
+    graft = isl_schedule_node_insert_mark(graft, id);
+    free(mark_name);
+  }
+
+//  if (data->insert_dependence) {
+//    isl_schedule_node *node2;
+//    node2 = isl_schedule_node_copy(node);
+//    if (n_lane >= 1 && is_simd) {
+//      node2 = isl_schedule_node_parent(node);      
+//    }
+//    /* Test if the access is stride one at the current loop. */    
+//    stride_one = is_acc_stride_one_at_node(node2, ref);    
+//    if (stride_one) {
+//      /* Test if the loop bound/n_lane > 1. 
+//       * If so, insert a hls_dep mark.
+//       * Only do this when there is a single access in the group.
+//       */
+//      int *ubs = NULL;
+//      isl_schedule_node *node_copy = isl_schedule_node_copy(node2);
+//      while (node_copy && isl_schedule_node_has_parent(node_copy)) {
+//        if (isl_schedule_node_get_type(node_copy) == isl_schedule_node_band)
+//          break;
+//        node_copy = isl_schedule_node_parent(node_copy);
+//      }
+//      if (isl_schedule_node_get_type(node_copy) == isl_schedule_node_band) {
+//        int n = isl_schedule_node_band_n_member(node_copy);
+//        ubs = extract_band_upper_bounds(data->kernel, node_copy);
+//        if (ubs[n - 1] / n_lane > 1) {
+//          char *mark_name;
+//          isl_id *id;
+//          isl_printer *p_str = isl_printer_to_str(ctx);
+//          p_str = isl_printer_print_str(p_str, "hls_dependence.");
+//          p_str = autosa_array_ref_group_print_name(group, p_str);
+//          mark_name = isl_printer_get_str(p_str);
+//          isl_printer_free(p_str);
+//          id = isl_id_alloc(ctx, mark_name, NULL);
+//          graft = isl_schedule_node_child(graft, 0);
+//          graft = isl_schedule_node_child(graft, 0);
+//          graft = isl_schedule_node_insert_mark(graft, id);
+//          free(mark_name);
+//        }
+//      }
+//      free(ubs);
+//      isl_schedule_node_free(node_copy);
+//    }
+//    isl_schedule_node_free(node2);
+//  } 
+
   while (graft && isl_schedule_node_has_parent(graft))
     graft = isl_schedule_node_parent(graft);
 
@@ -862,6 +1019,7 @@ static __isl_give isl_schedule_node *add_io_copies_stmt_acc_single(
  * "group" is an I/O group.
  * "read" denotes if copy-in or copy-out from/to the external memory.
  * "in" denotes the fifo direction.
+ * "insert_dependence" determines if it is necessary to insert a hls dependence mark.
  */
 __isl_give isl_schedule_node *add_io_copies_stmt_acc(
   struct autosa_kernel *kernel,
@@ -871,10 +1029,12 @@ __isl_give isl_schedule_node *add_io_copies_stmt_acc(
   int n_lane,
   int read,
   __isl_take char *stmt_name,
-  int before
+  int before,
+  int insert_dependence
 ) {
   struct add_io_copies_stmt_acc_data data = {
-            kernel, group, NULL, tile, n_lane, read, stmt_name};
+            kernel, group, NULL, tile, n_lane, read, stmt_name, 
+            insert_dependence && group->n_ref == 1};
 
   for (int i = 0; i < group->n_ref; i++) {
     struct autosa_stmt_access *ref = group->refs[i];
@@ -1190,7 +1350,7 @@ static __isl_give isl_schedule *generate_io_module_inter_trans(
    */
   node = autosa_tree_move_down_to_io_mark(node, kernel->core, buf->level); 
   node = isl_schedule_node_child(node, 0);
-  if (!buf->tile) { 
+  if (!buf->tile) {     
     /* Add the I/O statement for each array reference in the group. */
     module->data_pack_inter = buf->n_lane;
     module->data_pack_intra = buf->n_lane;
@@ -1199,7 +1359,9 @@ static __isl_give isl_schedule *generate_io_module_inter_trans(
     stmt_name = isl_printer_get_str(p);
     isl_printer_free(p);
     node = add_io_copies_stmt_acc(kernel, group, node, 
-              buf->tile, buf->n_lane, read, stmt_name, read? 1: 0);
+              buf->tile, buf->n_lane, read, stmt_name, read? 1: 0,
+              is_buffer && !read && 0 
+                && kernel->options->autosa->insert_hls_dependence);
   } else {
     int coalesce_depth;
     isl_val *coalesce_bound_val;
@@ -1229,8 +1391,7 @@ static __isl_give isl_schedule *generate_io_module_inter_trans(
     node = add_io_copies_stmt_tile(kernel, group, node, 
               buf->tile, buf->tile, buf->n_lane, read, stmt_name, read? 1: 0, 
               is_buffer & 0, 
-              coalesce_bound > 1 
-              && 0);
+              coalesce_bound > 1 && 0 && kernel->options->autosa->insert_hls_dependence);
     node = isl_schedule_node_cut(node);
     /* Insert empty filter. */
     empty_filter = isl_union_set_from_set(isl_set_empty(
@@ -1454,8 +1615,13 @@ static __isl_give isl_schedule *generate_io_module_intra_trans(
     stmt_name = isl_printer_get_str(p);
     isl_printer_free(p);
     module->data_pack_intra = group->n_lane;
+    // TODO: Test if we could insert a hls dependence at the current loop. 
+    // We weed to test if the access under the innermost loop is stride-1.
+    // If so, gather the loop bound and make sure the bound is greater than n_lane. 
     node = add_io_copies_stmt_acc(kernel, group, node, 
-              cur_buf->tile, group->n_lane, read, stmt_name, read? 1: 0); 
+              cur_buf->tile, group->n_lane, read, stmt_name, read? 1: 0,
+              is_buffer && !read && cur_buf->n_lane != group->n_lane 
+                && kernel->options->autosa->insert_hls_dependence); 
   } else {
     int coalesce_depth;
     isl_val *coalesce_bound_val;
@@ -1483,7 +1649,8 @@ static __isl_give isl_schedule *generate_io_module_intra_trans(
     node = add_io_copies_stmt_tile(kernel, group, node, 
               cur_buf->tile, buf->tile, buf->n_lane, 
               read, stmt_name, read? 1: 0, is_buffer & 0,
-              coalesce_bound > 1 && cur_buf->n_lane != buf->n_lane
+              coalesce_bound > 1 && cur_buf->n_lane != buf->n_lane 
+                && kernel->options->autosa->insert_hls_dependence
               );
     node = isl_schedule_node_cut(node);
     /* Insert empty filter. */
@@ -2039,7 +2206,9 @@ static isl_stat generate_default_io_module_schedule(
     isl_printer_free(p);
     /* Add the I/O statement for each array reference in the group. */
     node = add_io_copies_stmt_acc(kernel, group, node, 
-              buf->tile, buf->n_lane, read, stmt_name, read? 1: 0);
+              buf->tile, buf->n_lane, read, stmt_name, read? 1: 0,
+              is_buffer && !read && 0 
+                && kernel->options->autosa->insert_hls_dependence);
   } else {
     int coalesce_depth;
     isl_val *coalesce_bound_val;
@@ -2069,7 +2238,7 @@ static isl_stat generate_default_io_module_schedule(
     node = add_io_copies_stmt_tile(kernel, group, node, 
               buf->tile, buf->tile, buf->n_lane, read, 
               stmt_name, read? 1: 0, is_buffer,
-              coalesce_bound > 1 && 0);
+              coalesce_bound > 1 && 0 && kernel->options->autosa->insert_hls_dependence);
     if (!is_buffer) {
       node = isl_schedule_node_cut(node);
       empty_filter = isl_union_set_from_set(isl_set_empty(isl_set_get_space(kernel->context)));
@@ -2116,7 +2285,9 @@ static isl_stat generate_default_io_module_schedule(
       isl_printer_free(p);
       module->data_pack_intra = group->n_lane; 
       node = add_io_copies_stmt_acc(kernel, group, node, cur_buf->tile, 
-                group->n_lane, read, stmt_name, read? 1 : 0); 
+                group->n_lane, read, stmt_name, read? 1 : 0,
+                is_buffer && !read && cur_buf->n_lane != group->n_lane 
+                  && kernel->options->autosa->insert_hls_dependence); 
     } else {
       int coalesce_depth;
       isl_val *coalesce_bound_val;
@@ -2143,7 +2314,8 @@ static isl_stat generate_default_io_module_schedule(
       module->data_pack_intra = buf->n_lane;
       node = add_io_copies_stmt_tile(kernel, group, node, cur_buf->tile, 
               buf->tile, buf->n_lane, read, stmt_name, read? 1 : 0, is_buffer,
-              coalesce_bound > 1 && cur_buf->n_lane != buf->n_lane);
+              coalesce_bound > 1 && cur_buf->n_lane != buf->n_lane
+                && kernel->options->autosa->insert_hls_dependence);
       node = isl_schedule_node_cut(node);
       empty_filter = isl_union_set_from_set(isl_set_empty(
               isl_set_get_space(kernel->context)));

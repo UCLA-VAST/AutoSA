@@ -102,6 +102,8 @@ ISL_ARG_INT(struct autosa_options, n_hbm_port, 0, "hbm-port-num", "num", 2,
   "default HBM port number")
 ISL_ARG_BOOL(struct autosa_options, hls, 0, "hls", 0,
   "generate Xilinx HLS host")	
+ISL_ARG_BOOL(struct autosa_options, insert_hls_dependence, 0, "insert-hls-dependence", 1,
+  "insert Xilinx HLS dependence pragma")		
 ISL_ARG_BOOL(struct autosa_options, use_local_memory, 0, "local-memory", 1, 
   "use local memory in kernel code")
 ISL_ARG_INT(struct autosa_options, max_local_memory, 0,

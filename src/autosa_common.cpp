@@ -226,6 +226,154 @@ struct autosa_kernel *autosa_kernel_alloc(isl_ctx *ctx, struct ppcg_scop *scop)
 /****************************************************************
  * AutoSA access
  ****************************************************************/
+/* Create an identical mapping. */
+static __isl_give isl_map *same(__isl_take isl_space *domain_space)
+{
+  isl_space *space;
+  isl_aff *aff;
+  isl_multi_aff *next;
+
+  space = isl_space_map_from_set(domain_space);
+  next = isl_multi_aff_identity(space);
+  
+  return isl_map_from_multi_aff(next);
+}
+
+/* Construct a map from domain_space to domain_space that increments
+ * the dimension at position "pos" and leaves all other dimensions constant. 
+ */
+static __isl_give isl_map *next(__isl_take isl_space *domain_space, int pos)
+{
+  isl_space *space;
+  isl_aff *aff;
+  isl_multi_aff *next;
+
+  space = isl_space_map_from_set(domain_space);
+  next = isl_multi_aff_identity(space);
+  aff = isl_multi_aff_get_aff(next, pos);
+  aff = isl_aff_add_constant_si(aff, 1);
+  next = isl_multi_aff_set_aff(next, pos, aff);
+
+  return isl_map_from_multi_aff(next);
+}
+
+/* Check is the "access" has stride-0 access at dim "pos".
+ * The access is already transformed to scheduling domains. 
+ * We first create an identical mapping "next_element"that maps the accessed 
+ * elements to the same elements. 
+ * Then, we create a mapping "map" that maps the array elements accessed by the 
+ * current iteration to the elements accssed by the next iteration.
+ * We examine if the access is stride-0 by testing if map is the subset of 
+ * "next_element".
+ */
+isl_bool access_is_stride_zero(__isl_keep isl_map *access, int pos)
+{
+  isl_space *space;
+  int dim;
+  isl_map *next_element, *map, *next_iter;
+  isl_set *accessed;
+  isl_bool empty, zero;
+
+  space = isl_map_get_space(access);
+  space = isl_space_range(space);
+  dim = isl_space_dim(space, isl_dim_set);
+  if (dim == 0)
+    next_element = isl_map_empty(isl_space_map_from_set(space));
+  else
+    next_element = same(space);
+
+  accessed = isl_map_range(isl_map_copy(access));
+  map = isl_map_copy(next_element);
+  map = isl_map_intersect_domain(map, isl_set_copy(accessed));
+  map = isl_map_intersect_range(map, accessed);
+  empty = isl_map_is_empty(map);
+  isl_map_free(map);
+
+  if (empty < 0 || empty) {
+    isl_map_free(next_element);
+    return empty;
+  } 
+
+  space = isl_map_get_space(access);
+  space = isl_space_domain(space);
+  next_iter = next(space, isl_map_dim(access, isl_dim_in) - 1);
+  map = isl_map_apply_domain(next_iter, isl_map_copy(access));
+  map = isl_map_apply_range(map, isl_map_copy(access));
+  zero = isl_map_is_subset(map, next_element);
+
+  isl_map_free(next_element);
+  isl_map_free(map);
+
+  return zero;
+}
+
+/* Check is the "access" has stride-1 access at dim "pos".
+ * The access is already transformed to scheduling domains. 
+ * We first create a mapping "next_element"that maps the accessed 
+ * elements to the elements with a stride of one. 
+ * Then, we create a mapping "map" that maps the array elements accessed by the 
+ * current iteration to the elements accssed by the next iteration.
+ * We examine if the access is stride-1 by testing if map is the subset of 
+ * "next_element".
+ */
+isl_bool access_is_stride_one(__isl_keep isl_map *access, int pos)
+{
+  isl_space *space;
+  int dim;
+  isl_map *next_element, *map, *next_iter;
+  isl_set *accessed;
+  isl_bool empty, coalesced;
+
+  space = isl_map_get_space(access);
+  space = isl_space_range(space);
+  dim = isl_space_dim(space, isl_dim_set);
+  if (dim == 0)
+    next_element = isl_map_empty(isl_space_map_from_set(space));
+  else
+    next_element = next(space, pos);
+
+  accessed = isl_map_range(isl_map_copy(access));
+  map = isl_map_copy(next_element);
+  map = isl_map_intersect_domain(map, isl_set_copy(accessed));
+  map = isl_map_intersect_range(map, accessed);
+  empty = isl_map_is_empty(map);
+  isl_map_free(map);
+
+  if (empty < 0 || empty) {
+    isl_map_free(next_element);
+    return empty;
+  } 
+
+  space = isl_map_get_space(access);
+  space = isl_space_domain(space);
+  next_iter = next(space, isl_map_dim(access, isl_dim_in) - 1);
+#ifdef _DEBUG
+  isl_printer *pd = isl_printer_to_file(isl_map_get_ctx(access), stdout);
+  pd = isl_printer_print_map(pd, next_iter);
+  pd = isl_printer_end_line(pd);
+#endif  
+  map = isl_map_apply_domain(next_iter, isl_map_copy(access));
+  map = isl_map_apply_range(map, isl_map_copy(access));
+  if (isl_map_is_empty(map)) 
+  {
+    isl_map_free(next_element);
+    isl_map_free(map);
+    return isl_bool_false;
+  }
+  coalesced = isl_map_is_subset(map, next_element);
+#ifdef _DEBUG  
+  pd = isl_printer_print_map(pd, map);
+  pd = isl_printer_end_line(pd);
+  pd = isl_printer_print_map(pd, next_element);
+  pd = isl_printer_end_line(pd);
+  isl_printer_free(pd);
+#endif
+
+  isl_map_free(next_element);
+  isl_map_free(map);
+
+  return coalesced;
+}
 
 void *autosa_acc_free(struct autosa_acc *acc) {
   if (!acc)

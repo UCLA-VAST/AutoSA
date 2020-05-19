@@ -350,9 +350,9 @@ def shrink_bit_width(lines):
 def lify_split_buffers(lines):
   """ Lift the split buffers in the program
 
-  For each module, if we find any split buffers with the name "buf_data_split", 
+  For each module, if we find any split buffers with the name "buf_data_split",
   we will lift them out of the for loops and put them in the variable declaration
-  section at the beginning of the module. 
+  section at the beginning of the module.
 
   Args:
     lines: contains the codelines of the program
@@ -378,7 +378,7 @@ def lify_split_buffers(lines):
       del lines[pos - 1]
       lines.insert(decl_pos, line1)
       lines.insert(decl_pos + 1, line2)
-  
+
   return lines
 
 def reorder_module_calls(lines):
@@ -473,7 +473,7 @@ def reorder_module_calls(lines):
 
   return lines
 
-def xilinx_run(kernel_call, kernel_def, kernel='autosa.tmp/output/src/kernel_kernel.cpp'):
+def xilinx_run(kernel_call, kernel_def, kernel='autosa.tmp/output/src/kernel_kernel.cpp', host='opencl'):
   """ Generate the kernel file for Xilinx platform
 
   We will copy the content of kernel definitions before the kernel calls.
@@ -506,16 +506,18 @@ def xilinx_run(kernel_call, kernel_def, kernel='autosa.tmp/output/src/kernel_ker
   print("Please find the generated file: " + kernel)
 
   with open(kernel, 'w') as f:
-    # Load kernel header file
-    kernel_header = kernel.split('.')
-    kernel_header[-1] = 'h'
-    kernel_header = ".".join(kernel_header)
-    with open(kernel_header, 'r') as f2:
-      header_lines = f2.readlines()
-      f.writelines(header_lines)
-    f.write('\n')
+    if host == 'opencl':
+      # Merge kernel header file
+      kernel_header = kernel.split('.')
+      kernel_header[-1] = 'h'
+      kernel_header = ".".join(kernel_header)
+      with open(kernel_header, 'r') as f2:
+        header_lines = f2.readlines()
+        f.writelines(header_lines)
+      f.write('\n')
 
     f.writelines(lines)
+
     # Load kernel call file
     with open(kernel_call, 'r') as f2:
       lines = f2.readlines()
@@ -612,8 +614,9 @@ if __name__ == "__main__":
   parser = argparse.ArgumentParser(description='==== AutoSA CodeGen ====')
   parser.add_argument('-c', '--kernel-call', metavar='KERNEL_CALL', required=True, help='kernel function call')
   parser.add_argument('-d', '--kernel-def', metavar='KERNEL_DEF', required=True, help='kernel function definition')
-  parser.add_argument('-t', '--target', metavar='TARGET', required=True, help='hardware target: autosa_hls_c/autosa_opencl')
+  parser.add_argument('-t', '--target', metavar='TARGET', required=True, help='hardware target: autosa_hls_c|autosa_opencl')
   parser.add_argument('-o', '--output', metavar='OUTPUT', required=False, help='output kernel file')
+  parser.add_argument('--host', metavar='HOST', required=False, help='Xilinx host target: hls|opencl', default='opencl')
 
   args = parser.parse_args()
 
@@ -621,4 +624,4 @@ if __name__ == "__main__":
     print("Intel OpenCL is not supported!")
     # intel_run(args.kernel_call, args.kernel_def, args.output)
   elif args.target == 'autosa_hls_c':
-    xilinx_run(args.kernel_call, args.kernel_def, args.output)
+    xilinx_run(args.kernel_call, args.kernel_def, args.output, args.host)

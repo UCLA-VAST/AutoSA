@@ -58,6 +58,8 @@ struct autosa_options {
   int uram;	
 	/* Print verbose information */
 	int verbose;
+	/* Insert HLS dependence pragma */
+	int insert_hls_dependence;
 };
 
 struct ppcg_options {

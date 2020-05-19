@@ -30,6 +30,7 @@ src/.nfs*
 src/*.o
 src/.vscode
 src/autosa
+src/tags
 
 autosa
 autosa.tmp

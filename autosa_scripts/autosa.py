@@ -10,6 +10,8 @@ if __name__ == "__main__":
   output_dir = './autosa.tmp/output'
   target = 'autosa_hls_c'
   src_file_prefix = 'kernel'
+  xilinx_host = 'opencl'
+
   for arg in argv:
     if 'output-dir' in arg:
       output_dir = arg.split('=')[-1]
@@ -18,6 +20,12 @@ if __name__ == "__main__":
   if n_arg > 1:
     src_file = argv[1]
     src_file_prefix = os.path.basename(src_file).split('.')[0]
+  if n_arg > 1 and target == 'autosa_hls_c':
+    # Check whether to generate HLS or OpenCL host for Xilinx FPGAs
+    for arg in argv:
+      if 'AutoSA-hls' in arg:
+        xilinx_host = 'hls'        
+
   # Check if the output directory exists
   if not os.path.isdir("./autosa.tmp"):
     os.mkdir("./autosa.tmp")
@@ -52,6 +60,9 @@ if __name__ == "__main__":
         '/src/top.cpp -d ' + output_dir + '/src/' + src_file_prefix + \
         '_kernel_modules.cpp -t ' + target + ' -o ' + output_dir + '/src/' + \
         src_file_prefix + '_kernel.cpp'
+  if target == 'autosa_hls_c':
+    cmd += ' --host '
+    cmd += xilinx_host
   process = subprocess.run(cmd.split())  
 
   # Clean up the temp files
@@ -76,4 +87,6 @@ if __name__ == "__main__":
   if os.path.exists(output_dir + '/src/completed'):
     cmd = 'rm ' + output_dir + '/src/completed'
     process = subprocess.run(cmd.split())
-
+  if target == 'autosa_hls_c' and xilinx_host == 'opencl':
+    cmd = 'rm ' + output_dir + '/src/' + src_file_prefix + '_kernel.h'
+    process = subprocess.run(cmd.split())
