@@ -32,4 +32,8 @@ char *concat(isl_ctx *ctx, const char *a, const char *b);
 bool isl_vec_is_zero(__isl_keep isl_vec *vec);
 int suffixcmp(const char *s, const char *suffix);
 
+__isl_give isl_set *add_bounded_parameters_dynamic(
+	__isl_take isl_set *set, __isl_keep isl_multi_pw_aff *size,
+	__isl_keep isl_id_list *ids);
+
 #endif

@@ -934,6 +934,67 @@ __isl_give isl_schedule_node *autosa_node_interchange(
   return node;
 }
 
+/* Given two nested nodes,
+ * N2
+ * |
+ * N1
+ * Interchange the two nodes to
+ * N1
+ * |
+ * N2
+ * The input "node" points to N1.
+ * Return a pointer to node N1.
+ * Besides, currently we only support interchanging band nodes and mark nodes.
+ */
+__isl_give isl_schedule_node *autosa_node_interchange_up(
+  __isl_take isl_schedule_node *node)
+{
+  enum isl_schedule_node_type t;
+  enum isl_schedule_node_type parent_t;
+  isl_schedule_node *parent_node;
+  struct autosa_node_band_prop *prop;
+  isl_id *id;
+
+  if (!isl_schedule_node_has_parent(node)) {
+    return node;
+  }
+  t = isl_schedule_node_get_type(node);
+  if (!(t == isl_schedule_node_band || t == isl_schedule_node_mark)) {
+    isl_die(isl_schedule_node_get_ctx(node), isl_error_unsupported,
+      "only band and mark nodes are supported", return node);
+  }
+  parent_node = isl_schedule_node_parent(isl_schedule_node_copy(node));
+  parent_t = isl_schedule_node_get_type(parent_node);
+  if (!(parent_t == isl_schedule_node_band 
+        || parent_t == isl_schedule_node_mark)) {
+    isl_die(isl_schedule_node_get_ctx(node), isl_error_unsupported,
+      "only band and mark nodes are supported", return node);
+  }
+  isl_schedule_node_free(parent_node);
+
+  /* Save the current node. */
+  if (t == isl_schedule_node_band) {
+    prop = extract_node_band_prop(node);      
+  } else if (t == isl_schedule_node_mark) {
+    id = isl_schedule_node_mark_get_id(node);
+  }
+  
+  /* Delete the current node. */
+  node = isl_schedule_node_delete(node);
+
+  /* Insert the old node. */
+  node = isl_schedule_node_parent(node);
+  if (t == isl_schedule_node_band) {
+    node = isl_schedule_node_insert_partial_schedule(node,
+              isl_multi_union_pw_aff_copy(prop->mupa));
+    node = restore_node_band_prop(node, prop);    
+  } else if (t == isl_schedule_node_mark) {
+    node = isl_schedule_node_insert_mark(node, id);
+  }
+
+  return node;
+}
+
 /* If the "node" is a permutable band node, return false.
  */
 isl_bool no_permutable_node(__isl_keep isl_schedule_node *node, void *user)
@@ -1091,6 +1152,98 @@ int *extract_band_upper_bounds(struct autosa_kernel *kernel,
   }
   isl_fixed_box_free(box);
   return ubs;
+}
+
+/* Return an isl_multi_aff, with as elements the parameters in "space"
+ * that have the names specified by the elements in "names".
+ * If (some of) these parameters do not already appear in "space",
+ * then they are added first.
+ */
+static __isl_give isl_multi_aff *parameter_vector(__isl_take isl_space *space,
+	__isl_keep isl_id_list *names)
+{
+	int i, n;
+	isl_local_space *ls;
+	isl_multi_aff *ma;
+
+	if (!names)
+		space = isl_space_free(space);
+
+	n = isl_id_list_n_id(names);
+	for (i = 0; i < n; ++i) {
+		int pos;
+		isl_id *id;
+
+		id = isl_id_list_get_id(names, i);
+		pos = isl_space_find_dim_by_id(space, isl_dim_param, id);
+		if (pos >= 0) {
+			isl_id_free(id);
+			continue;
+		}
+		pos = isl_space_dim(space, isl_dim_param);
+		space = isl_space_add_dims(space, isl_dim_param, 1);
+		space = isl_space_set_dim_id(space, isl_dim_param, pos, id);
+	}
+	ma = isl_multi_aff_zero(isl_space_copy(space));
+	ls = isl_local_space_from_space(isl_space_domain(space));
+	for (i = 0; i < n; ++i) {
+		int pos;
+		isl_id *id;
+		isl_aff *aff;
+
+		id = isl_id_list_get_id(names, i);
+		pos = isl_space_find_dim_by_id(space, isl_dim_param, id);
+		isl_id_free(id);
+		aff = isl_aff_var_on_domain(isl_local_space_copy(ls),
+					    isl_dim_param, pos);
+		ma = isl_multi_aff_set_aff(ma, i, aff);
+	}
+	isl_local_space_free(ls);
+
+	return ma;
+}
+
+/* Return constraints on the domain elements that equate a sequence of
+ * parameters called "names", to the partial schedule of "node".
+ * The number of members of the band node "node" should be smaller
+ * than or equal to the number of elements in "names". 
+ * If it is smaller, then the first elements of "names" are equated to zero.
+ */
+__isl_give isl_union_set *set_schedule_eq(
+  __isl_keep isl_schedule_node *node, __isl_keep isl_id_list *names)
+{
+  int n, n_zero;
+  isl_multi_union_pw_aff *mupa, *mupa2;
+  isl_multi_aff *ma;
+  isl_space *space;
+  isl_union_set *domain;
+
+  if (!node)
+    return NULL;
+  n = isl_id_list_n_id(names);
+  if (n == 0)
+    return isl_schedule_node_get_universe_domain(node);
+  n_zero = n - isl_schedule_node_band_n_member(node);
+
+  mupa = isl_schedule_node_band_get_partial_schedule(node);
+  space = isl_multi_union_pw_aff_get_space(mupa);
+  space = isl_space_params(space);
+  space = isl_space_set_from_params(space);
+  space = isl_space_add_dims(space, isl_dim_set, n_zero);
+  ma = isl_multi_aff_zero(space);
+
+  domain = isl_schedule_node_get_universe_domain(node);
+  /* Map the domain elements to "n_zero" zeros. */
+  mupa2 = isl_multi_union_pw_aff_multi_aff_on_domain(
+            isl_union_set_copy(domain), ma);
+  /* Build a new mupa that mupa2 -> mupa */
+  mupa = isl_multi_union_pw_aff_range_product(mupa2, mupa);  
+  space = isl_multi_union_pw_aff_get_space(mupa);
+  ma = parameter_vector(space, names);
+  mupa2 = isl_multi_union_pw_aff_multi_aff_on_domain(domain, ma);
+  mupa = isl_multi_union_pw_aff_sub(mupa, mupa2);
+
+  return isl_multi_union_pw_aff_zero_union_set(mupa);
 }
 
 /* Construct schedule constraints from the dependences in prog->scop and

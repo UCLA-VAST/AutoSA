@@ -1672,7 +1672,7 @@ static __isl_give isl_printer *autosa_print_host_code(__isl_take isl_printer *p,
 
   for (int i = 0; i < n_modules; i++) {
     if (modules[i]->is_filter && modules[i]->is_buffer) {
-      /* Print out the definitions for inter_trans and intra_trans function calls */
+      /* Print out the definitions for inter_trans and intra_trans function calls. */
       /* Intra transfer function */
       p_module = autosa_print_intra_trans_module(p_module, modules[i], prog, hls, 0);
        
@@ -1683,6 +1683,7 @@ static __isl_give isl_printer *autosa_print_host_code(__isl_take isl_printer *p,
     }
 
     p_module = autosa_print_default_module(p_module, modules[i], prog, hls, 0);
+
     if (modules[i]->boundary) {
       /* Print out the definitions for boundary trans function calls. */
       p_module = autosa_print_default_module(p_module, modules[i], prog, hls, 1); 

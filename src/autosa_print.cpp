@@ -1587,11 +1587,26 @@ __isl_give isl_printer *print_module_call_upper(__isl_take isl_printer *p,
     p = isl_printer_print_str(p, "p = isl_printer_print_str(p, \"/* array */ ");
     p = isl_printer_print_str(p, module->io_groups[0]->array->name);
     if (module->io_groups[0]->local_array->n_io_group_refs > 1) {
-      p = isl_printer_print_str(p, "_");
-      p = isl_printer_print_int(p, module->n_array_ref);
+      if (module->io_groups[0]->n_mem_ports == 1) {
+        /* Print A_[module_n_array_ref] */
+        p = isl_printer_print_str(p, "_");
+        p = isl_printer_print_int(p, module->n_array_ref);
+        p = isl_printer_print_str(p, "\");");
+        p = isl_printer_end_line(p);
+      } else {
+        /* Print A_[module_n_array_ref + c0] */
+        p = isl_printer_print_str(p, "_\");");
+        p = isl_printer_end_line(p);
+        p = isl_printer_start_line(p);
+        p = isl_printer_print_str(p, "p = isl_printer_print_int(p, c0 + ");      
+        p = isl_printer_print_int(p, module->n_array_ref);
+        p = isl_printer_print_str(p, ");");
+        p = isl_printer_end_line(p);
+      }
+    } else {
+      p = isl_printer_print_str(p, "\");");
+      p = isl_printer_end_line(p);
     }
-    p = isl_printer_print_str(p, "\");");
-    p = isl_printer_end_line(p);
   } else if (module->type == PE_MODULE) {
     for (int i = 0; i < prog->n_array; i++) {
       int required;

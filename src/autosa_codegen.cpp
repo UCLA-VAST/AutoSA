@@ -215,56 +215,6 @@ static char *generate_io_module_name(isl_ctx *ctx,
   return str;
 }
 
-/* Add "len" parameters p[i] with identifiers "ids" and intersect "set"
- * with
- *
- *	{ : 0 <= p[i] < size[i] }
- *
- * or an overapproximation.
- */
-static __isl_give isl_set *add_bounded_parameters_dynamic(
-	__isl_take isl_set *set, __isl_keep isl_multi_pw_aff *size,
-	__isl_keep isl_id_list *ids)
-{
-	int i, len;
-	unsigned nparam;
-	isl_space *space;
-	isl_local_space *ls;
-
-	len = isl_multi_pw_aff_dim(size, isl_dim_out);
-	nparam = isl_set_dim(set, isl_dim_param);
-	set = isl_set_add_dims(set, isl_dim_param, len);
-
-	for (i = 0; i < len; ++i) {
-		isl_id *id;
-
-		id = isl_id_list_get_id(ids, i);
-		set = isl_set_set_dim_id(set, isl_dim_param, nparam + i, id);
-	}
-
-	space = isl_space_params(isl_set_get_space(set));
-	ls = isl_local_space_from_space(space);
-	for (i = 0; i < len; ++i) {
-		isl_pw_aff *param, *size_i, *zero;
-		isl_set *bound;
-
-		param = isl_pw_aff_var_on_domain(isl_local_space_copy(ls),
-						isl_dim_param, nparam + i);
-
-		size_i = isl_multi_pw_aff_get_pw_aff(size, i);
-		bound = isl_pw_aff_lt_set(isl_pw_aff_copy(param), size_i);
-		bound = isl_set_from_basic_set(isl_set_simple_hull(bound));
-		set = isl_set_intersect_params(set, bound);
-
-		zero = isl_pw_aff_zero_on_domain(isl_local_space_copy(ls));
-		bound = isl_pw_aff_ge_set(param, zero);
-		set = isl_set_intersect_params(set, bound);
-	}
-	isl_local_space_free(ls);
-
-	return set;
-}
-
 /* Return an isl_multi_aff, with as elements the parameters in "space"
  * that have the names specified by the elements in "names".
  * If (some of) these parameters do not already appear in "space",
@@ -469,49 +419,6 @@ static __isl_give isl_union_set *set_schedule_modulo(
 	mupa = isl_multi_union_pw_aff_sub(mupa, mupa2);
 
 	return isl_multi_union_pw_aff_zero_union_set(mupa);
-}
-
-/* Return constraints on the domain elements that equate a sequence of
- * parameters called "names", to the partial schedule of "node".
- * The number of members of the band node "node" should be smaller
- * than or equal to the number of elements in "names". 
- * If it is smaller, then the first elements of "names" are equated to zero.
- */
-static __isl_give isl_union_set *set_schedule_eq(
-  __isl_keep isl_schedule_node *node, __isl_keep isl_id_list *names)
-{
-  int n, n_zero;
-  isl_multi_union_pw_aff *mupa, *mupa2;
-  isl_multi_aff *ma;
-  isl_space *space;
-  isl_union_set *domain;
-
-  if (!node)
-    return NULL;
-  n = isl_id_list_n_id(names);
-  if (n == 0)
-    return isl_schedule_node_get_universe_domain(node);
-  n_zero = n - isl_schedule_node_band_n_member(node);
-
-  mupa = isl_schedule_node_band_get_partial_schedule(node);
-  space = isl_multi_union_pw_aff_get_space(mupa);
-  space = isl_space_params(space);
-  space = isl_space_set_from_params(space);
-  space = isl_space_add_dims(space, isl_dim_set, n_zero);
-  ma = isl_multi_aff_zero(space);
-
-  domain = isl_schedule_node_get_universe_domain(node);
-  /* Map the domain elements to "n_zero" zeros. */
-  mupa2 = isl_multi_union_pw_aff_multi_aff_on_domain(
-            isl_union_set_copy(domain), ma);
-  /* Build a new mupa that mupa2 -> mupa */
-  mupa = isl_multi_union_pw_aff_range_product(mupa2, mupa);  
-  space = isl_multi_union_pw_aff_get_space(mupa);
-  ma = parameter_vector(space, names);
-  mupa2 = isl_multi_union_pw_aff_multi_aff_on_domain(domain, ma);
-  mupa = isl_multi_union_pw_aff_sub(mupa, mupa2);
-
-  return isl_multi_union_pw_aff_zero_union_set(mupa);
 }
 
 /* Generate two prefixes: fifo_prefix and buffer_prefix
@@ -734,12 +641,12 @@ static isl_bool is_acc_stride_one_at_node(
   acc = isl_map_copy(ref->access);
   acc = isl_map_from_union_map(
           isl_union_map_apply_domain(isl_union_map_from_map(acc), prefix));  
-#ifdef _DEBUG
-  isl_printer *pd = isl_printer_to_file(isl_schedule_node_get_ctx(node), stdout);
-  pd = isl_printer_print_map(pd, acc);
-  pd = isl_printer_end_line(pd);
-  isl_printer_free(pd);
-#endif
+//#ifdef _DEBUG
+//  isl_printer *pd = isl_printer_to_file(isl_schedule_node_get_ctx(node), stdout);
+//  pd = isl_printer_print_map(pd, acc);
+//  pd = isl_printer_end_line(pd);
+//  isl_printer_free(pd);
+//#endif
   is_one = access_is_stride_one(acc, ref->n_index - 1);
 
   isl_map_free(acc);
@@ -931,14 +838,14 @@ static __isl_give isl_schedule_node *add_io_copies_stmt_acc_single(
   graft = isl_schedule_node_insert_mark(graft, hls_id);
   graft = isl_schedule_node_parent(graft);
 
-#ifdef _DEBUG
-  isl_printer *pd = isl_printer_to_file(ctx, stdout);
-  pd = isl_printer_set_yaml_style(pd, ISL_YAML_STYLE_BLOCK);
-  pd = isl_printer_print_schedule_node(pd, node);  
-  pd = isl_printer_print_map(pd, ref->access);
-  pd = isl_printer_end_line(pd);
-  isl_printer_free(pd);
-#endif
+//#ifdef _DEBUG
+//  isl_printer *pd = isl_printer_to_file(ctx, stdout);
+//  pd = isl_printer_set_yaml_style(pd, ISL_YAML_STYLE_BLOCK);
+//  pd = isl_printer_print_schedule_node(pd, node);  
+//  pd = isl_printer_print_map(pd, ref->access);
+//  pd = isl_printer_end_line(pd);
+//  isl_printer_free(pd);
+//#endif
 
   if (insert_dependence) {
     char *mark_name;
@@ -1242,30 +1149,30 @@ static __isl_give isl_schedule *generate_io_module_inter_trans(
   upper_io_level = io_level + 1;
 
   /* Update the context by adding the constraints for the io ids. */
-  context = isl_set_universe(isl_set_get_space(kernel->context));
-  node = autosa_tree_move_down_to_array(node, kernel->core);
-  while (!isl_schedule_node_is_io_mark(node, io_level)) {
-    if (isl_schedule_node_get_type(node) == isl_schedule_node_band) {
-      isl_union_map *umap;
-      isl_union_set *uset;
-      isl_multi_pw_aff *size;
-      isl_id *id;
-      isl_id_list *ids;
-
-      umap = isl_schedule_node_band_get_partial_schedule_union_map(node);
-      uset = isl_union_map_range(umap);
-      size = ppcg_size_from_extent(isl_set_from_union_set(uset));
-      ids = isl_id_list_from_id(isl_id_list_get_id(io_ids, n_io_ids));
-      n_io_ids++;
-      context = add_bounded_parameters_dynamic(context, size, ids);
-      isl_id_list_free(ids);
-      isl_multi_pw_aff_free(size);
-    }
-    node = isl_schedule_node_child(node, 0);
-  }
-  node = autosa_tree_move_up_to_kernel(node);
-  node = isl_schedule_node_child(node, 0);
-  node = isl_schedule_node_insert_context(node, context);
+//  context = isl_set_universe(isl_set_get_space(kernel->context));
+//  node = autosa_tree_move_down_to_array(node, kernel->core);
+//  while (!isl_schedule_node_is_io_mark(node, io_level)) {
+//    if (isl_schedule_node_get_type(node) == isl_schedule_node_band) {
+//      isl_union_map *umap;
+//      isl_union_set *uset;
+//      isl_multi_pw_aff *size;
+//      isl_id *id;
+//      isl_id_list *ids;
+//
+//      umap = isl_schedule_node_band_get_partial_schedule_union_map(node);
+//      uset = isl_union_map_range(umap);
+//      size = ppcg_size_from_extent(isl_set_from_union_set(uset));
+//      ids = isl_id_list_from_id(isl_id_list_get_id(io_ids, n_io_ids));
+//      n_io_ids++;
+//      context = add_bounded_parameters_dynamic(context, size, ids);
+//      isl_id_list_free(ids);
+//      isl_multi_pw_aff_free(size);
+//    }
+//    node = isl_schedule_node_child(node, 0);
+//  }
+//  node = autosa_tree_move_up_to_kernel(node);
+//  node = isl_schedule_node_child(node, 0);
+//  node = isl_schedule_node_insert_context(node, context);
 
   /* Add the filters. 
    * We add filters to the I/O space loops such that:
@@ -1489,31 +1396,31 @@ static __isl_give isl_schedule *generate_io_module_intra_trans(
   assert(module->to_mem == 0);
   upper_io_level = io_level + 1;
 
-  /* Update the context. */
-  context = isl_set_universe(isl_set_get_space(kernel->context));
-  node = autosa_tree_move_down_to_array(node, kernel->core);
-  while (!isl_schedule_node_is_io_mark(node, io_level)) {
-    if (isl_schedule_node_get_type(node) == isl_schedule_node_band) {
-      isl_union_map *umap;
-      isl_union_set *uset;
-      isl_multi_pw_aff *size;
-      isl_id *id;
-      isl_id_list *ids;
-
-      umap = isl_schedule_node_band_get_partial_schedule_union_map(node);
-      uset = isl_union_map_range(umap);
-      size = ppcg_size_from_extent(isl_set_from_union_set(uset));
-      ids = isl_id_list_from_id(isl_id_list_get_id(io_ids, n_io_ids));
-      n_io_ids++;
-      context = add_bounded_parameters_dynamic(context, size, ids);
-      isl_id_list_free(ids);
-      isl_multi_pw_aff_free(size);
-    }
-    node = isl_schedule_node_child(node, 0);
-  }
-  node = autosa_tree_move_up_to_kernel(node);
-  node = isl_schedule_node_child(node, 0);
-  node = isl_schedule_node_insert_context(node, context);
+//  /* Update the context. */
+//  context = isl_set_universe(isl_set_get_space(kernel->context));
+//  node = autosa_tree_move_down_to_array(node, kernel->core);
+//  while (!isl_schedule_node_is_io_mark(node, io_level)) {
+//    if (isl_schedule_node_get_type(node) == isl_schedule_node_band) {
+//      isl_union_map *umap;
+//      isl_union_set *uset;
+//      isl_multi_pw_aff *size;
+//      isl_id *id;
+//      isl_id_list *ids;
+//
+//      umap = isl_schedule_node_band_get_partial_schedule_union_map(node);
+//      uset = isl_union_map_range(umap);
+//      size = ppcg_size_from_extent(isl_set_from_union_set(uset));
+//      ids = isl_id_list_from_id(isl_id_list_get_id(io_ids, n_io_ids));
+//      n_io_ids++;
+//      context = add_bounded_parameters_dynamic(context, size, ids);
+//      isl_id_list_free(ids);
+//      isl_multi_pw_aff_free(size);
+//    }
+//    node = isl_schedule_node_child(node, 0);
+//  }
+//  node = autosa_tree_move_up_to_kernel(node);
+//  node = isl_schedule_node_child(node, 0);
+//  node = isl_schedule_node_insert_context(node, context);
 
   /* Add the filters.
    * All the space loops above the current io_level should equal to
@@ -1796,31 +1703,31 @@ static __isl_give isl_schedule *generate_io_module_outer(
   assert(module->to_mem == 0);
   upper_io_level = io_level + 1;
 
-  /* Update the context. */
-  context = isl_set_universe(isl_set_get_space(kernel->context));
-  node = autosa_tree_move_down_to_array(node, kernel->core);
-  while (!isl_schedule_node_is_io_mark(node, io_level)) {
-    if (isl_schedule_node_get_type(node) == isl_schedule_node_band) {
-      isl_union_map *umap;
-      isl_union_set *uset;
-      isl_multi_pw_aff *size;
-      isl_id *id;
-      isl_id_list *ids;
-
-      umap = isl_schedule_node_band_get_partial_schedule_union_map(node);
-      uset = isl_union_map_range(umap);
-      size = ppcg_size_from_extent(isl_set_from_union_set(uset));
-      ids = isl_id_list_from_id(isl_id_list_get_id(io_ids, n_io_ids));
-      n_io_ids++;
-      context = add_bounded_parameters_dynamic(context, size, ids);
-      isl_id_list_free(ids);
-      isl_multi_pw_aff_free(size);
-    }
-    node = isl_schedule_node_child(node, 0);
-  }
-  node = autosa_tree_move_up_to_kernel(node);
-  node = isl_schedule_node_child(node, 0);
-  node = isl_schedule_node_insert_context(node, context);
+//  /* Update the context. */
+//  context = isl_set_universe(isl_set_get_space(kernel->context));
+//  node = autosa_tree_move_down_to_array(node, kernel->core);
+//  while (!isl_schedule_node_is_io_mark(node, io_level)) {
+//    if (isl_schedule_node_get_type(node) == isl_schedule_node_band) {
+//      isl_union_map *umap;
+//      isl_union_set *uset;
+//      isl_multi_pw_aff *size;
+//      isl_id *id;
+//      isl_id_list *ids;
+//
+//      umap = isl_schedule_node_band_get_partial_schedule_union_map(node);
+//      uset = isl_union_map_range(umap);
+//      size = ppcg_size_from_extent(isl_set_from_union_set(uset));
+//      ids = isl_id_list_from_id(isl_id_list_get_id(io_ids, n_io_ids));
+//      n_io_ids++;
+//      context = add_bounded_parameters_dynamic(context, size, ids);
+//      isl_id_list_free(ids);
+//      isl_multi_pw_aff_free(size);
+//    }
+//    node = isl_schedule_node_child(node, 0);
+//  }
+//  node = autosa_tree_move_up_to_kernel(node);
+//  node = isl_schedule_node_child(node, 0);
+//  node = isl_schedule_node_insert_context(node, context);
 
   /* Add the filters. */
   n_io_ids = 0;
@@ -2076,31 +1983,31 @@ static isl_stat generate_default_io_module_schedule(
   io_ids = ppcg_scop_generate_names(gen->prog->scop, n_io_ids, "p"); 
 
   n_io_ids = 0;
-  /* Update the context. */
-  context = isl_set_universe(isl_set_get_space(kernel->context));
-  node = autosa_tree_move_down_to_array(node, kernel->core);
-  while (!isl_schedule_node_is_io_mark(node, io_level)) {
-    if (isl_schedule_node_get_type(node) == isl_schedule_node_band) {
-      isl_union_map *umap;
-      isl_union_set *uset;
-      isl_multi_pw_aff *size;
-      isl_id *id;
-      isl_id_list *ids;
-
-      umap = isl_schedule_node_band_get_partial_schedule_union_map(node);
-      uset = isl_union_map_range(umap);
-      size = ppcg_size_from_extent(isl_set_from_union_set(uset));
-      ids = isl_id_list_from_id(isl_id_list_get_id(io_ids, n_io_ids));
-      n_io_ids++;
-      context = add_bounded_parameters_dynamic(context, size, ids);
-      isl_id_list_free(ids);
-      isl_multi_pw_aff_free(size);
-    }
-    node = isl_schedule_node_child(node, 0);
-  }
-  node = autosa_tree_move_up_to_kernel(node);
-  node = isl_schedule_node_child(node, 0);
-  node = isl_schedule_node_insert_context(node, context);
+//  /* Update the context. */
+//  context = isl_set_universe(isl_set_get_space(kernel->context));
+//  node = autosa_tree_move_down_to_array(node, kernel->core);
+//  while (!isl_schedule_node_is_io_mark(node, io_level)) {
+//    if (isl_schedule_node_get_type(node) == isl_schedule_node_band) {
+//      isl_union_map *umap;
+//      isl_union_set *uset;
+//      isl_multi_pw_aff *size;
+//      isl_id *id;
+//      isl_id_list *ids;
+//
+//      umap = isl_schedule_node_band_get_partial_schedule_union_map(node);
+//      uset = isl_union_map_range(umap);
+//      size = ppcg_size_from_extent(isl_set_from_union_set(uset));
+//      ids = isl_id_list_from_id(isl_id_list_get_id(io_ids, n_io_ids));
+//      n_io_ids++;
+//      context = add_bounded_parameters_dynamic(context, size, ids);
+//      isl_id_list_free(ids);
+//      isl_multi_pw_aff_free(size);
+//    }
+//    node = isl_schedule_node_child(node, 0);
+//  }
+//  node = autosa_tree_move_up_to_kernel(node);
+//  node = isl_schedule_node_child(node, 0);
+//  node = isl_schedule_node_insert_context(node, context);
 
   /* Add the filters. */
   n_io_ids = 0;
@@ -2470,6 +2377,12 @@ static __isl_give struct autosa_hw_module **sa_io_module_gen(
 
   ctx = gen->ctx;
   node = isl_schedule_get_root(group->io_schedule);
+//#ifdef _DEBUG
+//  isl_printer *pd = isl_printer_to_file(gen->ctx, stdout);
+//  pd = isl_printer_set_yaml_style(pd, ISL_YAML_STYLE_BLOCK);
+//  pd = isl_printer_print_schedule_node(pd, node);
+//  pd = isl_printer_free(pd);
+//#endif
   io_level = group->io_level;
   space_dim = group->space_dim;
   kernel = gen->kernel;
@@ -2606,7 +2519,7 @@ static __isl_give struct autosa_hw_module **sa_io_module_gen(
         module->credit = (i == outermost)? credit : 0;
         module->n_array_ref = group->local_array->n_io_group_refs;
         if (module->to_mem)
-          group->local_array->n_io_group_refs++;
+          group->local_array->n_io_group_refs += group->n_mem_ports;
 
         module = generate_io_module_by_type(module, node, group, kernel, 
             gen, i, space_dim, is_filter, is_buffer, 1);
@@ -2676,7 +2589,7 @@ static __isl_give struct autosa_hw_module **sa_io_module_gen(
         module->credit = (i == outermost)? credit : 0;
         module->n_array_ref = group->local_array->n_io_group_refs;
         if (module->to_mem)
-          group->local_array->n_io_group_refs++;
+          group->local_array->n_io_group_refs += group->n_mem_ports;
 
         module = generate_io_module_by_type(module, node, group, kernel, 
             gen, i, space_dim, is_filter, is_buffer, 0);
@@ -7805,6 +7718,12 @@ isl_stat sa_module_generate_code(struct autosa_gen *gen,
   isl_ast_node *tree;
 
   schedule = module->sched;
+//#ifdef _DEBUG
+//  isl_printer *pd = isl_printer_to_file(gen->ctx, stdout);
+//  pd = isl_printer_set_yaml_style(pd, ISL_YAML_STYLE_BLOCK);
+//  pd = isl_printer_print_schedule(pd, schedule);
+//  pd = isl_printer_free(pd);
+//#endif
   autosa_at_domain_data_init(&data, gen);
   tree = autosa_generate_ast_from_schedule(schedule, data, gen);
   module->tree = tree;

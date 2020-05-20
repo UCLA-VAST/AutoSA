@@ -729,10 +729,10 @@ struct autosa_kernel *sa_candidates_smart_pick(
       opt_id = i;
       max_score = data.score;    
     }
-#ifdef _DEBUG    
-    DBGVAR(std::cout, i);
-    DBGVAR(std::cout, data.score);
-#endif    
+//#ifdef _DEBUG    
+//    DBGVAR(std::cout, i);
+//    DBGVAR(std::cout, data.score);
+//#endif    
   }
 
   //DBGVAR(std::cout, opt_id);
@@ -2010,19 +2010,20 @@ static isl_schedule_node *detect_simd_vectorization_loop(
            * Besides, reduction loops are only examined in the manual mode.
            * In thee auto mmode, only parallel loops are examined.
            */
-          isl_printer *p;
-          p = isl_printer_to_file(ctx, stdout);
-          p = isl_printer_end_line(p);
-          p = isl_printer_set_yaml_style(p, ISL_YAML_STYLE_BLOCK);
-          p = isl_printer_print_schedule_node(p, node);
-
           size_t bufsize = 100;
           size_t characters;  
           printf("[AutoSA] Detecting the reduction loop.\n");
           printf("[AutoSA] Band member position: %d\n", i);
           /* If the SIMD info is pre-loaded, we don't ask for user inputs. */
-          if (data->buffer == NULL) 
+          if (data->buffer == NULL) {
+            isl_printer *p;
+            p = isl_printer_to_file(ctx, stdout);
+            p = isl_printer_end_line(p);
+            p = isl_printer_set_yaml_style(p, ISL_YAML_STYLE_BLOCK);
+            p = isl_printer_print_schedule_node(p, node);
+            isl_printer_free(p);
             printf("[AutoSA] Please input if the current loop is a reduction loop [y/n]: ");
+          }
           if (data->buffer == NULL) {
             char *buffer = (char *)malloc(bufsize * sizeof(char));
             data->buffer = buffer;
@@ -2038,8 +2039,7 @@ static isl_schedule_node *detect_simd_vectorization_loop(
             free(data->buffer);
             data->buffer = NULL;
             data->buffer_offset = 0;
-          }
-          isl_printer_free(p);
+          }          
         } else {
           is_parallel = isl_schedule_node_band_member_get_coincident(node, i);
         }
@@ -2312,9 +2312,9 @@ static __isl_give char *load_simd_info(struct autosa_kernel *sa)
     int info_id = 0;    
     char kernel_name[20];
     sprintf(kernel_name, "kernel%d", sa->space_time_id); 
-#ifdef _DEBUG    
-    DBGVAR(std::cout, sa->space_time_id); 
-#endif
+//#ifdef _DEBUG    
+//    DBGVAR(std::cout, sa->space_time_id); 
+//#endif
     reductions = cJSON_GetObjectItemCaseSensitive(simd_info, kernel_name);
     if (reductions) {
       char *info = (char *)malloc(100 * sizeof(char));    

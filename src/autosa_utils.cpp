@@ -1,6 +1,8 @@
 #include <assert.h>
 #include <string.h>
 
+#include <isl/space.h>
+
 #include "autosa_utils.h"
 
 __isl_give isl_union_map *extract_sizes_from_str(isl_ctx *ctx, const char *str)
@@ -276,4 +278,54 @@ int suffixcmp(const char *s, const char *suffix)
     return 1;
   else
     return strncmp(s + start, suffix, strlen(suffix));
+}
+
+/* Add "len" parameters p[i] with identifiers "ids" and intersect "set"
+ * with
+ *
+ *	{ : 0 <= p[i] < size[i] }
+ *
+ * or an overapproximation.
+ */
+__isl_give isl_set *add_bounded_parameters_dynamic(
+	__isl_take isl_set *set, __isl_keep isl_multi_pw_aff *size,
+	__isl_keep isl_id_list *ids)
+{
+	int i, len;
+	unsigned nparam;
+	isl_space *space;
+	isl_local_space *ls;
+
+	len = isl_multi_pw_aff_dim(size, isl_dim_out);
+	nparam = isl_set_dim(set, isl_dim_param);
+	set = isl_set_add_dims(set, isl_dim_param, len);
+
+	for (i = 0; i < len; ++i) {
+		isl_id *id;
+
+		id = isl_id_list_get_id(ids, i);
+		set = isl_set_set_dim_id(set, isl_dim_param, nparam + i, id);
+	}
+
+	space = isl_space_params(isl_set_get_space(set));
+	ls = isl_local_space_from_space(space);
+	for (i = 0; i < len; ++i) {
+		isl_pw_aff *param, *size_i, *zero;
+		isl_set *bound;
+
+		param = isl_pw_aff_var_on_domain(isl_local_space_copy(ls),
+						isl_dim_param, nparam + i);
+
+		size_i = isl_multi_pw_aff_get_pw_aff(size, i);
+		bound = isl_pw_aff_lt_set(isl_pw_aff_copy(param), size_i);
+		bound = isl_set_from_basic_set(isl_set_simple_hull(bound));
+		set = isl_set_intersect_params(set, bound);
+
+		zero = isl_pw_aff_zero_on_domain(isl_local_space_copy(ls));
+		bound = isl_pw_aff_ge_set(param, zero);
+		set = isl_set_intersect_params(set, bound);
+	}
+	isl_local_space_free(ls);
+
+	return set;
 }
