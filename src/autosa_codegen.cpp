@@ -1006,7 +1006,8 @@ static __isl_give isl_schedule_node *add_io_copies_stmt_tile(
   mupa = isl_multi_union_pw_aff_from_multi_pw_aff(mpa);
 
   domain = isl_union_map_range(access);
-  if (read && !autosa_array_is_scalar(group->array)) {
+  /* Restrain the buffer to the local tile size. */
+  if (!autosa_array_is_scalar(group->array)) {
     isl_map *map;
     isl_set *set;
     set = isl_map_domain(isl_map_from_union_map(isl_union_set_unwrap(domain)));
@@ -1971,6 +1972,7 @@ static isl_stat generate_default_io_module_schedule(
   isl_union_map *group_access;
   isl_union_set *group_domain;
   int i;
+  isl_union_set *id_filter;
 
   ctx = isl_schedule_node_get_ctx(node);
   sched1 = isl_schedule_node_get_schedule(node);
@@ -2012,6 +2014,7 @@ static isl_stat generate_default_io_module_schedule(
   /* Add the filters. */
   n_io_ids = 0;
   node = autosa_tree_move_down_to_array(node, kernel->core);
+  //id_filter = isl_union_set_empty(isl_set_get_space(kernel->context));
   while (!isl_schedule_node_is_io_mark(node, io_level)) {
     if (isl_schedule_node_get_type(node) == isl_schedule_node_band) {
       isl_id *id;
@@ -2032,6 +2035,7 @@ static isl_stat generate_default_io_module_schedule(
       node = isl_schedule_node_insert_filter(node, uset);
       isl_id_list_free(ids);
       node = isl_schedule_node_child(node, 0);
+      //id_filter = isl_union_set_union(id_filter, uset);
     }
     node = isl_schedule_node_child(node, 0);
   }
@@ -2051,6 +2055,9 @@ static isl_stat generate_default_io_module_schedule(
     }
   }
   node = autosa_tree_move_up_to_kernel(node);
+  //node = isl_schedule_node_child(node, 0);
+  //node = isl_schedule_node_child(node, 0);
+  //node = isl_schedule_node_insert_filter(node, id_filter);
 
   /* Add the data transfer statements. */
   node = autosa_tree_move_down_to_io_mark(node, kernel->core, io_level); 
