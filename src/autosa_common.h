@@ -1029,7 +1029,8 @@ struct autosa_ast_node_userinfo *alloc_ast_node_userinfo();
 /* AutoSA PE opt */
 __isl_give isl_set *extract_sa_sizes(__isl_keep isl_union_map *sizes,
     const char *type, int id);
-int *read_hbm_tile_sizes(struct autosa_kernel *kernel, int tile_len);
+int *read_hbm_tile_sizes(struct autosa_kernel *kernel, int tile_len, char *name);
+int *read_default_hbm_tile_sizes(struct autosa_kernel *sa, int tile_len);
 int *read_array_part_tile_sizes(struct autosa_kernel *kernel, int tile_len);
 int *read_default_array_part_tile_sizes(struct autosa_kernel *kernel, int tile_len);
 int *read_latency_tile_sizes(struct autosa_kernel *kernel, int tile_len);

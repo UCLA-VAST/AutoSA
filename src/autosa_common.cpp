@@ -1729,7 +1729,7 @@ static void set_sa_used_sizes(struct autosa_kernel *sa, const char *type, int id
  * return a pointer to the tile sizes (or NULL on error).
  * And the effectively used sizes to sa->used_sizes.
  */
-int *read_hbm_tile_sizes(struct autosa_kernel *sa, int tile_len)
+int *read_hbm_tile_sizes(struct autosa_kernel *sa, int tile_len, char *name)
 {
   int n;
   int *tile_size;
@@ -1738,18 +1738,35 @@ int *read_hbm_tile_sizes(struct autosa_kernel *sa, int tile_len)
   tile_size = isl_alloc_array(sa->ctx, int, tile_len);
   if (!tile_size)
     return NULL;
-  for (n = 0; n < tile_len; ++n) 
-    tile_size[n] = sa->scop->options->autosa->n_hbm_port;
 
-  size = extract_sa_sizes(sa->sizes, "hbm", sa->id);
+  size = extract_sa_sizes(sa->sizes, name, sa->id);
+  if (isl_set_dim(size, isl_dim_set) < tile_len) {
+    free(tile_size);
+    isl_set_free(size);
+    return NULL;
+  }
   if (read_sa_sizes_from_set(size, tile_size, tile_len) < 0)
     goto error;
-  set_sa_used_sizes(sa, "hbm", sa->id, tile_size, tile_len);
+  set_sa_used_sizes(sa, name, sa->id, tile_size, tile_len);
 
   return tile_size;
 error:
   free(tile_size);
   return NULL;
+}
+
+int *read_default_hbm_tile_sizes(struct autosa_kernel *sa, int tile_len)
+{
+  int n;
+  int *tile_size;  
+
+  tile_size = isl_alloc_array(sa->ctx, int, tile_len);
+  if (!tile_size)
+    return NULL;
+  for (n = 0; n < tile_len; ++n) 
+    tile_size[n] = sa->scop->options->autosa->n_hbm_port;
+
+  return tile_size;
 }
 
 /* Extract user specified "sa_tile" sizes from the "sa_sizes" command line option,

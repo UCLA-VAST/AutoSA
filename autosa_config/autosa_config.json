@@ -17,5 +17,8 @@
     "simd": {
         "enable": 1,
         "mode": "manual"
+    },
+    "hbm": {
+        "mode": "manual"
     }
 }

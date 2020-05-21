@@ -994,7 +994,7 @@ isl_stat sa_array_partitioning_optimize(struct autosa_kernel *sa,
   tile_len = isl_schedule_node_band_n_member(node);
   if (!strcmp(mode, "manual")) {
     /* Manual mode */
-    tile_size = read_array_part_tile_sizes(sa, tile_len) ;
+    tile_size = read_array_part_tile_sizes(sa, tile_len);
     if (!tile_size) {
       /* User hasn't specified the tiling factors for array partitioning yet,
        * we will dump out the number and upper bounds of array_part loops 

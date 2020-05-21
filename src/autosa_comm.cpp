@@ -5,6 +5,7 @@
 #include "autosa_comm.h"
 #include "autosa_schedule_tree.h"
 #include "autosa_utils.h"
+#include "autosa_print.h"
 
 /* Internal data structure for autosa_group_references.
  */
@@ -1122,6 +1123,152 @@ static __isl_give isl_schedule_node *insert_io_module_context(
   return node;
 }
 
+/* Perform HBM/Multi-port DRAM optimization.
+ */
+static __isl_give isl_schedule_node *hbm_optimize(
+  __isl_take isl_schedule_node *node, 
+  isl_multi_aff **io_trans_ma,
+  struct autosa_kernel *kernel, struct autosa_array_ref_group *group,
+  struct autosa_gen *gen)
+{
+  isl_union_set *uset;
+  isl_set *set;
+  isl_basic_set *bset;
+  isl_union_map *umap;
+  isl_val *val;
+  isl_ctx *ctx = gen->ctx;
+  int tile_len = 1;
+  int *tile_size = NULL;
+  cJSON *hbm_json, *hbm_mode_json;
+  char *hbm_mode;
+  isl_printer *p_str;
+  char *module_name;
+  
+  /* Parse the tuning configuration. */
+  hbm_json = cJSON_GetObjectItemCaseSensitive(gen->tuning_config, "hbm");
+  if (!hbm_json) {
+    /* Default in auto mode. */
+    hbm_mode = "auto";
+  } else {
+    hbm_mode_json = cJSON_GetObjectItemCaseSensitive(hbm_json, "mode");
+    hbm_mode = hbm_mode_json->valuestring;
+  }
+
+  if (!strcmp(hbm_mode, "auto")) {
+    /* HBM optimization is set in AUTO mode. 
+     * We will pick up the tiling factors by default.
+     */
+    tile_size = read_default_hbm_tile_sizes(kernel, tile_len);
+  } else {
+    /* HBM optimization is set in MANUAL mode. 
+     * We will take the user specification to select the HBM factors.
+     */
+    char *name;
+    isl_printer *p_str;
+    p_str = isl_printer_to_str(ctx);
+    p_str = isl_printer_print_str(p_str, "hbm_");
+    p_str = autosa_array_ref_group_print_prefix(group, p_str);
+    name = isl_printer_get_str(p_str);
+    isl_printer_free(p_str);
+
+    tile_size = read_hbm_tile_sizes(kernel, tile_len, name);
+    if (!tile_size) {
+      /* User hasn't specified the tiling factors for HBM optimization yet,
+       * we will dump out the number and upper bounds of the last-level IO loops
+       * and exit the program.
+       */
+      int *ubs = extract_band_upper_bounds(kernel, node);
+      FILE *fp;
+      char *content;
+      cJSON *tuning, *hbm_json, *loops_json;
+      isl_printer *p_str;
+      char *tuning_path;      
+
+      tuning = cJSON_CreateObject();
+      hbm_json = cJSON_CreateObject();            
+      cJSON_AddItemToObject(tuning, name, hbm_json);
+      loops_json = cJSON_CreateArray();
+      cJSON_AddItemToObject(hbm_json, "tilable_loops", loops_json);
+      for (int i = 0; i < tile_len; i++) {
+        cJSON *loop = cJSON_CreateNumber(ubs[i]);
+        cJSON_AddItemToArray(loops_json, loop);
+      }
+      p_str = isl_printer_to_str(ctx);
+      p_str = isl_printer_print_str(p_str, kernel->options->autosa->output_dir);
+      p_str = isl_printer_print_str(p_str, "/tuning.json");
+      tuning_path = isl_printer_get_str(p_str);
+      fp = fopen(tuning_path, "w");
+      content = cJSON_Print(tuning);
+      fprintf(fp, "%s", content);
+      cJSON_Delete(tuning);
+      isl_printer_free(p_str);
+      free(tuning_path);
+      free(name);
+      exit(0);
+    }
+    free(name);
+  }  
+
+  p_str = isl_printer_to_str(ctx);
+  p_str = autosa_array_ref_group_print_prefix(group, p_str);
+  module_name = isl_printer_get_str(p_str);
+  isl_printer_free(p_str);
+
+  printf("[AutoSA] #HBM port for %s: %d \n", module_name, tile_size[0]);
+  free(module_name);
+
+  /* Check if the tile factor is greater or equal than the loop bound. */
+  umap = isl_schedule_node_band_get_partial_schedule_union_map(node);
+  uset = isl_union_map_range(umap);       
+  set = isl_set_from_union_set(uset);
+  val = isl_val_zero(ctx);
+  isl_set_foreach_basic_set(set, &extract_set_max_dim, &val);
+  isl_set_free(set);
+  if (isl_val_get_num_si(val) <= tile_size[0]) {
+    /* The current loop bound is smaller than the tile size, 
+     * no need to further tile. 
+     */
+    // TODO: At present, we require tile factor to be greater than the loop bound.
+    // This is due to the reason that we can't handle loop with bound one since
+    // such loop will be degenerated. Fix it in the future.
+    free(tile_size);
+    isl_val_free(val);
+    printf("[AutoSA] HBM optimization failed! Please try to use a smaller HBM port number.\n");
+    return node;
+  }
+  isl_val_free(val);
+
+  node = autosa_tile_band(node, tile_size);
+  node = isl_schedule_node_child(node, 0);
+  group->space_dim++;
+  group->n_mem_ports = tile_size[0];
+
+  /* Update the transformation function. */
+  isl_aff *aff = isl_multi_aff_get_aff(*io_trans_ma, 0);
+  isl_aff *tile_aff, *point_aff;
+  tile_aff = isl_aff_scale_down_ui(isl_aff_copy(aff), tile_size[0]);
+  tile_aff = isl_aff_floor(tile_aff);
+  point_aff = isl_aff_scale_down_ui(isl_aff_copy(aff), tile_size[0]);
+  point_aff = isl_aff_floor(point_aff);
+  point_aff = isl_aff_scale_val(point_aff, isl_val_int_from_ui(ctx, tile_size[0]));
+  point_aff = isl_aff_sub(aff, point_aff);
+
+  isl_aff_list *aff_list = isl_aff_list_from_aff(tile_aff);
+  aff_list = isl_aff_list_add(aff_list, point_aff);
+  for (int n = 1; n < isl_multi_aff_dim(*io_trans_ma, isl_dim_out); n++) {
+    aff = isl_multi_aff_get_aff(*io_trans_ma, n);
+    aff_list = isl_aff_list_add(aff_list, aff);
+  }
+
+  isl_space *space = isl_multi_aff_get_space(*io_trans_ma);
+  isl_multi_aff_free(*io_trans_ma);
+  space = isl_space_add_dims(space, isl_dim_out, 1);
+  *io_trans_ma = isl_multi_aff_from_aff_list(space, aff_list);
+  free(tile_size);
+
+  return node;
+}
+
 /* This function computes the schedule for the I/O modules that transfers
  * the data for the I/O group "group".
  * We will cluster I/O modules level by level. 
@@ -1170,50 +1317,10 @@ static isl_stat compute_io_group_schedule(
   node = isl_schedule_get_root(schedule);
   isl_schedule_free(schedule);
 
-//  /* Move the space band to the outermost. */
-///* #ifdef _DEBUG
-//  isl_printer *pd = isl_printer_to_file(ctx, stdout);
-//  pd = isl_printer_set_yaml_style(pd, ISL_YAML_STYLE_BLOCK);
-//  pd = isl_printer_print_schedule_node(pd, node);
-//  pd = isl_printer_free(pd);
-//#endif */
-//  node = autosa_tree_move_down_to_pe(node, kernel->core);
-//  /* Delete the "pe" mark. */
-//  node = isl_schedule_node_delete(node);
-//  node = isl_schedule_node_parent(node);
-///* #ifdef _DEBUG
-//  pd = isl_printer_to_file(ctx, stdout);
-//  pd = isl_printer_set_yaml_style(pd, ISL_YAML_STYLE_BLOCK);
-//  pd = isl_printer_print_schedule_node(pd, node);
-//  pd = isl_printer_free(pd);
-//#endif   */
-//  while (node && isl_schedule_node_has_parent(node)) {
-//    /* Examine if the parent node is the "kernel" mark. */
-//    isl_schedule_node *parent_node;
-//    parent_node = isl_schedule_node_parent(isl_schedule_node_copy(node));
-//    if (autosa_tree_node_is_kernel(parent_node)) {
-//      isl_schedule_node_free(parent_node);
-//      break;
-//    }
-//    node = autosa_node_interchange_up(node);
-//    isl_schedule_node_free(parent_node);
-//  }
-//  /* Insert the "pe" mark. */
-//  id = isl_id_alloc(ctx, "pe", NULL);
-//  node = isl_schedule_node_child(node, 0);
-//  node = isl_schedule_node_insert_mark(node, id);
-///* #ifdef _DEBUG
-//  pd = isl_printer_to_file(ctx, stdout);
-//  pd = isl_printer_set_yaml_style(pd, ISL_YAML_STYLE_BLOCK);
-//  pd = isl_printer_print_schedule_node(pd, node);
-//  pd = isl_printer_free(pd);
-//#endif */
-
-//  node = isl_schedule_node_parent(node);
-//  space_dim = isl_schedule_node_band_n_member(node);
   node = autosa_tree_move_down_to_array(node, kernel->core);
   node = isl_schedule_node_child(node, 0);
   space_dim = isl_schedule_node_band_n_member(node);
+  group->space_dim = space_dim;
 
   /* Insert the IO_L1 mark. */
   node = isl_schedule_node_child(node, 0);
@@ -1315,72 +1422,14 @@ static isl_stat compute_io_group_schedule(
     }
 
     /* If the multi-port DRAM/HBM is to be used, we will need to tile the loop again.
-     * TODO: This feature is not fully supported yet.
      */
     if (i == 0 && gen->options->autosa->hbm) {      
-      printf("[AutoSA] Apply HBM optimization.\n");      
-//      isl_die(ctx, isl_error_unsupported, 
-//                "HBM not supported yet", goto next);
+      printf("[AutoSA] Apply HBM optimization.\n");
       if (group->io_type == AUTOSA_EXT_IO && i == space_dim - 1) { 
         printf("[AutoSA] HBM optimization failed! Not enough I/O modules.\n");
         goto next; 
-      }
-      
-      isl_union_set *uset;
-      isl_set *set;
-      isl_basic_set *bset;
-      isl_union_map *umap;
-      isl_val *val;
-      int tile_len = 1;
-      int *tile_size = NULL;
-      tile_size = read_hbm_tile_sizes(kernel, tile_len);
-      printf("[AutoSA] HBM port: %d\n", tile_size[0]);
-
-      /* Check if the tile factor is greater or equal than the loop bound */
-      umap = isl_schedule_node_band_get_partial_schedule_union_map(node);
-      uset = isl_union_map_range(umap);       
-      set = isl_set_from_union_set(uset);
-      val = isl_val_zero(ctx);
-      isl_set_foreach_basic_set(set, &extract_set_max_dim, &val);
-      isl_set_free(set);
-      if (isl_val_get_num_si(val) <= tile_size[0]) {
-        /* The current loop bound is smaller than the tile size, 
-         * no need to further tile. 
-         */
-        free(tile_size);
-        isl_val_free(val);
-        printf("[AutoSA] HBM optimization failed! Please try to use a smaller HBM port number.\n");
-        goto next;
-      }
-      isl_val_free(val);
-
-      node = autosa_tile_band(node, tile_size);
-      node = isl_schedule_node_child(node, 0);
-      space_dim++;
-      group->n_mem_ports = tile_size[0];
-
-      /* Update the transformation function. */
-      isl_aff *aff = isl_multi_aff_get_aff(io_trans_ma, 0);
-      isl_aff *tile_aff, *point_aff;
-      tile_aff = isl_aff_scale_down_ui(isl_aff_copy(aff), tile_size[0]);
-      tile_aff = isl_aff_floor(tile_aff);
-      point_aff = isl_aff_scale_down_ui(isl_aff_copy(aff), tile_size[0]);
-      point_aff = isl_aff_floor(point_aff);
-      point_aff = isl_aff_scale_val(point_aff, isl_val_int_from_ui(ctx, tile_size[0]));
-      point_aff = isl_aff_sub(aff, point_aff);
-
-      isl_aff_list *aff_list = isl_aff_list_from_aff(tile_aff);
-      aff_list = isl_aff_list_add(aff_list, point_aff);
-      for (int n = 1; n < isl_multi_aff_dim(io_trans_ma, isl_dim_out); n++) {
-        aff = isl_multi_aff_get_aff(io_trans_ma, n);
-        aff_list = isl_aff_list_add(aff_list, aff);
-      }
-
-      isl_space *space = isl_multi_aff_get_space(io_trans_ma);
-      isl_multi_aff_free(io_trans_ma);
-      space = isl_space_add_dims(space, isl_dim_out, 1);
-      io_trans_ma = isl_multi_aff_from_aff_list(space, aff_list);
-      free(tile_size);
+      }    
+      node = hbm_optimize(node, &io_trans_ma, kernel, group, gen);
     }
 next:
     p_str = isl_printer_to_str(ctx);
@@ -1405,7 +1454,6 @@ next:
 #endif */
 
   group->io_level = io_level;
-  group->space_dim = space_dim;
   group->io_trans = io_trans_ma;
 
   /* Insert the context node for the IO ids. */  
