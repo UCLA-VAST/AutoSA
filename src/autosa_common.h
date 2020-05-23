@@ -5,6 +5,8 @@
 #include <limits.h>
 #include <string.h>
 #include <iostream>
+#include <vector>
+#include <utility>
 
 #include <isl/aff.h>
 #include <isl/aff_type.h>
@@ -411,6 +413,14 @@ struct autosa_array_info {
 
   /* AutoSA Extended */
   int n_lane;
+  /* Since in AutoSA, we only a single kernel, 
+   * the "local_array" is safely pointed to the local array inside the kernel.
+   */
+  struct autosa_local_array_info *local_array;
+  /* Is the array to be copied in to the device memory? */
+  int copy_in;
+  /* Is the array to be copied out from the device memory? */
+  int copy_out;
   /* AutoSA Extended */
 };
 
@@ -502,6 +512,12 @@ struct autosa_array_ref_group {
   isl_union_pw_multi_aff *copy_schedule;
   /* Number of DRAM ports that this group is connected. */
   int n_mem_ports;
+  /* The starting offset of external memory port id for this group. */
+  int mem_port_id;
+  /* Does copy-in module exist? */
+  int copy_in;
+  /* Does copy-out module exist? */
+  int copy_out;
   /* AutoSA Extended */
 };
 
@@ -543,6 +559,10 @@ struct autosa_local_array_info {
    * allocate separater pointers for each group. 
    */
   int n_io_group_refs;
+  /* Number of external memory ports that this array is allocated. */
+  int n_mem_ports;
+  /* Map from io_group_ref to mem_port. */
+  std::vector<std::pair<int,int> > group_ref_mem_port_map;
 
   /* Default groups */
   int n_group;
@@ -970,6 +990,8 @@ int *extract_band_upper_bounds(struct autosa_kernel *kernel,
   __isl_keep isl_schedule_node *node);
 __isl_give isl_union_set *set_schedule_eq(
   __isl_keep isl_schedule_node *node, __isl_keep isl_id_list *names);  
+isl_bool is_flow_dep_carried_by_array_part_loops(__isl_keep isl_schedule *schedule,
+  struct autosa_array_ref_group *group, struct autosa_kernel *kernel);
 
 /* Schedule */
 __isl_give isl_schedule *compute_schedule(struct autosa_gen *gen);

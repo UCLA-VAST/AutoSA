@@ -66,5 +66,9 @@ __isl_give isl_multi_aff *autosa_array_ref_group_recompute_tiling(
   struct autosa_array_tile *tile,
   struct autosa_array_ref_group *group,
   int depth);  
+isl_bool is_io_module_valid(
+  __isl_keep isl_schedule_node *node,  
+  struct autosa_kernel *kernel, 
+  struct autosa_array_ref_group *group, int read);  
 
 #endif

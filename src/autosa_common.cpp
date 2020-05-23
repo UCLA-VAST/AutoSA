@@ -648,6 +648,13 @@ static isl_stat extract_array_info(struct autosa_prog *prog,
 		return isl_stat_error;
 	info->only_fixed_element = only_fixed_element_accessed(info); 
 
+  /* AutoSA Extended */
+  info->n_lane = 0;
+  info->local_array = NULL;
+  info->copy_in = 0;
+  info->copy_out = 0;
+  /* AutoSA Extended */
+
 	return isl_stat_ok;  
 }
 

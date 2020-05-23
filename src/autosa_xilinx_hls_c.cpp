@@ -324,7 +324,7 @@ static __isl_give isl_printer *find_device_xilinx(__isl_take isl_printer *p)
   p = print_str_new_line(p, "// Import XCLBIN");
   p = print_str_new_line(p, "xclbin_file_name = argv[1];");
   p = print_str_new_line(p, "cl::Program::Binaries kernel_bins = import_binary_file();");
-  p = print_str_new_line(p, "// Program and Kernel");
+  p = print_str_new_line(p, "// Create Program and Kernel");
   p = print_str_new_line(p, "devices.resize(1);");
   p = print_str_new_line(p, "cl::Program program(context, devices, kernel_bins);");
   p = print_str_new_line(p, "cl::Kernel krnl(program, \"kernel0\");");
@@ -377,85 +377,170 @@ static __isl_give isl_printer *find_device_xilinx(__isl_take isl_printer *p)
 }
 
 static __isl_give isl_printer *declare_and_allocate_device_arrays_xilinx(
-  __isl_take isl_printer *p, struct autosa_prog *prog)
+  __isl_take isl_printer *p, struct autosa_prog *prog, struct autosa_kernel *kernel)
 {
-  p = print_str_new_line(p, "// Allocate Memory in Host Memory");
-  for (int i = 0; i < prog->n_array; i++) {
-    struct autosa_array_info *array = &prog->array[i];
-    if (!autosa_array_requires_device_allocation(array))
-      continue;
+  p = print_str_new_line(p, "// Allocate memory in host memory");
+  
+  for (int i = 0; i < kernel->n_array; i++) {    
+    struct autosa_local_array_info *local_array = &kernel->array[i];
+    if (!autosa_array_requires_device_allocation(local_array->array))
+      continue;      
     
-    p = isl_printer_start_line(p);
-    p = isl_printer_print_str(p, "std::vector<");
-    p = isl_printer_print_str(p, array->type);
-    p = isl_printer_print_str(p, ", aligned_allocator<");
-    p = isl_printer_print_str(p, array->type);
-    p = isl_printer_print_str(p, ">> ");
-    p = isl_printer_print_str(p, "dev_");
-    p = isl_printer_print_str(p, array->name);
-    p = isl_printer_print_str(p, "(");
-    p = autosa_array_info_print_data_size(p, array);
-    p = isl_printer_print_str(p, ");");
-    p = isl_printer_end_line(p);
+    if (local_array->n_mem_ports > 1 && local_array->array->copy_out) {
+      /* Create multiple host buffers. */
+      for (int j = 0; j < local_array->n_mem_ports; j++) {
+        p = isl_printer_start_line(p);
+        p = isl_printer_print_str(p, "std::vector<");
+        p = isl_printer_print_str(p, local_array->array->type);
+        p = isl_printer_print_str(p, ", aligned_allocator<");
+        p = isl_printer_print_str(p, local_array->array->type);
+        p = isl_printer_print_str(p, ">> ");
+        p = isl_printer_print_str(p, "dev_");
+        p = isl_printer_print_str(p, local_array->array->name);        
+        p = isl_printer_print_str(p, "_");
+        p = isl_printer_print_int(p, j);        
+        p = isl_printer_print_str(p, "(");
+        p = autosa_array_info_print_data_size(p, local_array->array);
+        p = isl_printer_print_str(p, ");");
+        p = isl_printer_end_line(p);
+      }
+    } else {
+      /* Create a single host buffer. */
+      p = isl_printer_start_line(p);
+      p = isl_printer_print_str(p, "std::vector<");
+      p = isl_printer_print_str(p, local_array->array->type);
+      p = isl_printer_print_str(p, ", aligned_allocator<");
+      p = isl_printer_print_str(p, local_array->array->type);
+      p = isl_printer_print_str(p, ">> ");
+      p = isl_printer_print_str(p, "dev_");
+      p = isl_printer_print_str(p, local_array->array->name);      
+      p = isl_printer_print_str(p, "(");
+      p = autosa_array_info_print_data_size(p, local_array->array);
+      p = isl_printer_print_str(p, ");");
+      p = isl_printer_end_line(p);
+    }    
   }
   p = isl_printer_end_line(p);
 
   /* Initialize buffer. */
-  p = print_str_new_line(p, "// Initialize Host Buffers");
-  for (int i = 0; i < prog->n_array; i++) {
-    struct autosa_array_info *array = &prog->array[i];
-    if (!autosa_array_requires_device_allocation(array))
-      continue;
+  p = print_str_new_line(p, "// Initialize host buffers");
+  
+  for (int i = 0; i < kernel->n_array; i++) {    
+    struct autosa_local_array_info *local_array = &kernel->array[i];
+    if (!autosa_array_requires_device_allocation(local_array->array))
+      continue;    
 
-    p = isl_printer_start_line(p);
-    p = isl_printer_print_str(p, "std::copy(reinterpret_cast<");
-    p = isl_printer_print_str(p, array->type);
-    p = isl_printer_print_str(p, " *>(");
-    p = isl_printer_print_str(p, array->name);
-    p = isl_printer_print_str(p, "), reinterpret_cast<");
-    p = isl_printer_print_str(p, array->type);
-    p = isl_printer_print_str(p, " *>(");
-    p = isl_printer_print_str(p, array->name);
-    p = isl_printer_print_str(p, ") + ");
-    p = autosa_array_info_print_data_size(p, array);
-    p = isl_printer_print_str(p, ", dev_");
-    p = isl_printer_print_str(p, array->name);
-    p = isl_printer_print_str(p, ".begin());");
-    p = isl_printer_end_line(p);
+    if (local_array->n_mem_ports > 1 && local_array->array->copy_out) {      
+      for (int j = 0; j < local_array->n_mem_ports; j++) {
+        p = isl_printer_start_line(p);
+        p = isl_printer_print_str(p, "std::copy(reinterpret_cast<");
+        p = isl_printer_print_str(p, local_array->array->type);
+        p = isl_printer_print_str(p, " *>(");
+        p = isl_printer_print_str(p, local_array->array->name);
+        p = isl_printer_print_str(p, "), reinterpret_cast<");
+        p = isl_printer_print_str(p, local_array->array->type);
+        p = isl_printer_print_str(p, " *>(");
+        p = isl_printer_print_str(p, local_array->array->name);
+        p = isl_printer_print_str(p, ") + ");
+        p = autosa_array_info_print_data_size(p, local_array->array);
+        p = isl_printer_print_str(p, ", dev_");
+        p = isl_printer_print_str(p, local_array->array->name);        
+        p = isl_printer_print_str(p, "_");
+        p = isl_printer_print_int(p, j);        
+        p = isl_printer_print_str(p, ".begin());");
+        p = isl_printer_end_line(p);
+      }
+    } else {
+      p = isl_printer_start_line(p);
+      p = isl_printer_print_str(p, "std::copy(reinterpret_cast<");
+      p = isl_printer_print_str(p, local_array->array->type);
+      p = isl_printer_print_str(p, " *>(");
+      p = isl_printer_print_str(p, local_array->array->name);
+      p = isl_printer_print_str(p, "), reinterpret_cast<");
+      p = isl_printer_print_str(p, local_array->array->type);
+      p = isl_printer_print_str(p, " *>(");
+      p = isl_printer_print_str(p, local_array->array->name);
+      p = isl_printer_print_str(p, ") + ");
+      p = autosa_array_info_print_data_size(p, local_array->array);
+      p = isl_printer_print_str(p, ", dev_");
+      p = isl_printer_print_str(p, local_array->array->name);
+      p = isl_printer_print_str(p, ".begin());");
+      p = isl_printer_end_line(p);
+    }
   }
   p = isl_printer_end_line(p);
 
-  p = print_str_new_line(p, "// Allocate Buffer in Global Memory");
+  p = print_str_new_line(p, "// Allocate buffers in device memory");
   p = print_str_new_line(p, "// Buffers are allocated using CL_MEM_USE_HOST_PTR for efficient memory and");
-  p = print_str_new_line(p, "// Device-to-host communication");
-  for (int i = 0; i < prog->n_array; i++) {
-    int indent1, indent2;
-    struct autosa_array_info *array = &prog->array[i];
-    if (!autosa_array_requires_device_allocation(array))
+  p = print_str_new_line(p, "// device-to-host communication");  
+  for (int i = 0; i < kernel->n_array; i++) {
+    struct autosa_local_array_info *local_array = &kernel->array[i];    
+    if (!autosa_array_requires_device_allocation(local_array->array))
       continue;
+    
+    p = isl_printer_start_line(p);
+    p = isl_printer_print_str(p, "std::vector<cl::Buffer> buffer_");
+    p = isl_printer_print_str(p, local_array->array->name);
+    p = isl_printer_print_str(p, ";");
+    p = isl_printer_end_line(p);    
+  }
 
-    p = print_str_new_line(p, "OCL_CHECK(err,");
-    indent1 = strlen("OCL_CHECK(");
-    p = isl_printer_indent(p, indent1);
-    p = isl_printer_start_line(p);
-    p = isl_printer_print_str(p, "cl::Buffer buffer_");
-    p = isl_printer_print_str(p, array->name);
-    p = isl_printer_print_str(p, "(context,");
-    p = isl_printer_end_line(p);
-    p = isl_printer_indent(p, strlen("cl::Buffer buffer_") + strlen(array->name) + 1);
-    p = print_str_new_line(p, "CL_MEM_USE_HOST_PTR | CL_MEM_READ_WRITE,");
-    p = isl_printer_start_line(p);
-    p = autosa_array_info_print_size(p, array);
-    p = isl_printer_print_str(p, ",");
-    p = isl_printer_end_line(p);
-    p = isl_printer_start_line(p);
-    p = isl_printer_print_str(p, "dev_");
-    p = isl_printer_print_str(p, array->name);
-    p = isl_printer_print_str(p, ".data(),");
-    p = isl_printer_end_line(p);
-    p = print_str_new_line(p, "&err));");
-    p = isl_printer_indent(p, -(strlen("cl::Buffer buffer_") + strlen(array->name) + 1));
-    p = isl_printer_indent(p, -indent1);
+  for (int i = 0; i < kernel->n_array; i++) {
+    int indent1, indent2;
+    struct autosa_local_array_info *local_array = &kernel->array[i];
+    if (!autosa_array_requires_device_allocation(local_array->array))
+      continue;
+        
+    for (int j = 0; j < local_array->n_mem_ports; j++) {
+      p = print_str_new_line(p, "OCL_CHECK(err,");
+      indent1 = strlen("OCL_CHECK(");
+      p = isl_printer_indent(p, indent1);
+      p = isl_printer_start_line(p);    
+      p = isl_printer_print_str(p, "cl::Buffer buffer_");
+      p = isl_printer_print_str(p, local_array->array->name);    
+      p = isl_printer_print_str(p, "_tmp");    
+      p = isl_printer_print_str(p, "(context,");
+      p = isl_printer_end_line(p);
+      p = isl_printer_indent(p, strlen("cl::Buffer buffer_") + 
+        strlen(local_array->array->name) + strlen("_tmp") + 1);        
+      p = isl_printer_start_line(p);
+      p = isl_printer_print_str(p, "CL_MEM_USE_HOST_PTR | ");
+      if (local_array->array->copy_in && local_array->array->copy_out) {
+        p = isl_printer_print_str(p, "CL_MEM_READ_WRITE");
+      } else {
+        if (local_array->array->copy_in) 
+          p = isl_printer_print_str(p, "CL_MEM_READ");
+        else if (local_array->array->copy_out)
+          p = isl_printer_print_str(p, "CL_MEM_WRITE");
+      }
+      p = isl_printer_print_str(p, ",");
+      p = isl_printer_end_line(p);
+      p = isl_printer_start_line(p);
+      p = autosa_array_info_print_size(p, local_array->array);
+      p = isl_printer_print_str(p, ",");
+      p = isl_printer_end_line(p);
+      p = isl_printer_start_line(p);
+      p = isl_printer_print_str(p, "dev_");
+      p = isl_printer_print_str(p, local_array->array->name);
+      if (local_array->n_mem_ports > 1 && local_array->array->copy_out) {
+        p = isl_printer_print_str(p, "_");
+        p = isl_printer_print_int(p, j);
+      }
+      p = isl_printer_print_str(p, ".data(),");
+      p = isl_printer_end_line(p);
+      p = print_str_new_line(p, "&err));");
+      p = isl_printer_indent(p, -(strlen("cl::Buffer buffer_") + 
+        strlen(local_array->array->name) + strlen("_tmp") + 1));
+      p = isl_printer_indent(p, -indent1);            
+        
+      p = isl_printer_start_line(p);
+      p = isl_printer_print_str(p, "buffer_");
+      p = isl_printer_print_str(p, local_array->array->name);
+      p = isl_printer_print_str(p, ".push_back(std::move(buffer_");
+      p = isl_printer_print_str(p, local_array->array->name);
+      p = isl_printer_print_str(p, "_tmp));");
+      p = isl_printer_end_line(p);          
+    }
   }
   p = isl_printer_end_line(p);
 
@@ -499,12 +584,12 @@ static __isl_give isl_printer *declare_and_allocate_cpu_arrays_xilinx(
  * declaring and allocating the required copies of arrays on the device.
  */
 static __isl_give isl_printer *init_device_xilinx(__isl_take isl_printer *p,
-	struct autosa_prog *prog, int hls)
+	struct autosa_prog *prog, struct autosa_kernel *kernel, int hls)
 {
 	p = autosa_print_local_declarations(p, prog);
   if (!hls) {
     p = find_device_xilinx(p);
-    p = declare_and_allocate_device_arrays_xilinx(p, prog); 
+    p = declare_and_allocate_device_arrays_xilinx(p, prog, kernel); 
   } else {
     p = declare_and_allocate_cpu_arrays_xilinx(p, prog);
   }
@@ -544,7 +629,7 @@ static __isl_give isl_printer *clear_device_xilinx(__isl_take isl_printer *p,
     p = print_str_new_line(p, "q.finish();");    
     p = print_str_new_line(p, "auto host_end = std::chrono::high_resolution_clock::now();");
     p = isl_printer_end_line(p);
-    p = print_str_new_line(p, "// Calculate Time");
+    p = print_str_new_line(p, "// Calculate time");
     p = print_str_new_line(p, "std::chrono::duration<double> fpga_duration = fpga_end - fpga_begin;");
     p = print_str_new_line(p, "std::cout << \"FPGA Time: \" << fpga_duration.count() << \" s\" << std::endl;");
     p = print_str_new_line(p, "std::chrono::duration<double> host_duration = host_end - host_begin;");
@@ -552,23 +637,32 @@ static __isl_give isl_printer *clear_device_xilinx(__isl_take isl_printer *p,
     p = isl_printer_end_line(p);
 
     /* Restore buffer */
-    p = print_str_new_line(p, "// Restore Data from Host Buffers");
+    // TODO: How to merge several dev buffers
+    p = print_str_new_line(p, "// Restore data from host buffers");
     for (int i = 0; i < prog->n_array; i++) {
       struct autosa_array_info *array = &prog->array[i];
       if (!autosa_array_requires_device_allocation(array))
         continue;
   
-      p = isl_printer_start_line(p);
-      p = isl_printer_print_str(p, "std::copy(dev_");
-      p = isl_printer_print_str(p, array->name);
-      p = isl_printer_print_str(p, ".begin(), dev_");
-      p = isl_printer_print_str(p, array->name);
-      p = isl_printer_print_str(p, ".end(), reinterpret_cast<");
-      p = isl_printer_print_str(p, array->type);
-      p = isl_printer_print_str(p, " *>(");
-      p = isl_printer_print_str(p, array->name);
-      p = isl_printer_print_str(p, "));");
-      p = isl_printer_end_line(p);
+      if (array->copy_out) {
+        p = isl_printer_start_line(p);
+        p = isl_printer_print_str(p, "std::copy(dev_");
+        p = isl_printer_print_str(p, array->name);
+        if (array->local_array->n_mem_ports > 1) {
+          p = isl_printer_print_str(p, "_0");
+        }
+        p = isl_printer_print_str(p, ".begin(), dev_");
+        p = isl_printer_print_str(p, array->name);
+        if (array->local_array->n_mem_ports > 1) {
+          p = isl_printer_print_str(p, "_0");
+        }
+        p = isl_printer_print_str(p, ".end(), reinterpret_cast<");
+        p = isl_printer_print_str(p, array->type);
+        p = isl_printer_print_str(p, " *>(");
+        p = isl_printer_print_str(p, array->name);
+        p = isl_printer_print_str(p, "));");
+        p = isl_printer_end_line(p);
+      }
     }
   }
 
@@ -586,15 +680,28 @@ static __isl_give isl_printer *copy_array_to_device_xilinx(
 {
   int indent;
   if (!hls) {
+    struct autosa_local_array_info *local_array = array->local_array;
+    
+    p = isl_printer_start_line(p);
+    p = isl_printer_print_str(p, "for (int i = 0; i < ");
+    p = isl_printer_print_int(p, local_array->n_mem_ports);
+    p = isl_printer_print_str(p, "; i++) {");
+    p = isl_printer_end_line(p);
+    p = isl_printer_indent(p, 4);
+    
     p = print_str_new_line(p, "OCL_CHECK(err,");
     indent = strlen("OCL_CHECK(");
     p = isl_printer_indent(p, indent);
     p = isl_printer_start_line(p);
     p = isl_printer_print_str(p, "err = q.enqueueMigrateMemObjects({buffer_");
-    p = isl_printer_print_str(p, array->name);
+    p = isl_printer_print_str(p, array->name);    
+    p = isl_printer_print_str(p, "[i]");    
     p = isl_printer_print_str(p, "}, 0));");
     p = isl_printer_end_line(p);
     p = isl_printer_indent(p, -indent);
+    
+    p = isl_printer_indent(p, -4);
+    p = print_str_new_line(p, "}");    
   } else {
     p = isl_printer_start_line(p);
     p = isl_printer_print_str(p, "memcpy(dev_");
@@ -620,17 +727,31 @@ static __isl_give isl_printer *copy_array_to_device_xilinx(
 static __isl_give isl_printer *copy_array_from_device_xilinx(
 	__isl_take isl_printer *p, struct autosa_array_info *array, int hls)
 {
+  struct autosa_local_array_info *local_array;
   int indent;
-  if (!hls) {
+
+  local_array = array->local_array;
+  if (!hls) {    
+    p = isl_printer_start_line(p);
+    p = isl_printer_print_str(p, "for (int i = 0; i < ");
+    p = isl_printer_print_int(p, local_array->n_io_group_refs);
+    p = isl_printer_print_str(p, "; i++) {");
+    p = isl_printer_end_line(p);
+    p = isl_printer_indent(p, 4);
+    
     p = print_str_new_line(p, "OCL_CHECK(err,");
     indent = strlen("OCL_CHECK(");
     p = isl_printer_indent(p, indent);
     p = isl_printer_start_line(p);
     p = isl_printer_print_str(p, "err = q.enqueueMigrateMemObjects({buffer_");
-    p = isl_printer_print_str(p, array->name);
+    p = isl_printer_print_str(p, array->name);    
+    p = isl_printer_print_str(p, "[i]");    
     p = isl_printer_print_str(p, "}, CL_MIGRATE_MEM_OBJECT_HOST));");
     p = isl_printer_end_line(p);
     p = isl_printer_indent(p, -indent);
+    
+    p = isl_printer_indent(p, -4);
+    p = print_str_new_line(p, "}");    
   } else {
     p = isl_printer_start_line(p);
     p = isl_printer_print_str(p, "memcpy(");
@@ -667,12 +788,16 @@ static __isl_give isl_printer *print_device_node_xilinx(__isl_take isl_printer *
 	isl_id *id;
 	const char *name;
 	struct autosa_array_info *array;
+  struct autosa_kernel *kernel;
 
 	expr = isl_ast_node_user_get_expr(node);
 	arg = isl_ast_expr_get_op_arg(expr, 0);
 	id = isl_ast_expr_get_id(arg);
 	name = isl_id_get_name(id);
-	array = (struct autosa_array_info *)isl_id_get_user(id);
+  if (!strcmp(name, "init_device"))
+    kernel = (struct autosa_kernel *)isl_id_get_user(id);
+  else
+	  array = (struct autosa_array_info *)isl_id_get_user(id);
 	isl_id_free(id);
 	isl_ast_expr_free(arg);
 	isl_ast_expr_free(expr);
@@ -680,7 +805,7 @@ static __isl_give isl_printer *print_device_node_xilinx(__isl_take isl_printer *
 	if (!name)
 		return isl_printer_free(p);
 	if (!strcmp(name, "init_device"))
-		return init_device_xilinx(p, prog, hls); 
+		return init_device_xilinx(p, prog, kernel, hls); 
 	if (!strcmp(name, "clear_device"))
 		return clear_device_xilinx(p, prog, hls); 
 	if (!array)
@@ -707,7 +832,7 @@ static __isl_give isl_printer *print_set_kernel_arguments_xilinx(
   const char *type;
 
   /* array */
-  for (int i = 0; i < prog->n_array; ++i) {
+/*   for (int i = 0; i < prog->n_array; ++i) {
     int required;
 
     required = autosa_kernel_requires_array_argument(kernel, i);
@@ -720,12 +845,43 @@ static __isl_give isl_printer *print_set_kernel_arguments_xilinx(
 
     p = isl_printer_start_line(p);
     p = isl_printer_print_str(p, "OCL_CHECK(err, err = krnl.setArg(");
-    p = isl_printer_print_int(p, n_arg);
-    p = isl_printer_print_str(p, ", buffer_");
+    p = isl_printer_print_int(p, n_arg);    
+    p = isl_printer_print_str(p, ", buffer_");    
     p = isl_printer_print_str(p, array->name);
     p = isl_printer_print_str(p, "));");
     p = isl_printer_end_line(p);
     n_arg++;
+  } */
+  for (int i = 0; i < kernel->n_array; ++i) {
+    struct autosa_local_array_info *local_array = &kernel->array[i];
+    if (autosa_kernel_requires_array_argument(kernel, i)) {
+      if (autosa_array_is_scalar(local_array->array)) {
+        /* Scalar */
+        p = isl_printer_start_line(p);
+        p = isl_printer_print_str(p, "OCL_CHECK(err, err = krnl.setArg(");
+        p = isl_printer_print_int(p, n_arg);
+        p = isl_printer_print_str(p, ", ");
+        p = isl_printer_print_str(p, local_array->array->name);
+        p = isl_printer_print_str(p, "));");
+        p = isl_printer_end_line(p);
+        n_arg++;
+      } else {        
+        for (int j = 0; j < local_array->n_io_group_refs; j++) {
+          std::pair<int,int> ref_port_map = local_array->group_ref_mem_port_map[j];            
+          p = isl_printer_start_line(p);
+          p = isl_printer_print_str(p, "OCL_CHECK(err, err = krnl.setArg(");
+          p = isl_printer_print_int(p, n_arg);    
+          p = isl_printer_print_str(p, ", buffer_");    
+          p = isl_printer_print_str(p, local_array->array->name);
+          p = isl_printer_print_str(p, "[");            
+          //p = isl_printer_print_int(p, j);
+          p = isl_printer_print_int(p, ref_port_map.second);
+          p = isl_printer_print_str(p, "]));");
+          p = isl_printer_end_line(p);
+          n_arg++;
+        }        
+      }
+    }
   }
 
   /* param */

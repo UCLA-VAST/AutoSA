@@ -19,6 +19,6 @@
         "mode": "manual"
     },
     "hbm": {
-        "mode": "auto"
+        "mode": "manual"
     }
 }

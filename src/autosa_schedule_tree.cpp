@@ -1019,6 +1019,72 @@ isl_bool all_parallel_node(__isl_keep isl_schedule_node *node, void *user)
   return isl_bool_true;
 }
 
+/* This function tests if the loops above the "array" mark carry any flow
+ * dependence that is assoicated with the I/O group "group".
+ */
+isl_bool is_flow_dep_carried_by_array_part_loops(__isl_keep isl_schedule *schedule,
+  struct autosa_array_ref_group *group, struct autosa_kernel *kernel) 
+{
+  isl_bool carried = isl_bool_false;
+  isl_schedule_node *node;
+  isl_union_map *umap;
+
+  if (!group->local_array->array_type == AUTOSA_INT_ARRAY) 
+    return carried;
+  node = isl_schedule_get_root(schedule);
+  node = autosa_tree_move_down_to_array(node, kernel->core);
+  while (node && isl_schedule_node_has_parent(node)) {
+    if (autosa_tree_node_is_kernel(node))
+      break;
+    if (isl_schedule_node_get_type(node) == isl_schedule_node_band) {
+      umap = isl_schedule_node_band_get_partial_schedule_union_map(node);
+      for (int i = 0; i < group->n_ref; i++) {
+        struct autosa_stmt_access *ref = group->refs[i];
+        for (int j = 0; j < ref->n_io_info; j++) {
+          struct autosa_io_info *io_info = ref->io_info[j];
+          if (io_info->io_type == group->io_type &&
+                !isl_vec_cmp(io_info->dir, group->dir)) {
+            isl_map *test;
+            isl_map *schedule_dep;
+            int dim;
+            int is_parallel;
+            
+            isl_union_map *dep = isl_union_map_from_map(
+                isl_map_factor_domain(
+                isl_map_from_basic_map(isl_basic_map_copy(io_info->dep->isl_dep))));
+            dep = isl_union_map_apply_range(dep, isl_union_map_copy(umap));
+            dep = isl_union_map_apply_domain(dep, isl_union_map_copy(umap));
+            if (isl_union_map_is_empty(dep)) {
+              isl_union_map_free(dep);
+              break;
+            }
+            schedule_dep = isl_map_from_union_map(dep);
+            test = isl_map_universe(isl_map_get_space(schedule_dep));
+            dim = isl_schedule_node_band_n_member(node);
+            for (int n = 0; n < dim; n++) {
+              test = isl_map_equate(test, isl_dim_in, n, isl_dim_out, n);
+            }
+            is_parallel = isl_map_is_subset(schedule_dep, test);
+            isl_map_free(schedule_dep);
+            isl_map_free(test);
+  
+            if (!is_parallel) { 
+              /* Dependence is carried by the array part loops. */
+              carried = isl_bool_true;
+              break;
+            }
+          }
+        }
+      }
+      isl_union_map_free(umap);
+    }
+    node = isl_schedule_node_parent(node);
+  }
+  
+  isl_schedule_node_free(node);
+  return carried;
+}
+
 /* Examines if the current schedule node is a io mark at the level "io_level".
  * Specifically, the io mark at the level "io_level" has the name as "io_L[io_level]".
  */

@@ -6,184 +6,6 @@
 #include "autosa_schedule_tree.h"
 #include "autosa_comm.h"
 
-/* This function examines if the accessed elements of the I/O group 
- * are fully overlapped at the PE level.
- * We will create a relation "overlap"
- * 
- *  [[D -> R] -> [D' -> R']]
- * 
- * of pairs of domain iterations accessing the reference group and 
- * the domain iteraetions D' is lexicographically greater than D by one 
- * at the last array_part loop with PE loops equal.
- * 
- * This relation is intersected with all flow dependences to derive the 
- * pairs of iterations that overlapped due to the flow dependence.
- * 
- * Next, we construct a relation "external"
- * that contains pair of iteration domains with flow dependences that 
- * access the elements by the I/O group.
- * 
- * We substract "overlap" from "external". If the diff is null, clearly
- * the accessed elements are overlapped between different array partitions 
- * for one PE, we will return true for this case.
- * Otherwise, we return false.
- */
-static isl_bool internal_group_in_out_overlap(
-  __isl_keep isl_schedule_node *node,
-  struct autosa_kernel *kernel,
-  struct autosa_array_ref_group *group, int read)
-{
-  int empty;
-  struct autosa_prog *prog = kernel->prog;
-  isl_union_pw_multi_aff *tagger;
-  isl_union_map *prefix;
-  isl_union_map *access, *tagged;
-  isl_union_set *domain;
-  isl_set *prefix_range;
-  isl_map *lt;
-  int n_sched_dim;
-  isl_union_map *overlap;
-  isl_union_map *external, *universe;
-  isl_union_set *access_domain;
-  isl_union_set *tag_set;
-  isl_map *sched_identity;
-  int pe_depth, array_depth;
-
-  node = isl_schedule_node_copy(node);
-  node = autosa_tree_move_down_to_array(node, kernel->core);
-  array_depth = isl_schedule_node_get_schedule_depth(node);
-  node = autosa_tree_move_down_to_pe(node, kernel->core);
-  pe_depth = isl_schedule_node_get_schedule_depth(node);
-  prefix = isl_schedule_node_get_prefix_schedule_relation(node);
-  prefix = isl_union_map_preimage_domain_union_pw_multi_aff(prefix,
-              isl_union_pw_multi_aff_copy(kernel->contraction)); 
-  isl_schedule_node_free(node);
-  access = autosa_io_group_access_relation(group, read, !read); 
-  tagged = group_tagged_access_relation(group); 
- 
-  /* Remove the local dependency first. */
-  access = remove_local_accesses_group_flow(kernel, group, access, prefix, read);
-
-  /* Tagger maps the tagged iteration domain to untagged iteration domain.
-   * Iteration domain is tagged to the access function.
-   * e.g. [S1[i,j,k] -> _pet_ref_1[]] -> S1[(i),(j),(k)]
-   */
-  tagger = isl_union_pw_multi_aff_copy(prog->scop->tagger);
-  domain = isl_union_map_domain(isl_union_map_copy(tagged));
-  tagger = isl_union_pw_multi_aff_intersect_domain(tagger, 
-            isl_union_set_copy(domain));
-  prefix = isl_union_map_preimage_domain_union_pw_multi_aff(prefix, tagger); 
-  
-  prefix_range = isl_set_from_union_set(isl_union_map_range(isl_union_map_copy(prefix))); 
-  n_sched_dim = isl_set_dim(prefix_range, isl_dim_set);
-  sched_identity = isl_set_identity(isl_set_copy(prefix_range));
-
-  lt = isl_map_lex_lt_first(isl_map_get_space(sched_identity), array_depth); 
-  isl_map_free(sched_identity);
-
-  /* Set the space dims equal. */
-  for (int i = array_depth; i < n_sched_dim; i++) {
-    lt = isl_map_equate(lt, isl_dim_in, i, isl_dim_out, i);
-  }
-  lt = isl_map_intersect_domain(lt, isl_set_copy(prefix_range));
-  lt = isl_map_intersect_range(lt, prefix_range);
-  lt = isl_map_lexmin(lt); 
-  
-  overlap = isl_union_map_apply_range(isl_union_map_copy(prefix), 
-              isl_union_map_from_map(lt));
-  overlap = isl_union_map_apply_range(overlap, isl_union_map_reverse(prefix)); 
-
-  /* Derive the overlapping set. */
-  overlap = isl_union_map_intersect(overlap, 
-              isl_union_map_copy(prog->scop->tagged_dep_flow)); 
-  empty = isl_union_map_is_empty(overlap);
-
-  external = isl_union_map_copy(prog->scop->tagged_dep_flow); 
-  universe = isl_union_map_universe(isl_union_map_copy(access)); 
-  access_domain = isl_union_map_domain(universe); 
-  domain = isl_union_set_universe(domain); 
-  universe = isl_union_set_unwrap(domain); 
-  universe = isl_union_map_intersect_domain(universe, access_domain); 
-  /* D -> __pet_ref_1 */
-  domain = isl_union_map_wrap(universe);
-  if (read)
-    external = isl_union_map_intersect_range(external, domain);
-  else
-    external = isl_union_map_intersect_domain(external, domain);
-  external = isl_union_map_intersect_params(external,
-              isl_set_copy(prog->scop->context));
-  /* external contains flow dep that are associated with the group access. */
-  
-  external = isl_union_map_subtract(external, overlap);
-  /* external only contains access non-overlap RAW pairs. */
-
-  if (read) {
-    tag_set = isl_union_map_range(external);
-    external = wrapped_reference_to_access(tag_set, tagged); 
-  } else {
-    tag_set = isl_union_map_domain(external);
-    external = wrapped_reference_to_access(tag_set, tagged);
-  }
-
-  if (empty < 0) 
-    external = isl_union_map_free(external);
-  else if (empty)
-    external = isl_union_map_universe(external);
-
-  access = isl_union_map_intersect(access, external); 
-  empty = isl_union_map_is_empty(access);
-  isl_union_map_free(access);
-
-  if (empty)
-    return isl_bool_true;
-  else
-    return isl_bool_false;
-}
-
-/* Return if the current module is valid to be generated. 
- * There are several cases to consider:
- * - For I/O group with all RAR depenendence, no copy-out modules to be generated.
- * - For I/O group with either RAW/RAR dependence, if the next read equals 
- *   the previous write, no copy-in/copy-out to be generated.
- */
-static isl_bool is_module_valid(
-  __isl_keep isl_schedule_node *node,  
-  struct autosa_kernel *kernel, 
-  struct autosa_array_ref_group *group, int read)
-{
-  int external_group = 1;
-
-  if (group->group_type == AUTOSA_PE_GROUP)
-    return isl_bool_true;
-
-  /* External group */
-  for (int i = 0; i < group->n_ref; i++) {
-    struct autosa_stmt_access *ref = group->refs[i];
-    for (int j = 0; j < ref->n_io_info; j++) {
-      struct autosa_io_info *io_info = ref->io_info[j];
-      if (io_info->io_type == group->io_type && !isl_vec_cmp(io_info->dir, group->dir)) {
-        if (io_info->dep->type != AUTOSA_DEP_RAR) {
-          external_group = 0;
-          break;
-        }
-      }
-    }
-  }
-
-  if (external_group) {
-    if (read)
-      return isl_bool_true;
-    else
-      return isl_bool_false;
-  }  
-
-  /* Internal group */
-  if (internal_group_in_out_overlap(node, kernel, group, read))
-    return isl_bool_false;
-
-  return isl_bool_true;
-}
-
 /* Generate the I/O module name.
  * [io_group_name]_IO_L[X]_in/out
  */
@@ -2402,61 +2224,64 @@ static __isl_give struct autosa_hw_module **sa_io_module_gen(
    * TODO: This is not supported yet.
    */
   if (gen->options->autosa->credit_control) {
-    if (group->local_array->array_type == AUTOSA_INT_ARRAY) {
-      isl_bool carried = isl_bool_false;
-      isl_union_map *umap;
-  
-      node = autosa_tree_move_down_to_array(node, kernel->core);
-      node = isl_schedule_node_parent(node);
-      umap = isl_schedule_node_band_get_partial_schedule_union_map(node);
-      for (int i = 0; i < group->n_ref; i++) {
-        struct autosa_stmt_access *ref = group->refs[i];
-        for (int j = 0; j < ref->n_io_info; j++) {
-          struct autosa_io_info *io_info = ref->io_info[j];
-          if (io_info->io_type == group->io_type && 
-                !isl_vec_cmp(io_info->dir, group->dir)) {
-            isl_map *test;
-            isl_map *schedule_dep;
-            int dim;
-            int is_parallel;
-            isl_union_map *dep = isl_union_map_from_map(
-                isl_map_factor_domain(
-                isl_map_from_basic_map(isl_basic_map_copy(io_info->dep->isl_dep))));
-            dep = isl_union_map_apply_range(dep, isl_union_map_copy(umap));
-            dep = isl_union_map_apply_domain(dep, isl_union_map_copy(umap));
-            if (isl_union_map_is_empty(dep)) {
-              isl_union_map_free(dep);
-              break;
-            }
-            schedule_dep = isl_map_from_union_map(dep);
-            test = isl_map_universe(isl_map_get_space(schedule_dep));
-            dim = isl_schedule_node_band_n_member(node);
-            for (int n = 0; n < dim; n++) {
-              test = isl_map_equate(test, isl_dim_in, n, isl_dim_out, n);
-            }
-            is_parallel = isl_map_is_subset(schedule_dep, test);
-            isl_map_free(schedule_dep);
-            isl_map_free(test);
-  
-            if (!is_parallel) { 
-              /* Dependence is carried by the array part loops. */
-              carried = isl_bool_true;
-              break;
-            }
-          }
-        }
-      }
-      isl_union_map_free(umap); 
-      if (carried) {
-        credit = 1;
-      }
-      node = autosa_tree_move_up_to_kernel(node);
-    }
+    if (is_flow_dep_carried_by_array_part_loops(group->io_schedule, group, kernel))        
+      credit = 1;
+
+//    if (group->local_array->array_type == AUTOSA_INT_ARRAY) {
+//      isl_bool carried = isl_bool_false;
+//      isl_union_map *umap;
+//  
+//      node = autosa_tree_move_down_to_array(node, kernel->core);
+//      node = isl_schedule_node_parent(node);
+//      umap = isl_schedule_node_band_get_partial_schedule_union_map(node);
+//      for (int i = 0; i < group->n_ref; i++) {
+//        struct autosa_stmt_access *ref = group->refs[i];
+//        for (int j = 0; j < ref->n_io_info; j++) {
+//          struct autosa_io_info *io_info = ref->io_info[j];
+//          if (io_info->io_type == group->io_type && 
+//                !isl_vec_cmp(io_info->dir, group->dir)) {
+//            isl_map *test;
+//            isl_map *schedule_dep;
+//            int dim;
+//            int is_parallel;
+//            isl_union_map *dep = isl_union_map_from_map(
+//                isl_map_factor_domain(
+//                isl_map_from_basic_map(isl_basic_map_copy(io_info->dep->isl_dep))));
+//            dep = isl_union_map_apply_range(dep, isl_union_map_copy(umap));
+//            dep = isl_union_map_apply_domain(dep, isl_union_map_copy(umap));
+//            if (isl_union_map_is_empty(dep)) {
+//              isl_union_map_free(dep);
+//              break;
+//            }
+//            schedule_dep = isl_map_from_union_map(dep);
+//            test = isl_map_universe(isl_map_get_space(schedule_dep));
+//            dim = isl_schedule_node_band_n_member(node);
+//            for (int n = 0; n < dim; n++) {
+//              test = isl_map_equate(test, isl_dim_in, n, isl_dim_out, n);
+//            }
+//            is_parallel = isl_map_is_subset(schedule_dep, test);
+//            isl_map_free(schedule_dep);
+//            isl_map_free(test);
+//  
+//            if (!is_parallel) { 
+//              /* Dependence is carried by the array part loops. */
+//              carried = isl_bool_true;
+//              break;
+//            }
+//          }
+//        }
+//      }
+//      isl_union_map_free(umap); 
+//      if (carried) {
+//        credit = 1;
+//      }
+//      node = autosa_tree_move_up_to_kernel(node);
+//    }
   }
 
   /* At each I/O level, generate one I/O module. */
   /* Copy-in group. */
-  if (in && is_module_valid(node, kernel, group, 1)) {
+  if (in && is_io_module_valid(node, kernel, group, 1)) {
     group->array_io_dir = (group->array_io_dir == IO_OUT)? IO_INOUT : IO_IN;
     for (int i = io_level; i >= 1; i--) {
       struct autosa_hw_module *module;
@@ -2525,8 +2350,16 @@ static __isl_give struct autosa_hw_module **sa_io_module_gen(
         module->to_mem = (i == outermost)? 1 : 0;
         module->credit = (i == outermost)? credit : 0;
         module->n_array_ref = group->local_array->n_io_group_refs;
-        if (module->to_mem)
-          group->local_array->n_io_group_refs += group->n_mem_ports;
+        if (module->to_mem) {
+          /* Create the group_ref and mem_port mapping. */
+          for (int p = 0; p < group->n_mem_ports; p++) {
+            int group_ref_offset = group->local_array->n_io_group_refs;
+            int mem_port_offset = group->mem_port_id;
+            std::pair<int,int> ref_port_map(group_ref_offset + p, mem_port_offset + p);
+            group->local_array->group_ref_mem_port_map.push_back(ref_port_map);
+          }
+          group->local_array->n_io_group_refs += group->n_mem_ports;          
+        }
 
         module = generate_io_module_by_type(module, node, group, kernel, 
             gen, i, space_dim, is_filter, is_buffer, 1);
@@ -2540,7 +2373,7 @@ static __isl_give struct autosa_hw_module **sa_io_module_gen(
   }
 
   /* Copy-out group. */
-  if (out && is_module_valid(node, kernel, group, 0)) {
+  if (out && is_io_module_valid(node, kernel, group, 0)) {
     group->array_io_dir = (group->array_io_dir == IO_IN)? IO_INOUT : IO_OUT;
     for (int i = 1; i <= io_level; i++) {
       struct autosa_hw_module *module;
@@ -2595,8 +2428,16 @@ static __isl_give struct autosa_hw_module **sa_io_module_gen(
         module->to_mem = (i == outermost)? 1 : 0;
         module->credit = (i == outermost)? credit : 0;
         module->n_array_ref = group->local_array->n_io_group_refs;
-        if (module->to_mem)
-          group->local_array->n_io_group_refs += group->n_mem_ports;
+        if (module->to_mem) {
+          /* Create the group_ref and mem_port mapping. */
+          for (int p = 0; p < group->n_mem_ports; p++) {
+            int group_ref_offset = group->local_array->n_io_group_refs;
+            int mem_port_offset = group->mem_port_id;
+            std::pair<int,int> ref_port_map(group_ref_offset + p, mem_port_offset + p);
+            group->local_array->group_ref_mem_port_map.push_back(ref_port_map);
+          }
+          group->local_array->n_io_group_refs += group->n_mem_ports;          
+        }
 
         module = generate_io_module_by_type(module, node, group, kernel, 
             gen, i, space_dim, is_filter, is_buffer, 0);
@@ -4982,6 +4823,10 @@ static __isl_give isl_union_set_list *create_copy_filters(struct autosa_prog *pr
 		array->global = 1;
 		if (array->local)
 			array->declare_local = 1;
+    if (!strcmp(prefix, "to_device"))
+      array->copy_in = 1;
+    if (!strcmp(prefix, "from_device"))
+      array->copy_out = 1;
 
 		name = concat(ctx, prefix, array->name);
 		id = name ? isl_id_alloc(ctx, name, array) : NULL;
@@ -5175,7 +5020,7 @@ __isl_give isl_schedule_node *sa_add_to_from_device(
   may_write = isl_union_map_copy(prog->may_write);
   may_write = isl_union_map_intersect_domain(may_write,
       isl_union_set_copy(domain));
-  /* Keep ouly the live-out union domain of non-local flow. */
+  /* Keep only the live-out union domain of non-local flow. */
   may_write = remove_local_accesses(prog,
       isl_union_map_copy(tagged), may_write,
       isl_union_map_copy(prefix), 0);
@@ -5239,17 +5084,20 @@ __isl_give isl_schedule_node *sa_add_to_from_device(
  * the device before and after "node".
  */
 __isl_give isl_schedule_node *sa_add_init_clear_device(
-	__isl_take isl_schedule_node *node)
+	__isl_take isl_schedule_node *node, struct autosa_kernel *kernel)
 {
 	isl_ctx *ctx;
 	isl_space *space;
 	isl_union_set *domain;
 	isl_schedule_node *graft;
+  isl_id *id;
 
 	ctx = isl_schedule_node_get_ctx(node);
 
 	space = isl_space_set_alloc(ctx, 0, 0);
-	space = isl_space_set_tuple_name(space, isl_dim_set, "init_device");
+  id = isl_id_alloc(ctx, "init_device", kernel);
+	//space = isl_space_set_tuple_name(space, isl_dim_set, "init_device");
+  space = isl_space_set_tuple_id(space, isl_dim_set, id);
 	domain = isl_union_set_from_set(isl_set_universe(space));
 	graft = isl_schedule_node_from_domain(domain);
 

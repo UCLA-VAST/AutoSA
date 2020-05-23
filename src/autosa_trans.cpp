@@ -779,8 +779,13 @@ static struct autosa_kernel *autosa_kernel_create_local_arrays(
     return (struct autosa_kernel *)autosa_kernel_free(kernel);
   kernel->n_array = prog->n_array;
 
-  for (i = 0; i < prog->n_array; i++) 
+  for (i = 0; i < prog->n_array; i++) {
     kernel->array[i].array = &prog->array[i];
+    prog->array[i].local_array = &kernel->array[i];
+    /* Initialize the fields. */
+    kernel->array[i].n_io_group_refs = 0;
+    kernel->array[i].n_mem_ports = 0;
+  }
 
   return kernel;
 }
@@ -3448,7 +3453,7 @@ __isl_give isl_schedule *sa_map_to_device(struct autosa_gen *gen,
   node = isl_schedule_node_child(node, 0);
 
   /* Add init/clear device statements. */
-  node = sa_add_init_clear_device(node); 
+  node = sa_add_init_clear_device(node, kernel); 
 
   isl_schedule_free(gen->schedule);
   gen->schedule = isl_schedule_node_get_schedule(node);

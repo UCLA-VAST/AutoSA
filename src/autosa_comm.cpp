@@ -1143,6 +1143,7 @@ static __isl_give isl_schedule_node *hbm_optimize(
   char *hbm_mode;
   isl_printer *p_str;
   char *module_name;
+  int *ubs = NULL;
   
   /* Parse the tuning configuration. */
   hbm_json = cJSON_GetObjectItemCaseSensitive(gen->tuning_config, "hbm");
@@ -1154,6 +1155,7 @@ static __isl_give isl_schedule_node *hbm_optimize(
     hbm_mode = hbm_mode_json->valuestring;
   }
 
+  ubs = extract_band_upper_bounds(kernel, node);
   if (!strcmp(hbm_mode, "auto")) {
     /* HBM optimization is set in AUTO mode. 
      * We will pick up the tiling factors by default.
@@ -1177,7 +1179,7 @@ static __isl_give isl_schedule_node *hbm_optimize(
        * we will dump out the number and upper bounds of the last-level IO loops
        * and exit the program.
        */
-      int *ubs = extract_band_upper_bounds(kernel, node);
+      
       FILE *fp;
       char *content;
       cJSON *tuning, *hbm_json, *loops_json;
@@ -1204,6 +1206,7 @@ static __isl_give isl_schedule_node *hbm_optimize(
       isl_printer_free(p_str);
       free(tuning_path);
       free(name);
+      free(ubs);
       exit(0);
     }
     free(name);
@@ -1238,10 +1241,12 @@ static __isl_give isl_schedule_node *hbm_optimize(
   }
   isl_val_free(val);
 
+  group->n_mem_ports = tile_size[0];  
+  group->space_dim++;
+
+  tile_size[0] = ubs[0] / tile_size[0];
   node = autosa_tile_band(node, tile_size);
   node = isl_schedule_node_child(node, 0);
-  group->space_dim++;
-  group->n_mem_ports = tile_size[0];
 
   /* Update the transformation function. */
   isl_aff *aff = isl_multi_aff_get_aff(*io_trans_ma, 0);
@@ -1265,8 +1270,187 @@ static __isl_give isl_schedule_node *hbm_optimize(
   space = isl_space_add_dims(space, isl_dim_out, 1);
   *io_trans_ma = isl_multi_aff_from_aff_list(space, aff_list);
   free(tile_size);
+  free(ubs);
 
   return node;
+}
+
+/* This function examines if the accessed elements of the I/O group 
+ * are fully overlapped at the PE level.
+ * We will create a relation "overlap"
+ * 
+ *  [[D -> R] -> [D' -> R']]
+ * 
+ * of pairs of domain iterations accessing the reference group and 
+ * the domain iteraetions D' is lexicographically greater than D by one 
+ * at the last array_part loop with PE loops equal.
+ * 
+ * This relation is intersected with all flow dependences to derive the 
+ * pairs of iterations that overlapped due to the flow dependence.
+ * 
+ * Next, we construct a relation "external"
+ * that contains pair of iteration domains with flow dependences that 
+ * access the elements by the I/O group.
+ * 
+ * We substract "overlap" from "external". If the diff is null, clearly
+ * the accessed elements are overlapped between different array partitions 
+ * for one PE, we will return true for this case.
+ * Otherwise, we return false.
+ */
+static isl_bool internal_group_in_out_overlap(
+  __isl_keep isl_schedule_node *node,
+  struct autosa_kernel *kernel,
+  struct autosa_array_ref_group *group, int read)
+{
+  int empty;
+  struct autosa_prog *prog = kernel->prog;
+  isl_union_pw_multi_aff *tagger;
+  isl_union_map *prefix;
+  isl_union_map *access, *tagged;
+  isl_union_set *domain;
+  isl_set *prefix_range;
+  isl_map *lt;
+  int n_sched_dim;
+  isl_union_map *overlap;
+  isl_union_map *external, *universe;
+  isl_union_set *access_domain;
+  isl_union_set *tag_set;
+  isl_map *sched_identity;
+  int pe_depth, array_depth;
+
+  node = isl_schedule_node_copy(node);
+  node = autosa_tree_move_down_to_array(node, kernel->core);
+  array_depth = isl_schedule_node_get_schedule_depth(node);
+  node = autosa_tree_move_down_to_pe(node, kernel->core);
+  pe_depth = isl_schedule_node_get_schedule_depth(node);
+  prefix = isl_schedule_node_get_prefix_schedule_relation(node);
+  prefix = isl_union_map_preimage_domain_union_pw_multi_aff(prefix,
+              isl_union_pw_multi_aff_copy(kernel->contraction)); 
+  isl_schedule_node_free(node);
+  access = autosa_io_group_access_relation(group, read, !read); 
+  tagged = group_tagged_access_relation(group); 
+ 
+  /* Remove the local dependency first. */
+  access = remove_local_accesses_group_flow(kernel, group, access, prefix, read);
+
+  /* Tagger maps the tagged iteration domain to untagged iteration domain.
+   * Iteration domain is tagged to the access function.
+   * e.g. [S1[i,j,k] -> _pet_ref_1[]] -> S1[(i),(j),(k)]
+   */
+  tagger = isl_union_pw_multi_aff_copy(prog->scop->tagger);
+  domain = isl_union_map_domain(isl_union_map_copy(tagged));
+  tagger = isl_union_pw_multi_aff_intersect_domain(tagger, 
+            isl_union_set_copy(domain));
+  prefix = isl_union_map_preimage_domain_union_pw_multi_aff(prefix, tagger); 
+  
+  prefix_range = isl_set_from_union_set(isl_union_map_range(isl_union_map_copy(prefix))); 
+  n_sched_dim = isl_set_dim(prefix_range, isl_dim_set);
+  sched_identity = isl_set_identity(isl_set_copy(prefix_range));
+
+  lt = isl_map_lex_lt_first(isl_map_get_space(sched_identity), array_depth); 
+  isl_map_free(sched_identity);
+
+  /* Set the space dims equal. */
+  for (int i = array_depth; i < n_sched_dim; i++) {
+    lt = isl_map_equate(lt, isl_dim_in, i, isl_dim_out, i);
+  }
+  lt = isl_map_intersect_domain(lt, isl_set_copy(prefix_range));
+  lt = isl_map_intersect_range(lt, prefix_range);
+  lt = isl_map_lexmin(lt); 
+  
+  overlap = isl_union_map_apply_range(isl_union_map_copy(prefix), 
+              isl_union_map_from_map(lt));
+  overlap = isl_union_map_apply_range(overlap, isl_union_map_reverse(prefix)); 
+
+  /* Derive the overlapping set. */
+  overlap = isl_union_map_intersect(overlap, 
+              isl_union_map_copy(prog->scop->tagged_dep_flow)); 
+  empty = isl_union_map_is_empty(overlap);
+
+  external = isl_union_map_copy(prog->scop->tagged_dep_flow); 
+  universe = isl_union_map_universe(isl_union_map_copy(access)); 
+  access_domain = isl_union_map_domain(universe); 
+  domain = isl_union_set_universe(domain); 
+  universe = isl_union_set_unwrap(domain); 
+  universe = isl_union_map_intersect_domain(universe, access_domain); 
+  /* D -> __pet_ref_1 */
+  domain = isl_union_map_wrap(universe);
+  if (read)
+    external = isl_union_map_intersect_range(external, domain);
+  else
+    external = isl_union_map_intersect_domain(external, domain);
+  external = isl_union_map_intersect_params(external,
+              isl_set_copy(prog->scop->context));
+  /* external contains flow dep that are associated with the group access. */
+  
+  external = isl_union_map_subtract(external, overlap);
+  /* external only contains access non-overlap RAW pairs. */
+
+  if (read) {
+    tag_set = isl_union_map_range(external);
+    external = wrapped_reference_to_access(tag_set, tagged); 
+  } else {
+    tag_set = isl_union_map_domain(external);
+    external = wrapped_reference_to_access(tag_set, tagged);
+  }
+
+  if (empty < 0) 
+    external = isl_union_map_free(external);
+  else if (empty)
+    external = isl_union_map_universe(external);
+
+  access = isl_union_map_intersect(access, external); 
+  empty = isl_union_map_is_empty(access);
+  isl_union_map_free(access);
+
+  if (empty)
+    return isl_bool_true;
+  else
+    return isl_bool_false;
+}
+
+/* Return if the current module is valid to be generated. 
+ * There are several cases to consider:
+ * - For I/O group with all RAR depenendence, no copy-out modules to be generated.
+ * - For I/O group with either RAW/RAR dependence, if the next read equals 
+ *   the previous write, no copy-in/copy-out to be generated.
+ */
+isl_bool is_io_module_valid(
+  __isl_keep isl_schedule_node *node,  
+  struct autosa_kernel *kernel, 
+  struct autosa_array_ref_group *group, int read)
+{
+  int external_group = 1;
+
+  if (group->group_type == AUTOSA_PE_GROUP)
+    return isl_bool_true;
+
+  /* External group */
+  for (int i = 0; i < group->n_ref; i++) {
+    struct autosa_stmt_access *ref = group->refs[i];
+    for (int j = 0; j < ref->n_io_info; j++) {
+      struct autosa_io_info *io_info = ref->io_info[j];
+      if (io_info->io_type == group->io_type && !isl_vec_cmp(io_info->dir, group->dir)) {
+        if (io_info->dep->type != AUTOSA_DEP_RAR) {
+          external_group = 0;
+          break;
+        }
+      }
+    }
+  }
+
+  if (external_group) {
+    if (read)
+      return isl_bool_true;
+    else
+      return isl_bool_false;
+  }  
+
+  /* Internal group */
+  if (internal_group_in_out_overlap(node, kernel, group, read))
+    return isl_bool_false;
+
+  return isl_bool_true;
 }
 
 /* This function computes the schedule for the I/O modules that transfers
@@ -1424,7 +1608,28 @@ static isl_stat compute_io_group_schedule(
     /* If the multi-port DRAM/HBM is to be used, we will need to tile the loop again.
      */
     if (i == 0 && gen->options->autosa->hbm) {      
+      /* Test if this group contains both copy-in and copy-out set. 
+       * At present, HBM optimization is not supported for this type of I/O group.
+       * We will need to make sure the copy-in and copy-out set for each HBM channel 
+       * do not overlap since we only support fixed HBM port mapping for now.
+       * Therefore, for this type of I/O group, we will disable the HBM optimization.
+       * TODO: Relax this constraint in the future.
+       */
       printf("[AutoSA] Apply HBM optimization.\n");
+      if (group->group_type == AUTOSA_IO_GROUP &&
+            is_flow_dep_carried_by_array_part_loops(kernel->schedule, group, kernel)) {
+        isl_printer *p_str;
+        char *module_name;
+        p_str = isl_printer_to_str(ctx);
+        p_str = autosa_array_ref_group_print_prefix(group, p_str);
+        module_name = isl_printer_get_str(p_str);
+        isl_printer_free(p_str);
+
+        printf("[AutoSA] The flow dependence is carried by the array partitioning loops.\n");
+        printf("[AutoSA] HBM optimization for the group: %s is omitted.\n", module_name);
+        free(module_name);
+        goto next;
+      }      
       if (group->io_type == AUTOSA_EXT_IO && i == space_dim - 1) { 
         printf("[AutoSA] HBM optimization failed! Not enough I/O modules.\n");
         goto next; 
@@ -1452,9 +1657,9 @@ next:
   pd = isl_printer_print_schedule_node(pd, node);
   pd = isl_printer_free(pd);
 #endif */
-
+  
   group->io_level = io_level;
-  group->io_trans = io_trans_ma;
+  group->io_trans = io_trans_ma;  
 
   /* Insert the context node for the IO ids. */  
   node = autosa_tree_move_up_to_kernel(node);
@@ -1465,6 +1670,22 @@ next:
 //  pd = isl_printer_print_schedule_node(pd, node);
 //  pd = isl_printer_free(pd);  
 //#endif
+
+  /* Determine if the I/O module for this group could be eliminated.
+   */
+  group->copy_in = 0;
+  group->copy_out = 0;
+  if (is_io_module_valid(node, kernel, group, 1)) {
+    group->copy_in = 1;
+  }
+  if (is_io_module_valid(node, kernel, group, 0)) {
+    group->copy_out = 1;
+  }
+
+  if (group->copy_in || group->copy_out) {
+    group->mem_port_id = group->local_array->n_mem_ports;
+    group->local_array->n_mem_ports += group->n_mem_ports;  
+  }
 
   /* Store the I/O schedule. */
   sched = isl_schedule_node_get_schedule(node);
