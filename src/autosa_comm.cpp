@@ -2254,6 +2254,12 @@ static isl_stat compute_io_group_buffer(struct autosa_kernel *kernel,
   int two_level_buffer = gen->options->autosa->two_level_buffer;
 
   node = isl_schedule_get_root(group->io_schedule);
+/* #ifdef _DEBUG
+  isl_printer *pd = isl_printer_to_file(gen->ctx, stdout);
+  pd = isl_printer_set_yaml_style(pd, ISL_YAML_STYLE_BLOCK);
+  pd = isl_printer_print_schedule_node(pd, node);
+  isl_printer_free(pd);
+#endif */
 
   /* Compute the group tiling at each I/O level. */
   node = autosa_tree_move_down_to_pe(node, kernel->core);
@@ -2280,9 +2286,9 @@ static isl_stat compute_io_group_buffer(struct autosa_kernel *kernel,
 
       node_cp = isl_schedule_node_copy(node);
       /* Insert the filter ids. */      
-      node_cp = insert_io_module_ids(gen, kernel, node_cp, group->space_dim, i);      
+      // node_cp = insert_io_module_ids(gen, kernel, node_cp, group->space_dim, i);      
 /* #ifdef _DEBUG
-      isl_printer *pd = isl_printer_to_file(gen->ctx, stdout);
+      pd = isl_printer_to_file(gen->ctx, stdout);
       pd = isl_printer_set_yaml_style(pd, ISL_YAML_STYLE_BLOCK);
       pd = isl_printer_print_schedule_node(pd, node_cp);
       isl_printer_free(pd);
@@ -2317,6 +2323,12 @@ static isl_stat compute_io_group_buffer(struct autosa_kernel *kernel,
       }
       if (two_level_buffer) {
         if (i == io_level) {
+/* #ifdef _DEBUG
+          pd = isl_printer_to_file(gen->ctx, stdout);
+          pd = isl_printer_set_yaml_style(pd, ISL_YAML_STYLE_BLOCK);
+          pd = isl_printer_print_schedule_node(pd, node_cp);
+          isl_printer_free(pd);
+#endif */
           /* Compute the group tiling at the outermost I/O module. */
           if (group->group_type == AUTOSA_DRAIN_GROUP) 
             compute_group_bounds_drain_at_node(kernel, group, node_cp, group->io_buffers[group->n_io_buffer - 1]);
@@ -2326,10 +2338,11 @@ static isl_stat compute_io_group_buffer(struct autosa_kernel *kernel,
           autosa_array_ref_group_compute_tiling(group->io_buffers[group->n_io_buffer - 1]->tile, group);
         }
       }
-/* #ifdef _DEBUG
+/* #ifdef _DEBUG      
       if (group->io_buffers[group->n_io_buffer - 1]->tile != NULL) {
         struct autosa_array_tile *tile = 
           group->io_buffers[group->n_io_buffer - 1]->tile;
+        //isl_printer *pd;
         pd = isl_printer_to_file(gen->ctx, stdout);
         pd = isl_printer_print_multi_aff(pd, tile->tiling);
         pd = isl_printer_end_line(pd);
