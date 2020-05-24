@@ -67,6 +67,7 @@ enum autosa_kernel_stmt_type {
   AUTOSA_KERNEL_STMT_IO_DRAM,
   AUTOSA_KERNEL_STMT_FIFO_DECL,
   AUTOSA_KERNEL_STMT_MODULE_CALL,
+  AUTOSA_KERNEL_STMT_DRAIN_MERGE,
   AUTOSA_KERNEL_STMT_IO_MODULE_CALL_INTER_TRANS,
   AUTOSA_KERNEL_STMT_IO_MODULE_CALL_INTRA_TRANS,
   AUTOSA_KERNEL_STMT_IO_MODULE_CALL_INTER_INTRA,
@@ -654,6 +655,15 @@ struct autosa_pe_dummy_module {
   isl_ast_node *device_tree;
 };
 
+struct autosa_drain_merge_func {
+  struct autosa_array_ref_group *group;
+  struct autosa_kernel *kernel;
+  isl_id_list *inst_ids;
+  isl_schedule *sched;
+  isl_ast_node *tree;
+  isl_ast_node *device_tree;
+};
+
 struct autosa_hw_module {
   struct ppcg_options *options;
 
@@ -740,6 +750,7 @@ struct autosa_gen {
     struct autosa_prog *prog, __isl_keep isl_ast_node *tree, 
     struct autosa_hw_module **modules, int n_modules,
     struct autosa_hw_top_module *top_module,
+    struct autosa_drain_merge_func **drain_merge_funcs, int n_drain_merge_funcs,
     struct autosa_types *types, void *user);
   void *print_user;
 
@@ -755,6 +766,8 @@ struct autosa_gen {
   struct autosa_hw_module **hw_modules;
   int n_hw_modules;
   struct autosa_hw_top_module *hw_top_module;
+  struct autosa_drain_merge_func **drain_merge_funcs;
+  int n_drain_merge_funcs;
 
   /* The sequence of types for which a definition has been printed. */
   struct autosa_types types;
@@ -859,6 +872,10 @@ struct autosa_kernel_stmt {
       struct autosa_hw_module *module;
       int boundary;
     } f;
+    struct {
+      struct autosa_drain_merge_func *func;
+      isl_ast_expr *index;
+    } dm;
 	} u;
 };
 
@@ -936,7 +953,7 @@ struct hls_info {
   FILE *kernel_h;        /* Declaration of hardware modules. */
   FILE *top_gen_c;       /* Prints out the top module that connects the 
                             hardware modules. */
-  FILE *top_gen_h;      
+  FILE *top_gen_h;        
 
   enum platform target;
   int hls;               /* Generate HLS host instead of OpenCL host */
@@ -1044,6 +1061,8 @@ struct autosa_hw_top_module *autosa_hw_top_module_alloc();
 void *autosa_hw_top_module_free(struct autosa_hw_top_module *module);
 struct autosa_pe_dummy_module *autosa_pe_dummy_module_alloc();
 void *autosa_pe_dummy_module_free(struct autosa_pe_dummy_module *module);
+struct autosa_drain_merge_func *autosa_drain_merge_func_alloc(struct autosa_gen *gen);
+void *autosa_drain_merge_func_free(struct autosa_drain_merge_func *func);
 
 /* AutoSA AST node */
 struct autosa_ast_node_userinfo *alloc_ast_node_userinfo();

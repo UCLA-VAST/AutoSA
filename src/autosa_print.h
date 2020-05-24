@@ -62,7 +62,9 @@ __isl_give isl_printer *print_top_gen_arguments(__isl_take isl_printer *p,
   struct autosa_prog *prog, struct autosa_kernel *kernel, int types);
 __isl_give isl_printer *autosa_kernel_print_module_call(
   __isl_take isl_printer *p,
-  struct autosa_kernel_stmt *stmt, struct autosa_prog *prog);  
+  struct autosa_kernel_stmt *stmt, struct autosa_prog *prog);
+void print_func_iterators(FILE *out, 
+  struct autosa_drain_merge_func *func);  
 
 /* FIFOs */
 __isl_give isl_printer *autosa_fifo_print_declaration_arguments(
@@ -100,6 +102,9 @@ __isl_give isl_printer *autosa_kernel_print_inter_intra(
 __isl_give isl_printer *autosa_kernel_print_state_handle(
   __isl_take isl_printer *p,
   struct autosa_kernel_stmt *stmt, struct hls_info *hls);  
+__isl_give isl_printer *autosa_kernel_print_drain_merge(
+  __isl_take isl_printer *p,
+  struct autosa_kernel_stmt *stmt, struct hls_info *hls);
 
 /* Xilinx-specific */
 __isl_give isl_printer *print_fifo_type_xilinx(__isl_take isl_printer *p, 

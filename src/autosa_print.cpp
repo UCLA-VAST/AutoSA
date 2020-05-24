@@ -9,13 +9,19 @@
 /* Print the call of an array argument.
  */
 __isl_give isl_printer *autosa_array_info_print_call_argument(
-	__isl_take isl_printer *p, struct autosa_array_info *array)
+	__isl_take isl_printer *p, struct autosa_array_info *array, int n_ref)
 {
 	if (autosa_array_is_read_only_scalar(array))
 		return isl_printer_print_str(p, array->name);
 
-	p = isl_printer_print_str(p, "dev_");
+	p = isl_printer_print_str(p, "buffer_");
 	p = isl_printer_print_str(p, array->name);
+  if (n_ref >= 0) {
+    std::pair<int,int> ref_port_map = array->local_array->group_ref_mem_port_map[n_ref];
+    p = isl_printer_print_str(p, "[");
+    p = isl_printer_print_int(p, ref_port_map.second);
+    p = isl_printer_print_str(p, "]");
+  }
 
 	return p;
 }
@@ -324,7 +330,7 @@ __isl_give isl_printer *print_kernel_arguments(__isl_take isl_printer *p,
     			local_array->array, n_lane, NULL, -1);
     	else
     		p = autosa_array_info_print_call_argument(p,
-    			local_array->array);
+    			local_array->array, -1);
     
     	first = 0;
     } else {
@@ -335,9 +341,10 @@ __isl_give isl_printer *print_kernel_arguments(__isl_take isl_printer *p,
     		if (types)
     			p = autosa_array_info_print_declaration_argument(p,
     				local_array->array, n_lane, NULL, j);
-    		else
+    		else {
     			p = autosa_array_info_print_call_argument(p,
-    				local_array->array);
+    				local_array->array, j);
+        }
     
     		first = 0;
       }
@@ -503,9 +510,20 @@ void print_module_iterators(FILE *out, struct autosa_hw_module *module)
   const char *dims[] = { "idx", "idy", "idz" };
 
   ctx = isl_ast_node_get_ctx(module->tree);
-  type = isl_options_get_ast_iterator_type(ctx);
-  ctx = isl_ast_node_get_ctx(module->device_tree);
+  type = isl_options_get_ast_iterator_type(ctx);  
   print_iterators(out, type, module->inst_ids, dims);
+}
+
+void print_func_iterators(FILE *out, 
+  struct autosa_drain_merge_func *func)
+{
+  isl_ctx *ctx;
+  const char *type;
+  const char *dims[] = { "idx", "idy", "idz" };
+
+  ctx = isl_ast_node_get_ctx(func->tree);
+  type = isl_options_get_ast_iterator_type(ctx);  
+  print_iterators(out, type, func->inst_ids, dims);
 }
 
 /* Print out
@@ -720,7 +738,7 @@ __isl_give isl_printer *print_module_arguments(
                 &prog->array[i], 1, NULL, -1);
         else
           p = autosa_array_info_print_call_argument(p,
-                &prog->array[i]); 
+                &prog->array[i], -1); 
         first = 0;
       }
     }
@@ -2843,6 +2861,83 @@ static __isl_give isl_printer *io_stmt_print_global_index(
 	isl_ast_expr_free(index);
 
 	return p;
+}
+
+/* Print an drain merge statement.
+ *
+ * [group_array_prefix]_to[...] = [group_array_prefix]_from[...]
+ */
+__isl_give isl_printer *autosa_kernel_print_drain_merge(__isl_take isl_printer *p,
+  struct autosa_kernel_stmt *stmt, struct hls_info *hls)
+{
+  isl_ast_expr *index_to, *index_from, *arg;
+  isl_ctx *ctx = hls->ctx;
+  struct autosa_drain_merge_func *func = stmt->u.dm.func;
+  isl_ast_expr *index = stmt->u.dm.index;
+  int n_arg;
+  isl_id *id;
+  const char *array_name;
+  char *new_array_name;
+  isl_printer *p_str;
+
+  p = isl_printer_start_line(p);
+  // TODO
+  n_arg = isl_ast_expr_get_op_n_arg(index);
+  /* Modify the index. */  
+  arg = isl_ast_expr_get_op_arg(index, 0);
+  id = isl_ast_expr_id_get_id(arg);
+  array_name = isl_id_get_name(id);
+  isl_id_free(id);
+  isl_ast_expr_free(arg);
+  p_str = isl_printer_to_str(ctx);
+  p_str = isl_printer_print_str(p_str, array_name);
+  p_str = isl_printer_print_str(p_str, "_to");
+  new_array_name = isl_printer_get_str(p_str);
+  isl_printer_free(p_str);
+  id = isl_id_alloc(ctx, new_array_name, NULL);  
+  arg = isl_ast_expr_from_id(id);
+  free(new_array_name);
+  index_to = isl_ast_expr_set_op_arg(isl_ast_expr_copy(index), 0, arg);
+//#ifdef _DEBUG
+//  DBGVAR(std::cout, n_arg);
+//  isl_printer *pd = isl_printer_to_file(ctx, stdout);
+//  pd = isl_printer_print_ast_expr(pd, index);
+//  pd = isl_printer_end_line(pd);
+//  pd = isl_printer_print_ast_expr(pd, index_to);
+//  pd = isl_printer_end_line(pd);
+////  pd = isl_printer_print_ast_expr(pd, arg);
+////  pd = isl_printer_end_line(pd);
+////  pd = isl_printer_print_id(pd, id);
+////  pd = isl_printer_end_line(pd);
+//  pd = isl_printer_free(pd);
+//#endif
+  
+  arg = isl_ast_expr_get_op_arg(index, 0);
+  id = isl_ast_expr_id_get_id(arg);
+  array_name = isl_id_get_name(id);
+  isl_id_free(id);
+  isl_ast_expr_free(arg);
+  p_str = isl_printer_to_str(ctx);
+  p_str = isl_printer_print_str(p_str, array_name);
+  p_str = isl_printer_print_str(p_str, "_from");
+  new_array_name = isl_printer_get_str(p_str);
+  isl_printer_free(p_str);
+  id = isl_id_alloc(ctx, new_array_name, NULL);  
+  arg = isl_ast_expr_from_id(id);
+  free(new_array_name);
+  index_from = isl_ast_expr_set_op_arg(isl_ast_expr_copy(index), 0, arg);
+  
+  p = isl_printer_print_ast_expr(p, index_to);
+  p = isl_printer_print_str(p, " = ");
+  p = isl_printer_print_ast_expr(p, index_from);
+  p = isl_printer_print_str(p, ";");
+
+  isl_ast_expr_free(index_to);
+  isl_ast_expr_free(index_from);
+
+  p = isl_printer_end_line(p);
+
+  return p;
 }
 
 /* Print an I/O dram statement.

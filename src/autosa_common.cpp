@@ -10,7 +10,6 @@
 /****************************************************************
  * AutoSA kernel
  ****************************************************************/
-
 /* Free the AutoSA kernel struct. */
 void *autosa_kernel_free(struct autosa_kernel *kernel) 
 {
@@ -1314,6 +1313,9 @@ void autosa_kernel_stmt_free(void *user)
       break;
     case AUTOSA_KERNEL_STMT_FIFO_DECL:
       break;
+    case AUTOSA_KERNEL_STMT_DRAIN_MERGE:
+      isl_ast_expr_free(stmt->u.dm.index);
+      break;
   }
 
   free(stmt);
@@ -1605,6 +1607,33 @@ void *autosa_pe_dummy_module_free(struct autosa_pe_dummy_module *module)
   isl_ast_node_free(module->tree);
   isl_ast_node_free(module->device_tree);
   free(module);
+
+  return NULL;
+}
+
+struct autosa_drain_merge_func *autosa_drain_merge_func_alloc(struct autosa_gen *gen)
+{
+  struct autosa_drain_merge_func *func = (struct autosa_drain_merge_func *)
+    malloc(sizeof(struct autosa_drain_merge_func));
+  func->group = NULL;
+  func->kernel = NULL;
+  func->inst_ids = NULL;
+  func->sched = NULL;
+  func->tree = NULL;
+  func->device_tree = NULL;
+
+  return func;
+}
+
+void *autosa_drain_merge_func_free(struct autosa_drain_merge_func *func)
+{
+  if (!func)
+    return NULL;
+
+  isl_id_list_free(func->inst_ids);
+  isl_ast_node_free(func->tree);
+  isl_ast_node_free(func->device_tree);
+  free(func);
 
   return NULL;
 }

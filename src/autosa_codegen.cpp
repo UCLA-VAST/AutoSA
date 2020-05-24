@@ -1770,6 +1770,235 @@ static __isl_give struct autosa_hw_module *generate_filter_buffer_io_module(
   return module;
 }
 
+/* Internal struct for add_drain_merge_stmt_acc_single. */
+struct drain_merge_stmt_acc_data {
+  struct autosa_kernel *kernel;
+  struct autosa_array_ref_group *group;
+  struct autosa_stmt_access *ref;  
+};
+
+static __isl_give isl_multi_aff *autosa_create_drain_merge_stmt(
+  isl_ctx *ctx,
+  struct autosa_array_ref_group *io_group,
+  isl_schedule_node *node,
+  char *stmt_name)
+{
+  isl_space *space;
+  int depth;
+  char buf[100];
+  isl_id *id;
+  
+  depth = isl_schedule_node_get_schedule_depth(node);
+  space = isl_space_copy(io_group->array->space);
+  space = isl_space_from_range(space);
+  space = isl_space_add_dims(space, isl_dim_in, depth);
+  space = isl_space_wrap(space);
+  space = isl_space_map_from_set(space);
+
+  sprintf(buf, "%s", stmt_name);
+
+  id = isl_id_alloc(ctx, buf, NULL);
+  space = isl_space_set_tuple_id(space, isl_dim_in, id);
+
+  return isl_multi_aff_identity(space);
+}
+
+static __isl_give isl_schedule_node *add_drain_merge_stmt_acc_single(
+  __isl_take isl_schedule_node *node, void *user)
+{
+  struct drain_merge_stmt_acc_data *data = 
+          (struct drain_merge_stmt_acc_data *)(user);
+  struct autosa_array_ref_group *group = data->group;
+  struct autosa_kernel *kernel = data->kernel;
+  struct autosa_stmt_access *ref = data->ref;
+  struct autosa_array_tile *tile;
+  isl_union_set *uset, *empty_filter, *domain;
+  isl_set *set;
+  isl_space *space;
+  isl_id *id, *id2;
+  isl_ctx *ctx;
+  isl_union_map *access;
+  int empty;
+  isl_printer *p_str;
+  char *stmt_name;
+  isl_multi_aff *from_access, *ma;  
+  isl_multi_pw_aff *mpa;
+  isl_multi_union_pw_aff *mupa;
+  isl_schedule_node *graft;
+
+  if (isl_schedule_node_get_type(node) != isl_schedule_node_leaf)
+    return node;
+
+  /* Examine if the statement contains the access. */
+  uset = isl_schedule_node_get_domain(node);
+  set = isl_set_from_union_set(isl_union_set_copy(uset));
+  space = isl_set_get_space(set);
+  isl_set_free(set);
+  id = isl_space_get_tuple_id(space, isl_dim_set);
+  isl_space_free(space);
+  space = isl_map_get_space(ref->access);
+  id2 = isl_space_get_tuple_id(space, isl_dim_in);
+  empty_filter = isl_union_set_empty(isl_union_set_get_space(uset));
+  isl_union_set_free(uset);
+  isl_space_free(space);
+
+  if (id != id2) {
+    isl_id_free(id);
+    isl_id_free(id2);
+    node = isl_schedule_node_insert_filter(node, empty_filter);
+    return node;
+  }
+  isl_id_free(id);
+  isl_id_free(id2);
+  ctx = isl_schedule_node_get_ctx(node);
+
+  access = io_comm_access_ref(kernel, node, group, ref, 0);
+  empty = isl_union_map_is_empty(access);
+  if (empty < 0 || empty) {
+    isl_union_map_free(access);
+    isl_union_set_free(empty_filter);
+    if (empty < 0)
+      return isl_schedule_node_free(node);
+    return node;
+  }
+
+  p_str = isl_printer_to_str(ctx);
+  p_str = isl_printer_print_str(p_str, "drain_merge.");
+  p_str = isl_printer_print_str(p_str, group->local_array->array->name);
+  stmt_name = isl_printer_get_str(p_str);
+  isl_printer_free(p_str);
+
+  from_access = autosa_create_drain_merge_stmt(ctx, group, node, stmt_name);
+  free(stmt_name);
+
+  /* Create a register tiling. */
+  tile = create_register_tiling(node, group, ref);
+  ma = isl_multi_aff_copy(tile->tiling);
+  ma = isl_multi_aff_pullback_multi_aff(ma,
+        isl_multi_aff_copy(from_access));
+  mpa = isl_multi_pw_aff_from_multi_aff(ma);
+  mupa = isl_multi_union_pw_aff_from_multi_pw_aff(mpa);
+
+  domain = isl_union_map_range(access);
+  domain = isl_union_set_preimage_multi_aff(domain, from_access);
+  access = isl_union_set_wrapped_domain_map(domain);
+  access = isl_union_map_reverse(access);
+  access = isl_union_map_coalesce(access);
+
+  graft = isl_schedule_node_from_extension(access);
+  graft = isl_schedule_node_child(graft, 0);
+  graft = isl_schedule_node_insert_partial_schedule(graft, mupa);
+
+  while (graft && isl_schedule_node_has_parent(graft))
+    graft = isl_schedule_node_parent(graft);
+
+  node = isl_schedule_node_graft_before(node, graft);
+  node = isl_schedule_node_insert_filter(node, empty_filter);
+  node = isl_schedule_node_parent(node);
+  node = isl_schedule_node_parent(node);
+  node = isl_schedule_node_parent(node);
+
+  autosa_array_tile_free(tile);
+
+  return node;
+} 
+
+static __isl_give isl_schedule_node *add_drain_merge_stmt_acc(
+  __isl_take isl_schedule_node *node, struct autosa_array_ref_group *group,
+  struct autosa_kernel *kernel)
+{  
+  struct drain_merge_stmt_acc_data data = {kernel, group, NULL};
+  for (int i = 0; i < group->n_ref; i++) {
+    data.ref = group->refs[i];
+    node = isl_schedule_node_map_descendant_bottom_up(
+              node, &add_drain_merge_stmt_acc_single, &data);    
+  }
+  return node;
+}
+
+/* This function generats code that merge all drained values from the drain group.
+ */
+static __isl_give struct autosa_drain_merge_func *generate_drain_merge_func(  
+  struct autosa_array_ref_group *group, struct autosa_kernel *kernel,
+  struct autosa_gen *gen)
+{
+  isl_ctx *ctx;
+  isl_schedule_node *node;
+  int io_level;
+  int space_dim;
+  int n_io_ids;
+  isl_id_list *io_ids = NULL;
+  isl_union_map *group_access;
+  isl_union_set *group_domain;
+  isl_schedule *sched;
+  isl_id *id;
+  struct autosa_drain_merge_func *func = NULL;
+
+  ctx = gen->ctx;
+  node = isl_schedule_get_root(group->io_schedule);
+  io_level = group->io_level;
+  space_dim = group->space_dim;
+  n_io_ids = space_dim - io_level + 1;
+  io_ids = ppcg_scop_generate_names(gen->prog->scop, n_io_ids, "p");
+  
+  /* Add the filters. */
+  n_io_ids = 0;
+  node = autosa_tree_move_down_to_array(node, kernel->core);
+  while (!isl_schedule_node_is_io_mark(node, io_level)) {
+    if (isl_schedule_node_get_type(node) == isl_schedule_node_band) {
+      isl_id *id;
+      isl_id_list *ids;
+      isl_union_set *uset;
+
+      ids = isl_id_list_from_id(isl_id_list_get_id(io_ids, n_io_ids));          
+      uset = set_schedule_eq(node, ids);
+      n_io_ids++;
+      node = isl_schedule_node_insert_filter(node, uset);
+      isl_id_list_free(ids);
+      node = isl_schedule_node_child(node, 0);
+    }
+    node = isl_schedule_node_child(node, 0);
+  }
+  node = autosa_tree_move_up_to_kernel(node);
+
+  /* Add the data transfer statements. */
+  node = autosa_tree_move_down_to_io_mark(node, kernel->core, io_level);
+  node = add_drain_merge_stmt_acc(node, group, kernel);
+
+  /* Compute the union of domains of all the array references in the group. */
+  group_access = isl_union_map_empty(isl_map_get_space(group->access));
+  for (int i = 0; i < group->n_ref; i++) {
+    struct autosa_stmt_access *ref = group->refs[i];  
+    group_access = isl_union_map_union(group_access,
+          autosa_drain_group_ref_access_relation(group, ref, 0, 1, 
+            kernel->expanded_domain));
+  }
+  group_domain = isl_union_map_domain(group_access);
+  group_domain = isl_union_set_coalesce(group_domain);
+  /* Add the group domain as the filter. */
+  node = autosa_tree_move_up_to_kernel(node);
+  node = isl_schedule_node_child(node, 0); // context
+  node = isl_schedule_node_child(node, 0); 
+  node = isl_schedule_node_insert_filter(node, group_domain);
+
+  /* Add the func mark. */
+  func = autosa_drain_merge_func_alloc(gen);
+  id = isl_id_alloc(ctx, "drain_merge", func);
+  node = autosa_tree_move_up_to_kernel(node);
+  node = isl_schedule_node_child(node, 0);
+  node = isl_schedule_node_insert_mark(node, id);
+
+  sched = isl_schedule_node_get_schedule(node);
+  func->sched = sched;
+  func->group = group;
+  func->kernel = kernel;
+  func->inst_ids = io_ids;
+
+  isl_schedule_node_free(node);  
+
+  return func;
+}
+
 static isl_stat generate_default_io_module_schedule(
   __isl_take struct autosa_hw_module *module, __isl_keep isl_schedule_node *node,
   struct autosa_array_ref_group *group, struct autosa_kernel *kernel, 
@@ -4374,6 +4603,22 @@ void generate_hw_modules(__isl_take isl_schedule *schedule,
   /* top module */
   struct autosa_hw_top_module *top_module = sa_top_module_gen(gen); 
   gen->hw_top_module = top_module;
+
+  /* Generate drain merge functions. */
+  for (int i = 0; i < kernel->n_array; i++) {
+    struct autosa_local_array_info *info = &kernel->array[i];
+    if (!info->drain_group)
+      continue;
+    if (info->n_mem_ports == 1)
+      continue;
+    struct autosa_drain_merge_func *func = 
+      generate_drain_merge_func(info->drain_group, kernel, gen);    
+    gen->drain_merge_funcs = (struct autosa_drain_merge_func **)realloc(
+      gen->drain_merge_funcs, (gen->n_drain_merge_funcs + 1) * 
+      sizeof(struct autosa_drain_merge_func *));
+    gen->drain_merge_funcs[gen->n_drain_merge_funcs] = func;
+    gen->n_drain_merge_funcs++;
+  }  
 }
 
 /* Replace any reference to an array element in the range of "copy"
@@ -5103,14 +5348,42 @@ __isl_give isl_schedule_node *sa_add_init_clear_device(
 
 	node = isl_schedule_node_graft_before(node, graft);
 
-	space = isl_space_set_alloc(ctx, 0, 0);
-	space = isl_space_set_tuple_name(space, isl_dim_set, "clear_device");
+	space = isl_space_set_alloc(ctx, 0, 0);  
+  id = isl_id_alloc(ctx, "clear_device", kernel);
+	//space = isl_space_set_tuple_name(space, isl_dim_set, "clear_device");  
+  space = isl_space_set_tuple_id(space, isl_dim_set, id);
 	domain = isl_union_set_from_set(isl_set_universe(space));
 	graft = isl_schedule_node_from_domain(domain);
 
 	node = isl_schedule_node_graft_after(node, graft);
 
 	return node;
+}
+
+__isl_give isl_schedule_node *sa_add_drain_merge(
+  __isl_take isl_schedule_node *node, struct autosa_gen *gen)
+{
+  isl_ctx *ctx;
+
+  ctx = isl_schedule_node_get_ctx(node);
+  for (int i = 0; i < gen->n_drain_merge_funcs; i++) {    
+    isl_id *id;
+    isl_space *space;
+    isl_union_set *domain;
+    isl_schedule_node *graft;
+    struct autosa_drain_merge_func *func = gen->drain_merge_funcs[i];
+    struct autosa_array_ref_group *group = func->group;
+    if (group->local_array->n_mem_ports == 1)
+      continue;
+    space = isl_space_set_alloc(ctx, 0, 0);
+    id = isl_id_alloc(ctx, "drain_merge", func);
+    space = isl_space_set_tuple_id(space, isl_dim_set, id);
+    domain = isl_union_set_from_set(isl_set_universe(space));
+    graft = isl_schedule_node_from_domain(domain);
+    node = isl_schedule_node_graft_after(node, graft);
+  }
+
+  return node;
 }
 
 /***************************************************************
@@ -5128,6 +5401,7 @@ struct autosa_at_domain_data {
   struct autosa_hw_module *module;
   struct autosa_hw_top_module *top;
   struct autosa_pe_dummy_module *pe_dummy_module;
+  struct autosa_drain_merge_func *drain_merge_func;
   int filter_buffer;
   int boundary;
   int pe_dummy;
@@ -5927,6 +6201,8 @@ static __isl_give isl_ast_node *at_domain(__isl_take isl_ast_node *node,
     return build_array_bounds(node, data->prog, build); 
   if (!strcmp(name, "clear_device"))
     return node;
+  if (!strcmp(name, "drain_merge"))
+    return node;
   if (!strcmp(name, "read") || !strcmp(name, "write")) {
     struct autosa_array_ref_group *group = (struct autosa_array_ref_group *)p;
     return create_access_leaf(data->kernel, group, node, build);
@@ -6110,6 +6386,7 @@ static void autosa_at_domain_data_init(
   data->boundary = 0;
   data->pe_dummy = 0;
   data->pe_dummy_module = NULL;
+  data->drain_merge_func = NULL;
 }
 
 /* Return a pointer to the autosa_array_ref_group in "local"
@@ -6967,6 +7244,55 @@ static __isl_give isl_ast_node *create_io_leaf(struct autosa_kernel *kernel,
   return isl_ast_node_set_annotation(node, id);
 }
 
+static __isl_give isl_ast_node *create_drain_merge_leaf(struct autosa_kernel *kernel,
+  struct autosa_drain_merge_func *func, __isl_take isl_ast_node *node,
+  __isl_keep isl_ast_build *build)
+{
+  struct autosa_kernel_stmt *stmt;
+  struct autosa_array_ref_group *group;
+  isl_ctx *ctx;
+  isl_map *access;  
+  isl_pw_multi_aff *pma, *pma2;
+  isl_space *space;
+  isl_ast_expr *expr;
+  isl_id *id;
+
+  stmt = isl_calloc_type(kernel->ctx, struct autosa_kernel_stmt);
+  if (!stmt)
+    return isl_ast_node_free(node);
+  ctx = kernel->ctx;
+  stmt->type = AUTOSA_KERNEL_STMT_DRAIN_MERGE;
+  stmt->u.dm.func = func;
+
+  /* Compute the global index. */
+  /* type[D -> A] -> L */
+  access = isl_map_from_union_map(isl_ast_build_get_schedule(build)); 
+  /* L -> type[D -> A] */
+  access = isl_map_reverse(access); 
+  pma = isl_pw_multi_aff_from_map(access); 
+  pma = isl_pw_multi_aff_reset_tuple_id(pma, isl_dim_out); 
+  space = isl_space_range(isl_pw_multi_aff_get_space(pma)); 
+  space = isl_space_unwrap(space);
+  /* [D -> A] -> A */
+  pma2 = isl_pw_multi_aff_range_map(space); 
+  /* L -> A */
+  pma2 = isl_pw_multi_aff_pullback_pw_multi_aff(pma2,
+            isl_pw_multi_aff_copy(pma));
+  expr = isl_ast_build_access_from_pw_multi_aff(build, pma2); 
+  isl_pw_multi_aff_free(pma);
+
+  /* Linearize the index. */
+  group = func->group;
+  expr = autosa_local_array_info_linearize_index(group->local_array, expr);
+  stmt->u.dm.index = expr;
+
+  id = isl_id_alloc(ctx, "drain_merge", stmt);
+  id = isl_id_set_free_user(id, &autosa_kernel_stmt_free);
+  if (!id)
+    autosa_kernel_stmt_free(stmt);
+  return isl_ast_node_set_annotation(node, id);
+}
+
 /* Exatract the boundary field from the module call type, which is in the format of:
  * io_module.[].boundary
  * or 
@@ -7284,6 +7610,9 @@ static __isl_give isl_ast_node *at_domain_module(__isl_take isl_ast_node *node,
   if (!prefixcmp(name, "io_module")) {
     return create_io_module_call_leaf(data->kernel, node, data->module, name, build);
   }
+  if (!prefixcmp(name, "drain_merge")) {
+    return create_drain_merge_leaf(data->kernel, data->drain_merge_func, node, build);
+  }
 
   return node;
 }
@@ -7322,6 +7651,9 @@ static isl_stat before_mark_module(__isl_keep isl_id *mark,
   if (!strcmp(isl_id_get_name(mark), "hls_unroll")) {
     data->under_unroll = 1;
   }
+  if (!strcmp(isl_id_get_name(mark), "drain_merge")) {
+    data->drain_merge_func = (struct autosa_drain_merge_func *)isl_id_get_user(mark);
+  }
 
 	return isl_stat_ok;
 }
@@ -7347,6 +7679,7 @@ static __isl_give isl_ast_node *after_mark_module(__isl_take isl_ast_node *node,
 	struct autosa_at_domain_data *data = (struct autosa_at_domain_data *)user;
   struct autosa_hw_module *module;
   struct autosa_pe_dummy_module *pe_dummy_module;
+  struct autosa_drain_merge_func *func;
 
 	ctx = isl_ast_node_get_ctx(node);
 	id = isl_ast_node_mark_get_id(node);
@@ -7395,6 +7728,19 @@ static __isl_give isl_ast_node *after_mark_module(__isl_take isl_ast_node *node,
 
     return node;
   }
+  if (!strcmp(isl_id_get_name(id), "drain_merge")) {
+    func = data->drain_merge_func;
+    func->device_tree = isl_ast_node_mark_get_node(node);
+    isl_ast_node_free(node);
+
+    expr = isl_ast_expr_from_id(isl_id_copy(id));
+    list = isl_ast_expr_list_alloc(ctx, 0);
+    expr = isl_ast_expr_call(expr, list);
+    node = isl_ast_node_alloc_user(expr);
+    node = isl_ast_node_set_annotation(node, id);
+
+    return node;
+  }
   if (!strcmp(isl_id_get_name(id), "hls_pipeline")) {
     isl_id_free(id);
     data->under_pipeline = 0;
@@ -7406,12 +7752,11 @@ static __isl_give isl_ast_node *after_mark_module(__isl_take isl_ast_node *node,
     data->under_unroll = 0;
 
     return node;
-  }
-
+  }  
 	if (strcmp(isl_id_get_name(id), "module") || !data->module) {
 		isl_id_free(id);
 		return node;
-	}
+	}  
   /* Prepare for boundary I/O module. */
   if (data->boundary && data->filter_buffer == 0) {
     module = data->module;
@@ -7604,6 +7949,21 @@ isl_stat sa_module_generate_code(struct autosa_gen *gen,
       isl_ast_node_free(tree);
     }
   }
+
+  return isl_stat_ok;
+}
+
+isl_stat sa_drain_merge_generate_code(struct autosa_gen *gen,
+  struct autosa_drain_merge_func *func)
+{
+  isl_schedule *schedule;
+  struct autosa_at_domain_data data;
+  isl_ast_node *tree;  
+
+  schedule = func->sched;
+  autosa_at_domain_data_init(&data, gen);
+  tree = autosa_generate_ast_from_schedule(schedule, data, gen);  
+  func->tree = tree;
 
   return isl_stat_ok;
 }

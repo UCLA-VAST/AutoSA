@@ -30,6 +30,7 @@ int generate_sa(isl_ctx *ctx, const char *input, FILE *out,
     struct autosa_prog *prog, __isl_keep isl_ast_node *tree, 
     struct autosa_hw_module **modules, int n_modules,
     struct autosa_hw_top_module *top_module,
+    struct autosa_drain_merge_func **drain_merge_funcs, int n_drain_merge_funcs,
     struct autosa_types *types, void *user), void *user);
 __isl_give isl_schedule *sa_map_to_device(struct autosa_gen *gen,
     __isl_take isl_schedule *schedule);

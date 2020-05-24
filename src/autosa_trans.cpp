@@ -3437,7 +3437,12 @@ __isl_give isl_schedule *sa_map_to_device(struct autosa_gen *gen,
   kernel = (struct autosa_kernel *)isl_id_get_user(id);
   isl_id_free(id);
   schedule = isl_schedule_node_get_schedule(node);
-
+//#ifdef _DEBUG
+//  isl_printer *pd = isl_printer_to_file(gen->ctx, stdout);
+//  pd = isl_printer_set_yaml_style(pd, ISL_YAML_STYLE_BLOCK);
+//  pd = isl_printer_print_schedule_node(pd, node);
+//  pd = isl_printer_free(pd);
+//#endif
   /* Generate hw modules in the systolic array. */
   generate_hw_modules(schedule, gen, kernel);
 
@@ -3451,9 +3456,17 @@ __isl_give isl_schedule *sa_map_to_device(struct autosa_gen *gen,
   node = isl_schedule_node_child(node, 0);
   node = isl_schedule_node_insert_guard(node, guard);
   node = isl_schedule_node_child(node, 0);
-
+//#ifdef _DEBUG
+//  pd = isl_printer_to_file(gen->ctx, stdout);
+//  pd = isl_printer_set_yaml_style(pd, ISL_YAML_STYLE_BLOCK);
+//  pd = isl_printer_print_schedule_node(pd, node);
+//  pd = isl_printer_free(pd);
+//#endif
   /* Add init/clear device statements. */
   node = sa_add_init_clear_device(node, kernel); 
+
+  /* Add drain merge nodes. */
+  node = sa_add_drain_merge(node, gen);
 
   isl_schedule_free(gen->schedule);
   gen->schedule = isl_schedule_node_get_schedule(node);
@@ -3561,6 +3574,9 @@ static __isl_give isl_printer *generate(__isl_take isl_printer *p,
       }
     }
     sa_top_module_generate_code(gen);
+    for (int i = 0; i < gen->n_drain_merge_funcs; i++) {
+      sa_drain_merge_generate_code(gen, gen->drain_merge_funcs[i]);
+    }
 
     /* Extract loop structure for latency estimation */
     for (int i = 0; i < gen->n_hw_modules; i++) {
@@ -3575,7 +3591,8 @@ static __isl_give isl_printer *generate(__isl_take isl_printer *p,
     p = ppcg_set_macro_names(p);
     p = ppcg_print_exposed_declarations(p, prog->scop);
     p = gen->print(p, gen->prog, gen->tree, gen->hw_modules, gen->n_hw_modules, 
-          gen->hw_top_module, &gen->types, gen->print_user);
+          gen->hw_top_module, gen->drain_merge_funcs, gen->n_drain_merge_funcs,
+          &gen->types, gen->print_user);
     
     /* Clean up */
     isl_ast_node_free(gen->tree);
@@ -3585,6 +3602,10 @@ static __isl_give isl_printer *generate(__isl_take isl_printer *p,
     }
     free(gen->hw_modules);
     autosa_hw_top_module_free(gen->hw_top_module);
+    for (int i = 0; i < gen->n_drain_merge_funcs; i++) {
+      autosa_drain_merge_func_free(gen->drain_merge_funcs[i]);
+    }
+    free(gen->drain_merge_funcs);
   }
 
   autosa_prog_free(prog);
@@ -3611,6 +3632,7 @@ int generate_sa(isl_ctx *ctx, const char *input, FILE *out,
     struct autosa_prog *prog, __isl_keep isl_ast_node *trees, 
     struct autosa_hw_module **modules, int n_module,
     struct autosa_hw_top_module *module,
+    struct autosa_drain_merge_func **drain_merge_funcs, int n_drain_merge_funcs,
     struct autosa_types *types, void *user), void *user)
 {
   struct autosa_gen gen;  
@@ -3628,6 +3650,8 @@ int generate_sa(isl_ctx *ctx, const char *input, FILE *out,
   gen.hw_modules = NULL;
   gen.n_hw_modules = 0;
   gen.hw_top_module = NULL;
+  gen.drain_merge_funcs = NULL;
+  gen.n_drain_merge_funcs = 0;
   gen.schedule = NULL;
   gen.kernel = NULL;
   gen.tuning_config = NULL;
