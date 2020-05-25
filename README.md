@@ -112,8 +112,8 @@ source /opt/xilinx/xrt/setup.sh
 
 Execute the makefile to build the design.
 ```
-cp autosa_scripts/vitis_scripts/Makefile autosa.tmp/output/
-cp autosa_scripts/vitis_scripts/connectivity.cfg autosa.tmp/output/
+cp autosa_tests/mm/Makefile autosa.tmp/output/
+cp autosa_tests/mm/connectivity.cfg autosa.tmp/output/
 cd autosa.tmp/output
 make all
 ```

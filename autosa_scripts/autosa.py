@@ -65,17 +65,6 @@ if __name__ == "__main__":
     cmd += xilinx_host
   process = subprocess.run(cmd.split())  
 
-  # Clean up the temp files
-  cmd = 'rm ' + output_dir + '/src/top_gen'
-  process = subprocess.run(cmd.split())
-  cmd = 'rm ' + output_dir + '/src/top.cpp'
-  process = subprocess.run(cmd.split())
-  cmd = 'rm ' + output_dir + '/src/' + src_file_prefix + '_top_gen.cpp'
-  process = subprocess.run(cmd.split())
-  cmd = 'rm ' + output_dir + '/src/' + src_file_prefix + '_top_gen.h'
-  process = subprocess.run(cmd.split())
-  cmd = 'rm ' + output_dir + '/src/' + src_file_prefix + '_kernel_modules.cpp'
-  process = subprocess.run(cmd.split())
   cmd = 'cp ' + argv[1] + ' ' + output_dir + '/src/'
   process = subprocess.run(cmd.split())
   headers = src_file.split('.')
@@ -90,3 +79,15 @@ if __name__ == "__main__":
   if target == 'autosa_hls_c' and xilinx_host == 'opencl':
     cmd = 'rm ' + output_dir + '/src/' + src_file_prefix + '_kernel.h'
     process = subprocess.run(cmd.split())
+
+  # Clean up the temp files
+  cmd = 'rm ' + output_dir + '/src/top_gen'
+  process = subprocess.run(cmd.split())
+  cmd = 'rm ' + output_dir + '/src/top.cpp'
+  process = subprocess.run(cmd.split())
+  cmd = 'rm ' + output_dir + '/src/' + src_file_prefix + '_top_gen.cpp'
+  process = subprocess.run(cmd.split())
+  cmd = 'rm ' + output_dir + '/src/' + src_file_prefix + '_top_gen.h'
+  process = subprocess.run(cmd.split())
+  cmd = 'rm ' + output_dir + '/src/' + src_file_prefix + '_kernel_modules.cpp'
+  process = subprocess.run(cmd.split())
