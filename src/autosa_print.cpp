@@ -330,7 +330,7 @@ __isl_give isl_printer *print_kernel_arguments(__isl_take isl_printer *p,
     			local_array->array, n_lane, NULL, -1);
     	else
     		p = autosa_array_info_print_call_argument(p,
-    			local_array->array, -1);
+    			local_array->array, 0);
     
     	first = 0;
     } else {

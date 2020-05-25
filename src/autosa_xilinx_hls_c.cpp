@@ -178,7 +178,7 @@ static void hls_open_files(struct hls_info *info, const char *input)
   fprintf(info->top_gen_c, "#include \"%s\"\n", name);  
 
   fprintf(info->kernel_h, "#include <ap_int.h>\n");
-  fprintf(info->kernel_h, "#include <hls_stream.h>\n");
+  fprintf(info->kernel_h, "#include <hls_stream.h>\n");  
   fprintf(info->kernel_h, "\n");
 
   free(file_path);
@@ -396,11 +396,8 @@ static __isl_give isl_printer *declare_and_allocate_device_arrays_xilinx(
       p = isl_printer_print_str(p, local_array->array->type);
       p = isl_printer_print_str(p, ">>> ");
       p = isl_printer_print_str(p, "dev_");
-      p = isl_printer_print_str(p, local_array->array->name);                    
-      p = isl_printer_print_str(p, "(");
-      //p = autosa_array_info_print_data_size(p, local_array->array);
-      p = isl_printer_print_int(p, local_array->n_mem_ports);
-      p = isl_printer_print_str(p, ");");
+      p = isl_printer_print_str(p, local_array->array->name);                          
+      p = isl_printer_print_str(p, ";");
       p = isl_printer_end_line(p);      
 
       p = isl_printer_start_line(p);
@@ -553,9 +550,9 @@ static __isl_give isl_printer *declare_and_allocate_device_arrays_xilinx(
       p = isl_printer_print_str(p, "CL_MEM_READ_WRITE");
     } else {
       if (local_array->array->copy_in) 
-        p = isl_printer_print_str(p, "CL_MEM_READ");
+        p = isl_printer_print_str(p, "CL_MEM_READ_ONLY");
       else if (local_array->array->copy_out)
-        p = isl_printer_print_str(p, "CL_MEM_WRITE");
+        p = isl_printer_print_str(p, "CL_MEM_WRITE_ONLY");
     }
     p = isl_printer_print_str(p, ",");
     p = isl_printer_end_line(p);
@@ -614,10 +611,8 @@ static __isl_give isl_printer *declare_and_allocate_cpu_arrays_xilinx(
       p = isl_printer_print_str(p, local_array->array->type);
       p = isl_printer_print_str(p, " *> ");
       p = isl_printer_print_str(p, "dev_");
-      p = isl_printer_print_str(p, local_array->array->name);
-      p = isl_printer_print_str(p, "(");
-      p = isl_printer_print_int(p, local_array->n_mem_ports);
-      p = isl_printer_print_str(p, ");");
+      p = isl_printer_print_str(p, local_array->array->name);      
+      p = isl_printer_print_str(p, ";");
       p = isl_printer_end_line(p);
 
       p = isl_printer_start_line(p);
@@ -804,24 +799,22 @@ static __isl_give isl_printer *autosa_free_cpu_arrays_xilinx(
     struct autosa_local_array_info *local_array = &kernel->array[i];
     if (!autosa_array_requires_device_allocation(local_array->array))
       continue;
+    
+    p = isl_printer_start_line(p);
+    p = isl_printer_print_str(p, "for (int i = 0; i < ");
+    p = isl_printer_print_int(p, local_array->n_mem_ports);
+    p = isl_printer_print_str(p, "; i++) {");
+    p = isl_printer_end_line(p);
+    p = isl_printer_indent(p, 4);
 
-    if (local_array->n_mem_ports > 1 && local_array->array->copy_out) {
-      p = isl_printer_start_line(p);
-      p = isl_printer_print_str(p, "for (int i = 0; i < ");
-      p = isl_printer_print_int(p, local_array->n_mem_ports);
-      p = isl_printer_print_str(p, "; i++) {");
-      p = isl_printer_end_line(p);
-      p = isl_printer_indent(p, 4);
+    p = isl_printer_start_line(p);
+    p = isl_printer_print_str(p, "free(buffer_");
+    p = isl_printer_print_str(p, local_array->array->name);
+    p = isl_printer_print_str(p, "[i]);");
+    p = isl_printer_end_line(p);
 
-      p = isl_printer_start_line(p);
-      p = isl_printer_print_str(p, "free(buffer_");
-      p = isl_printer_print_str(p, local_array->array->name);
-      p = isl_printer_print_str(p, "[i]);");
-      p = isl_printer_end_line(p);
-
-      p = isl_printer_indent(p, -4);
-      p = print_str_new_line(p, "}");
-    }
+    p = isl_printer_indent(p, -4);
+    p = print_str_new_line(p, "}");    
   }
 
   for (int i = 0; i < kernel->n_array; i++) {    
@@ -900,19 +893,8 @@ static __isl_give isl_printer *clear_device_xilinx(__isl_take isl_printer *p,
     }    
     p = isl_printer_end_line(p);
     p = autosa_free_cpu_arrays_xilinx(p, prog, kernel);
-  } else {
-    p = print_str_new_line(p, "q.finish();");    
-    p = print_str_new_line(p, "auto host_end = std::chrono::high_resolution_clock::now();");
-    p = isl_printer_end_line(p);
-    p = print_str_new_line(p, "// Calculate time");
-    p = print_str_new_line(p, "std::chrono::duration<double> fpga_duration = fpga_end - fpga_begin;");
-    p = print_str_new_line(p, "std::cout << \"FPGA Time: \" << fpga_duration.count() << \" s\" << std::endl;");
-    p = print_str_new_line(p, "std::chrono::duration<double> host_duration = host_end - host_begin;");
-    p = print_str_new_line(p, "std::cout << \"Host Time: \" << host_duration.count() << \" s\" << std::endl;");    
-    p = isl_printer_end_line(p);
-
-    /* Restore buffer */
-    // TODO: How to merge several dev buffers
+  } else {    
+    /* Restore buffer */    
     p = print_str_new_line(p, "// Restore data from host buffers");
     for (int i = 0; i < prog->n_array; i++) {
       struct autosa_array_info *array = &prog->array[i];
@@ -958,7 +940,8 @@ static __isl_give isl_printer *print_drain_merge_arguments_xilinx(
   struct autosa_kernel *kernel,
   struct autosa_array_ref_group *group,
   struct autosa_drain_merge_func *func,
-  int types)
+  int types,
+  int hls)
 {
   int first = 1;  
   int nparam;
@@ -1023,11 +1006,16 @@ static __isl_give isl_printer *print_drain_merge_arguments_xilinx(
   if (!first)
     p = isl_printer_print_str(p, ", ");
   if (types) {
-    p = isl_printer_print_str(p, "std::vector<");
-    p = isl_printer_print_str(p, local_array->array->type);
-    p = isl_printer_print_str(p, ", aligned_allocator<");
-    p = isl_printer_print_str(p, local_array->array->type);
-    p = isl_printer_print_str(p, ">> &");    
+    if (hls) {
+      p = isl_printer_print_str(p, local_array->array->type);
+      p = isl_printer_print_str(p, " *");    
+    } else {
+      p = isl_printer_print_str(p, "std::vector<");
+      p = isl_printer_print_str(p, local_array->array->type);
+      p = isl_printer_print_str(p, ", aligned_allocator<");
+      p = isl_printer_print_str(p, local_array->array->type);
+      p = isl_printer_print_str(p, ">> &");    
+    }
     p = isl_printer_print_str(p, local_array->array->name);
     p = isl_printer_print_str(p, "_to");
   } else {    
@@ -1040,17 +1028,22 @@ static __isl_give isl_printer *print_drain_merge_arguments_xilinx(
   if (!first)
     p = isl_printer_print_str(p, ", ");
   if (types) {
-    p = isl_printer_print_str(p, "std::vector<");
-    p = isl_printer_print_str(p, local_array->array->type);
-    p = isl_printer_print_str(p, ", aligned_allocator<");
-    p = isl_printer_print_str(p, local_array->array->type);
-    p = isl_printer_print_str(p, ">> &");
+    if (hls) {
+      p = isl_printer_print_str(p, local_array->array->type);
+      p = isl_printer_print_str(p, " *");    
+    } else {
+      p = isl_printer_print_str(p, "std::vector<");
+      p = isl_printer_print_str(p, local_array->array->type);
+      p = isl_printer_print_str(p, ", aligned_allocator<");
+      p = isl_printer_print_str(p, local_array->array->type);
+      p = isl_printer_print_str(p, ">> &");
+    }
     p = isl_printer_print_str(p, local_array->array->name);
     p = isl_printer_print_str(p, "_from");
   } else {
     p = isl_printer_print_str(p, "dev_");
     p = isl_printer_print_str(p, local_array->array->name);
-    p = isl_printer_print_str(p, "[i]");
+    p = isl_printer_print_str(p, "[idx]");
   }
   first = 0;
 
@@ -1061,8 +1054,25 @@ static __isl_give isl_printer *drain_merge_xilinx(
   __isl_take isl_printer *p, struct autosa_prog *prog, 
   struct autosa_drain_merge_func *func,
   int hls) 
-{
+{  
   struct autosa_array_ref_group *group = func->group;
+
+  // TODO: Currently assume there is only one drain_merge node.
+  // If there is more than one drain merge node, we will need to 
+  // allocate new profiling node so that the profiling statements are not 
+  // inserted multiple times.
+  if (!hls) {
+    p = print_str_new_line(p, "q.finish();");    
+    p = print_str_new_line(p, "auto host_end = std::chrono::high_resolution_clock::now();");
+    p = isl_printer_end_line(p);
+    p = print_str_new_line(p, "// Calculate time");
+    p = print_str_new_line(p, "std::chrono::duration<double> fpga_duration = fpga_end - fpga_begin;");
+    p = print_str_new_line(p, "std::cout << \"FPGA Time: \" << fpga_duration.count() << \" s\" << std::endl;");
+    p = print_str_new_line(p, "std::chrono::duration<double> host_duration = host_end - host_begin;");
+    p = print_str_new_line(p, "std::cout << \"Host Time: \" << host_duration.count() << \" s\" << std::endl;");    
+    p = isl_printer_end_line(p);
+  }
+
   p = print_str_new_line(p, "// Merge results");
   p = isl_printer_start_line(p);
   p = isl_printer_print_str(p, "for (int idx = ");
@@ -1076,7 +1086,7 @@ static __isl_give isl_printer *drain_merge_xilinx(
   p = isl_printer_start_line(p);
   p = autosa_array_ref_group_print_prefix(group, p);
   p = isl_printer_print_str(p, "_drain_merge(");
-  p = print_drain_merge_arguments_xilinx(p, func->kernel, group, func, 0);
+  p = print_drain_merge_arguments_xilinx(p, func->kernel, group, func, 0, hls);
   p = isl_printer_print_str(p, ");");
   p = isl_printer_end_line(p);
 
@@ -1607,14 +1617,23 @@ static __isl_give isl_printer *print_module_var_xilinx(
     p = isl_printer_end_line(p);
   }
   if (use_memory) {
+    if (double_buffer) {
+      p = isl_printer_start_line(p);
+      p = isl_printer_print_str(p, "#pragma HLS ARRAY_MAP variable=");
+      p = isl_printer_print_str(p, var->name);
+      p = isl_printer_print_str(p, "_ping instance=");
+      p = isl_printer_print_str(p, var->name);
+      p = isl_printer_print_str(p, " horizontal");
+      p = isl_printer_end_line(p);
+    }
     p = isl_printer_start_line(p);
     p = isl_printer_print_str(p, "#pragma HLS RESOURCE variable=");
     p = isl_printer_print_str(p, var->name);
     if (double_buffer)
       p = isl_printer_print_str(p, "_ping");
     p = isl_printer_print_str(p, use_memory == 1? " core=RAM_2P_LUTRAM" : 
-              (use_memory == 2? " core=RAM_2P_BRAM" : " core=RAM_2P_URAM"));
-    p = isl_printer_end_line(p);
+            (use_memory == 2? " core=RAM_2P_BRAM" : " core=RAM_2P_URAM"));
+    p = isl_printer_end_line(p);       
   }
 
   /* Print pong buffer */
@@ -1657,10 +1676,17 @@ static __isl_give isl_printer *print_module_var_xilinx(
     }
     if (use_memory) {
       p = isl_printer_start_line(p);
-      p = isl_printer_print_str(p, "#pragma HLS RESOURCE variable=");
+      p = isl_printer_print_str(p, "#pragma HLS ARRAY_MAP variable=");
       p = isl_printer_print_str(p, var->name);
-      if (double_buffer)
-        p = isl_printer_print_str(p, "_pong");
+      p = isl_printer_print_str(p, "_pong instance=");
+      p = isl_printer_print_str(p, var->name);
+      p = isl_printer_print_str(p, " horizontal");
+      p = isl_printer_end_line(p);
+
+      p = isl_printer_start_line(p);
+      p = isl_printer_print_str(p, "#pragma HLS RESOURCE variable=");
+      p = isl_printer_print_str(p, var->name);      
+      p = isl_printer_print_str(p, "_pong");
       p = isl_printer_print_str(p, use_memory == 1? " core=RAM_2P_LUTRAM" : 
                 (use_memory == 2? " core=RAM_2P_BRAM" : " core=RAM_2P_URAM"));
       p = isl_printer_end_line(p);
@@ -1958,10 +1984,12 @@ static isl_stat print_drain_merge_funcs(
     
     p = print_str_new_line(p, "/* Helper Function */");
     p = isl_printer_start_line(p);
+    if (hls->hls)
+      p = isl_printer_print_str(p, "inline ");
     p = isl_printer_print_str(p, "void ");
     p = autosa_array_ref_group_print_prefix(group, p);
     p = isl_printer_print_str(p, "_drain_merge(");
-    p = print_drain_merge_arguments_xilinx(p, kernel, group, funcs[i], 1);
+    p = print_drain_merge_arguments_xilinx(p, kernel, group, funcs[i], 1, hls->hls);
     p = isl_printer_print_str(p, "){");
     p = isl_printer_end_line(p);
     p = isl_printer_indent(p, 4);
