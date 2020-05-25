@@ -304,9 +304,9 @@ No. | Design Example | Description    | Board        | Software Version
 1   | [autosa_tests/mm](autosa_tests/mm/) | Small-size matrix multiplication | Xilinx Alveo U200 | Xilinx Vitis 2019.2
 2   | [autosa_tests/mm_hbm](autosa_tests/mm_hbm/) | Large-size matrix multiplication | Xilinx Alveo U200 | Xilinx Vitis 2019.2
 3   | [autosa_tests/cnn](autosa_tests/cnn/) | Single layer of convolutional neural network | Xilinx Alveo U200 | Xilinx Vitis 2019.2
-4   | [autosa_tests/ttm](autosa_tests/ttm/) | Tensor Times Matrix | Xilinx Alveo U200 | Xilinx Vitis 2019.2
-5   | [autosa_tests/ttmc](autosa_tests/ttmc/) | Chain of Tensor-matrix multiplications | Xilinx Alveo U200 | Xilinx Vitis 2019.2
-6   | [autosa_tests/mttkrp](autosa_tests/mttkrp/) | Matricized Tensor Times Khatri-Rao Product | Xilinx Alveo U200 | Xilinx Vitis 2019.2
+4   | [autosa_tests/ttm](autosa_tests/ttm/) | Tensor times matrix (TTM)| Xilinx Alveo U200 | Xilinx Vitis 2019.2
+5   | [autosa_tests/ttmc](autosa_tests/ttmc/) | Chain of tensor-matrix multiplications (TTMc)| Xilinx Alveo U200 | Xilinx Vitis 2019.2
+6   | [autosa_tests/mttkrp](autosa_tests/mttkrp/) | Matricized tensor times Khatri-Rao product (MTTKRP)| Xilinx Alveo U200 | Xilinx Vitis 2019.2
 7   | [autosa_tests/mm_hbm](autosa_tests/mm_hbm/) | Small-size matrix multiplication using HBM | Xilinx Alveo U280 | Xilinx Vitis 2019.2
 8   | [autosa_tests/mm_hbm_large](autosa_tests/mm_hbm_large/) | Large-size matrix multiplication using HBM | Xilinx Alveo U280 | Xilinx Vitis 2019.2
 
