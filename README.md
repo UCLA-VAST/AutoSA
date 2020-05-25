@@ -39,6 +39,7 @@ The structure of this repo is as follows:
 7. [Version History](#version-history)
 
 ## Latest Features
++ [2020/5/24] Added HBM support.
 + [2020/5/17] Version 0.01 is released.
 
 ## Prerequisites
