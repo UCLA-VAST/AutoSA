@@ -284,6 +284,8 @@ After this step, you should be able to find the files of the generated arrays in
 * __`--AutoSA-data-pack`__: Enable data packing for data transfer. Default: yes.
 * __`--AutoSA-double-buffer`__: Enable double-buffering for data transfer. Default: yes.
 * __`--AutoSA-hls`__: Generate Xilinx HLS host, otherwise, OpenCL host is generated. Default: no.
+* __`--AutoSA-hbm`__: Use multi-port DRAM/HBM. Default: no.
+* __`--AutoSA-hbm-port-num=<num>`__: Default HBM port number. Default: 2.
 * __`--AutoSA-insert-hls-dependence`__: Insert Xilinx HLS dependence pragma. Default: yes.
 * __`--AutoSA-max-sa-dim=<dim>`__: Maximal systolic array dimension. Default: 2.
 * __`--AutoSA-output-dir=<dir>`__: AutoSA output directory. Default: `./autosa.tmp/output`
@@ -297,90 +299,16 @@ After this step, you should be able to find the files of the generated arrays in
 * __`--isl-schedule-whole-component`__: try and compute schedule for entire component first. Default: No.
 
 ## Design Examples
-### Supported Platforms
-Board | Software Version
-------|-----------------
-Xilinx Alveo U200 | Xilinx Vitis 2019.2
-### Examples
-In the following examples, set space-time transformation in auto mode and the rest steps in manual mode.
-
-1. Matrix multiplication (small)
-
-Files:
-```
-autosa_tests/mm/kernel.c
-autosa_tests/mm/kernel.h
-autosa_tests/mm/simd_info.json
-```
-Command:
-```c
-./autosa ./autosa_tests/mm/kernel.c --AutoSA-config=./autosa_config/autosa_config.json --target=autosa_hls_c --AutoSA-autosa --AutoSA-two-level-buffer --AutoSA-uram --isl-schedule-whole-component --AutoSA-output-dir=./autosa.tmp/output --sa-sizes="{kernel[0]->array_part[16,16,16];kernel[0]->array_part_L2[2,2,2];kernel[0]->latency[8,8];kernel[0]->simd[2]}" --AutoSA-simd-info=./autosa_tests/mm/simd_info.json
-```
-
-2. Matrix multiplication (large)
-
-Files:
-```
-autosa_tests/mm_large/kernel.c
-autosa_tests/mm_large/kernel.h
-autosa_tests/mm_large/simd_info.json
-```
-Command:
-```c
-./autosa ./autosa_tests/mm_large/kernel.c --AutoSA-config=./autosa_config/autosa_config.json --target=autosa_hls_c --AutoSA-autosa --AutoSA-two-level-buffer --AutoSA-uram --isl-schedule-whole-component --AutoSA-output-dir=./autosa.tmp/output --sa-sizes="{kernel[0]->array_part[260,128,256];kernel[0]->array_part_L2[4,4,4];kernel[0]->latency[26,16];kernel[0]->simd[8]}" --AutoSA-simd-info=./autosa_tests/mm_large/simd_info.json
-```
-
-3. Convolutional neural network (single layer)
-
-Files:
-```
-autosa_tests/cnn/kernel.c
-autosa_tests/cnn/kernel.h
-autosa_tests/cnn/simd_info.json
-```
-Command:
-```c
-./autosa ./autosa_tests/cnn/kernel.c --AutoSA-config=./autosa_config/autosa_config.json --target=autosa_hls_c --AutoSA-autosa --AutoSA-two-level-buffer --AutoSA-uram --isl-schedule-whole-component --AutoSA-output-dir=./autosa.tmp/output --sa-sizes="{kernel[0]->array_part[64,60,14,64];kernel[0]->array_part_L2[1,1,1,8];kernel[0]->latency[8,6,7];kernel[0]->simd[-1,-1,8]}" --AutoSA-simd-info=./autosa_tests/cnn/simd_info.json
-```
-
-4. Tensor Times Matrix (TTM)
-
-Files:
-```
-autosa_tests/ttm/kernel.c
-autosa_tests/ttm/kernel.h
-autosa_tests/ttm/simd_info.json
-```
-Command:
-```c
-./autosa ./autosa_tests/ttm/kernel.c --AutoSA-config=./autosa_config/autosa_config.json --target=autosa_hls_c --AutoSA-autosa --AutoSA-two-level-buffer --AutoSA-uram --isl-schedule-whole-component --AutoSA-output-dir=./autosa.tmp/output --sa-sizes="{kernel[0]->array_part[20,256,4,128];kernel[0]->array_part_L2[13,2,16,4];kernel[0]->latency[2,32,2];kernel[0]->simd[8]}" --AutoSA-simd-info=./autosa_tests/ttm/simd_info.json
-```
-
-5. Chain of Tensor-matrix multiplications (TTMc)
-
-Files:
-```
-autosa_tests/ttmc/kernel.c
-autosa_tests/ttmc/kernel.h
-autosa_tests/ttmc/simd_info.json
-```
-Command:
-```c
-./autosa ./autosa_tests/ttmc/kernel.c --AutoSA-config=./autosa_config/autosa_config.json --target=autosa_hls_c --AutoSA-autosa --AutoSA-two-level-buffer --AutoSA-uram --isl-schedule-whole-component --AutoSA-output-dir=./autosa.tmp/output --sa-sizes="{kernel[0]->array_part[12,64,32,32];kernel[0]->array_part_L2[1,1,4,4];kernel[0]->latency[2,8,16];kernel[0]->simd[8,-1]}" --AutoSA-simd-info=./autosa_tests/ttmc/simd_info.json
-```
-
-6. Matricized Tensor Times Khatri-Rao Product (MTTKRP)
-
-Files:
-```
-autosa_tests/mttkrp/kernel.c
-autosa_tests/mttkrp/kernel.h
-autosa_tests/mttkrp/simd_info.json
-```
-Command:
-```c
-./autosa ./autosa_tests/mttkrp/kernel.c --AutoSA-config=./autosa_config/autosa_config.json --target=autosa_hls_c --AutoSA-autosa --AutoSA-two-level-buffer --AutoSA-uram --isl-schedule-whole-component --AutoSA-output-dir=./autosa.tmp/output --sa-sizes="{kernel[0]->array_part[12,512,16];kernel[0]->array_part_L2[1,1,32];kernel[0]->latency[2,64];kernel[0]->simd[8,-1]}" --AutoSA-simd-info=./autosa_tests/mttkrp/simd_info.json
-```
+No. | Design Example | Description    | Board        | Software Version
+----|----------------|----------------|--------------|------------------
+1   | [autosa_tests/mm](autosa_tests/mm/) | Small-size matrix multiplication | Xilinx Alveo U200 | Xilinx Vitis 2019.2
+2   | [autosa_tests/mm_hbm](autosa_tests/mm_hbm/) | Large-size matrix multiplication | Xilinx Alveo U200 | Xilinx Vitis 2019.2
+3   | [autosa_tests/cnn](autosa_tests/cnn/) | Single layer of convolutional layer | Xilinx Alveo U200 | Xilinx Vitis 2019.2
+4   | [autosa_tests/ttm](autosa_tests/ttm/) | Tensor Times Matrix | Xilinx Alveo U200 | Xilinx Vitis 2019.2
+5   | [autosa_tests/ttmc](autosa_tests/ttmc/) | Chain of Tensor-matrix multiplications | Xilinx Alveo U200 | Xilinx Vitis 2019.2
+6   | [autosa_tests/mttkrp](autosa_tests/mttkrp/) | Matricized Tensor Times Khatri-Rao Product | Xilinx Alveo U200 | Xilinx Vitis 2019.2
+7   | [autosa_tests/mm_hbm](autosa_tests/mm_hbm/) | Small-size matrix multiplication using HBM | Xilinx Alveo U280 | Xilinx Vitis 2019.2
+8   | [autosa_tests/mm_hbm_large](autosa_tests/mm_hbm_large/) | Large-size matrix multiplication using HBM | Xilinx Alveo U280 | Xilinx Vitis 2019.2
 
 ## Send Us Failure Cases and Feedback!
 AutoSA is open source for research purposes, and we would like to continously improve it! Please let us know if...
