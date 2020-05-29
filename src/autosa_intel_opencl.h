@@ -1,5 +1,5 @@
-#ifndef _INTEL_OPENCL_H
-#define _INTEL_OPENCL_H
+#ifndef _AUTOSA_INTEL_OPENCL_H
+#define _AUTOSA_INTEL_OPENCL_H
 
 #include <pet.h>
 #include "ppcg_options.h"

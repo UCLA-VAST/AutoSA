@@ -2,6 +2,22 @@
 
 #include "autosa_intel_opencl.h"
 #include "autosa_common.h"
+#include "autosa_print.h"
+#include "autosa_trans.h"
+#include "autosa_codegen.h"
+#include "autosa_utils.h"
+
+struct print_host_user_data {
+	struct hls_info *hls;
+	struct autosa_prog *prog;
+  struct autosa_hw_top_module *top;
+};
+
+struct print_hw_module_data {
+  struct hls_info *hls;
+  struct autosa_prog *prog;
+  struct autosa_hw_module *module;
+};
 
 static void opencl_open_files(struct hls_info *info, const char *input)
 {
