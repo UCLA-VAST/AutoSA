@@ -634,7 +634,7 @@ __isl_give isl_printer *print_module_arguments(
   const char *type;
 
   type = isl_options_get_ast_iterator_type(prog->ctx);
-  /* module identifiers */
+  /* Module identifiers */
   const char *dims[] = { "idx", "idy", "idz" };
   n = isl_id_list_n_id(module->inst_ids);
   for (int i = 0; i < n; ++i) {
@@ -1598,7 +1598,7 @@ __isl_give isl_printer *print_module_call_upper(__isl_take isl_printer *p,
   }
 
   /* scalar and arrays */
-  if (module->type != PE_MODULE && module->level == 3) {
+  if (module->type != PE_MODULE && module->to_mem) {
     p = print_delimiter(p, &first);
 
     p = isl_printer_start_line(p);

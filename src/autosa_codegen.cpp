@@ -4272,6 +4272,256 @@ static __isl_give isl_schedule_node *io_gen_module_call(
   return node;
 }
 
+/* The input "node" points to the node below io_[module->level] mark.
+ * Return the node points to the "kernel" mark.
+ * We will insert one module call extension node: 
+ * module_call_upper: which contains the module name and arguments for the 
+ * inter-module transfer
+ * This function is used for Intel OpenCL only. We will not generate 
+ * the module_call_lower, which is define as below:
+ * module_call_lower: which contains arguments for the intra-module transfer
+ * (i.e., transfer to the lower-level modules)
+ */
+static __isl_give isl_schedule_node *io_gen_ext_module(
+  __isl_take isl_schedule_node *node, struct autosa_hw_module *module,
+  struct autosa_kernel *kernel, struct autosa_array_ref_group *group,
+  int boundary)
+{
+  isl_printer *p_str;
+  char *stmt_name;
+  isl_space *space;
+  isl_union_set *domain, *empty_filter, *lower_level_filter;
+  isl_schedule_node *graft;
+  isl_bool insert_lower = isl_bool_false;
+  isl_ctx *ctx = isl_schedule_node_get_ctx(node);
+  isl_id *id;
+  isl_union_map *prefix, *extension, *umap;
+  isl_union_set *range;
+  isl_set *set;
+  isl_map *map;
+  isl_multi_union_pw_aff *mupa;
+
+//  /* Collect the filter for the lower I/O module. */
+//  if (isl_schedule_node_get_type(node) == isl_schedule_node_band) {
+//    if (module->level > 1) {
+//      lower_level_filter = schedule_eq_lb(node);
+//      insert_lower = isl_bool_true;
+//    }
+//  }
+  
+  /* Graft an extension node for module call. */
+  prefix = isl_schedule_node_get_prefix_schedule_relation(node);
+  prefix = isl_union_map_preimage_domain_union_pw_multi_aff(prefix,
+      isl_union_pw_multi_aff_copy(kernel->contraction));
+  domain = isl_union_map_range(prefix);
+
+  p_str = isl_printer_to_str(ctx);
+  p_str = isl_printer_print_str(p_str, "ext_module_upper.");
+  p_str = isl_printer_print_str(p_str, module->name);
+  if (boundary)
+    p_str = isl_printer_print_str(p_str, ".boundary");
+  stmt_name = isl_printer_get_str(p_str);
+  isl_printer_free(p_str);
+  space = isl_space_set_alloc(ctx, 0, 0);
+  space = isl_space_set_tuple_name(space, isl_dim_set, stmt_name);
+  free(stmt_name);
+
+  isl_point *pnt = isl_point_zero(space);
+  set = isl_set_from_point(pnt);  
+  range = isl_union_set_from_set(isl_set_copy(set));
+
+  extension = isl_union_map_from_domain_and_range(domain, range);
+  graft = isl_schedule_node_from_extension(extension);
+
+  map = isl_set_identity(set);
+  map = isl_map_reset_tuple_id(map, isl_dim_out);
+  umap = isl_union_map_from_map(map);
+  mupa = isl_multi_union_pw_aff_from_union_map(umap);
+
+  graft = isl_schedule_node_child(graft, 0);
+  graft = isl_schedule_node_insert_partial_schedule(graft, mupa);
+
+  while (graft && isl_schedule_node_has_parent(graft))
+    graft = isl_schedule_node_parent(graft);
+
+  node = isl_schedule_node_graft_before(node, graft);
+  node = isl_schedule_node_cut(node);
+
+//  if (module->level > 1) {
+//    node = autosa_tree_move_down_to_io_mark(node, kernel->core, module->level - 1);
+//  }
+//  node = isl_schedule_node_cut(node);
+
+//  /* Graft an extension node for lower level transfer. */
+//  if (insert_lower) {
+//    node = isl_schedule_node_insert_filter(node, lower_level_filter);
+//    node = isl_schedule_node_child(node, 0);
+//  }
+//  {
+//    isl_union_map *prefix;
+//    isl_union_set *domain, *range;
+//    isl_point *pnt;
+//    isl_set *set;
+//    isl_union_map *extension, *umap;
+//    isl_map *map;
+//    isl_multi_union_pw_aff *mupa;
+//
+//    prefix = isl_schedule_node_get_prefix_schedule_relation(node);
+//    prefix = isl_union_map_preimage_domain_union_pw_multi_aff(prefix,
+//                isl_union_pw_multi_aff_copy(kernel->contraction));
+//    domain = isl_union_map_range(prefix);  
+//    
+//    p_str = isl_printer_to_str(ctx);
+//    p_str = isl_printer_print_str(p_str, "set_ext_module_args_lower.");
+//    p_str = isl_printer_print_str(p_str, module->name);
+//    if (boundary)
+//      p_str = isl_printer_print_str(p_str, ".boundary");
+//
+//    stmt_name = isl_printer_get_str(p_str);
+//    isl_printer_free(p_str);
+//    space = isl_space_set_alloc(ctx, 0, 0);
+//    id = isl_id_alloc(ctx, stmt_name, group);
+//    space = isl_space_set_tuple_id(space, isl_dim_set, id);
+//    free(stmt_name);
+//
+//    pnt = isl_point_zero(space);
+//    set = isl_set_from_point(pnt);
+//    range = isl_union_set_from_set(isl_set_copy(set));
+//
+//    extension = isl_union_map_from_domain_and_range(domain, range);
+//    graft = isl_schedule_node_from_extension(extension);
+//
+//    map = isl_set_identity(set);
+//    map = isl_map_reset_tuple_id(map, isl_dim_out);
+//    umap = isl_union_map_from_map(map);
+//    mupa = isl_multi_union_pw_aff_from_union_map(umap);
+//
+//    graft = isl_schedule_node_child(graft, 0);
+//    graft = isl_schedule_node_insert_partial_schedule(graft, mupa);
+//
+//    while (graft && isl_schedule_node_has_parent(graft))
+//      graft = isl_schedule_node_parent(graft);
+//
+//    node = isl_schedule_node_graft_after(node, graft);
+//  }
+
+  /* Insert an empty filter. */
+  empty_filter = isl_union_set_from_set(isl_set_empty(isl_set_get_space(kernel->context)));
+  node = isl_schedule_node_insert_filter(node, empty_filter);
+
+  node = autosa_tree_move_up_to_kernel(node);
+
+  return node;
+}
+
+/* Generate the calls for the io module connected to the external memory. 
+ * This function is used for Intel OpenCL only.
+ * Since all fifos will be replaced with channels later, this function only 
+ * generates the upper module calls, ignoring the lower module call.
+ */
+static isl_stat top_module_io_gen_ext_module(
+  struct autosa_gen *gen, struct autosa_hw_top_module *top,
+  struct autosa_hw_module *module,
+  struct autosa_array_ref_group *group)
+{
+  isl_schedule *schedule;
+  isl_ctx *ctx = gen->ctx;
+  isl_schedule_node *node, *graft;
+  isl_id *id;
+  struct autosa_kernel *kernel = gen->kernel;
+  isl_printer *p_str;
+  char *stmt_name;
+  isl_space *space;
+  isl_union_set *domain, *empty_filter, *lower_level_filter;
+  isl_bool insert_lower = isl_bool_false;
+  int boundary = module->boundary;
+  isl_union_set *boundary_filter, *non_boundary_filter;
+  isl_union_set_list *boundary_filters;
+
+  /* Only the top-level io module connected to the external memory is handled.
+   */
+  if (module->type == PE_MODULE || module->to_mem == 0)
+    return isl_stat_ok;
+
+  /* Transform the schedule. */
+  schedule = isl_schedule_dup(group->io_schedule);
+  node = isl_schedule_get_root(schedule);
+  isl_schedule_free(schedule);
+
+  /* Delete the node above the array mark. */
+  node = autosa_tree_move_down_to_array(node, kernel->core);
+  node = isl_schedule_node_parent(node);
+  while (!autosa_tree_node_is_kernel(node)) {
+    node = isl_schedule_node_delete(node);
+    node = isl_schedule_node_parent(node);
+  }
+
+  /* Collect the filter for the boundary and non-boundary I/O module. */
+  if (boundary) {
+    node = autosa_tree_move_down_to_io_mark(node, kernel->core, module->level);
+    node = isl_schedule_node_parent(node);
+    if (isl_schedule_node_get_type(node) == isl_schedule_node_band) {
+      boundary_filter = schedule_eq_ub(node);
+      non_boundary_filter = schedule_neq_ub(node);
+      boundary_filters = isl_union_set_list_from_union_set(non_boundary_filter);
+      boundary_filters = isl_union_set_list_add(boundary_filters, boundary_filter);
+
+      node = isl_schedule_node_child(node, 0); // io_mark
+      node = isl_schedule_node_child(node, 0); // band
+      node = isl_schedule_node_insert_sequence(node, boundary_filters);
+      /* The node now is right below the io_[module->level] mark. */
+    }
+  } else {
+    node = autosa_tree_move_down_to_io_mark(node, kernel->core, module->level);
+    node = isl_schedule_node_child(node, 0);
+  }
+
+  if (boundary) {
+    node = isl_schedule_node_child(node, 0); // filter
+    node = isl_schedule_node_child(node, 0); // band
+    /* non-boundary */
+    node = io_gen_ext_module(node, module, kernel, group, 0);
+    node = autosa_tree_move_down_to_io_mark(node, kernel->core, module->level);
+    node = isl_schedule_node_child(node, 0); // sequence
+    node = isl_schedule_node_child(node, 1); // filter
+    node = isl_schedule_node_child(node, 0); // band
+    /* boundary */
+    node = io_gen_ext_module(node, module, kernel, group, 1);
+  } else {
+    node = io_gen_ext_module(node, module, kernel, group, 0);
+  }
+
+  /* Cleanup the schedule tree. Remove "array" and "io_LX" mark.
+   */
+  node = autosa_tree_move_down_to_io_mark(node, kernel->core, module->level);
+  node = isl_schedule_node_delete(node);
+  node = autosa_tree_move_up_to_array(node);
+  node = isl_schedule_node_delete(node);
+  node = autosa_tree_move_up_to_kernel(node);
+
+  /* Add module mark after the kernel mark.auto */
+  id = isl_id_alloc(ctx, "module", module);
+  node = isl_schedule_node_child(node, 0);
+  node = isl_schedule_node_insert_mark(node, id);
+
+//#ifdef _DEBUG
+//  isl_printer *pd = isl_printer_to_file(ctx, stdout);
+//  pd = isl_printer_set_yaml_style(pd, ISL_YAML_STYLE_BLOCK);
+//  pd = isl_printer_print_schedule_node(pd, node);
+//  pd = isl_printer_free(pd);
+//#endif
+
+  schedule = isl_schedule_node_get_schedule(node);
+  isl_schedule_node_free(node);  
+
+  top->n_ext_module++;
+  top->ext_module_scheds = (isl_schedule **)realloc(top->ext_module_scheds,
+      top->n_ext_module * sizeof(isl_schedule *));
+  top->ext_module_scheds[top->n_ext_module - 1] = schedule;
+
+  return isl_stat_ok;  
+}
+
 /* Generate the module calls for the io module. */
 static isl_stat top_module_io_gen_module_call(
   struct autosa_gen *gen, struct autosa_hw_top_module *top,
@@ -4513,6 +4763,11 @@ static isl_stat top_module_io_gen(struct autosa_gen *gen,
 
   /* Generate the fifo declaration schedule. */
   top_module_io_gen_fifo_decl(gen, top, module, group);
+
+  /* Generate the external memory module arguments setting schedule. */
+  if (gen->options->target == AUTOSA_TARGET_INTEL_OPENCL) {
+    top_module_io_gen_ext_module(gen, top, module, group);
+  }
 
   return isl_stat_ok;
 }
@@ -7361,6 +7616,98 @@ static char *extract_module_name(isl_ctx *ctx, const char *type)
  * we will calculate the AST expression io_pe_expr which is the 
  * PE indices described by IO ids.
  */
+static __isl_give isl_ast_node *create_ext_module_leaf(
+  struct autosa_kernel *kernel,
+  __isl_take isl_ast_node *node, struct autosa_hw_module *module,
+  struct autosa_pe_dummy_module *pe_dummy_module,
+  struct autosa_array_ref_group *group, const char *name, 
+  __isl_keep isl_ast_build *build)
+{
+  struct autosa_kernel_stmt *stmt;
+  isl_id *id;
+  isl_ctx *ctx;
+  isl_multi_aff *trans;
+  isl_map *map;
+  isl_pw_multi_aff *pma;
+  isl_ast_expr *expr;
+
+  ctx = isl_ast_node_get_ctx(node);
+  stmt = isl_calloc_type(ctx, struct autosa_kernel_stmt);
+  if (!stmt)
+    return isl_ast_node_free(node);
+ 
+  stmt->type = AUTOSA_KERNEL_STMT_EXT_MODULE;
+  stmt->u.m.module = module;
+  stmt->u.m.group = group;
+  stmt->u.m.boundary = extract_is_boundary(name);
+  stmt->u.m.module_name = extract_module_name(ctx, name);
+  stmt->u.m.dummy = !suffixcmp(stmt->u.m.module_name, "dummy");
+  stmt->u.m.pe_dummy_module = pe_dummy_module;
+  if (!prefixcmp(name, "ext_module_lower")) {
+    stmt->u.m.lower = 1;
+    stmt->u.m.upper = 0;
+  } else if (!prefixcmp(name, "ext_module_upper")) {
+    stmt->u.m.lower = 0;
+    stmt->u.m.upper = 1;
+  } else {
+    stmt->u.m.lower = 0;
+    stmt->u.m.upper = 0;
+  }
+
+//  if (stmt->u.m.lower) {
+//    if (!stmt->u.m.boundary) {
+//      if ((module->type == IO_MODULE || module->type == DRAIN_MODULE) 
+//            && !group->io_pe_expr) {
+//        if (module->to_pe) {
+//          isl_union_map *umap = isl_ast_build_get_schedule(build);
+//          isl_union_set *uset = isl_union_map_range(umap);
+//          isl_set *set = isl_set_from_union_set(uset);
+//          isl_map *map = isl_set_identity(set);
+//          map = isl_map_flatten_range(map);
+//          trans = isl_multi_aff_copy(group->io_trans);
+//          isl_map *map2 = isl_map_from_multi_aff(trans);
+//          map2 = isl_map_reverse(map2);
+//          map = isl_map_apply_range(map, map2);
+//          isl_pw_multi_aff *pma = isl_pw_multi_aff_from_map(map);
+//          expr = isl_ast_build_access_from_pw_multi_aff(build, pma);
+//          group->io_pe_expr = expr;
+//        }
+//      }
+//    }
+//    /* boundary module */
+//    if (stmt->u.m.boundary) {
+//      if ((module->type == IO_MODULE || module->type == DRAIN_MODULE) && !group->io_pe_expr_boundary) {
+//        if (module->to_pe) {
+//          isl_union_map *umap = isl_ast_build_get_schedule(build);
+//          isl_union_set *uset = isl_union_map_range(umap);
+//          isl_set *set = isl_set_from_union_set(uset);
+//          isl_map *map = isl_set_identity(set);
+//          map = isl_map_flatten_range(map);
+//          trans = isl_multi_aff_copy(group->io_trans);
+//          isl_map *map2 = isl_map_from_multi_aff(trans);
+//          map2 = isl_map_reverse(map2);
+//          map = isl_map_apply_range(map, map2);
+//          isl_pw_multi_aff *pma = isl_pw_multi_aff_from_map(map);
+//          expr = isl_ast_build_access_from_pw_multi_aff(build, pma);
+//          group->io_pe_expr_boundary = expr;
+//        }
+//      }
+//    }
+//  }
+
+  id = isl_id_alloc(ctx, "ext_module", stmt);
+  id = isl_id_set_free_user(id, &autosa_kernel_stmt_free);
+  if (!id)
+    autosa_kernel_stmt_free(stmt);
+  return isl_ast_node_set_annotation(node, id);
+}
+
+/* There are two types of module call statements:
+ * module_call_upper and module_call_lower
+ * For module_call_lower, if the module is connected to PEs,
+ * we will calculate the AST expression io_pe_expr which is the 
+ * PE indices described by IO ids.
+ */
 static __isl_give isl_ast_node *create_module_call_leaf(
   struct autosa_kernel *kernel,
   __isl_take isl_ast_node *node, struct autosa_hw_module *module,
@@ -7606,6 +7953,16 @@ static __isl_give isl_ast_node *at_domain_module(__isl_take isl_ast_node *node,
      */
     struct autosa_array_ref_group *group = (struct autosa_array_ref_group *)p;
     return create_fifo_decl_leaf(data->kernel, node, data->module, group, name, build);
+  }
+  if (!prefixcmp(name, "ext_module")) {
+    /* set_ext_module_args_upper.[module_name]
+     * set_ext_module_args_lower.[module_name]
+     */
+    struct autosa_array_ref_group *group = NULL;
+    if (!prefixcmp(name, "ext_module_lower"))
+      group = (struct autosa_array_ref_group *)p;
+    return create_ext_module_leaf(data->kernel, node, data->module, 
+              data->pe_dummy_module, group, name, build);
   }
   if (!prefixcmp(name, "io_module")) {
     return create_io_module_call_leaf(data->kernel, node, data->module, name, build);
@@ -8157,6 +8514,103 @@ __isl_give isl_ast_node *sa_module_call_generate_code(
   return tree; 
 }
 
+/* This function is called after the AST generator has finished traversing
+ * the schedule subtree of a mark node. "node" points to the corresponding
+ * mark AST node.
+ *
+ * If the mark is called "module call", then replace "node" by a user node
+ * that "calls" the module call, representing the printing of module calls.
+ * We will store the AST node into the module_call_wrapped_trees.
+ */
+static __isl_give isl_ast_node *after_mark_ext_module(
+  __isl_take isl_ast_node *node,
+  __isl_keep isl_ast_build *build, void *user)
+{
+	isl_ctx *ctx;
+	isl_id *id;
+	isl_ast_expr *expr;
+	isl_ast_expr_list *list;
+	struct autosa_kernel *kernel;
+	struct autosa_at_domain_data *data = (struct autosa_at_domain_data *)user;
+  struct autosa_hw_module *module;
+  struct autosa_hw_top_module *top;
+
+	ctx = isl_ast_node_get_ctx(node);
+	id = isl_ast_node_mark_get_id(node);
+	if (!id)
+		return isl_ast_node_free(node);
+
+  if (!strcmp(isl_id_get_name(id), "kernel") && data->kernel) {
+    isl_id_free(id);
+    if (!data->kernel->space)
+      data->kernel->space = isl_ast_build_get_schedule_space(build);
+    data->kernel = NULL;
+    return node;
+  }
+	if (strcmp(isl_id_get_name(id), "module") || !data->module) {
+		isl_id_free(id);
+		return node;
+	}
+  top = data->top;
+  data->top = NULL;
+  top->n_ext_module_wrapped++;
+  top->ext_module_wrapped_trees = (isl_ast_node **)realloc(
+    top->ext_module_wrapped_trees, 
+    top->n_ext_module_wrapped * sizeof(isl_ast_node *));
+  top->ext_module_wrapped_trees[top->n_ext_module_wrapped - 1] =
+    isl_ast_node_mark_get_node(node);
+	isl_ast_node_free(node);
+
+	expr = isl_ast_expr_from_id(isl_id_copy(id));
+	list = isl_ast_expr_list_alloc(ctx, 0);
+	expr = isl_ast_expr_call(expr, list);
+	node = isl_ast_node_alloc_user(expr);
+	node = isl_ast_node_set_annotation(node, id);
+
+	return node;
+}
+
+/* Generate code for setting arguments of the io modules connected to the 
+ * external memory given the input schedule "schedule". 
+ */
+__isl_give isl_ast_node *sa_set_ext_module_args_generate_code(
+  struct autosa_gen *gen, __isl_take isl_schedule *schedule)
+{
+  struct autosa_at_domain_data data;
+  isl_ast_build *build;
+  isl_ast_node *tree;
+  isl_id_list *iterators;
+
+  int depth;
+
+  if (schedule == NULL)
+    return NULL;
+
+  data.prog = gen->prog;
+  data.kernel = NULL;
+  data.module = NULL;
+  data.pe_dummy_module = NULL;
+  data.top = gen->hw_top_module;
+
+  depth = 0;
+  if (isl_schedule_foreach_schedule_node_top_down(schedule, &update_depth,
+        &depth) < 0)
+    schedule = isl_schedule_free(schedule);
+  build = isl_ast_build_alloc(gen->prog->ctx);
+  iterators = ppcg_scop_generate_names(gen->prog->scop, depth, "c");
+  build = isl_ast_build_set_iterators(build, iterators);
+  build = isl_ast_build_set_at_each_domain(build, &at_domain_module, &data);
+  build = isl_ast_build_set_before_each_mark(build, &before_mark_module, &data);
+  build = isl_ast_build_set_after_each_mark(build, 
+            &after_mark_ext_module, &data);
+  if (gen->prog->scop->options->debug->dump_final_schedule)
+    isl_schedule_dump(schedule);
+  tree = isl_ast_build_node_from_schedule(build, schedule);
+  isl_ast_build_free(build);
+
+  return tree; 
+}
+
 /* Generate AST for module calls and fifo decls in the top module.
  */
 isl_stat sa_top_module_generate_code(struct autosa_gen *gen) 
@@ -8176,6 +8630,25 @@ isl_stat sa_top_module_generate_code(struct autosa_gen *gen)
   for (int i = 0; i < top->n_module_calls; i++) {
     top->module_call_trees[i] = sa_module_call_generate_code(gen,
         top->module_call_scheds[i]);
+  }
+
+  if (gen->options->target == AUTOSA_TARGET_INTEL_OPENCL) {
+    top->ext_module_trees = (isl_ast_node **)malloc(
+      top->n_ext_module * sizeof(isl_ast_node *));
+    for (int i = 0; i < top->n_ext_module; i++) {
+      top->ext_module_trees[i] = sa_set_ext_module_args_generate_code(gen,
+          top->ext_module_scheds[i]);      
+    }    
+
+//    for (int i = 0; i < top->n_ext_module; i++) {
+//      isl_ast_node_free(top->ext_module_trees[i]);
+//      isl_ast_node_free(top->ext_module_wrapped_trees[i]);
+//    }
+//    free(top->ext_module_trees);
+//    free(top->ext_module_wrapped_trees);
+//    top->ext_module_trees = NULL;
+//    top->ext_module_wrapped_trees = NULL;
+//    top->n_ext_module = 0;
   }
 
   return isl_stat_ok;

@@ -104,7 +104,7 @@ __isl_give isl_printer *autosa_kernel_print_state_handle(
   struct autosa_kernel_stmt *stmt, struct hls_info *hls);  
 __isl_give isl_printer *autosa_kernel_print_drain_merge(
   __isl_take isl_printer *p,
-  struct autosa_kernel_stmt *stmt, struct hls_info *hls);
+  struct autosa_kernel_stmt *stmt, struct hls_info *hls);  
 
 /* Xilinx-specific */
 __isl_give isl_printer *print_fifo_type_xilinx(__isl_take isl_printer *p, 

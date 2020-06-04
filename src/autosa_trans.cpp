@@ -3467,6 +3467,12 @@ __isl_give isl_schedule *sa_map_to_device(struct autosa_gen *gen,
 
   /* Add drain merge nodes. */
   node = sa_add_drain_merge(node, gen);
+//#ifdef _DEBUG
+//  isl_printer *pd = isl_printer_to_file(gen->ctx, stdout);
+//  pd = isl_printer_set_yaml_style(pd, ISL_YAML_STYLE_BLOCK);
+//  pd = isl_printer_print_schedule_node(pd, node);
+//  pd = isl_printer_free(pd);  
+//#endif
 
   isl_schedule_free(gen->schedule);
   gen->schedule = isl_schedule_node_get_schedule(node);
@@ -3605,7 +3611,7 @@ static __isl_give isl_printer *generate(__isl_take isl_printer *p,
     for (int i = 0; i < gen->n_drain_merge_funcs; i++) {
       autosa_drain_merge_func_free(gen->drain_merge_funcs[i]);
     }
-    free(gen->drain_merge_funcs);
+    free(gen->drain_merge_funcs);        
   }
 
   autosa_prog_free(prog);

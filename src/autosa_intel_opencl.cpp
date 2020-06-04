@@ -19,76 +19,1848 @@ struct print_hw_module_data {
   struct autosa_hw_module *module;
 };
 
+static void print_intel_host_header(FILE *fp)
+{  
+  fprintf(fp, "#include <stdio.h>\n");
+  fprintf(fp, "#include <stdlib.h>\n");
+  fprintf(fp, "#include <math.h>\n");
+  fprintf(fp, "#include <cassert>\n");
+  fprintf(fp, "#include <cstdio>\n");
+  fprintf(fp, "#include <cstdlib>\n");
+  fprintf(fp, "#include <cstring>\n");
+  fprintf(fp, "#include <fstream>\n");
+  fprintf(fp, "#include <iomanip>\n");
+  fprintf(fp, "#include <iostream>\n");
+  fprintf(fp, "#include <sstream>\n");
+  fprintf(fp, "#include <string>\n");
+  fprintf(fp, "#ifdef _WIN32\n");
+  fprintf(fp, "#include <time.h>\n");
+  fprintf(fp, "#include <windows.h>\n");
+  fprintf(fp, "#else\n");
+  fprintf(fp, "#include <sys/time.h>\n");
+  fprintf(fp, "#endif\n");
+  fprintf(fp, "#include <CL/opencl.h>\n");
+  fprintf(fp, "#include \"AOCLUtils/aocl_utils.h\"\n\n");
+  
+  fprintf(fp, "using namespace aocl_utils;\n\n");
+//  fprintf(fp, "using namespace aocl_utils;\n\n");
+//  fprintf(fp, "#define AOCX_FIEL \"krnl.aocx\"\n\n");  
+  
+  /* Print Intel helper function */
+  fprintf(fp, "#define HOST\n");
+  fprintf(fp, "#define ACL_ALIGNMENT 64\n");
+  fprintf(fp, "#ifdef _WIN32\n");
+  fprintf(fp, "void *acl_aligned_malloc(size_t size) {\n");
+  fprintf(fp, "    return _aligned_malloc(size, ACL_ALIGNMENT);\n");
+  fprintf(fp, "}\n");
+  fprintf(fp, "void acl_aligned_free(void *ptr) {\n");
+  fprintf(fp, "    _aligned_free(ptr);\n");
+  fprintf(fp, "}\n");
+  fprintf(fp, "#else\n");
+  fprintf(fp, "void *acl_aligned_malloc(size_t size) {\n");
+  fprintf(fp, "    void *result = NULL;\n");
+  fprintf(fp, "    if (posix_memalign(&result, ACL_ALIGNMENT, size) != 0)\n");
+  fprintf(fp, "        printf(\"acl_aligned_malloc() failed.\\n\");\n");
+  fprintf(fp, "    return result;\n");
+  fprintf(fp, "}\n");
+  fprintf(fp, "void acl_aligned_free(void *ptr) {\n");
+  fprintf(fp, "    free(ptr);\n");
+  fprintf(fp, "}\n");
+  fprintf(fp, "#endif\n\n");
+
+  //fprintf(fp, "$define AOCX_FILE \"krnl.aocx\"\n\n");
+  //fprintf(fp, "// Function prototypes\n");
+  //fprintf(fp, "void cleanup_host_side_resources();\n");
+  //fprintf(fp, "void cleanup();\n\n");
+
+  fprintf(fp, "// Check the status returned by the OpenCL API functions\n");
+  fprintf(fp, "#define CHECK(status) \\\n");
+  fprintf(fp, "if (status != CL_SUCCESS) { \\\n");
+  fprintf(fp, "    fprintf(stderr, \"error %%d in line %%d.\\n\", status, __LINE__); \\\n");
+  fprintf(fp, "    exit(1); \\\n");
+  fprintf(fp, "}\n\n");
+
+  fprintf(fp, "// Check the status returned by the OpenCL API functions, don't exit on error\n");
+  fprintf(fp, "#define CHECK_NO_EXIT(status) \\\n");
+  fprintf(fp, "if (status != CL_SUCCESS) { \\\n");
+  fprintf(fp, "    fprintf(stderr, \"error %%d in line %%d.\\n\", status, __LINE__); \\\n");
+  fprintf(fp, "}\n\n");
+}
+
+/* Open the host .cpp file and the kernel .h and .cpp files for writing.
+ * Add the necessary includes.
+ */
 static void opencl_open_files(struct hls_info *info, const char *input)
 {
   char name[PATH_MAX];
-  int len;
+  char dir[PATH_MAX];
+  int len, len_dir;
+  isl_printer *p_str;
+  char *file_path;
 
+  p_str = isl_printer_to_str(info->ctx);
+  p_str = isl_printer_print_str(p_str, info->output_dir);
+  p_str = isl_printer_print_str(p_str, "/src/");
+  file_path = isl_printer_get_str(p_str);
+  isl_printer_free(p_str);
   len = ppcg_extract_base_name(name, input);
+  /* Add the prefix */
+  sprintf(dir, "%s", file_path);
+  len_dir = strlen(file_path);
 
+  /* OpenCL host */
   strcpy(name + len, "_host.cpp");
-  info->host_c = fopen(name, "w");
+  strcpy(dir + len_dir, name);
+  info->host_c = fopen(dir, "w");
+  if (!info->host_c) {
+    printf("[AutoSA] Error: Can't open the file: %s\n", dir);
+    exit(1);
+  }
 
-  strcpy(name + len, "_kernel.c");
-  info->kernel_c = fopen(name, "w");
+  strcpy(name + len, "_host.h");
+  strcpy(dir + len_dir, name);
+  info->host_h = fopen(dir, "w");
+  print_intel_host_header(info->host_h);
+  fprintf(info->host_c, "#include \"%s\"\n", name);
+  strcpy(name + len, "_kernel.aocx");
+  fprintf(info->host_c, "#define AOCX_FILE \"%s\"\n", name);
+
+  strcpy(name + len, "_kernel_modules.cl");
+  strcpy(dir + len_dir, name);  
+  info->kernel_c = fopen(dir, "w");
+  if (!info->kernel_c) {
+    printf("[AutoSA] Error: Can't open the file: %s\n", dir);
+    exit(1);
+  }
 
   strcpy(name + len, "_kernel.h");
-  info->kernel_h = fopen(name, "w");
+  strcpy(dir + len_dir, name);
+  info->kernel_h = fopen(dir, "w");
+  if (!info->kernel_h) {
+    printf("[AutoSA] Error: Can't open the file: %s\n", dir);
+    exit(1);
+  }  
 
-  fprintf(info->host_c, "#include <assert.h>\n");
-  fprintf(info->host_c, "#include <stdio.h>\n");
-  fprintf(info->host_c, "#include <math.h>\n");
-  fprintf(info->host_c, "#include <CL/opencl.h>\n");
-  fprintf(info->host_c, "#include \"AOCLUtils/aocl_utils.h\"\n");
-  fprintf(info->host_c, "#include \"%s\"\n", name); 
-  fprintf(info->host_c, "using namespace aocl_utils;\n\n");
-  fprintf(info->host_c, "#define AOCX_FIEL \"krnl.aocx\"\n\n");
-
-  /* Print Intel helper function */
-  fprintf(info->host_c, "#define HOST\n");
-  fprintf(info->host_c, "#define ACL_ALIGNMENT 64\n");
-  fprintf(info->host_c, "#ifdef _WIN32\n");
-  fprintf(info->host_c, "void *acl_aligned_malloc(size_t size) {\n");
-  fprintf(info->host_c, "    return _aligned_malloc(size, ACL_ALIGNMENT);\n");
-  fprintf(info->host_c, "}\n");
-  fprintf(info->host_c, "void acl_aligned_free(void *ptr) {\n");
-  fprintf(info->host_c, "    _aligned_free(ptr);\n");
-  fprintf(info->host_c, "}\n");
-  fprintf(info->host_c, "#else\n");
-  fprintf(info->host_c, "void *acl_aligned_malloc(size_t size) {\n");
-  fprintf(info->host_c, "    void *result = NULL;\n");
-  fprintf(info->host_c, "    if (posix_memalign(&result, ACL_ALIGNMENT, size) != 0)\n");
-  fprintf(info->host_c, "        printf(\"acl_aligned_malloc() failed.\\n\");\n");
-  fprintf(info->host_c, "    return result;\n");
-  fprintf(info->host_c, "}\n");
-  fprintf(info->host_c, "void acl_aligned_free(void *ptr) {\n");
-  fprintf(info->host_c, "    free(ptr);\n");
-  fprintf(info->host_c, "}\n");
-  fprintf(info->host_c, "#endif\n\n");
-
-  fprintf(info->host_c, "void cleanup_host_side_resources();\n");
-  fprintf(info->host_c, "void cleanup();\n\n");
-
-  fprintf(info->host_c, "#define CHECK(status) \\\n");
-  fprintf(info->host_c, "if (status != CL_SUCCESS) { \\\n");
-  fprintf(info->host_c, "    fprintf(stderr, \"error %%d in line %%d.\\n\", status, __LINE__); \\\n");
-  fprintf(info->host_c, "    exit(1); \\\n");
-  fprintf(info->host_c, "}\n\n");
-
-  fprintf(info->host_c, "#define CHECK_NO_EXIT(status) \\\n");
-  fprintf(info->host_c, "if (status != CL_SUCCESS) { \\\n");
-  fprintf(info->host_c, "    fprintf(stderr, \"error %%d in line %%d.\\n\", status, __LINE__); \\\n");
-  fprintf(info->host_c, "}\n\n");
-
-  fprintf(info->kernel_c, "#include \"%s\"\n", name);  
-
-  strcpy(name + len, "_top_gen.c");
-  info->top_gen_c = fopen(name, "w");
+  strcpy(name + len, "_top_gen.cpp");
+  strcpy(dir + len_dir, name);
+  info->top_gen_c = fopen(dir, "w");
 
   strcpy(name + len, "_top_gen.h");
-  info->top_gen_h = fopen(name, "w");
-
-  fprintf(info->host_c, "#include \"%s\"\n", name);  
-  fprintf(info->top_gen_c, "#include <isl/printer.h>\n");
+  strcpy(dir + len_dir, name);
+  info->top_gen_h = fopen(dir, "w");
+  
+  fprintf(info->top_gen_c, "#include <isl/printer.h>\n");  
   fprintf(info->top_gen_c, "#include \"%s\"\n", name);  
+
+  free(file_path);
+}
+
+/* Close all output files. 
+ */
+static void opencl_close_files(struct hls_info *info)
+{
+  isl_printer *p_str;
+  char *complete;
+  FILE *f;
+
+  fclose(info->kernel_c);
+  fclose(info->kernel_h);
+  fclose(info->host_c);
+  if (!info->hls) {
+    fclose(info->host_h);
+  }
+  fclose(info->top_gen_c);
+  fclose(info->top_gen_h);  
+
+  p_str = isl_printer_to_str(info->ctx);
+  p_str = isl_printer_print_str(p_str, info->output_dir);
+  p_str = isl_printer_print_str(p_str, "/src/completed");
+  complete = isl_printer_get_str(p_str);
+  isl_printer_free(p_str);
+  f = fopen(complete, "w");
+  fclose(f);
+  free(complete);
+}
+
+/* Extract the data pack factors for each I/O buffer allocated for the current
+ * I/O group.
+ * Only insert the data pack factor that is not found in the current list
+ * "data_pack_factors".
+ * The list is in ascending order.
+ */
+static int *extract_data_pack_factors(int *data_pack_factors,
+  int *n_factor, struct autosa_array_ref_group *group)
+{
+  for (int i = 0; i < group->n_io_buffer; i++) {
+    struct autosa_io_buffer *buf = group->io_buffers[i];
+    bool insert = true;
+    int pos = 0;
+    for (pos = 0; pos < *n_factor; pos++) {
+      if (buf->n_lane > data_pack_factors[pos]) {
+        if (pos < *n_factor - 1) {
+          if (buf->n_lane < data_pack_factors[pos + 1]) {
+            // insert @pos+1
+            pos++;
+            break;
+          }
+        }
+      } else if (buf->n_lane == data_pack_factors[pos]) {
+        insert = false;
+        break;
+      }
+    }
+
+    if (!insert) 
+      continue;
+
+    *n_factor = *n_factor + 1;
+    data_pack_factors = (int *)realloc(data_pack_factors, 
+          sizeof(int) * (*n_factor));
+    for (int j = *n_factor - 1; j > pos; j--) {
+      data_pack_factors[j] = data_pack_factors[j - 1];
+    }
+    data_pack_factors[pos] = buf->n_lane;
+  }
+
+  return data_pack_factors;
+}
+
+/* Examine the local buffers of each array group. 
+ * Extract the data pack factors and build the data types 
+ * required by the program. 
+ * For Intel devices, we use the vectorized data types.
+ */
+static isl_stat print_data_types_intel(
+  struct autosa_hw_top_module *top, struct hls_info *hls)
+{
+  isl_printer *p;
+  struct autosa_kernel *kernel;
+
+  kernel = top->kernel;
+  p = isl_printer_to_file(kernel->ctx, hls->kernel_h);
+  p = isl_printer_set_output_format(p, ISL_FORMAT_C);
+  p = print_str_new_line(p, "/* Data Type */");
+  for (int i = 0; i < kernel->n_array; i++) {
+    struct autosa_local_array_info *local = &kernel->array[i]; 
+    int *data_pack_factors = NULL;
+    int n_factor = 0;
+    /* IO group */
+    for (int n = 0; n < local->n_io_group; n++) {
+      struct autosa_array_ref_group *group = local->io_groups[n];
+      data_pack_factors = extract_data_pack_factors(data_pack_factors, &n_factor, group);
+    }
+    /* Drain group */
+    if (local->drain_group)
+      data_pack_factors = extract_data_pack_factors(data_pack_factors, &n_factor, local->drain_group);
+
+    for (int n = 0; n < n_factor; n++) {
+      if (data_pack_factors[n] != 1) {        
+        p = isl_printer_start_line(p);
+        p = isl_printer_print_str(p, "typedef ");
+        p = isl_printer_print_str(p, local->array->type);
+        p = isl_printer_print_int(p, data_pack_factors[n]);        
+        p = isl_printer_print_str(p, " ");
+        p = isl_printer_print_str(p, local->array->name);
+        p = isl_printer_print_str(p, "_t");
+        p = isl_printer_print_int(p, data_pack_factors[n]);
+        p = isl_printer_print_str(p, ";");
+        p = isl_printer_end_line(p);
+      }
+    }
+    free(data_pack_factors);
+  }
+  p = print_str_new_line(p, "/* Data Type */");
+  p = isl_printer_end_line(p);
+  isl_printer_free(p);
+
+  return isl_stat_ok;
+}
+
+/* Print the arguments to a drain merge function declaration or call.
+ * If "types" is set, then print a declaration (including the types of the arguments).
+ * 
+ * The arguments are printed in the following order:
+ * - the module identifiers
+ * - the parameters
+ * - the host loop iterators
+ * - the arrays accssed by the module
+ */
+static __isl_give isl_printer *print_drain_merge_arguments_intel(
+  __isl_take isl_printer *p,
+  struct autosa_kernel *kernel,
+  struct autosa_array_ref_group *group,
+  struct autosa_drain_merge_func *func,
+  int types,
+  int hls)
+{
+  int first = 1;  
+  int nparam;
+  int n;
+  isl_space *space;
+  const char *type;
+  struct autosa_local_array_info *local_array;
+
+  type = isl_options_get_ast_iterator_type(kernel->ctx);
+  /* module identifiers */
+  const char *dims[] = { "idx", "idy", "idz" };
+  n = isl_id_list_n_id(func->inst_ids);
+  for (int i = 0; i < n; ++i) {
+    if (!first)
+      p = isl_printer_print_str(p, ", ");
+    if (types) {
+      p = isl_printer_print_str(p, type);
+      p = isl_printer_print_str(p, " ");
+    }
+    p = isl_printer_print_str(p, dims[i]);
+
+    first = 0;
+  }
+
+  /* params */
+  space = isl_union_set_get_space(kernel->arrays); 
+  nparam = isl_space_dim(space, isl_dim_param);
+  for (int i = 0; i < nparam; ++i) {
+    const char *name;
+    
+    name = isl_space_get_dim_name(space, isl_dim_param, i);
+    
+    if (!first)
+      p = isl_printer_print_str(p, ", ");
+    if (types)
+      p = isl_printer_print_str(p, "int ");
+    p = isl_printer_print_str(p, name);
+
+    first = 0;
+  }
+  isl_space_free(space);
+
+  /* Host iters */
+	n = isl_space_dim(kernel->space, isl_dim_set);	
+	for (int i = 0; i < n; ++i) {
+		const char *name;
+
+		if (!first)
+			p = isl_printer_print_str(p, ", ");
+		name = isl_space_get_dim_name(kernel->space, isl_dim_set, i);
+		if (types) {
+			p = isl_printer_print_str(p, type);
+			p = isl_printer_print_str(p, " ");
+		}
+		p = isl_printer_print_str(p, name);
+
+		first = 0;
+	}
+
+  /* Arrays */
+  local_array = group->local_array;
+  if (!first)
+    p = isl_printer_print_str(p, ", ");
+  if (types) {
+    if (hls) {
+      p = isl_printer_print_str(p, local_array->array->type);
+      p = isl_printer_print_str(p, " *");    
+    } else {
+      p = isl_printer_print_str(p, "std::vector<");
+      p = isl_printer_print_str(p, local_array->array->type);
+      p = isl_printer_print_str(p, ", aligned_allocator<");
+      p = isl_printer_print_str(p, local_array->array->type);
+      p = isl_printer_print_str(p, ", ACL_ALIGNMENT>> &");    
+    }
+    p = isl_printer_print_str(p, local_array->array->name);
+    p = isl_printer_print_str(p, "_to");
+  } else {    
+    p = isl_printer_print_str(p, "dev_");
+    p = isl_printer_print_str(p, local_array->array->name);
+    p = isl_printer_print_str(p, "[0]");
+  }
+  first = 0;
+  
+  if (!first)
+    p = isl_printer_print_str(p, ", ");
+  if (types) {
+    if (hls) {
+      p = isl_printer_print_str(p, local_array->array->type);
+      p = isl_printer_print_str(p, " *");    
+    } else {
+      p = isl_printer_print_str(p, "std::vector<");
+      p = isl_printer_print_str(p, local_array->array->type);
+      p = isl_printer_print_str(p, ", aligned_allocator<");
+      p = isl_printer_print_str(p, local_array->array->type);
+      p = isl_printer_print_str(p, ", ACL_ALIGNMENT>> &");
+    }
+    p = isl_printer_print_str(p, local_array->array->name);
+    p = isl_printer_print_str(p, "_from");
+  } else {
+    p = isl_printer_print_str(p, "dev_");
+    p = isl_printer_print_str(p, local_array->array->name);
+    p = isl_printer_print_str(p, "[idx]");
+  }
+  first = 0;
+
+  return p;
+}
+
+static __isl_give isl_printer *print_module_stmt(__isl_take isl_printer *p,
+  __isl_take isl_ast_print_options *print_options,
+  __isl_keep isl_ast_node *node, void *user)  
+{
+  isl_id *id;
+  struct autosa_kernel_stmt *stmt;
+  struct print_hw_module_data *hw_data = (struct print_hw_module_data *)(user);
+  struct autosa_hw_module *module = hw_data->module;
+
+  id = isl_ast_node_get_annotation(node);
+  stmt = (struct autosa_kernel_stmt *)isl_id_get_user(id);
+  isl_id_free(id);
+
+  isl_ast_print_options_free(print_options);
+  
+  switch (stmt->type) {
+//    case POLYSA_KERNEL_STMT_COPY:
+//      return autosa_kernel_print_copy(p, stmt);
+//    case POLYSA_KERNEL_STMT_SYNC:
+//      return print_sync(p, stmt);
+    case AUTOSA_KERNEL_STMT_DOMAIN:
+      return autosa_kernel_print_domain(p, stmt);
+    case AUTOSA_KERNEL_STMT_IO:
+      return autosa_kernel_print_io(p, stmt, hw_data->hls);
+    case AUTOSA_KERNEL_STMT_IO_TRANSFER:
+      return autosa_kernel_print_io_transfer(p, stmt, hw_data->hls);
+    case AUTOSA_KERNEL_STMT_IO_DRAM:
+      return autosa_kernel_print_io_dram(p, stmt, hw_data->hls);
+    case AUTOSA_KERNEL_STMT_IO_MODULE_CALL_INTER_TRANS:
+      return autosa_kernel_print_inter_trans(p, stmt, hw_data->hls); 
+    case AUTOSA_KERNEL_STMT_IO_MODULE_CALL_INTRA_TRANS:
+      return autosa_kernel_print_intra_trans(p, stmt, hw_data->hls); 
+    case AUTOSA_KERNEL_STMT_IO_MODULE_CALL_INTER_INTRA:
+      return autosa_kernel_print_inter_intra(p, stmt, hw_data->hls);
+    case AUTOSA_KERNEL_STMT_IO_MODULE_CALL_INTRA_INTER:
+      return autosa_kernel_print_intra_inter(p, stmt, hw_data->hls);
+    case AUTOSA_KERNEL_STMT_IO_MODULE_CALL_STATE_HANDLE:
+      return autosa_kernel_print_state_handle(p, stmt, hw_data->hls); 
+    case AUTOSA_KERNEL_STMT_DRAIN_MERGE:
+      return autosa_kernel_print_drain_merge(p, stmt, hw_data->hls);
+  }
+
+  return p;  
+}
+
+/* Print the drained data merge functions. 
+ */
+static isl_stat print_drain_merge_funcs(
+  struct autosa_kernel *kernel,
+  struct autosa_drain_merge_func **funcs, int n_funcs,
+  struct hls_info *hls)
+{
+  isl_printer *p;
+  isl_ctx *ctx;
+
+  if (n_funcs == 0)
+    return isl_stat_ok;
+
+  ctx = kernel->ctx;
+  if (!hls->hls)
+    p = isl_printer_to_file(kernel->ctx, hls->host_h);
+  else
+    p = isl_printer_to_file(kernel->ctx, hls->kernel_h);  
+  p = isl_printer_set_output_format(p, ISL_FORMAT_C);  
+  for (int i = 0; i < n_funcs; i++) {
+    struct autosa_array_ref_group *group = funcs[i]->group;
+    isl_ast_print_options *print_options;
+    struct print_hw_module_data hw_data = {hls, NULL, NULL};
+    
+    p = print_str_new_line(p, "/* Helper Function */");
+    p = isl_printer_start_line(p);
+    if (hls->hls)
+      p = isl_printer_print_str(p, "inline ");
+    p = isl_printer_print_str(p, "void ");
+    p = autosa_array_ref_group_print_prefix(group, p);
+    p = isl_printer_print_str(p, "_drain_merge(");
+    p = print_drain_merge_arguments_intel(p, kernel, group, funcs[i], 1, hls->hls);
+    p = isl_printer_print_str(p, "){");
+    p = isl_printer_end_line(p);
+    p = isl_printer_indent(p, 4);
+
+    p = print_str_new_line(p, "/* Variable Declaration */");
+    if (!hls->hls)
+      print_func_iterators(hls->host_h, funcs[i]);
+    else
+      print_func_iterators(hls->kernel_h, funcs[i]);      
+    p = print_str_new_line(p, "/* Variable Declaration */");
+    p = isl_printer_end_line(p);
+
+    print_options = isl_ast_print_options_alloc(ctx);
+    print_options = isl_ast_print_options_set_print_user(print_options,
+                    &print_module_stmt, &hw_data); 
+    p = isl_ast_node_print(funcs[i]->device_tree, p, print_options);
+
+    p = isl_printer_indent(p, -4);
+    p = print_str_new_line(p, "}");
+    p = print_str_new_line(p, "/* Helper Function */");
+  }
+  p = isl_printer_end_line(p);
+  isl_printer_free(p);
+
+  return isl_stat_ok;
+}
+
+/* For each io_module connected to the external memory, we will need to create 
+ * one separate queue assoicated with separate OpenCL kernels.
+ */
+static __isl_give isl_printer *find_device_intel(__isl_take isl_printer *p,
+  struct autosa_hw_top_module *top)
+{
+  int n_cmd_q;
+  int n_kernel;
+  int indent;
+
+  p = print_str_new_line(p, "// OpenCL host code starts from here");
+  p = print_str_new_line(p, "bool use_emulator = false; // control whether the emulator should be used.");
+  p = print_str_new_line(p, "cl_int status;");
+  p = print_str_new_line(p, "cl_platform_id platform = NULL;");
+  p = print_str_new_line(p, "cl_device_id *devices = NULL;");
+
+  int q_id = 0;
+  for (int i = 0; i < top->n_hw_modules; i++) {
+    struct autosa_hw_module *module = top->hw_modules[i];
+    if (module->type == PE_MODULE || module->to_mem == 0)
+      continue;
+    struct autosa_array_ref_group *group = module->io_groups[0];
+
+    p = isl_printer_start_line(p);
+    p = isl_printer_print_str(p, "int ID_");
+    p = isl_printer_print_str(p, module->name);
+    p = isl_printer_print_str(p, "_base = ");        
+    p = isl_printer_print_int(p, q_id);
+    p = isl_printer_print_str(p, ";");
+    p = isl_printer_end_line(p);
+    q_id += group->n_mem_ports;
+  }  
+
+  n_cmd_q = q_id;
+  n_kernel = n_cmd_q;
+
+  p = isl_printer_start_line(p);
+  p = isl_printer_print_str(p, "int NUM_QUEUES_TO_CREATE = ");
+  p = isl_printer_print_int(p, n_cmd_q);
+  p = isl_printer_print_str(p, ";");
+  p = isl_printer_end_line(p); 
+  p = isl_printer_start_line(p);
+  p = isl_printer_print_str(p, "int NUM_KERNELS_TO_CREATE = ");
+  p = isl_printer_print_int(p, n_kernel);
+  p = isl_printer_print_str(p, ";");
+  p = isl_printer_end_line(p);  
+
+  p = print_str_new_line(p, "cl_kernel kernel[NUM_KERNELS_TO_CREATE];");
+  p = print_str_new_line(p, "cl_command_queue cmdQueue[NUM_QUEUES_TO_CREATE];");
+
+  p = isl_printer_end_line(p);
+  p = print_str_new_line(p, "// Parse command line arguments");
+  p = print_str_new_line(p, "Options options(argc, argv);");
+  p = print_str_new_line(p, "if (options.has(\"emulator\")) {");
+  p = isl_printer_indent(p, 4);
+  p = print_str_new_line(p, "use_emulator = options.get<bool>(\"emulator\")");
+  p = isl_printer_indent(p, -4);
+  p = print_str_new_line(p, "}");
+  p = print_str_new_line(p, "if (!setCwdToExeDir()) {");
+  p = isl_printer_indent(p, 4);
+  p = print_str_new_line(p, "return false;");
+  p = isl_printer_indent(p, -4);
+  p = isl_printer_end_line(p);
+
+  p = print_str_new_line(p, "// Get the OpenCL platform");
+  p = print_str_new_line(p, "if (use_emulator) {");
+  p = isl_printer_indent(p, 4);
+  p = print_str_new_line(p, "platform = findPlatform(\"Intel(R) FPGA Emulation Platform for OpenCL(TM)\");");
+  p = isl_printer_indent(p, -4);
+  p = print_str_new_line(p, "} else {");
+  p = isl_printer_indent(p, 4);
+  p = print_str_new_line(p, "platform = findPlatform(\"Intel(R) FPGA SDK for OpenCL(TM)\");");
+  p = isl_printer_indent(p, -4);
+  p = print_str_new_line(p, "}");
+  p = print_str_new_line(p, "if (platform == NULL) {");
+  p = isl_printer_indent(p, 4);
+  p = print_str_new_line(p, "printf(\"ERROR: Unable to find Intel(R) FPGA OpenCL platform\");");
+  p = print_str_new_line(p, "return -1;");
+  p = isl_printer_indent(p, -4);
+  p = print_str_new_line(p, "}");
+  p = isl_printer_end_line(p);
+
+  p = print_str_new_line(p, "// Discover and initialize the devices");
+  p = print_str_new_line(p, "cl_uint numDevices = 0;");
+  p = print_str_new_line(p, "char buffer[4096];");
+  p = print_str_new_line(p, "unsigned int buf_uint;");
+  p = print_str_new_line(p, "int device_found = 0;");
+  p = print_str_new_line(p, "status = clGetDeviceIDs(platform,");
+  p = isl_printer_indent(p, strlen("status = clGetDeviceIDs("));
+  p = print_str_new_line(p, "CL_DEVICE_TYPE_ALL,");
+  p = print_str_new_line(p, "0,");
+  p = print_str_new_line(p, "NULL,");
+  p = print_str_new_line(p, "&numDevices);");
+  indent = strlen("status = clGetDeviceIDs(");
+  p = isl_printer_indent(p, -indent);
+  p = print_str_new_line(p, "if (status == CL_SUCCESS) {");
+  p = isl_printer_indent(p, 4);
+  p = print_str_new_line(p, "clGetPlatformInfo(platform,");
+  p = isl_printer_indent(p, strlen("clGetPlatformInfo("));
+  p = print_str_new_line(p, "CL_PLATFORM_VENDOR,");
+  p = print_str_new_line(p, "4096,");
+  p = print_str_new_line(p, "buffer,");
+  p = print_str_new_line(p, "NULL);");
+  indent = strlen("clGetPlatformInfo(");
+  p = isl_printer_indent(p, -indent);
+  p = print_str_new_line(p, "if (strstr(buffer, \"Intel(R)\") != NULL) {");
+  p = isl_printer_indent(p, 4);
+  p = print_str_new_line(p, "device_found = 1;");
+  p = isl_printer_indent(p, -4);
+  p = print_str_new_line(p, "}");
+  p = print_str_new_line(p, "if (device_found) {");
+  p = isl_printer_indent(p, 4);
+  p = print_str_new_line(p, "devices = (cl_device_id*) acl_aligned_malloc(numDevices * sizeof(cl_device_id));"); 
+  p = print_str_new_line(p, "status = clGetDeviceIDs(platform,");
+  p = isl_printer_indent(p, strlen("status = clGetDeviceIDs("));
+  p = print_str_new_line(p, "CL_DEVICE_TYPE_ALL,");
+  p = print_str_new_line(p, "numDevices,");
+  p = print_str_new_line(p, "devices,");
+  p = print_str_new_line(p, "NULL);");
+  indent = strlen("status = clGetDeviceIDs(");
+  p = isl_printer_indent(p, -indent);
+  p = isl_printer_indent(p, -4);
+  p = print_str_new_line(p, "}");
+  p = isl_printer_indent(p, -4);
+  p = print_str_new_line(p, "}");
+  p = print_str_new_line(p, "if (!device_found) {");
+  p = isl_printer_indent(p, 4);
+  p = print_str_new_line(p, "printf(\"failed to find a OpenCL device\\n\");");
+  p = print_str_new_line(p, "exit(1);");
+  p = isl_printer_indent(p, -4);
+  p = print_str_new_line(p, "}");
+
+  p = print_str_new_line(p, "for (int i = 0; i < numDevices; i++) {");
+  p = isl_printer_indent(p, 4);
+  p = print_str_new_line(p, "clGetDeviceInfo(devices[i],");
+  indent = strlen("clGetDeviceInfo(");
+  p = isl_printer_indent(p, indent);
+  p = print_str_new_line(p, "CL_DEVICE_NAME,");
+  p = print_str_new_line(p, "4096,");
+  p = print_str_new_line(p, "buffer,");
+  p = print_str_new_line(p, "NULL);");
+  p = isl_printer_indent(p, -indent);
+  p = print_str_new_line(p, "fprintf(stdout, \"\\nDevice Name: %s\\n\", buffer);");
+  p = isl_printer_end_line(p);
+
+  p = print_str_new_line(p, "clGetDeviceInfo(devices[i],");
+  indent = strlen("clGetDeviceInfo(");
+  p = isl_printer_indent(p, indent);
+  p = print_str_new_line(p, "CL_DEVICE_VENDOR,");
+  p = print_str_new_line(p, "4096,");
+  p = print_str_new_line(p, "buffer,");
+  p = print_str_new_line(p, "NULL);");
+  p = isl_printer_indent(p, -indent);
+  p = print_str_new_line(p, "fprintf(stdout, \"Device Vendor: %s\\n\", buffer);");
+  p = isl_printer_end_line(p);
+
+  p = print_str_new_line(p, "clGetDeviceInfo(devices[i],");
+  indent = strlen("clGetDeviceInfo(");
+  p = isl_printer_indent(p, indent);
+  p = print_str_new_line(p, "CL_DEVICE_MAX_COMPUTE_UNITS,");
+  p = print_str_new_line(p, "sizeof(buf_uint),");
+  p = print_str_new_line(p, "&buf_uint,");
+  p = print_str_new_line(p, "NULL);");
+  p = isl_printer_indent(p, -indent);
+  p = print_str_new_line(p, "fprintf(stdout, \"Device Computing Units: %u\\n\", buf_uint);");
+  p = isl_printer_end_line(p);
+
+  p = print_str_new_line(p, "clGetDeviceInfo(devices[i],");
+  indent = strlen("clGetDeviceInfo(");
+  p = isl_printer_indent(p, indent);
+  p = print_str_new_line(p, "CL_DEVICE_GLOBAL_MEM_SIZE,");
+  p = print_str_new_line(p, "sizeof(unsigned long),");
+  p = print_str_new_line(p, "&buffer,");
+  p = print_str_new_line(p, "NULL);");
+  p = isl_printer_indent(p, -indent);
+  p = print_str_new_line(p, "fprintf(stdout, \"Global Memory Size: %lu\\n\", *((unsigned long*)buffer));");
+  p = isl_printer_end_line(p);
+
+  p = print_str_new_line(p, "clGetDeviceInfo(devices[i],");
+  indent = strlen("clGetDeviceInfo(");
+  p = isl_printer_indent(p, indent);
+  p = print_str_new_line(p, "CL_DEVICE_MAX_MEM_ALLOC_SIZE,");
+  p = print_str_new_line(p, "sizeof(unsigned long),");
+  p = print_str_new_line(p, "&buffer,");
+  p = print_str_new_line(p, "NULL);");
+  p = isl_printer_indent(p, -indent);
+  p = print_str_new_line(p, "fprintf(stdout, \"Global Memory Allocation Size: %lu\\n\\n\", *((unsigned long*)buffer));");
+  p = isl_printer_end_line(p);
+
+  p = isl_printer_indent(p, -4);
+  p = print_str_new_line(p, "}");
+  p = isl_printer_end_line(p);
+
+  /* Context */
+  p = print_str_new_line(p, "// Create a context");
+  p = print_str_new_line(p, "context = clCreateContext(NULL,");
+  indent = strlen("context = clCreateContext(");
+  p = isl_printer_indent(p, indent);
+  p = print_str_new_line(p, "1,");
+  p = print_str_new_line(p, "devices,");
+  p = print_str_new_line(p, "NULL,");
+  p = print_str_new_line(p, "NULL,");
+  p = print_str_new_line(p, "&status); CHECK(status);");
+  p = isl_printer_indent(p, -indent);
+  p = isl_printer_end_line(p);
+
+  /* Command Queue */
+  p = print_str_new_line(p, "// Create command queues");
+  p = print_str_new_line(p, "for (int i = 0; i < NUM_QUEUES_TO_CREATE; i++) {");
+  p = isl_printer_indent(p, 4);
+  p = print_str_new_line(p, "cmdQueue[i] = clCreateCommandQueue(context,");  
+  indent = strlen("cmdQueue[i] = clCreateCommandQueue(");
+  p = isl_printer_indent(p, indent);
+  p = print_str_new_line(p, "devices[0],");
+  p = print_str_new_line(p, "CL_QUEUE_PROFILING_ENABLE,");
+  p = print_str_new_line(p, "&status); CHECK(status);");
+  p = isl_printer_indent(p, -indent);
+  p = isl_printer_indent(p, -4);
+  p = print_str_new_line(p, "}");
+  p = isl_printer_end_line(p);  
+
+  /* Create the program from binaries */
+  p = print_str_new_line(p, "// Create the program from binaries");
+  p = print_str_new_line(p, "size_t binary_length;");
+  p = print_str_new_line(p, "const unsigned char *binary;");
+  p = print_str_new_line(p, "printf(\"\\nAOCX file: %%s\\n\\n\", AOCX_FILE);");
+  p = print_str_new_line(p, "FILE *fp = fopen(AOCX_FILE, \"rb\");");
+  p = print_str_new_line(p, "if (fp == NULL) {");
+  p = isl_printer_indent(p, 4);
+  p = print_str_new_line(p, "printf(\"Failed to open the AOCX file (fopen).\\n\");");
+  p = print_str_new_line(p, "return -1;");  
+  p = isl_printer_indent(p, -4);
+  p = print_str_new_line(p, "}");
+  p = print_str_new_line(p, "fseek(fp, 0, SEEK_END);");
+  p = print_str_new_line(p, "long ftell_sz = ftell(fp);");
+  p = print_str_new_line(p, "if (ftell_sz < 0) {");
+  p = isl_printer_indent(p, 4);
+  p = print_str_new_line(p, "printf(\"ftell returns a negative value.\\n\");");
+  p = print_str_new_line(p, "fclose(fp);");
+  p = print_str_new_line(p, "return -1;");
+  p = isl_printer_indent(p, -4);
+  p = print_str_new_line(p, "} else {");
+  p = isl_printer_indent(p, 4);
+  p = print_str_new_line(p, "binary_length = ftell_sz;");
+  p = isl_printer_indent(p, -4);
+  p = print_str_new_line(p, "}");
+  p = print_str_new_line(p, "binary = (unsigned char *)malloc(sizeof(unsigned char) * binary_length);");
+  p = print_str_new_line(p, "rewind(fp);");
+  p = print_str_new_line(p, "size_t fread_sz = fread((void *)binary, binary_length, 1, fp);");
+  p = print_str_new_line(p, "if (fread_sz == 0) {");
+  p = isl_printer_indent(p, 4);
+  p = print_str_new_line(p, "printf(\"Failed to read from the AOCX file (fread).\\n\");");
+  p = print_str_new_line(p, "fclose(fp);");
+  p = print_str_new_line(p, "free(const_char<unsigned char *>(binary))");
+  p = print_str_new_line(p, "return -1;");
+  p = isl_printer_indent(p, -4);
+  p = print_str_new_line(p, "}");
+  p = print_str_new_line(p, "fclose(fp);");
+  p = isl_printer_end_line(p);
+  
+  p = print_str_new_line(p, "program = clCreateProgramWithBinary(context,");
+  indent = strlen("program = clCreateProgramWithBinary(");
+  p = isl_printer_indent(p, indent);
+  p = print_str_new_line(p, "1,");
+  p = print_str_new_line(p, "devices,");
+  p = print_str_new_line(p, "&binary_length,");
+  p = print_str_new_line(p, "(const unsigned char **)&binary,");
+  p = print_str_new_line(p, "&status,");
+  p = print_str_new_line(p, "NULL); CHECK(status);");
+  p = isl_printer_indent(p, -indent);
+  p = isl_printer_end_line(p);
+
+  p = print_str_new_line(p, "status = clBuildProgram(program, 0, NULL, NULL, NULL, NULL);");
+  p = print_str_new_line(p, "if (status != CL_SUCCESS) {");
+  p = isl_printer_indent(p, 4);
+  p = print_str_new_line(p, "char log[10000] = {0};");
+  p = print_str_new_line(p, "clGetProgramBuildInfo(program, devices[0], CL_PROGRAM_BUILD_LOG, 10000, log, NULL);");
+  p = print_str_new_line(p, "printf(\"%%s\\n\", log);");
+  p = print_str_new_line(p, "CHECK(status);");
+  p = isl_printer_indent(p, -4);
+  p = print_str_new_line(p, "}");
+  p = isl_printer_end_line(p);
+
+  /* Create the kernel */  
+  p = print_str_new_line(p, "// Create the kernel");  
+  int k_id = 0;
+  for (int i = 0; i < top->n_hw_modules; i++) {
+    struct autosa_hw_module *module = top->hw_modules[i];
+    if (module->type == PE_MODULE || module->to_mem == 0)
+      continue;
+    struct autosa_array_ref_group *group = module->io_groups[0];
+
+    for (int j = 0; j < group->n_mem_ports; j++) {
+      p = isl_printer_start_line(p);
+      p = isl_printer_print_str(p, "kernel[");
+      p = isl_printer_print_str(p, "ID_");
+      p = isl_printer_print_str(p, module->name);
+      p = isl_printer_print_str(p, "_base");              
+      p = isl_printer_print_str(p, " + ");
+      p = isl_printer_print_int(p, j);
+      p = isl_printer_print_str(p, "] = clCreateKernel(program, \"");
+      p = isl_printer_print_str(p, module->name);
+      if (group->n_mem_ports > 1) {
+        p = isl_printer_print_str(p, "_");
+        p = isl_printer_print_int(p, j);
+      }      
+      p = isl_printer_print_str(p, "\", &status);");
+      p = isl_printer_end_line(p);
+      p = print_str_new_line(p, "CHECK(status);");
+      k_id++;
+    }
+  }    
+
+  return p;
+}
+
+static __isl_give isl_printer *declare_and_allocate_device_arrays_intel(
+  __isl_take isl_printer *p, struct autosa_prog *prog, 
+  struct autosa_kernel *kernel)
+{
+  int indent;
+  p = print_str_new_line(p, "// Allocate memory in host memory");
+  for (int i = 0; i < kernel->n_array; i++) {    
+    struct autosa_local_array_info *local_array = &kernel->array[i];
+    if (!autosa_array_requires_device_allocation(local_array->array))
+      continue;      
+    
+    if (local_array->n_mem_ports > 1 && local_array->array->copy_out) {
+      /* Create multiple host buffers. */
+      p = isl_printer_start_line(p);
+      p = isl_printer_print_str(p, "std::vector<std::vector<");
+      p = isl_printer_print_str(p, local_array->array->type);
+      p = isl_printer_print_str(p, ", aligned_allocator<");
+      p = isl_printer_print_str(p, local_array->array->type);
+      p = isl_printer_print_str(p, ", ACL_ALIGNMENT>>> ");
+      p = isl_printer_print_str(p, "dev_");
+      p = isl_printer_print_str(p, local_array->array->name);                          
+      p = isl_printer_print_str(p, ";");
+      p = isl_printer_end_line(p);      
+
+      p = isl_printer_start_line(p);
+      p = isl_printer_print_str(p, "for (int i = 0; i < ");
+      p = isl_printer_print_int(p, local_array->n_mem_ports);
+      p = isl_printer_print_str(p, "; i++) {");
+      p = isl_printer_end_line(p);
+      p = isl_printer_indent(p, 4);
+      
+      p = isl_printer_start_line(p);
+      p = isl_printer_print_str(p, "std::vector<");
+      p = isl_printer_print_str(p, local_array->array->type);
+      p = isl_printer_print_str(p, ", aligned_allocator<");
+      p = isl_printer_print_str(p, local_array->array->type);
+      p = isl_printer_print_str(p, ", ACL_ALIGNMENT>> ");
+      p = isl_printer_print_str(p, "dev_");
+      p = isl_printer_print_str(p, local_array->array->name);        
+      p = isl_printer_print_str(p, "_tmp");        
+      p = isl_printer_print_str(p, "(");
+      p = autosa_array_info_print_data_size(p, local_array->array);
+      p = isl_printer_print_str(p, ");");
+      p = isl_printer_end_line(p);
+      
+      p = isl_printer_start_line(p);
+      p = isl_printer_print_str(p, "dev_");
+      p = isl_printer_print_str(p, local_array->array->name);
+      p = isl_printer_print_str(p, ".push_back(dev_");
+      p = isl_printer_print_str(p, local_array->array->name);
+      p = isl_printer_print_str(p, "_tmp);");
+      p = isl_printer_end_line(p);
+
+      p = isl_printer_indent(p, -4);
+      p = print_str_new_line(p, "}");
+    } else {
+      /* Create a single host buffer. */
+      p = isl_printer_start_line(p);
+      p = isl_printer_print_str(p, "std::vector<");
+      p = isl_printer_print_str(p, local_array->array->type);
+      p = isl_printer_print_str(p, ", aligned_allocator<");
+      p = isl_printer_print_str(p, local_array->array->type);
+      p = isl_printer_print_str(p, ", ACL_ALIGNMENT>> ");
+      p = isl_printer_print_str(p, "dev_");
+      p = isl_printer_print_str(p, local_array->array->name);      
+      p = isl_printer_print_str(p, "(");
+      p = autosa_array_info_print_data_size(p, local_array->array);
+      p = isl_printer_print_str(p, ");");
+      p = isl_printer_end_line(p);
+    }    
+  }
+  p = isl_printer_end_line(p);
+
+  /* Initialize buffer. */
+  p = print_str_new_line(p, "// Initialize host buffers");
+  for (int i = 0; i < kernel->n_array; i++) {    
+    struct autosa_local_array_info *local_array = &kernel->array[i];
+    if (!autosa_array_requires_device_allocation(local_array->array))
+      continue;    
+
+    if (local_array->n_mem_ports > 1 && local_array->array->copy_out) {      
+      p = isl_printer_start_line(p);
+      p = isl_printer_print_str(p, "for (int i = 0; i < ");
+      p = isl_printer_print_int(p, local_array->n_mem_ports);
+      p = isl_printer_print_str(p, "; i++) {");
+      p = isl_printer_end_line(p);
+      p = isl_printer_indent(p, 4);
+
+      p = isl_printer_start_line(p);
+      p = isl_printer_print_str(p, "std::copy(reinterpret_cast<");
+      p = isl_printer_print_str(p, local_array->array->type);
+      p = isl_printer_print_str(p, " *>(");
+      p = isl_printer_print_str(p, local_array->array->name);
+      p = isl_printer_print_str(p, "), reinterpret_cast<");
+      p = isl_printer_print_str(p, local_array->array->type);
+      p = isl_printer_print_str(p, " *>(");
+      p = isl_printer_print_str(p, local_array->array->name);
+      p = isl_printer_print_str(p, ") + ");
+      p = autosa_array_info_print_data_size(p, local_array->array);
+      p = isl_printer_print_str(p, ", dev_");
+      p = isl_printer_print_str(p, local_array->array->name);        
+      p = isl_printer_print_str(p, "[i]");        
+      p = isl_printer_print_str(p, ".begin());");
+      p = isl_printer_end_line(p);
+      
+      p = isl_printer_indent(p, -4);
+      p = print_str_new_line(p, "}");
+    } else {
+      p = isl_printer_start_line(p);
+      p = isl_printer_print_str(p, "std::copy(reinterpret_cast<");
+      p = isl_printer_print_str(p, local_array->array->type);
+      p = isl_printer_print_str(p, " *>(");
+      p = isl_printer_print_str(p, local_array->array->name);
+      p = isl_printer_print_str(p, "), reinterpret_cast<");
+      p = isl_printer_print_str(p, local_array->array->type);
+      p = isl_printer_print_str(p, " *>(");
+      p = isl_printer_print_str(p, local_array->array->name);
+      p = isl_printer_print_str(p, ") + ");
+      p = autosa_array_info_print_data_size(p, local_array->array);
+      p = isl_printer_print_str(p, ", dev_");
+      p = isl_printer_print_str(p, local_array->array->name);
+      p = isl_printer_print_str(p, ".begin());");
+      p = isl_printer_end_line(p);
+    }
+  }
+  p = isl_printer_end_line(p);
+
+  p = print_str_new_line(p, "// Allocate buffers in device memory");
+    for (int i = 0; i < kernel->n_array; i++) {
+    struct autosa_local_array_info *local_array = &kernel->array[i];    
+    if (!autosa_array_requires_device_allocation(local_array->array))
+      continue;
+    
+    p = isl_printer_start_line(p);
+    p = isl_printer_print_str(p, "std::vector<cl_mem> buffer_");
+    p = isl_printer_print_str(p, local_array->array->name);
+    p = isl_printer_print_str(p, ";");
+    p = isl_printer_end_line(p);    
+  }
+
+  for (int i = 0; i < kernel->n_array; i++) {
+    int indent1, indent2;
+    struct autosa_local_array_info *local_array = &kernel->array[i];
+    if (!autosa_array_requires_device_allocation(local_array->array))
+      continue;
+        
+    //for (int j = 0; j < local_array->n_mem_ports; j++) {
+    p = isl_printer_start_line(p);
+    p = isl_printer_print_str(p, "for (int i = 0; i < ");
+    p = isl_printer_print_int(p, local_array->n_mem_ports);
+    p = isl_printer_print_str(p, "; i++) {");
+    p = isl_printer_end_line(p);
+    p = isl_printer_indent(p, 4);
+            
+    p = isl_printer_start_line(p);    
+    p = isl_printer_print_str(p, "cl_mem buffer_");
+    p = isl_printer_print_str(p, local_array->array->name);    
+    p = isl_printer_print_str(p, "_tmp = clCreateBuffer");    
+    p = isl_printer_print_str(p, "(context,");
+    p = isl_printer_end_line(p);
+    p = isl_printer_indent(p, strlen("cl_mem buffer_") + 
+      strlen(local_array->array->name) + strlen("_tmp") + strlen(" = clCreateBuffer("));        
+    p = isl_printer_start_line(p);
+    p = isl_printer_print_str(p, "CL_MEM_USE_HOST_PTR | ");
+    if (local_array->array->copy_in && local_array->array->copy_out) {
+      p = isl_printer_print_str(p, "CL_MEM_READ_WRITE");
+    } else {
+      if (local_array->array->copy_in) 
+        p = isl_printer_print_str(p, "CL_MEM_READ_ONLY");
+      else if (local_array->array->copy_out)
+        p = isl_printer_print_str(p, "CL_MEM_WRITE_ONLY");
+    }
+    p = isl_printer_print_str(p, ",");
+    p = isl_printer_end_line(p);
+    p = isl_printer_start_line(p);
+    p = autosa_array_info_print_size(p, local_array->array);
+    p = isl_printer_print_str(p, ",");
+    p = isl_printer_end_line(p);
+    p = print_str_new_line(p, "NULL,");
+    //p = isl_printer_start_line(p);
+    //p = isl_printer_print_str(p, "dev_");
+    //p = isl_printer_print_str(p, local_array->array->name);
+    //if (local_array->n_mem_ports > 1 && local_array->array->copy_out) {
+    //  p = isl_printer_print_str(p, "[i]");      
+    //}
+    //p = isl_printer_print_str(p, ".data(),");
+    //p = isl_printer_end_line(p);
+    p = print_str_new_line(p, "&status); CHECK(status);");
+    p = isl_printer_indent(p, -(strlen("cl_mem buffer_") + 
+      strlen(local_array->array->name) + strlen("_tmp") + strlen(" = clCreateBuffer(")));    
+      
+    p = isl_printer_start_line(p);
+    p = isl_printer_print_str(p, "buffer_");
+    p = isl_printer_print_str(p, local_array->array->name);
+    p = isl_printer_print_str(p, ".push_back(std::move(buffer_");
+    p = isl_printer_print_str(p, local_array->array->name);
+    p = isl_printer_print_str(p, "_tmp));");
+    p = isl_printer_end_line(p);          
+
+    p = isl_printer_indent(p, -4);
+    p = print_str_new_line(p, "}");
+  }
+  p = isl_printer_end_line(p);
+
+  /* Insert profiling information. */
+  p = print_str_new_line(p, "auto host_begin = std::chrono::high_resolution_clock::now();");
+  p = print_str_new_line(p, "auto fpga_begin = std::chrono::high_resolution_clock::now();");
+  p = print_str_new_line(p, "auto fpga_end = std::chrono::high_resolution_clock::now();");
+  p = isl_printer_end_line(p);
+
+  return p;
+}
+
+/* Print code for initializing the device for execution of the transformed
+ * code. This includes declaring locally defined variables as well as
+ * declaring and allocating the required copies of arrays on the device.
+ */
+static __isl_give isl_printer *init_device_intel(__isl_take isl_printer *p,
+	struct autosa_prog *prog, struct autosa_kernel *kernel, int hls,
+  struct autosa_hw_top_module *top)
+{
+	p = autosa_print_local_declarations(p, prog);
+  
+  p = find_device_intel(p, top);
+  p = declare_and_allocate_device_arrays_intel(p, prog, kernel); 
+
+	return p;
+}
+
+/* Print code for clearing the device after execution of the transformed code.
+ * In particular, free the memory that was allocated on the device.
+ */
+static __isl_give isl_printer *clear_device_intel(__isl_take isl_printer *p,
+	struct autosa_prog *prog)
+{  
+  /* Profiling results */
+  p = print_str_new_line(p, "for (int i = 0; i < NUM_QUEUES_TO_CREATE; i++) {");  
+  p = isl_printer_indent(p, 4);
+  p = print_str_new_line(p, "status = clFinish(cmdQueue[i]); CHECK(status);");
+  p = isl_printer_indent(p, -4);
+  p = print_str_new_line(p, "}");  
+
+  p = print_str_new_line(p, "auto host_end = std::chrono::high_resolution_clock::now();");
+  p = isl_printer_end_line(p);
+  p = print_str_new_line(p, "// Calculate time");
+  p = print_str_new_line(p, "std::chrono::duration<double> fpga_duration = fpga_end - fpga_begin;");
+  p = print_str_new_line(p, "std::cout << \"FPGA Time: \" << fpga_duration.count() << \" s\" << std::endl;");
+  p = print_str_new_line(p, "std::chrono::duration<double> host_duration = host_end - host_begin;");
+  p = print_str_new_line(p, "std::cout << \"Host Time: \" << host_duration.count() << \" s\" << std::endl;");    
+  p = isl_printer_end_line(p);
+
+  /* Restore buffer */    
+  p = print_str_new_line(p, "// Restore data from host buffers");
+  for (int i = 0; i < prog->n_array; i++) {
+    struct autosa_array_info *array = &prog->array[i];
+    if (!autosa_array_requires_device_allocation(array))
+      continue;
+
+    if (array->copy_out) {
+      p = isl_printer_start_line(p);
+      p = isl_printer_print_str(p, "std::copy(dev_");
+      p = isl_printer_print_str(p, array->name);
+      if (array->local_array->n_mem_ports > 1) {
+        p = isl_printer_print_str(p, "[0]");
+      }
+      p = isl_printer_print_str(p, ".begin(), dev_");
+      p = isl_printer_print_str(p, array->name);
+      if (array->local_array->n_mem_ports > 1) {
+        p = isl_printer_print_str(p, "[0]");
+      }
+      p = isl_printer_print_str(p, ".end(), reinterpret_cast<");
+      p = isl_printer_print_str(p, array->type);
+      p = isl_printer_print_str(p, " *>(");
+      p = isl_printer_print_str(p, array->name);
+      p = isl_printer_print_str(p, "));");
+      p = isl_printer_end_line(p);
+    }
+  }  
+
+  /* Clean up OpenCL resources */
+  p = print_str_new_line(p, "// Clean up OpenCL resources");
+  p = print_str_new_line(p, "for (int i = 0; i < NUM_KERNELS_TO_CREATE; i++) {");
+  p = isl_printer_indent(p, 4);
+  p = print_str_new_line(p, "clReleaseKernel(kernel[i]);");
+  p = isl_printer_indent(p, -4);
+  p = print_str_new_line(p, "}");
+  p = isl_printer_end_line(p);
+  p = print_str_new_line(p, "for (int i = 0; i < NUM_QUEUES_TO_CREATE; i++) {");
+  p = isl_printer_indent(p, 4);
+  p = print_str_new_line(p, "clReleaseCommandQueue(cmdQueue[i]);");
+  p = isl_printer_indent(p, -4);
+  p = print_str_new_line(p, "}");
+  p = isl_printer_end_line(p);
+  p = print_str_new_line(p, "clReleaseProgram(program);");
+  p = print_str_new_line(p, "clReleaseContext(context);");
+  p = print_str_new_line(p, "acl_aligned_free(devices);");
+
+  return p;
+}
+
+static __isl_give isl_printer *drain_merge_intel(
+  __isl_take isl_printer *p, struct autosa_prog *prog, 
+  struct autosa_drain_merge_func *func,
+  int hls) 
+{  
+  struct autosa_array_ref_group *group = func->group;
+  p = print_str_new_line(p, "// Merge results");
+  p = isl_printer_start_line(p);
+  p = isl_printer_print_str(p, "for (int idx = ");
+  p = isl_printer_print_int(p, group->mem_port_id);
+  p = isl_printer_print_str(p, "; idx < ");
+  p = isl_printer_print_int(p, group->mem_port_id + group->n_mem_ports);
+  p = isl_printer_print_str(p, "; idx++) {");
+  p = isl_printer_end_line(p);
+
+  p = isl_printer_indent(p, 4);
+  p = isl_printer_start_line(p);
+  p = autosa_array_ref_group_print_prefix(group, p);
+  p = isl_printer_print_str(p, "_drain_merge(");
+  p = print_drain_merge_arguments_intel(p, func->kernel, group, func, 0, hls); // TODO
+  p = isl_printer_print_str(p, ");");
+  p = isl_printer_end_line(p);
+
+  p = isl_printer_indent(p, -4);
+  p = print_str_new_line(p, "}");
+  p = isl_printer_end_line(p);
+
+  return p;  
+}
+
+/* Print code to "p" for copying "array" from the host to the device
+ * in its entirety.  The bounds on the extent of "array" have
+ * been precomputed in extract_array_info and are used in
+ * gpu_array_info_print_size.
+ */
+static __isl_give isl_printer *copy_array_to_device_intel(__isl_take isl_printer *p,
+	struct autosa_array_info *array)
+{
+  int indent;
+  struct autosa_local_array_info *local_array = array->local_array;
+  
+  p = print_str_new_line(p, "// Write host data to device buffers");
+  p = isl_printer_start_line(p);
+  p = isl_printer_print_str(p, "for (int i = 0; i < ");
+  p = isl_printer_print_int(p, local_array->n_mem_ports);
+  p = isl_printer_print_str(p, "; i++) {");
+  p = isl_printer_end_line(p);
+  p = isl_printer_indent(p, 4);
+
+  p = print_str_new_line(p, "status = clEnqueueWriteBuffer(");
+  indent = strlen("status = clEnqueueWriteBuffer(");
+  p = isl_printer_indent(p, indent);
+  p = isl_printer_start_line(p);
+  p = isl_printer_print_str(p, "cmdQueue[0],");
+  p = isl_printer_end_line(p);
+  p = isl_printer_start_line(p);
+  p = isl_printer_print_str(p, "buffer_");
+  p = isl_printer_print_str(p, array->name);
+  p = isl_printer_print_str(p, "[i],");  
+  p = isl_printer_end_line(p);
+  p = print_str_new_line(p, "CL_TRUE");
+  p = print_str_new_line(p, "0");
+  p = isl_printer_start_line(p);
+  p = autosa_array_info_print_size(p, array);
+  p = isl_printer_print_str(p, ",");
+  p = isl_printer_end_line(p);
+  p = isl_printer_start_line(p);
+  p = isl_printer_print_str(p, "dev_");
+  p = isl_printer_print_str(p, array->name);
+  if (local_array->n_mem_ports > 1 && array->copy_out) {
+    p = isl_printer_print_str(p, "[i]");
+  }
+  p = isl_printer_print_str(p, ".data(),");
+  p = isl_printer_end_line(p);
+  p = print_str_new_line(p, "0");
+  p = print_str_new_line(p, "NULL");
+  p = print_str_new_line(p, "NULL); CHECK(status);");
+  p = isl_printer_indent(p, -indent);
+
+  p = isl_printer_indent(p, -4);
+  p = print_str_new_line(p, "}");    
+  p = isl_printer_end_line(p);
+
+  return p;
+}
+
+/* Print code to "p" for copying "array" back from the device to the host
+ * in its entirety.  The bounds on the extent of "array" have
+ * been precomputed in extract_array_info and are used in
+ * polysa_array_info_print_size.
+ */
+static __isl_give isl_printer *copy_array_from_device_intel(
+  __isl_take isl_printer *p, struct autosa_array_info *array)
+{
+  struct autosa_local_array_info *local_array;
+  int indent;
+
+  local_array = array->local_array;
+  p = print_str_new_line(p, "// Read the results back from the device");
+  p = isl_printer_start_line(p);
+  p = isl_printer_print_str(p, "for (int i = 0; i < ");
+  p = isl_printer_print_int(p, local_array->n_io_group_refs);
+  p = isl_printer_print_str(p, "; i++) {");
+  p = isl_printer_end_line(p);
+  p = isl_printer_indent(p, 4);
+
+  p = print_str_new_line(p, "clEnqueueReadBuffer(");
+  indent = strlen("clEnqueueReadBuffer(");
+  p = isl_printer_indent(p, indent);
+  p = isl_printer_start_line(p);
+  p = isl_printer_print_str(p, "cmdQueue[0],");  
+  p = isl_printer_end_line(p);
+  
+  p = isl_printer_start_line(p);
+  p = isl_printer_print_str(p, "buffer_");
+  p = isl_printer_print_str(p, array->name);
+  p = isl_printer_print_str(p, "[i],");
+  p = isl_printer_end_line(p);
+
+  p = print_str_new_line(p, "CL_TRUE,");
+  p = print_str_new_line(p, "0,");
+  p = isl_printer_start_line(p);
+  p = autosa_array_info_print_size(p, array)  ;
+  p = isl_printer_print_str(p, ",");
+  p = isl_printer_end_line(p);
+
+  p = isl_printer_start_line(p);
+  p = isl_printer_print_str(p, "dev_");
+  p = isl_printer_print_str(p, array->name);
+  if (local_array->n_mem_ports > 1 && array->copy_out) {
+    p = isl_printer_print_str(p, "[i]");
+  }
+  p = isl_printer_print_str(p, ".data(),");
+  p = isl_printer_end_line(p);
+
+  p = print_str_new_line(p, "0,");
+  p = print_str_new_line(p, "NULL,");
+  p = print_str_new_line(p, "NULL); CHECK(status);");
+
+  p = isl_printer_indent(p, -indent);
+  p = isl_printer_indent(p, -4);
+  p = print_str_new_line(p, "}");    
+
+  return p;
+}
+
+/* Print a statement for copying an array to or from the device,
+ * or for initializing or clearing the device.
+ * The statement identifier of a copying node is called
+ * "to_device_<array name>" or "from_device_<array name>" and
+ * its user pointer points to the autosa_array_info of the array
+ * that needs to be copied.
+ * The node for initializing the device is called "init_device".
+ * The node for clearing the device is called "clear_device".
+ *
+ * Extract the array (if any) from the identifier and call
+ * init_device, clear_device, copy_array_to_device or copy_array_from_device.
+ */
+static __isl_give isl_printer *print_device_node_intel(__isl_take isl_printer *p,
+	__isl_keep isl_ast_node *node, struct autosa_prog *prog, int hls,
+  struct autosa_hw_top_module *top)
+{
+  isl_ast_expr *expr, *arg;
+	isl_id *id;
+	const char *name;
+	struct autosa_array_info *array;
+  struct autosa_kernel *kernel;
+  struct autosa_drain_merge_func *func;
+
+  expr = isl_ast_node_user_get_expr(node);
+	arg = isl_ast_expr_get_op_arg(expr, 0);
+	id = isl_ast_expr_get_id(arg);
+	name = isl_id_get_name(id);
+  if (!strcmp(name, "init_device") || !strcmp(name, "clear_device"))
+    kernel = (struct autosa_kernel *)isl_id_get_user(id);
+  else if (!strcmp(name, "drain_merge"))
+    func = (struct autosa_drain_merge_func *)isl_id_get_user(id);
+  else
+	  array = (struct autosa_array_info *)isl_id_get_user(id);
+	isl_id_free(id);
+	isl_ast_expr_free(arg);
+	isl_ast_expr_free(expr);
+
+	if (!name)
+		return isl_printer_free(p);
+	if (!strcmp(name, "init_device"))
+    return init_device_intel(p, prog, kernel, hls, top);
+	if (!strcmp(name, "clear_device"))
+		return clear_device_intel(p, prog);
+  if (!strcmp(name, "drain_merge"))
+    return drain_merge_intel(p, prog, func, hls);
+	if (!array)
+		return isl_printer_free(p);
+
+	if (!prefixcmp(name, "to_device"))
+		return copy_array_to_device_intel(p, array); 
+	else
+		return copy_array_from_device_intel(p, array);
+}
+
+/* Print out the statements for setting the OpenCL arguments for the io
+ * modules connected to the external memory. 
+ * - set_ext_module_args_upper
+ * - set_ext_module_args_lower
+ * 
+ * This function only works for Intel OpenCL.
+ * Originally, for each module, we have the following arguments:
+ * - the module identifiers
+ * - the paramters
+ * - the host loop iterators
+ * - the array accessed by the modules
+ * - the fifos
+ * - the enable signal
+ * 
+ * We will ignore the fifos since for Intel OpenCL designs will replace these 
+ * fifos later with channels.
+ */
+static __isl_give isl_printer *autosa_kernel_print_set_ext_module_args(
+  __isl_take isl_printer *p,
+  struct autosa_kernel_stmt *stmt, struct autosa_prog *prog)
+{
+  int upper = stmt->u.m.upper;
+  int lower = stmt->u.m.lower;
+  int complete = (upper == 0 && lower == 0);
+  int dummy = stmt->u.m.dummy;
+  int boundary = stmt->u.m.boundary;
+  char *module_name = stmt->u.m.module_name;
+  struct autosa_hw_module *module = stmt->u.m.module;
+  int n_arg = 0;
+  struct autosa_kernel *kernel = module->kernel;
+    
+  isl_space *space;
+  int nparams;
+  int n;
+  const char *type;
+
+  if (!(complete || upper))
+    return p;
+
+  /* Module identifiers */
+  if (!dummy) {
+    for (int i = 0; i < isl_id_list_n_id(module->inst_ids); i++) {      
+      p = print_str_new_line(p, "status = clSetKernelArg(");
+      p = isl_printer_indent(p, 4);      
+              
+      p = isl_printer_start_line(p);      
+      p = isl_printer_print_str(p, "kernel[ID_");
+      p = isl_printer_print_str(p, module_name);
+      p = isl_printer_print_str(p, "_base");
+      if (module->io_groups[0]->n_mem_ports > 1) {
+        p = isl_printer_print_str(p, " + c0");
+      }
+      p = isl_printer_print_str(p, "],");
+      p = isl_printer_end_line(p);
+
+      p = isl_printer_start_line(p);
+      p = isl_printer_print_int(p, n_arg);
+      p = isl_printer_print_str(p, ",");
+      p = isl_printer_end_line(p);
+      n_arg++;
+
+      p = isl_printer_start_line(p);
+      p = isl_printer_print_str(p, "sizeof(unsigned int),");
+      p = isl_printer_end_line(p);
+
+      p = isl_printer_start_line(p);
+      p = isl_printer_print_str(p, "(void *)&c");
+      p = isl_printer_print_int(p, i);
+      p = isl_printer_print_str(p, ");");
+      p = isl_printer_end_line(p);
+
+      p = isl_printer_indent(p, -4);
+      p = print_str_new_line(p, "CHECK(status);");
+    }
+  } else {
+    /* Dummy modules will never be instantiated at the host code. */
+  }
+
+  /* Params */
+  space = isl_union_set_get_space(module->kernel->arrays);
+  n = isl_space_dim(space, isl_dim_param);
+  isl_space_free(space);
+  for (int i = 0; i < n; i++) {
+    const char *name = isl_space_get_dim_name(space, isl_dim_set, i);
+    p = print_str_new_line(p, "status = clSetKernelArg(");
+    p = isl_printer_indent(p, 4);
+
+    p = isl_printer_start_line(p);
+    p = isl_printer_print_str(p, "kernel[ID_");
+    p = isl_printer_print_str(p, module_name);
+    p = isl_printer_print_str(p, "_base");
+    if (module->io_groups[0]->n_mem_ports > 1) {
+      p = isl_printer_print_str(p, " + c0");
+    }
+    p = isl_printer_print_str(p, "],");
+    p = isl_printer_end_line(p);
+
+    p = isl_printer_start_line(p);
+    p = isl_printer_print_int(p, n_arg);
+    p = isl_printer_print_str(p, ",");
+    p = isl_printer_end_line(p);
+    n_arg++;    
+
+    p = isl_printer_start_line(p);
+    p = isl_printer_print_str(p, "sizeof(unsigned int),");
+    p = isl_printer_end_line(p);
+
+    p = isl_printer_start_line(p);
+    p = isl_printer_print_str(p, "(void *)&");    
+    p = isl_printer_print_str(p, name);
+    p = isl_printer_print_str(p, ");");
+    p = isl_printer_end_line(p);
+
+    p = isl_printer_indent(p, -4);
+    p = print_str_new_line(p, "CHECK(status);");    
+  }
+
+  /* Host iters */
+  n = isl_space_dim(module->kernel->space, isl_dim_set);
+  for (int i = 0; i < n; i++) {
+    const char *name = isl_space_get_dim_name(module->kernel->space, isl_dim_set, i);
+    p = print_str_new_line(p, "status = clSetKernelArg(");
+    p = isl_printer_indent(p, 4);
+
+    p = isl_printer_start_line(p);
+    p = isl_printer_print_str(p, "kernel[ID_");
+    p = isl_printer_print_str(p, module_name);
+    p = isl_printer_print_str(p, "_base");
+    if (module->io_groups[0]->n_mem_ports > 1) {
+      p = isl_printer_print_str(p, " + c0");
+    }
+    p = isl_printer_print_str(p, "],");
+    p = isl_printer_end_line(p);
+
+    p = isl_printer_start_line(p);
+    p = isl_printer_print_int(p, n_arg);
+    p = isl_printer_print_str(p, ",");
+    p = isl_printer_end_line(p);
+    n_arg++;    
+
+    p = isl_printer_start_line(p);
+    p = isl_printer_print_str(p, "sizeof(unsigned int),");
+    p = isl_printer_end_line(p);
+
+    p = isl_printer_start_line(p);
+    p = isl_printer_print_str(p, "(void *)&");    
+    p = isl_printer_print_str(p, name);
+    p = isl_printer_print_str(p, ");");
+    p = isl_printer_end_line(p);
+
+    p = isl_printer_indent(p, -4);
+    p = print_str_new_line(p, "CHECK(status);");        
+  }
+
+  /* Scalars and arrays */
+  if (module->type != PE_MODULE && module->to_mem) {
+    struct autosa_local_array_info *local_array = module->io_groups[0]->local_array;
+    /* IO modules will not contain any scalar inputs. */
+    p = print_str_new_line(p, "status = clSetKernelArg(");
+    p = isl_printer_indent(p, 4);
+
+    p = isl_printer_start_line(p);
+    p = isl_printer_print_str(p, "kernel[ID_");
+    p = isl_printer_print_str(p, module_name);
+    p = isl_printer_print_str(p, "_base");
+    if (module->io_groups[0]->n_mem_ports > 1) {
+      p = isl_printer_print_str(p, " + c0");
+    }
+    p = isl_printer_print_str(p, "],");
+    p = isl_printer_end_line(p);
+
+    p = isl_printer_start_line(p);
+    p = isl_printer_print_int(p, n_arg);
+    p = isl_printer_print_str(p, ",");
+    p = isl_printer_end_line(p);
+    n_arg++;    
+
+    p = isl_printer_start_line(p);
+    p = isl_printer_print_str(p, "sizeof(cl_mem),");            
+    p = isl_printer_end_line(p);
+
+    p = isl_printer_start_line(p);
+    p = isl_printer_print_str(p, "(void *)&buffer_");
+    p = isl_printer_print_str(p, local_array->array->name);          
+    p = isl_printer_print_str(p, "[");
+    if (module->io_groups[0]->n_mem_ports == 1) {
+      p = isl_printer_print_int(p, module->n_array_ref);
+    } else {
+      p = isl_printer_print_str(p, "c0 + ");
+      p = isl_printer_print_int(p, module->n_array_ref);
+    }
+    p = isl_printer_print_str(p, "]);");            
+    p = isl_printer_end_line(p);
+
+    p = isl_printer_indent(p, -4);
+    p = print_str_new_line(p, "CHECK(status);");   
+  }
+
+  return p;
+}
+
+static __isl_give isl_printer *print_set_ext_module_args_stmt(
+  __isl_take isl_printer *p,
+  __isl_take isl_ast_print_options *print_options,
+  __isl_keep isl_ast_node *node, void *user)
+{
+  isl_id *id;
+  struct autosa_kernel_stmt *stmt;
+  struct print_hw_module_data *data = (struct print_hw_module_data *)(user); 
+
+  id = isl_ast_node_get_annotation(node);
+  stmt = (struct autosa_kernel_stmt *)isl_id_get_user(id);
+  isl_id_free(id);
+
+  isl_ast_print_options_free(print_options);
+
+  switch (stmt->type) {
+    case AUTOSA_KERNEL_STMT_EXT_MODULE:
+      return autosa_kernel_print_set_ext_module_args(p, stmt, data->prog);
+  }
+
+  return p;  
+}
+
+static __isl_give isl_printer *autosa_kernel_print_launch_ext_module_kernels(
+  __isl_take isl_printer *p,
+  struct autosa_kernel_stmt *stmt, struct autosa_prog *prog)
+{
+  int upper = stmt->u.m.upper;
+  int lower = stmt->u.m.lower;
+  int complete = (upper == 0 && lower == 0);
+  int dummy = stmt->u.m.dummy;
+  int boundary = stmt->u.m.boundary;
+  char *module_name = stmt->u.m.module_name;
+  struct autosa_hw_module *module = stmt->u.m.module;
+  int n_arg = 0;
+  struct autosa_kernel *kernel = module->kernel;
+    
+  isl_space *space;
+  int nparams;
+  int n;
+  const char *type;
+
+  if (!(complete || upper))
+    return p;
+  
+  p = print_str_new_line(p, "status = clEnqueueNDRangeKernel(");
+  p = isl_printer_indent(p, 4);
+  p = isl_printer_start_line(p);
+  p = isl_printer_print_str(p, "cmdQueue[ID_");
+  p = isl_printer_print_str(p, module_name);
+  p = isl_printer_print_str(p, "_base");
+  if (module->io_groups[0]->n_mem_ports > 1) {
+    p = isl_printer_print_str(p, " + c0");    
+  }
+  p = isl_printer_print_str(p, "],");
+  p = isl_printer_end_line(p);
+
+  p = isl_printer_start_line(p);
+  p = isl_printer_print_str(p, "kernel[ID_");
+  p = isl_printer_print_str(p, module_name);
+  p = isl_printer_print_str(p, "_base");
+  if (module->io_groups[0]->n_mem_ports > 1) {
+    p = isl_printer_print_str(p, " + c0");    
+  }
+  p = isl_printer_print_str(p, "],");
+  p = isl_printer_end_line(p);
+
+  p = print_str_new_line(p, "1,");
+  p = print_str_new_line(p, "NULL,");
+  p = print_str_new_line(p, "globalWorkSize,");
+  p = print_str_new_line(p, "localWorkSize,");
+  p = print_str_new_line(p, "0,");
+  p = print_str_new_line(p, "NULL,");
+  p = print_str_new_line(p, "NULL);");
+
+  p = isl_printer_indent(p, -4);
+  p = print_str_new_line(p, "CHECK(status);");
+
+  return p;
+}
+
+static __isl_give isl_printer *print_launch_ext_module_kernels_stmt(
+  __isl_take isl_printer *p,
+  __isl_take isl_ast_print_options *print_options,
+  __isl_keep isl_ast_node *node, void *user)
+{
+  isl_id *id;
+  struct autosa_kernel_stmt *stmt;
+  struct print_hw_module_data *data = (struct print_hw_module_data *)(user); 
+
+  id = isl_ast_node_get_annotation(node);
+  stmt = (struct autosa_kernel_stmt *)isl_id_get_user(id);
+  isl_id_free(id);
+
+  isl_ast_print_options_free(print_options);
+
+  switch (stmt->type) {
+    case AUTOSA_KERNEL_STMT_EXT_MODULE:
+      return autosa_kernel_print_launch_ext_module_kernels(p, stmt, data->prog);
+  }
+
+  return p;
+}
+
+/* Set kernel arguments:
+ * - arrays
+ * - parameters
+ * - host iterators
+ * TODO: We need to filter out the module declaration trees and 
+ * print them for Intel devices.
+ */
+static __isl_give isl_printer *print_set_kernel_arguments_intel(
+  __isl_take isl_printer *p, 
+  struct autosa_prog *prog, 
+  struct autosa_kernel *kernel, 
+  struct autosa_hw_top_module *top)
+{
+  isl_ast_print_options *print_options;
+  isl_ctx *ctx = prog->ctx;
+  struct print_hw_module_data hw_data = { NULL, prog, NULL };
+
+  p = print_str_new_line(p, "// Set the arguments");
+  /* Default settings */
+  p = print_str_new_line(p, "size_t globalWorkSize[1];");
+  p = print_str_new_line(p, "size_t localWorkSize[1];");
+  p = print_str_new_line(p, "globalWorkSize[0] = 1;");
+  p = print_str_new_line(p, "localWorkSize[0] = 1;");
+  p = isl_printer_end_line(p);
+
+  for (int i = 0; i < top->n_ext_module; i++) {
+    /* Print AST */
+    print_options = isl_ast_print_options_alloc(ctx);
+    print_options = isl_ast_print_options_set_print_user(print_options,
+                      &print_set_ext_module_args_stmt, &hw_data);
+                    
+    p = isl_ast_node_print(top->ext_module_wrapped_trees[i],
+            p, print_options);
+    p = isl_printer_end_line(p);
+  }
+
+  return p;
+}
+
+/* Launch the kernels.
+ * For each io module connected to the external memory, we will launch a kernel
+ * in a independent command queue.
+ */
+static __isl_give isl_printer *print_launch_kernel_intel(
+  __isl_take isl_printer *p, 
+  struct autosa_prog *prog, 
+  struct autosa_kernel *kernel, 
+  struct autosa_hw_top_module *top)
+{
+  isl_ast_print_options *print_options;
+  isl_ctx *ctx = prog->ctx;
+  struct print_hw_module_data hw_data = { NULL, prog, NULL };
+
+  p = print_str_new_line(p, "// Launch the kernels");  
+
+  for (int i = 0; i < top->n_ext_module; i++) {
+    /* Print AST */
+    print_options = isl_ast_print_options_alloc(ctx);
+    print_options = isl_ast_print_options_set_print_user(print_options,
+                      &print_launch_ext_module_kernels_stmt, &hw_data);
+                    
+    p = isl_ast_node_print(top->ext_module_wrapped_trees[i],
+            p, print_options);
+    p = isl_printer_end_line(p);
+  }  
+
+  return p;
+}
+
+/* Print the user statement of the host code to "p".
+ *
+ * The host code may contain original user statements, kernel launches,
+ * statements that copy data to/from the device and statements
+ * the initialize or clear the device.
+ * The original user statements and the kernel launches have
+ * an associated annotation, while the other statements do not.
+ * The latter are handled by print_device_node.
+ * The annotation on the user statements is called "user".
+ *
+ * In case of a kernel launch, print a block of statements that
+ * defines the grid and the block and then launches the kernel.
+ */
+static __isl_give isl_printer *print_host_user_intel(__isl_take isl_printer *p,
+  __isl_take isl_ast_print_options *print_options,
+  __isl_keep isl_ast_node *node, void *user)
+{
+  isl_id *id;
+  int is_user;
+  struct autosa_kernel *kernel;
+  struct autosa_kernel_stmt *stmt;
+  struct print_host_user_data *data;
+  struct hls_info *hls;
+  struct autosa_hw_top_module *top;
+
+  isl_ast_print_options_free(print_options);
+
+  data = (struct print_host_user_data *) user;
+  hls = data->hls;
+  top = data->top;
+
+  id = isl_ast_node_get_annotation(node);
+  if (!id) {
+    return print_device_node_intel(p, node, data->prog, hls->hls, top);
+  }
+
+  is_user = !strcmp(isl_id_get_name(id), "user");
+  kernel = is_user ? NULL : (struct autosa_kernel *)isl_id_get_user(id);
+  stmt = is_user ? (struct autosa_kernel_stmt *)isl_id_get_user(id) : NULL;
+  isl_id_free(id);
+
+  if (is_user)
+    return autosa_kernel_print_domain(p, stmt); 
+
+  /* Print OpenCL host. */
+  p = ppcg_start_block(p); 
+  
+  p = print_set_kernel_arguments_intel(p, data->prog, kernel, top);
+
+  p = print_str_new_line(p, "for (int i = 0; i < NUM_QUEUES_TO_CREATE; i++) {");  
+  p = isl_printer_indent(p, 4);
+  p = print_str_new_line(p, "status = clFinish(cmdQueue[i]); CHECK(status);");
+  p = isl_printer_indent(p, -4);
+  p = print_str_new_line(p, "}");  
+  p = print_str_new_line(p, "fpga_begin = std::chrono::high_resolution_clock::now();");        
+
+  //p = print_launch_kernel_intel(p, data->prog, kernel, top);
+
+  p = print_str_new_line(p, "for (int i = 0; i < NUM_QUEUES_TO_CREATE; i++) {");  
+  p = isl_printer_indent(p, 4);
+  p = print_str_new_line(p, "status = clFinish(cmdQueue[i]); CHECK(status);");
+  p = isl_printer_indent(p, -4);
+  p = print_str_new_line(p, "}");  
+  p = print_str_new_line(p, "fpga_end = std::chrono::high_resolution_clock::now();");        
+
+  p = ppcg_end_block(p);     
+  p = isl_printer_end_line(p);
+
+  /* Print the top kernel header. */
+  // print_kernel_headers_intel(data->prog, kernel, data->hls); // TODO
+
+  return p;
+}
+
+static __isl_give isl_printer *autosa_print_host_code(__isl_take isl_printer *p,
+  struct autosa_prog *prog, __isl_keep isl_ast_node *tree, 
+  struct autosa_hw_module **modules, int n_modules,
+  struct autosa_hw_top_module *top,
+  struct autosa_drain_merge_func **drain_merge_funcs, int n_drain_merge_funcs,
+  struct hls_info *hls)
+{
+  isl_ast_print_options *print_options;
+  isl_ctx *ctx = isl_ast_node_get_ctx(tree);
+  struct print_host_user_data data = { hls, prog, top };
+  struct print_hw_module_data hw_data = { hls, prog, NULL };
+  isl_printer *p_module;
+
+  /* Print the data pack types in the program. */
+  print_data_types_intel(top, hls);
+
+  /* Print the helper functions in the program. */
+  print_drain_merge_funcs(top->kernel, drain_merge_funcs, n_drain_merge_funcs, hls);  
+
+  /* Print the default AST. */
+  print_options = isl_ast_print_options_alloc(ctx);
+  print_options = isl_ast_print_options_set_print_user(print_options,
+                  &print_host_user_intel, &data); // TODO
+
+  /* Print the macros definitions in the program. */
+  p = autosa_print_macros(p, tree); 
+  p = isl_ast_node_print(tree, p, print_options);
+
+  /* Print the hw module ASTs. */
+  p_module = isl_printer_to_file(ctx, hls->kernel_c);
+  p_module = isl_printer_set_output_format(p_module, ISL_FORMAT_C);
+  isl_printer_free(p_module);
+
+  return p;
+}
+
+/* This function prints the code that prints out the top function that 
+ * calls the hardware modules and declares the fifos.
+ */
+static void print_top_gen_host_code(
+  struct autosa_prog *prog, __isl_keep isl_ast_node *node,
+  struct autosa_hw_top_module *top, struct hls_info *hls)
+{
+}
+
+/* Given a autosa_prog "prog" and the corresponding tranformed AST
+ * "tree", print the entire OpenCL/HLS code to "p".
+ * "types" collects the types for which a definition has already been
+ * printed.
+ */
+static __isl_give isl_printer *print_hw(
+  __isl_take isl_printer *p,
+  struct autosa_prog *prog, __isl_keep isl_ast_node *tree, 
+  struct autosa_hw_module **modules, int n_modules,  
+  struct autosa_hw_top_module *top_module,
+  struct autosa_drain_merge_func **drain_merge_funcs, int n_drain_merge_funcs,
+  struct autosa_types *types, void *user)
+{
+  struct hls_info *hls = (struct hls_info *)user;
+  isl_printer *kernel;
+
+  kernel = isl_printer_to_file(isl_printer_get_ctx(p), hls->kernel_c);
+  kernel = isl_printer_set_output_format(kernel, ISL_FORMAT_C);
+  kernel = autosa_print_types(kernel, types, prog);
+  isl_printer_free(kernel);
+
+  if (!kernel)
+    return isl_printer_free(p);
+
+  /* Print OpenCL host and kernel function. */
+  p = autosa_print_host_code(p, prog, tree, modules, n_modules, top_module, 
+        drain_merge_funcs, n_drain_merge_funcs, hls); 
+  /* Print seperate top module code generation function. */
+  print_top_gen_host_code(prog, tree, top_module, hls); 
+
+  return p;
+}
+
+/* Generate systolic array on Intel FPGAs.
+ */
+int generate_autosa_intel_opencl(isl_ctx *ctx, struct ppcg_options *options,
+  const char *input)
+{
+  struct hls_info hls;
+  int r;
+
+  hls.target = INTEL_HW;
+  hls.hls = 0;
+  hls.ctx = ctx;
+  hls.output_dir = options->autosa->output_dir;
+  opencl_open_files(&hls, input);
+
+  r = generate_sa(ctx, input, hls.host_c, options, &print_hw, &hls);
+
+  opencl_close_files(&hls);    
 }

@@ -868,6 +868,18 @@ static __isl_give isl_printer *autosa_free_cpu_arrays_xilinx(
 static __isl_give isl_printer *clear_device_xilinx(__isl_take isl_printer *p,
 	struct autosa_prog *prog, struct autosa_kernel *kernel, int hls)
 {
+  if (!hls) {
+    p = print_str_new_line(p, "q.finish();");    
+    p = print_str_new_line(p, "auto host_end = std::chrono::high_resolution_clock::now();");
+    p = isl_printer_end_line(p);
+    p = print_str_new_line(p, "// Calculate time");
+    p = print_str_new_line(p, "std::chrono::duration<double> fpga_duration = fpga_end - fpga_begin;");
+    p = print_str_new_line(p, "std::cout << \"FPGA Time: \" << fpga_duration.count() << \" s\" << std::endl;");
+    p = print_str_new_line(p, "std::chrono::duration<double> host_duration = host_end - host_begin;");
+    p = print_str_new_line(p, "std::cout << \"Host Time: \" << host_duration.count() << \" s\" << std::endl;");    
+    p = isl_printer_end_line(p);
+  }
+
   if (hls) {	  
     /* Restore buffer */
     p = print_str_new_line(p, "// Restore data from host buffers");
@@ -1056,23 +1068,6 @@ static __isl_give isl_printer *drain_merge_xilinx(
   int hls) 
 {  
   struct autosa_array_ref_group *group = func->group;
-
-  // TODO: Currently assume there is only one drain_merge node.
-  // If there is more than one drain merge node, we will need to 
-  // allocate new profiling node so that the profiling statements are not 
-  // inserted multiple times.
-  if (!hls) {
-    p = print_str_new_line(p, "q.finish();");    
-    p = print_str_new_line(p, "auto host_end = std::chrono::high_resolution_clock::now();");
-    p = isl_printer_end_line(p);
-    p = print_str_new_line(p, "// Calculate time");
-    p = print_str_new_line(p, "std::chrono::duration<double> fpga_duration = fpga_end - fpga_begin;");
-    p = print_str_new_line(p, "std::cout << \"FPGA Time: \" << fpga_duration.count() << \" s\" << std::endl;");
-    p = print_str_new_line(p, "std::chrono::duration<double> host_duration = host_end - host_begin;");
-    p = print_str_new_line(p, "std::cout << \"Host Time: \" << host_duration.count() << \" s\" << std::endl;");    
-    p = isl_printer_end_line(p);
-  }
-
   p = print_str_new_line(p, "// Merge results");
   p = isl_printer_start_line(p);
   p = isl_printer_print_str(p, "for (int idx = ");
@@ -1491,10 +1486,8 @@ static __isl_give isl_printer *print_host_user_xilinx(__isl_take isl_printer *p,
 //    p = isl_printer_print_str(p, "/* Top Function Generation */");
 //    p = isl_printer_end_line(p);
   
-    p = ppcg_end_block(p);   
-    p = isl_printer_start_line(p);
-    p = isl_printer_end_line(p);
-  
+    p = ppcg_end_block(p);       
+    p = isl_printer_end_line(p);  
   } else {
     /* Print HLS host. */
     p = ppcg_start_block(p);
@@ -1510,7 +1503,7 @@ static __isl_give isl_printer *print_host_user_xilinx(__isl_take isl_printer *p,
 
     p = ppcg_end_block(p);
   }
-  /* Print the top kernel header */
+  /* Print the top kernel header. */
   print_kernel_headers_xilinx(data->prog, kernel, data->hls);
 
   return p;

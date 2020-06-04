@@ -67,6 +67,7 @@ enum autosa_kernel_stmt_type {
   AUTOSA_KERNEL_STMT_IO_DRAM,
   AUTOSA_KERNEL_STMT_FIFO_DECL,
   AUTOSA_KERNEL_STMT_MODULE_CALL,
+  AUTOSA_KERNEL_STMT_EXT_MODULE,
   AUTOSA_KERNEL_STMT_DRAIN_MERGE,
   AUTOSA_KERNEL_STMT_IO_MODULE_CALL_INTER_TRANS,
   AUTOSA_KERNEL_STMT_IO_MODULE_CALL_INTRA_TRANS,
@@ -645,6 +646,13 @@ struct autosa_hw_top_module {
   int n_hw_modules;
   struct autosa_hw_module **hw_modules;
   struct autosa_kernel *kernel;
+
+  /* For Intel devices */
+  int n_ext_module;
+  isl_schedule **ext_module_scheds;
+  isl_ast_node **ext_module_trees;
+  int n_ext_module_wrapped;
+  isl_ast_node **ext_module_wrapped_trees;
 };
 
 struct autosa_pe_dummy_module {

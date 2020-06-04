@@ -1309,6 +1309,7 @@ void autosa_kernel_stmt_free(void *user)
       isl_ast_expr_free(stmt->u.i.index);
       break;
     case AUTOSA_KERNEL_STMT_MODULE_CALL:
+    case AUTOSA_KERNEL_STMT_EXT_MODULE:
       free(stmt->u.m.module_name);
       break;
     case AUTOSA_KERNEL_STMT_FIFO_DECL:
@@ -1541,6 +1542,12 @@ struct autosa_hw_top_module *autosa_hw_top_module_alloc()
   module->hw_modules = NULL;
   module->n_hw_modules = 0;
   
+  module->n_ext_module = 0;
+  module->ext_module_scheds = NULL;
+  module->ext_module_trees = NULL;
+  module->n_ext_module_wrapped = 0;
+  module->ext_module_wrapped_trees = NULL;
+
   return module;
 }
 
@@ -1574,12 +1581,27 @@ void *autosa_hw_top_module_free(struct autosa_hw_top_module *module)
     }
   }
 
+  if (module->ext_module_trees) {
+    for (int i = 0; i < module->n_ext_module; i++) {
+      isl_ast_node_free(module->ext_module_trees[i]);
+    }
+  }
+
+  if (module->ext_module_wrapped_trees) {
+    for (int i = 0; i < module->n_ext_module_wrapped; i++) {
+      isl_ast_node_free(module->ext_module_wrapped_trees[i]);
+    }
+  }  
+  
   free(module->module_call_scheds);
   free(module->fifo_decl_scheds);
+  free(module->ext_module_scheds);
   free(module->module_call_trees);
   free(module->fifo_decl_trees);
+  free(module->ext_module_trees);
   free(module->module_call_wrapped_trees);
   free(module->fifo_decl_wrapped_trees);
+  free(module->ext_module_wrapped_trees);
   free(module->fifo_decl_names);
   free(module);
 
