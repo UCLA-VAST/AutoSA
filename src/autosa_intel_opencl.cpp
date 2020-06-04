@@ -131,7 +131,7 @@ static void opencl_open_files(struct hls_info *info, const char *input)
   if (!info->kernel_c) {
     printf("[AutoSA] Error: Can't open the file: %s\n", dir);
     exit(1);
-  }
+  }  
 
   strcpy(name + len, "_kernel.h");
   strcpy(dir + len_dir, name);
@@ -140,6 +140,8 @@ static void opencl_open_files(struct hls_info *info, const char *input)
     printf("[AutoSA] Error: Can't open the file: %s\n", dir);
     exit(1);
   }  
+  fprintf(info->kernel_c, "#include \"%s\"\n", name);
+  fprintf(info->kernel_c, "#pragma OPENCL EXTENSION cl_intel_channels : enable\n\n");
 
   strcpy(name + len, "_top_gen.cpp");
   strcpy(dir + len_dir, name);
@@ -802,8 +804,10 @@ static __isl_give isl_printer *find_device_intel(__isl_take isl_printer *p,
       p = isl_printer_print_str(p, "ID_");
       p = isl_printer_print_str(p, module->name);
       p = isl_printer_print_str(p, "_base");              
-      p = isl_printer_print_str(p, " + ");
-      p = isl_printer_print_int(p, j);
+      if (group->n_mem_ports > 1) {
+        p = isl_printer_print_str(p, " + ");
+        p = isl_printer_print_int(p, j);
+      }
       p = isl_printer_print_str(p, "] = clCreateKernel(program, \"");
       p = isl_printer_print_str(p, module->name);
       if (group->n_mem_ports > 1) {
@@ -1750,7 +1754,7 @@ static __isl_give isl_printer *print_host_user_intel(__isl_take isl_printer *p,
   p = print_str_new_line(p, "}");  
   p = print_str_new_line(p, "fpga_begin = std::chrono::high_resolution_clock::now();");        
 
-  //p = print_launch_kernel_intel(p, data->prog, kernel, top);
+  p = print_launch_kernel_intel(p, data->prog, kernel, top);
 
   p = print_str_new_line(p, "for (int i = 0; i < NUM_QUEUES_TO_CREATE; i++) {");  
   p = isl_printer_indent(p, 4);
@@ -1764,6 +1768,513 @@ static __isl_give isl_printer *print_host_user_intel(__isl_take isl_printer *p,
 
   /* Print the top kernel header. */
   // print_kernel_headers_intel(data->prog, kernel, data->hls); // TODO
+
+  return p;
+}
+
+/* Print the header of the given module.
+ */
+static __isl_give isl_printer *print_module_header_intel(
+  __isl_take isl_printer *p,
+  struct autosa_prog *prog, struct autosa_hw_module *module, 
+  int inter, int boundary)
+{
+  p = isl_printer_start_line(p);
+  if (module->to_mem)
+    p = isl_printer_print_str(p, "__kernel void ");
+  else
+    p = isl_printer_print_str(p, "void ");
+  p = isl_printer_print_str(p, module->name);
+  if (inter == 0)
+    p = isl_printer_print_str(p, "_intra_trans");
+  else if (inter == 1)
+    p = isl_printer_print_str(p, "_inter_trans");
+  if (boundary)
+    p = isl_printer_print_str(p, "_boundary");
+  p = isl_printer_print_str(p, "(");
+  p = print_module_arguments(p, prog, module->kernel, module, 1, INTEL_HW, inter, -1, boundary);
+  p = isl_printer_print_str(p, ")");
+
+  return p;
+}
+
+/* Print the header of the given module to both gen->hls.kernel_h
+ * and gen->hls.kernel_c
+ * If "inter" is -1, this is a normal module call.
+ * If "inter" is 0, this is a intra_trans module call.
+ * If "inter" is 1, this is a inter_trans module call.
+ */
+static isl_stat print_module_headers_intel(
+  struct autosa_prog *prog, struct autosa_hw_module *module, 
+  struct hls_info *hls, int inter, int boundary)
+{
+  isl_printer *p;
+
+  p = isl_printer_to_file(prog->ctx, hls->kernel_h);
+  p = isl_printer_set_output_format(p, ISL_FORMAT_C);
+  p = print_module_header_intel(p, prog, module, inter, boundary); 
+  p = isl_printer_print_str(p, ";");
+  p = isl_printer_end_line(p);
+  isl_printer_free(p);
+
+  p = isl_printer_to_file(prog->ctx, hls->kernel_c);
+  p = isl_printer_set_output_format(p, ISL_FORMAT_C);
+  if (inter == -1) {    
+    p = print_str_new_line(p, "__attribute__((max_global_work_dim(0)))");  
+    if (module->to_mem != 1) 
+      p = print_str_new_line(p, "__attribute__((autorun))");
+  }
+  p = print_module_header_intel(p, prog, module, inter, boundary);
+  p = isl_printer_end_line(p);
+  isl_printer_free(p);
+
+  return isl_stat_ok;
+}
+
+/* Print out variable declarations on Intel platforms. 
+ */
+static __isl_give isl_printer *print_module_var_intel(
+  __isl_take isl_printer *p,
+	struct autosa_kernel_var *var, int double_buffer, 
+  struct autosa_hw_module *module)
+{
+	int j;
+  int use_memory = 0; // 0: FF 1: LUTRAM 2: BRAM 3: URAM
+  use_memory = extract_memory_type(module, var, module->options->autosa->uram);
+
+	p = isl_printer_start_line(p);
+  if (var->n_lane == 1)
+	  p = isl_printer_print_str(p, var->array->type);
+  else {
+    p = isl_printer_print_str(p, var->array->name);
+    p = isl_printer_print_str(p, "_t");
+    p = isl_printer_print_int(p, var->n_lane);
+  }
+	p = isl_printer_print_str(p, " ");
+	p = isl_printer_print_str(p,  var->name);
+  if (double_buffer)
+    p = isl_printer_print_str(p, "_ping");
+	for (j = 0; j < isl_vec_size(var->size); ++j) {
+		isl_val *v;
+
+		p = isl_printer_print_str(p, "[");
+		v = isl_vec_get_element_val(var->size, j);
+		p = isl_printer_print_val(p, v);
+		isl_val_free(v);
+		p = isl_printer_print_str(p, "]");
+	}
+	p = isl_printer_print_str(p, ";");
+	p = isl_printer_end_line(p);
+
+  /* Print pong buffer */
+  if (double_buffer) {
+  	p = isl_printer_start_line(p);
+    if (var->n_lane == 1)
+      p = isl_printer_print_str(p, var->array->type);
+    else {
+      p = isl_printer_print_str(p, var->array->name);
+      p = isl_printer_print_str(p, "_t");
+      p = isl_printer_print_int(p, var->n_lane);
+    }
+  	p = isl_printer_print_str(p, " ");
+  	p = isl_printer_print_str(p,  var->name);
+    if (double_buffer)
+      p = isl_printer_print_str(p, "_pong");
+  	for (j = 0; j < isl_vec_size(var->size); ++j) {
+  		isl_val *v;
+  
+  		p = isl_printer_print_str(p, "[");
+  		v = isl_vec_get_element_val(var->size, j);
+  		p = isl_printer_print_val(p, v);
+  		isl_val_free(v);
+  		p = isl_printer_print_str(p, "]");
+  	}
+  	p = isl_printer_print_str(p, ";");
+  	p = isl_printer_end_line(p);  
+  }
+
+	return p;
+}
+
+static __isl_give isl_printer *print_module_vars_intel(__isl_take isl_printer *p,
+  struct autosa_hw_module *module, int inter)
+{
+  int i, n;
+  isl_space *space;  
+  const char *type;
+
+  if (inter == -1) {
+    for (i = 0; i < module->n_var; ++i)
+      p = print_module_var_intel(p, &module->var[i], module->double_buffer, module);
+  }
+
+  if (module->double_buffer && inter == -1) {
+    type = isl_options_get_ast_iterator_type(module->kernel->ctx);
+
+    p = isl_printer_start_line(p);
+    p = isl_printer_print_str(p, "bool arb = 0;");
+    p = isl_printer_end_line(p);
+    p = isl_printer_start_line(p);
+    p = isl_printer_print_str(p, module->in? "bool inter_trans_en = 1;" :
+        "bool inter_trans_en = 0;");
+    p = isl_printer_end_line(p);
+    p = isl_printer_start_line(p);
+    p = isl_printer_print_str(p, module->in? "bool intra_trans_en = 0;" :
+        "bool intra_trans_en = 1;");
+    p = isl_printer_end_line(p);
+    /* iterators */
+    space = (module->in)? module->intra_space : module->inter_space;
+    n = isl_space_dim(space, isl_dim_set);
+    for (int i = 0; i < n; i++) {
+      const char *name;
+      name = isl_space_get_dim_name(space, isl_dim_set, i);
+      p = isl_printer_start_line(p);
+      p = isl_printer_print_str(p, type);
+      p = isl_printer_print_str(p, " ");
+      p = isl_printer_print_str(p, name);
+      p = isl_printer_print_str(p, ", ");
+      p = isl_printer_print_str(p, name);
+      p = isl_printer_print_str(p, "_prev");
+      p = isl_printer_print_str(p, ";");
+      p = isl_printer_end_line(p);
+    }
+  }
+
+  return p;
+}
+
+/* Print the intra_trans module.
+ */
+static __isl_give isl_printer *autosa_print_intra_trans_module(
+  __isl_take isl_printer *p,
+  struct autosa_hw_module *module, struct autosa_prog *prog,
+  struct hls_info *hls, int boundary)
+{
+  struct print_hw_module_data hw_data = {hls, prog, module};
+  isl_ast_print_options *print_options;
+  isl_ctx *ctx = isl_printer_get_ctx(p);
+
+  p = isl_printer_start_line(p);
+  p = isl_printer_print_str(p, "/* Module Definition */");
+  p = isl_printer_end_line(p);
+    
+  print_module_headers_intel(prog, module, hls, 0, boundary);
+  fprintf(hls->kernel_c, "{\n");  
+  p = isl_printer_indent(p, 4);      
+  p = print_str_new_line(p, "/* Variable Declaration */");
+  print_module_iterators(hls->kernel_c, module);    
+  p = print_module_vars_intel(p, module, 0);
+  p = print_str_new_line(p, "/* Variable Declaration */");
+  p = isl_printer_end_line(p);
+
+  if (module->double_buffer) {
+    p = isl_printer_start_line(p);
+    p = isl_printer_print_str(p, "if (!intra_trans_en) return;");
+    p = isl_printer_end_line(p);
+    p = isl_printer_end_line(p);
+  }
+
+  print_options = isl_ast_print_options_alloc(ctx);
+  print_options = isl_ast_print_options_set_print_user(print_options,
+                    &print_module_stmt, &hw_data);   
+
+  p = isl_ast_node_print(module->intra_tree, p, print_options);
+  p = isl_printer_indent(p, -4);
+
+  fprintf(hls->kernel_c, "}\n");
+  p = isl_printer_start_line(p);
+  p = isl_printer_print_str(p, "/* Module Definition */");
+  p = isl_printer_end_line(p);
+  
+  p = isl_printer_end_line(p);
+
+  return p;
+}
+
+/* Print the inter_trans module.
+ */
+static __isl_give isl_printer *autosa_print_inter_trans_module(
+  __isl_take isl_printer *p,
+  struct autosa_hw_module *module, struct autosa_prog *prog,
+  struct hls_info *hls, int boundary)
+{
+  struct print_hw_module_data hw_data = {hls, prog, module};
+  isl_ast_print_options *print_options;
+  isl_ctx *ctx = isl_printer_get_ctx(p);
+
+  p = isl_printer_start_line(p);
+  p = isl_printer_print_str(p, "/* Module Definition */");
+  p = isl_printer_end_line(p);
+  
+  print_module_headers_intel(prog, module, hls, 1, boundary);   
+  fprintf(hls->kernel_c, "{\n");  
+  p = isl_printer_indent(p, 4);
+  p = print_str_new_line(p, "/* Variable Declaration */");
+  print_module_iterators(hls->kernel_c, module);      
+  p = print_module_vars_intel(p, module, 1);    
+  p = print_str_new_line(p, "/* Variable Declaration */");
+  p = isl_printer_end_line(p);
+
+  if (module->double_buffer) {
+    p = isl_printer_start_line(p);
+    p = isl_printer_print_str(p, "if (!inter_trans_en) return;");
+    p = isl_printer_end_line(p);
+    p = isl_printer_end_line(p);
+  }
+
+  print_options = isl_ast_print_options_alloc(ctx);
+  print_options = isl_ast_print_options_set_print_user(print_options,
+                    &print_module_stmt, &hw_data); 
+ 
+  p = isl_ast_node_print((boundary == 0)? 
+        module->inter_tree : module->boundary_inter_tree, p, print_options);
+  p = isl_printer_indent(p, -4);
+
+  fprintf(hls->kernel_c, "}\n");
+  p = isl_printer_start_line(p);
+  p = isl_printer_print_str(p, "/* Module Definition */");
+  p = isl_printer_end_line(p);
+  
+  p = isl_printer_end_line(p);
+
+  return p;
+}
+
+/* Print the default module. */
+static __isl_give isl_printer *autosa_print_default_module(
+  __isl_take isl_printer *p,
+  struct autosa_hw_module *module, struct autosa_prog *prog,
+  struct hls_info *hls, int boundary)
+{
+  struct print_hw_module_data hw_data = {hls, prog, module};
+  isl_ast_print_options *print_options;
+  isl_ctx *ctx = isl_printer_get_ctx(p);
+
+  /* Print core. */
+  p = isl_printer_start_line(p);
+  p = isl_printer_print_str(p, "/* Module Definition */");
+  p = isl_printer_end_line(p);
+  
+  //p = print_module_core_headers_intel(p, prog, module, hls, -1, boundary, 1); 
+  print_module_headers_intel(prog, module, hls, -1, boundary);
+  fprintf(hls->kernel_c, "{\n");  
+  p = isl_printer_indent(p, 4);
+  p = print_str_new_line(p, "/* Variable Declaration */");
+  print_module_iterators(hls->kernel_c, module);      
+  p = print_module_vars_intel(p, module, -1);    
+  p = print_str_new_line(p, "/* Variable Declaration */");
+  p = isl_printer_end_line(p);
+  
+  if (module->credit && !module->in) {
+  }
+  
+  print_options = isl_ast_print_options_alloc(ctx);
+  print_options = isl_ast_print_options_set_print_user(print_options,
+                    &print_module_stmt, &hw_data);   
+  
+  if (!boundary)
+    p = isl_ast_node_print(module->device_tree, p, print_options);
+  else
+    p = isl_ast_node_print(module->boundary_tree, p, print_options);
+  
+  if (module->credit && module->in) {    
+  }
+  
+  p = isl_printer_indent(p, -4);
+   
+  fprintf(hls->kernel_c, "}\n");
+  p = isl_printer_start_line(p);
+  p = isl_printer_print_str(p, "/* Module Definition */");
+  p = isl_printer_end_line(p);
+  
+  p = isl_printer_end_line(p);
+
+  /* Print wrapper. */
+//  if (hls->target == XILINX_HW) {
+//    p = isl_printer_start_line(p);
+//    p = isl_printer_print_str(p, "/* Module Definition */");
+//    p = isl_printer_end_line(p);
+//  
+//    print_module_wrapper_headers_xilinx(prog, module, hls, -1, boundary); 
+//  
+//    fprintf(hls->kernel_c, "{\n");
+//    p = isl_printer_indent(p, 4);
+//   
+//    p = print_module_core_headers_xilinx(p, prog, module, hls, -1, boundary, 0);
+//    p = isl_printer_print_str(p, ";");
+//    p = isl_printer_end_line(p);
+//
+//    p = isl_printer_indent(p, -4);
+//    fprintf(hls->kernel_c, "}\n");
+//    p = isl_printer_start_line(p);
+//    p = isl_printer_print_str(p, "/* Module Definition */");
+//    p = isl_printer_end_line(p);
+//    
+//    p = isl_printer_end_line(p);
+//  }
+
+  return p;
+}
+
+static __isl_give isl_printer *print_pe_dummy_module_core_header_intel(
+  __isl_take isl_printer *p,
+  struct autosa_prog *prog, struct autosa_pe_dummy_module *module, int types)
+{
+  struct autosa_array_ref_group *group = module->io_group;
+
+  p = isl_printer_start_line(p);
+  if (types)
+    p = isl_printer_print_str(p, "void ");
+  // group_name
+  p = isl_printer_print_str(p, group->array->name);
+  if (group->group_type == AUTOSA_IO_GROUP) {
+    if (group->local_array->n_io_group > 1) {
+      p = isl_printer_print_str(p, "_");
+      p = isl_printer_print_int(p, group->nr);
+    } 
+  } else if (group->group_type == AUTOSA_DRAIN_GROUP) {
+    p = isl_printer_print_str(p, "_");
+    p = isl_printer_print_str(p, "drain");
+  }
+  p = isl_printer_print_str(p, "_PE_dummy");
+  p = isl_printer_print_str(p, "(");
+  p = print_pe_dummy_module_arguments(p, prog, module->module->kernel, 
+                                      module, types, INTEL_HW);
+  p = isl_printer_print_str(p, ")");
+
+  return p;
+}
+
+static __isl_give isl_printer *print_pe_dummy_module_core_headers_intel(
+  __isl_take isl_printer *p, struct autosa_prog *prog,
+  struct autosa_pe_dummy_module *module, struct hls_info *hls, int types)
+{
+  p = print_pe_dummy_module_core_header_intel(p, prog, module, types);
+  
+  return p;
+}
+
+/* Print the header of the given module.
+ */
+static __isl_give isl_printer *print_pe_dummy_module_header_intel(
+  __isl_take isl_printer *p,
+  struct autosa_prog *prog, struct autosa_pe_dummy_module *module, 
+  int inter, int boundary)
+{
+  struct autosa_array_ref_group *group = module->io_group;
+
+  p = isl_printer_start_line(p);  
+  p = isl_printer_print_str(p, "void ");
+  // group_name
+  p = isl_printer_print_str(p, group->array->name);
+  if (group->group_type == AUTOSA_IO_GROUP) {
+    if (group->local_array->n_io_group > 1) {
+      p = isl_printer_print_str(p, "_");
+      p = isl_printer_print_int(p, group->nr);
+    } 
+  } else if (group->group_type == AUTOSA_DRAIN_GROUP) {
+    p = isl_printer_print_str(p, "_");
+    p = isl_printer_print_str(p, "drain");
+  }
+  p = isl_printer_print_str(p, "_PE_dummy");
+  p = isl_printer_print_str(p, "(");
+  p = print_pe_dummy_module_arguments(p, prog, module->module->kernel, 
+                                      module, 1, INTEL_HW);
+  p = isl_printer_print_str(p, ")");
+
+  return p;
+}
+
+/* Print the header of the given module to both gen->hls.kernel_h
+ * and gen->hls.kernel_c
+ * If "inter" is -1, this is a normal module call.
+ * If "inter" is 0, this is a intra_trans module call.
+ * If "inter" is 1, this is a inter_trans module call.
+ */
+static isl_stat print_pe_dummy_module_headers_intel(
+  struct autosa_prog *prog, struct autosa_pe_dummy_module *module,
+  struct hls_info *hls, int inter, int boundary)
+{
+  isl_printer *p;
+
+  p = isl_printer_to_file(prog->ctx, hls->kernel_h);
+  p = isl_printer_set_output_format(p, ISL_FORMAT_C);
+  p = print_pe_dummy_module_header_intel(p, prog, module, inter, boundary); 
+  p = isl_printer_print_str(p, ";");
+  p = isl_printer_end_line(p);
+  isl_printer_free(p);
+
+  p = isl_printer_to_file(prog->ctx, hls->kernel_c);
+  p = isl_printer_set_output_format(p, ISL_FORMAT_C);
+  p = print_str_new_line(p, "__attribute__((max_global_work_dim(0)))");
+  p = print_pe_dummy_module_header_intel(p, prog, module, inter, boundary);
+  p = isl_printer_end_line(p);
+  isl_printer_free(p);
+
+  return isl_stat_ok;
+}
+
+static __isl_give isl_printer *autosa_print_default_pe_dummy_module(
+  __isl_take isl_printer *p,
+  struct autosa_pe_dummy_module *pe_dummy_module,
+  struct autosa_prog *prog, struct hls_info *hls, int boundary)
+{
+  struct autosa_hw_module *module = pe_dummy_module->module;
+  struct print_hw_module_data hw_data = {hls, prog, module};
+  isl_ast_print_options *print_options;
+  isl_ctx *ctx = isl_printer_get_ctx(p);
+
+  /* Print core. */
+  p = isl_printer_start_line(p);
+  p = isl_printer_print_str(p, "/* Module Definition */");
+  p = isl_printer_end_line(p);
+
+  //if (hls->target == XILINX_HW)
+//    p = print_pe_dummy_module_core_headers_xilinx(p, prog, 
+                                                  //pe_dummy_module, hls, 1);
+  print_pe_dummy_module_headers_intel(prog, pe_dummy_module, hls, -1, boundary);  
+  
+  fprintf(hls->kernel_c, "{\n");  
+  print_module_iterators(hls->kernel_c, module);
+  
+  p = isl_printer_indent(p, 4);
+  p = isl_printer_end_line(p);
+  
+  print_options = isl_ast_print_options_alloc(ctx);
+  print_options = isl_ast_print_options_set_print_user(print_options,
+                    &print_module_stmt, &hw_data);   
+  
+  p = isl_ast_node_print(pe_dummy_module->device_tree, p, print_options);
+  
+  p = isl_printer_indent(p, -4);   
+  fprintf(hls->kernel_c, "}\n");
+  p = isl_printer_start_line(p);
+  p = isl_printer_print_str(p, "/* Module Definition */");
+  p = isl_printer_end_line(p);
+  
+  p = isl_printer_end_line(p);
+
+//  /* Print wrapper. */
+//  if (hls->target == XILINX_HW) {
+//    p = isl_printer_start_line(p);
+//    p = isl_printer_print_str(p, "/* Module Definition */");
+//    p = isl_printer_end_line(p);
+//  
+//    print_pe_dummy_module_wrapper_headers_xilinx(prog, pe_dummy_module, hls);
+//    
+//    fprintf(hls->kernel_c, "{\n");
+//    p = isl_printer_indent(p, 4);
+//    p = print_pe_dummy_module_core_headers_xilinx(p, prog, pe_dummy_module, hls, 0);
+//    p = isl_printer_print_str(p, ";");
+//    p = isl_printer_end_line(p);
+//    p = isl_printer_indent(p, -4);
+//    fprintf(hls->kernel_c, "}\n");
+//    p = isl_printer_start_line(p);
+//    p = isl_printer_print_str(p, "/* Module Definition */");
+//    p = isl_printer_end_line(p);
+//    
+//    p = isl_printer_end_line(p);
+//  }
 
   return p;
 }
@@ -1799,7 +2310,153 @@ static __isl_give isl_printer *autosa_print_host_code(__isl_take isl_printer *p,
   /* Print the hw module ASTs. */
   p_module = isl_printer_to_file(ctx, hls->kernel_c);
   p_module = isl_printer_set_output_format(p_module, ISL_FORMAT_C);
+
+  for (int i = 0; i < n_modules; i++) {
+    if (modules[i]->is_filter && modules[i]->is_buffer) {
+      /* Print out the definitions for inter_trans and intra_trans function calls. */
+      /* Intra transfer function */
+      p_module = autosa_print_intra_trans_module(p_module, modules[i], prog, hls, 0);
+       
+      /* Inter transfer function */
+      p_module = autosa_print_inter_trans_module(p_module, modules[i], prog, hls, 0);
+      if (modules[i]->boundary)
+        p_module = autosa_print_inter_trans_module(p_module, modules[i], prog, hls, 1);
+    }
+
+    p_module = autosa_print_default_module(p_module, modules[i], prog, hls, 0);
+
+    if (modules[i]->boundary) {
+      /* Print out the definitions for boundary trans function calls. */
+      p_module = autosa_print_default_module(p_module, modules[i], prog, hls, 1); 
+    }
+    if (modules[i]->n_pe_dummy_modules > 0) {
+      /* Print out the definitions for pe dummy function calls. */
+      for (int j = 0; j < modules[i]->n_pe_dummy_modules; j++) {
+        p_module = autosa_print_default_pe_dummy_module(
+            p_module, modules[i]->pe_dummy_modules[j], prog, hls, 0);
+      }
+    }
+  }
   isl_printer_free(p_module);
+
+  return p;
+}
+
+static __isl_give isl_printer *print_top_module_headers_intel(
+  __isl_take isl_printer *p,
+  struct autosa_prog *prog, struct autosa_hw_top_module *top, struct hls_info *hls)
+{
+  struct autosa_kernel *kernel = top->kernel;
+
+  p = print_str_new_line(p, "p = isl_printer_start_line(p);");
+
+  p = isl_printer_start_line(p);
+  p = isl_printer_print_str(p, "p = isl_printer_print_str(p, \"void kernel");
+  p = isl_printer_print_int(p, top->kernel->id);
+  p = isl_printer_print_str(p, "(");
+  p = print_kernel_arguments(p, prog, top->kernel, 1, hls);
+  p = isl_printer_print_str(p, ")\");");
+  p = isl_printer_end_line(p);
+
+  p = print_str_new_line(p, "p = isl_printer_end_line(p);");
+  p = print_str_new_line(p, "p = isl_printer_start_line(p);");
+  p = print_str_new_line(p, "p = isl_printer_print_str(p, \"{\");");
+  p = print_str_new_line(p, "p = isl_printer_end_line(p);");
+  
+  return p;
+}
+
+static char *extract_fifo_name_from_fifo_decl_name(isl_ctx *ctx, char *fifo_decl_name) {
+  int loc = 0;
+  char ch;
+  isl_printer *p_str = isl_printer_to_str(ctx);
+  char *name = NULL;
+
+  while ((ch = fifo_decl_name[loc]) != '\0') {
+    if (ch == '.')
+      break;
+    char buf[2];
+    buf[0] = ch;
+    buf[1] = '\0';
+    p_str = isl_printer_print_str(p_str, buf);
+    loc++;
+  }
+
+  name = isl_printer_get_str(p_str);
+  isl_printer_free(p_str);
+
+  return name;
+}
+
+static char *extract_fifo_width_from_fifo_decl_name(isl_ctx *ctx, char *fifo_decl_name) {
+  int loc = 0;
+  char ch;
+  isl_printer *p_str = isl_printer_to_str(ctx);
+  char *name = NULL;
+
+  while ((ch = fifo_decl_name[loc]) != '\0') {
+    if (ch == '.')
+      break;
+    loc++;
+  }
+
+  loc++;
+
+  while ((ch = fifo_decl_name[loc]) != '\0') {
+    char buf[2];
+    buf[0] = ch;
+    buf[1] = '\0';
+    p_str = isl_printer_print_str(p_str, buf);
+    loc++;
+  }
+
+  name = isl_printer_get_str(p_str);
+  isl_printer_free(p_str);
+
+  return name;
+}
+
+static __isl_give isl_printer *print_top_module_fifo_stmt(__isl_take isl_printer *p,
+  __isl_take isl_ast_print_options *print_options,
+  __isl_keep isl_ast_node *node, void *user)
+{
+  isl_id *id;
+  struct autosa_kernel_stmt *stmt;
+  struct print_hw_module_data *data = (struct print_hw_module_data *)(user); 
+
+  id = isl_ast_node_get_annotation(node);
+  stmt = (struct autosa_kernel_stmt *)isl_id_get_user(id);
+  isl_id_free(id);
+
+  isl_ast_print_options_free(print_options);
+
+  switch (stmt->type) {
+    case AUTOSA_KERNEL_STMT_FIFO_DECL:
+      return autosa_kernel_print_fifo_decl(p, stmt, data->prog, data->hls);
+  }
+
+  return p;
+}
+
+static __isl_give isl_printer *print_top_module_call_stmt(
+  __isl_take isl_printer *p,
+  __isl_take isl_ast_print_options *print_options,
+  __isl_keep isl_ast_node *node, void *user)
+{
+  isl_id *id;
+  struct autosa_kernel_stmt *stmt;
+  struct print_hw_module_data *data = (struct print_hw_module_data *)(user); 
+
+  id = isl_ast_node_get_annotation(node);
+  stmt = (struct autosa_kernel_stmt *)isl_id_get_user(id);
+  isl_id_free(id);
+
+  isl_ast_print_options_free(print_options);
+
+  switch (stmt->type) {
+    case AUTOSA_KERNEL_STMT_MODULE_CALL:
+      return autosa_kernel_print_module_call(p, stmt, data->prog);
+  }
 
   return p;
 }
@@ -1811,6 +2468,293 @@ static void print_top_gen_host_code(
   struct autosa_prog *prog, __isl_keep isl_ast_node *node,
   struct autosa_hw_top_module *top, struct hls_info *hls)
 {
+  isl_ast_print_options *print_options;
+  isl_ctx *ctx = isl_ast_node_get_ctx(node);
+  isl_printer *p;
+  struct print_hw_module_data hw_data = { hls, prog, NULL };
+
+  /* Print the top module ASTs. */
+  p = isl_printer_to_file(ctx, hls->top_gen_c);
+  p = isl_printer_set_output_format(p, ISL_FORMAT_C);
+
+  print_top_gen_headers(prog, top, hls);
+  fprintf(hls->top_gen_c, "{\n");
+  p = isl_printer_indent(p, 4);
+
+  p = isl_printer_start_line(p);
+  p = isl_printer_print_str(p, "FILE *fd = fopen(\"");
+  p = isl_printer_print_str(p, hls->output_dir);
+  p = isl_printer_print_str(p, "/resource_est/design_info.dat\", \"w\");");
+  p = isl_printer_end_line(p);
+  p = isl_printer_start_line(p);
+  p = isl_printer_print_str(p, "int fifo_cnt;");
+  p = isl_printer_end_line(p);
+
+  p = isl_printer_start_line(p);
+  p = isl_printer_print_str(p, "isl_ctx *ctx = isl_ctx_alloc();");
+  p = isl_printer_end_line(p);
+  p = isl_printer_start_line(p);
+  p = isl_printer_print_str(p, "isl_printer *p = isl_printer_to_file(ctx, f);");
+  p = isl_printer_end_line(p);
+  p = isl_printer_end_line(p);
+
+  p = print_top_module_headers_intel(p, prog, top, hls); // TODO
+  p = isl_printer_start_line(p);
+  p = isl_printer_print_str(p, "p = isl_printer_indent(p, 4);");
+  p = isl_printer_end_line(p);
+
+    /* Print FIFO declarations */
+  p = isl_printer_start_line(p);
+  p = isl_printer_print_str(p, "p = isl_printer_start_line(p);");
+  p = isl_printer_end_line(p);
+
+  p = isl_printer_start_line(p);
+  p = isl_printer_print_str(p, "p = isl_printer_print_str(p, \"/* FIFO Declaration */\");");
+  p = isl_printer_end_line(p);
+
+  p = isl_printer_start_line(p);
+  p = isl_printer_print_str(p, "p = isl_printer_end_line(p);");
+  p = isl_printer_end_line(p);
+  p = isl_printer_end_line(p);
+
+  for (int i = 0; i < top->n_fifo_decls; i++) {
+    /* Generate fifo decl counter. */
+    char *fifo_decl_name = top->fifo_decl_names[i];
+    char *fifo_name = extract_fifo_name_from_fifo_decl_name(ctx, fifo_decl_name);
+    char *fifo_w = extract_fifo_width_from_fifo_decl_name(ctx, fifo_decl_name);
+    p = isl_printer_start_line(p);
+    p = isl_printer_print_str(p, "fifo_cnt = 0;");
+    p = isl_printer_end_line(p);
+
+    /* Print AST */
+    print_options = isl_ast_print_options_alloc(ctx);
+    print_options = isl_ast_print_options_set_print_user(print_options,
+                      &print_top_module_fifo_stmt, &hw_data); 
+  
+    p = isl_ast_node_print(top->fifo_decl_wrapped_trees[i], 
+          p, print_options); 
+
+    /* fifo:fifo_name:fifo_cnt:fifo_width */
+    p = isl_printer_start_line(p);
+    p = isl_printer_print_str(p, "fprintf(fd, \"fifo:");
+    p = isl_printer_print_str(p, fifo_name);
+    p = isl_printer_print_str(p, ":\%d:");
+    p = isl_printer_print_str(p, fifo_w);
+    p = isl_printer_print_str(p, "\\n\", fifo_cnt);");
+    p = isl_printer_end_line(p);
+
+    p = isl_printer_end_line(p);
+
+    free(fifo_name);
+    free(fifo_w);
+  }
+
+  p = isl_printer_start_line(p);
+  p = isl_printer_print_str(p, "p = isl_printer_start_line(p);");
+  p = isl_printer_end_line(p);
+
+  p = isl_printer_start_line(p);
+  p = isl_printer_print_str(p, "p = isl_printer_print_str(p, \"/* FIFO Declaration */\");");
+  p = isl_printer_end_line(p);
+
+  p = isl_printer_start_line(p);
+  p = isl_printer_print_str(p, "p = isl_printer_end_line(p);");
+  p = isl_printer_end_line(p);
+
+  p = isl_printer_start_line(p);
+  p = isl_printer_print_str(p, "p = isl_printer_end_line(p);");
+  p = isl_printer_end_line(p);
+
+  int n_module_names = 0;
+  char **module_names = NULL;
+  for (int i = 0; i < top->n_hw_modules; i++) {
+    /* Generate module call counter. */
+    struct autosa_hw_module *module = top->hw_modules[i];
+    char *module_name;
+
+    if (module->is_filter && module->is_buffer) {
+      module_name = concat(ctx, module->name, "intra_trans");
+      
+      n_module_names++;
+      module_names = (char **)realloc(module_names, n_module_names * sizeof(char *));
+      module_names[n_module_names - 1] = module_name;
+
+      module_name = concat(ctx, module->name, "inter_trans");
+      
+      n_module_names++;
+      module_names = (char **)realloc(module_names, n_module_names * sizeof(char *));
+      module_names[n_module_names - 1] = module_name;
+
+      if (module->boundary) {
+        module_name = concat(ctx, module->name, "inter_trans_boundary");
+      
+        n_module_names++;
+        module_names = (char **)realloc(module_names, n_module_names * sizeof(char *));
+        module_names[n_module_names - 1] = module_name;       
+      }
+    }  
+
+    module_name = strdup(module->name);
+    
+    n_module_names++;
+    module_names = (char **)realloc(module_names, n_module_names * sizeof(char *));
+    module_names[n_module_names - 1] = module_name;       
+ 
+    if (module->boundary) {
+      module_name = concat(ctx, module->name, "boundary");
+      
+      n_module_names++;
+      module_names = (char **)realloc(module_names, n_module_names * sizeof(char *));
+      module_names[n_module_names - 1] = module_name;       
+    }
+
+    if (module->n_pe_dummy_modules > 0) {
+      for (int j = 0; j < module->n_pe_dummy_modules; j++) {
+        struct autosa_pe_dummy_module *dummy_module = module->pe_dummy_modules[j];
+        struct autosa_array_ref_group *group = dummy_module->io_group;
+        isl_printer *p_str = isl_printer_to_str(ctx);
+        p_str = autosa_array_ref_group_print_prefix(group, p_str);
+        p_str = isl_printer_print_str(p_str, "_PE_dummy");
+        module_name = isl_printer_get_str(p_str);
+        isl_printer_free(p_str);
+        
+        n_module_names++;
+        module_names = (char **)realloc(module_names, n_module_names * sizeof(char *));
+        module_names[n_module_names - 1] = module_name;       
+      }
+    }
+  }  
+  for (int i = 0; i < n_module_names; i++) {
+    p = isl_printer_start_line(p);
+    p = isl_printer_print_str(p, "int ");
+    p = isl_printer_print_str(p, module_names[i]);
+    p = isl_printer_print_str(p, "_cnt = 0;");
+    p = isl_printer_end_line(p);
+  }
+
+  /* Print module calls. */
+  for (int i = 0; i < top->n_module_calls; i++) {
+    /* Print AST */
+    print_options = isl_ast_print_options_alloc(ctx);
+    print_options = isl_ast_print_options_set_print_user(print_options,
+                      &print_top_module_call_stmt, &hw_data); 
+  
+    p = isl_ast_node_print(top->module_call_wrapped_trees[i], 
+          p, print_options);    
+  }
+
+    /* module:module_name:module_cnt. */
+  for (int i = 0; i < n_module_names; i++) {
+    p = isl_printer_start_line(p);
+    p = isl_printer_print_str(p, "fprintf(fd, \"module:");
+    p = isl_printer_print_str(p, module_names[i]);
+    p = isl_printer_print_str(p, ":\%d\\n\", ");
+    p = isl_printer_print_str(p, module_names[i]);
+    p = isl_printer_print_str(p, "_cnt);");
+    p = isl_printer_end_line(p);
+  }
+  p = isl_printer_end_line(p);   
+
+  for (int i = 0; i < n_module_names; i++) {
+    free(module_names[i]);
+  }
+  free(module_names);
+
+  p = isl_printer_start_line(p);
+  p = isl_printer_print_str(p, "p = isl_printer_indent(p, -4);");
+  p = isl_printer_end_line(p);
+
+  p = print_str_new_line(p, "p = isl_printer_start_line(p);");
+  p = print_str_new_line(p, "p = isl_printer_print_str(p, \"}\");");
+  p = print_str_new_line(p, "p = isl_printer_end_line(p);");
+  if (hls->target == XILINX_HW) {
+    if (!hls->hls) {
+      p = print_str_new_line(p, "p = isl_printer_start_line(p);");
+      p = print_str_new_line(p, "p = isl_printer_print_str(p, \"}\");");
+      p = print_str_new_line(p, "p = isl_printer_end_line(p);");
+    }
+  }
+
+  p = isl_printer_end_line(p);
+  p = isl_printer_start_line(p);
+  p = isl_printer_print_str(p, "fclose(fd);");
+  p = isl_printer_end_line(p);
+
+  p = isl_printer_start_line(p);
+  p = isl_printer_print_str(p, "isl_printer_free(p);");
+  p = isl_printer_end_line(p);
+  p = isl_printer_start_line(p);
+  p = isl_printer_print_str(p, "isl_ctx_free(ctx);");
+  p = isl_printer_end_line(p);
+  p = isl_printer_indent(p, -4);
+  p = isl_printer_start_line(p);
+  p = isl_printer_print_str(p, "}");
+  p = isl_printer_end_line(p);
+  p = isl_printer_end_line(p);
+
+  /* For internal testing only. */
+  p = isl_printer_start_line(p);
+  p = isl_printer_print_str(p, "int main()");
+  p = isl_printer_end_line(p);
+
+  p = ppcg_start_block(p);
+  
+  p = isl_printer_start_line(p);
+  p = isl_printer_print_str(p, "FILE *f = fopen(\"");
+  p = isl_printer_print_str(p, hls->output_dir);
+  p = isl_printer_print_str(p, "/src/top.cpp\", \"w\");");
+  p = isl_printer_end_line(p);
+
+  p = isl_printer_start_line(p);
+  p = isl_printer_print_str(p, "top_generate(f);");
+  p = isl_printer_end_line(p);
+
+  p = ppcg_end_block(p);
+  p = isl_printer_free(p);
+  
+  return;  
+}
+
+/* Examine if all autorun modules are legal to be used as autorun.
+ * Specifically, for Intel OpenCL, we examine for each non external module 
+ * (modules that are not connected to the external memory), if there is only
+ * index and fifos in the arguments.
+ */ 
+static int is_autorun_legal(struct autosa_prog *prog, 
+  struct autosa_hw_module **modules, int n_modules)
+{  
+  for (int i = 0; i < n_modules; i++) {
+    struct autosa_hw_module *module = modules[i];
+    if (module->to_mem)
+      continue;
+
+    isl_space *space;
+    int nparam, n;
+
+    /* param */
+    space = isl_union_set_get_space(module->kernel->arrays);
+    nparam = isl_space_dim(space, isl_dim_param);
+    isl_space_free(space);
+    if (nparam > 0)
+      return 0;
+    /* host iter */
+    n = isl_space_dim(module->space, isl_dim_set);    
+    if (n > 0)
+      return 0;
+    /* scalar */
+    if (module->type == PE_MODULE) {
+      for (int i = 0; i < prog->n_array; i++) {
+        int required;
+        required = autosa_kernel_requires_array_argument(module->kernel, i);
+        if (required) {
+          if (autosa_array_is_read_only_scalar(&prog->array[i]))
+            return 0;
+        }
+      }
+    }
+  }
+
+  return 1;
 }
 
 /* Given a autosa_prog "prog" and the corresponding tranformed AST
@@ -1828,6 +2772,7 @@ static __isl_give isl_printer *print_hw(
 {
   struct hls_info *hls = (struct hls_info *)user;
   isl_printer *kernel;
+  int legal;
 
   kernel = isl_printer_to_file(isl_printer_get_ctx(p), hls->kernel_c);
   kernel = isl_printer_set_output_format(kernel, ISL_FORMAT_C);
@@ -1836,6 +2781,13 @@ static __isl_give isl_printer *print_hw(
 
   if (!kernel)
     return isl_printer_free(p);
+
+  /* Examine if autorun kernels are legal. */
+  legal = is_autorun_legal(prog, modules, n_modules);
+  if (!legal) {
+    printf("[AutoSA] Error: Autorun kernels not legal! Abort the code generation.\n");
+    return p;
+  }
 
   /* Print OpenCL host and kernel function. */
   p = autosa_print_host_code(p, prog, tree, modules, n_modules, top_module, 
