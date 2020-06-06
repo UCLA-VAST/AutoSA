@@ -381,12 +381,12 @@ static __isl_give isl_printer *find_device_xilinx(__isl_take isl_printer *p)
 static __isl_give isl_printer *declare_and_allocate_device_arrays_xilinx(
   __isl_take isl_printer *p, struct autosa_prog *prog, struct autosa_kernel *kernel)
 {
-  p = print_str_new_line(p, "// Allocate memory in host memory");  
+  p = print_str_new_line(p, "// Allocate memory in host memory");    
   for (int i = 0; i < kernel->n_array; i++) {    
     struct autosa_local_array_info *local_array = &kernel->array[i];
     if (!autosa_array_requires_device_allocation(local_array->array))
       continue;      
-    
+  
     if (local_array->n_mem_ports > 1 && local_array->array->copy_out) {
       /* Create multiple host buffers. */
       p = isl_printer_start_line(p);
@@ -451,7 +451,7 @@ static __isl_give isl_printer *declare_and_allocate_device_arrays_xilinx(
 
   /* Initialize buffer. */
   p = print_str_new_line(p, "// Initialize host buffers");
-  
+
   for (int i = 0; i < kernel->n_array; i++) {    
     struct autosa_local_array_info *local_array = &kernel->array[i];
     if (!autosa_array_requires_device_allocation(local_array->array))
@@ -1280,6 +1280,8 @@ static __isl_give isl_printer *print_device_node_xilinx(__isl_take isl_printer *
 		return copy_array_to_device_xilinx(p, array, hls); 
 	else
 		return copy_array_from_device_xilinx(p, array, hls); 
+
+  return p;
 }
 
 /* Set kernel arguments:

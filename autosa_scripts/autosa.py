@@ -97,5 +97,8 @@ if __name__ == "__main__":
   process = subprocess.run(cmd.split())
   cmd = 'rm ' + output_dir + '/src/' + src_file_prefix + '_top_gen.h'
   process = subprocess.run(cmd.split())
-  cmd = 'rm ' + output_dir + '/src/' + src_file_prefix + '_kernel_modules.cpp'
+  if target == 'autosa_hls_c':
+    cmd = 'rm ' + output_dir + '/src/' + src_file_prefix + '_kernel_modules.cpp'
+  elif target == 'autosa_opencl':
+    cmd = 'rm ' + output_dir + '/src/' + src_file_prefix + '_kernel_modules.cl'
   process = subprocess.run(cmd.split())

@@ -16,7 +16,7 @@ cd -
 cd src
 ./autogen.sh
 ./configure
-make
+make -j4
 #make check
 
 # Cleanup
