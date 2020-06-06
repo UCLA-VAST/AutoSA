@@ -62,7 +62,8 @@ __isl_give isl_printer *print_top_gen_arguments(__isl_take isl_printer *p,
   struct autosa_prog *prog, struct autosa_kernel *kernel, int types);
 __isl_give isl_printer *autosa_kernel_print_module_call(
   __isl_take isl_printer *p,
-  struct autosa_kernel_stmt *stmt, struct autosa_prog *prog);
+  struct autosa_kernel_stmt *stmt, struct autosa_prog *prog,
+  enum platform target);
 void print_func_iterators(FILE *out, 
   struct autosa_drain_merge_func *func);  
 
@@ -115,5 +116,7 @@ __isl_give isl_printer *print_fifo_rw_xilinx(__isl_take isl_printer *p,
 /* Intel-specific */
 __isl_give isl_printer *print_fifo_type_intel(__isl_take isl_printer *p, 
   struct autosa_array_ref_group *group, int n_lane);
+__isl_give isl_printer *print_fifo_rw_intel(__isl_take isl_printer *p,
+  const char *fifo_name, int read);  
 
 #endif

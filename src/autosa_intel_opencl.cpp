@@ -141,7 +141,7 @@ static void opencl_open_files(struct hls_info *info, const char *input)
     exit(1);
   }  
   fprintf(info->kernel_c, "#include \"%s\"\n", name);
-  fprintf(info->kernel_c, "#pragma OPENCL EXTENSION cl_intel_channels : enable\n\n");
+  //fprintf(info->kernel_c, "#pragma OPENCL EXTENSION cl_intel_channels : enable\n\n");
 
   strcpy(name + len, "_top_gen.cpp");
   strcpy(dir + len_dir, name);
@@ -2455,7 +2455,7 @@ static __isl_give isl_printer *print_top_module_call_stmt(
 
   switch (stmt->type) {
     case AUTOSA_KERNEL_STMT_MODULE_CALL:
-      return autosa_kernel_print_module_call(p, stmt, data->prog);
+      return autosa_kernel_print_module_call(p, stmt, data->prog, data->hls->target);
   }
 
   return p;

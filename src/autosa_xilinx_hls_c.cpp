@@ -2638,7 +2638,7 @@ static __isl_give isl_printer *print_top_module_call_stmt(
 
   switch (stmt->type) {
     case AUTOSA_KERNEL_STMT_MODULE_CALL:
-      return autosa_kernel_print_module_call(p, stmt, data->prog);
+      return autosa_kernel_print_module_call(p, stmt, data->prog, data->hls->target);
   }
 
   return p;

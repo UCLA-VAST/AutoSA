@@ -1294,13 +1294,19 @@ static __isl_give isl_printer *print_fifo_decl_single(
     else
       p = print_pretrans_inst_ids_suffix(p, n, group->io_L1_pe_expr, NULL); 
   }
-  p = isl_printer_start_line(p);
-  p = isl_printer_print_str(p, "p = isl_printer_print_str(p, \";\");");
-  p = isl_printer_end_line(p);
+  if (hls->target == INTEL_HW) {
+    /* Print fifo attribute */
+    p = print_str_new_line(p, "p = isl_printer_print_str(p, \" __attribute__((depth(2)))\");");
+  }
+  //p = isl_printer_start_line(p);
+  //p = isl_printer_print_str(p, "p = isl_printer_print_str(p, \";\");");
+  //p = isl_printer_end_line(p);
+  p = print_str_new_line(p, "p = isl_printer_print_str(p, \";\");");
 
-  p = isl_printer_start_line(p);
-  p = isl_printer_print_str(p, "p = isl_printer_end_line(p);");
-  p = isl_printer_end_line(p);
+  //p = isl_printer_start_line(p);
+  //p = isl_printer_print_str(p, "p = isl_printer_end_line(p);");
+  //p = isl_printer_end_line(p);
+  p = print_str_new_line(p, "p = isl_printer_end_line(p);");
 
   if (hls->target == XILINX_HW) {
     /* Print fifo pragma */
@@ -1373,13 +1379,15 @@ static __isl_give isl_printer *print_fifo_decl_single(
           p = print_pretrans_inst_ids_suffix(p, n, group->io_L1_pe_expr, NULL);
         }
       }
-      p = isl_printer_start_line(p);
-      p = isl_printer_print_str(p, "p = isl_printer_print_str(p, \" core=FIFO_SRL\");");
-      p = isl_printer_end_line(p);
+      //p = isl_printer_start_line(p);
+      //p = isl_printer_print_str(p, "p = isl_printer_print_str(p, \" core=FIFO_SRL\");");
+      //p = isl_printer_end_line(p);
+      p = print_str_new_line(p, "p = isl_printer_print_str(p, \" core=FIFO_SRL\");");
    
-      p = isl_printer_start_line(p);
-      p = isl_printer_print_str(p, "p = isl_printer_end_line(p);");
-      p = isl_printer_end_line(p);   
+      //p = isl_printer_start_line(p);
+      //p = isl_printer_print_str(p, "p = isl_printer_end_line(p);");
+      //p = isl_printer_end_line(p);   
+      p = print_str_new_line(p, "p = isl_printer_end_line(p);");
     }
   }
 
@@ -1491,7 +1499,8 @@ static __isl_give isl_printer *print_fifo_prefix(__isl_take isl_printer *p,
  * - inter-module fifos
  */
 __isl_give isl_printer *print_module_call_upper(__isl_take isl_printer *p, 
-  struct autosa_kernel_stmt *stmt, struct autosa_prog *prog)
+  struct autosa_kernel_stmt *stmt, struct autosa_prog *prog,
+  enum platform target)
 {
   struct autosa_hw_module *module = stmt->u.m.module;
   struct autosa_pe_dummy_module *pe_dummy_module = stmt->u.m.pe_dummy_module;
@@ -1522,7 +1531,8 @@ __isl_give isl_printer *print_module_call_upper(__isl_take isl_printer *p,
   if (boundary) {
     p = isl_printer_print_str(p, "_boundary");
   }
-  p = isl_printer_print_str(p, "_wrapper");
+  if (target == XILINX_HW)
+    p = isl_printer_print_str(p, "_wrapper");
   p = isl_printer_print_str(p, "(\");");
   p = isl_printer_end_line(p);
 
@@ -1867,7 +1877,8 @@ static __isl_give isl_printer *print_module_call_lower(__isl_take isl_printer *p
  */
 __isl_give isl_printer *autosa_kernel_print_module_call(
   __isl_take isl_printer *p,
-  struct autosa_kernel_stmt *stmt, struct autosa_prog *prog)
+  struct autosa_kernel_stmt *stmt, struct autosa_prog *prog,
+  enum platform target)
 {
   int upper = stmt->u.m.upper;
   int lower = stmt->u.m.lower;
@@ -1918,7 +1929,7 @@ __isl_give isl_printer *autosa_kernel_print_module_call(
     p = isl_printer_print_str(p, "p = isl_printer_end_line(p);");
     p = isl_printer_end_line(p);
 
-    p = print_module_call_upper(p, stmt, prog);
+    p = print_module_call_upper(p, stmt, prog, target);
     p = print_module_call_lower(p, stmt, prog);
 
     p = isl_printer_start_line(p);
@@ -1976,7 +1987,7 @@ __isl_give isl_printer *autosa_kernel_print_module_call(
       p = isl_printer_print_str(p, "p = isl_printer_end_line(p);");
       p = isl_printer_end_line(p);
 
-      p = print_module_call_upper(p, stmt, prog);
+      p = print_module_call_upper(p, stmt, prog, target);
     } else { 
       p = print_module_call_lower(p, stmt, prog);
 
@@ -2021,6 +2032,26 @@ __isl_give isl_printer *print_fifo_rw_xilinx(__isl_take isl_printer *p,
   return p;
 }
 
+/* If read, print:
+ *   "read_channel_intel([fifo_name])"
+ * else, print:
+ *   "write_channel_intel([fifo_name])"
+ */
+__isl_give isl_printer *print_fifo_rw_intel(__isl_take isl_printer *p,
+  const char *fifo_name, int read)
+{
+  if (read) {
+    p = isl_printer_print_str(p, "read_channel_intel(");
+    p = isl_printer_print_str(p, fifo_name);
+    p = isl_printer_print_str(p, ")");
+  } else {
+    p = isl_printer_print_str(p, "write_channel_intel(");
+    p = isl_printer_print_str(p, fifo_name);
+    p = isl_printer_print_str(p, ", ");
+  }
+  return p;
+}
+
 /* Print an I/O statement.
  *
  * An in I/O statement is printed as
@@ -2059,7 +2090,9 @@ __isl_give isl_printer *autosa_kernel_print_io(__isl_take isl_printer *p,
     p = isl_printer_start_line(p);
     p = isl_printer_print_str(p, "fifo_data = ");
     if (hls->target == XILINX_HW) 
-      p = print_fifo_rw_xilinx(p, fifo_name, 1);    
+      p = print_fifo_rw_xilinx(p, fifo_name, 1);   
+    else if (hls->target == INTEL_HW) 
+      p = print_fifo_rw_intel(p, fifo_name, 1);
     p = isl_printer_print_str(p, ";");
     p = isl_printer_end_line(p);
 
@@ -2088,11 +2121,15 @@ __isl_give isl_printer *autosa_kernel_print_io(__isl_take isl_printer *p,
       p = isl_printer_print_ast_expr(p, local_index_packed); 
       p = isl_printer_print_str(p, " = ");
       if (hls->target == XILINX_HW)
-        p = print_fifo_rw_xilinx(p, fifo_name, 1);      
+        p = print_fifo_rw_xilinx(p, fifo_name, 1);    
+      else if (hls->target == INTEL_HW)  
+        p = print_fifo_rw_intel(p, fifo_name, 1);
     } else {
       /* fifo.write(local[]) */
       if (hls->target == XILINX_HW)
         p = print_fifo_rw_xilinx(p, fifo_name, 0);      
+      else if (hls->target == INTEL_HW)
+        p = print_fifo_rw_intel(p, fifo_name, 0);
       p = isl_printer_print_ast_expr(p, local_index_packed);
       p = isl_printer_print_str(p, ")");
     }
@@ -2114,7 +2151,9 @@ __isl_give isl_printer *autosa_kernel_print_io(__isl_take isl_printer *p,
       p = isl_printer_start_line(p);
       p = isl_printer_print_str(p, "fifo_data = ");
       if (hls->target == XILINX_HW)
-        p = print_fifo_rw_xilinx(p, fifo_name, 1);      
+        p = print_fifo_rw_xilinx(p, fifo_name, 1);   
+      else if (hls->target == INTEL_HW)   
+        p = print_fifo_rw_intel(p, fifo_name, 1);
       p = isl_printer_print_str(p, ";");
       p = isl_printer_end_line(p);      
 
@@ -2384,6 +2423,8 @@ static __isl_give isl_printer *autosa_kernel_print_io_transfer_default(
     p = isl_printer_print_str(p, " = ");
     if (hls->target == XILINX_HW)
       p = print_fifo_rw_xilinx(p, fifo_name, 1);    
+    else if (hls->target == INTEL_HW)
+      p = print_fifo_rw_intel(p, fifo_name, 1);
     p = isl_printer_print_str(p, ";");
     p = isl_printer_end_line(p);
     free(fifo_name);
@@ -2412,6 +2453,8 @@ static __isl_give isl_printer *autosa_kernel_print_io_transfer_default(
       p = isl_printer_start_line(p);
       if (hls->target == XILINX_HW)
         p = print_fifo_rw_xilinx(p, fifo_name, 0);      
+      else if (hls->target == INTEL_HW)
+        p = print_fifo_rw_intel(p, fifo_name, 0);
       p = isl_printer_print_str(p, "fifo_data);");
       p = isl_printer_end_line(p);
       free(fifo_name);
@@ -2429,6 +2472,8 @@ static __isl_give isl_printer *autosa_kernel_print_io_transfer_default(
       p = isl_printer_start_line(p);
       if (hls->target == XILINX_HW)
         p = print_fifo_rw_xilinx(p, fifo_name, 0);      
+      else if (hls->target == INTEL_HW)
+        p = print_fifo_rw_intel(p, fifo_name, 0);
       p = isl_printer_print_str(p, "fifo_data);");
       p = isl_printer_end_line(p);
       free(fifo_name);
@@ -2464,7 +2509,9 @@ static __isl_give isl_printer *autosa_kernel_print_io_transfer_default(
       p = isl_printer_start_line(p);
       p = isl_printer_print_str(p, "fifo_data = ");
       if (hls->target == XILINX_HW)
-        p = print_fifo_rw_xilinx(p, fifo_name, 1);      
+        p = print_fifo_rw_xilinx(p, fifo_name, 1);   
+      else if (hls->target == INTEL_HW)   
+        p = print_fifo_rw_intel(p, fifo_name, 1);
       p = isl_printer_print_str(p, ";");
       p = isl_printer_end_line(p);
       free(fifo_name);
@@ -2482,7 +2529,9 @@ static __isl_give isl_printer *autosa_kernel_print_io_transfer_default(
       p = isl_printer_start_line(p);
       p = isl_printer_print_str(p, "fifo_data = ");
       if (hls->target == XILINX_HW)
-        p = print_fifo_rw_xilinx(p, fifo_name, 1);      
+        p = print_fifo_rw_xilinx(p, fifo_name, 1);    
+      else if (hls->target == INTEL_HW)  
+        p = print_fifo_rw_intel(p, fifo_name, 1);
       p = isl_printer_print_str(p, ";");
       p = isl_printer_end_line(p);
       free(fifo_name);
@@ -2497,7 +2546,9 @@ static __isl_give isl_printer *autosa_kernel_print_io_transfer_default(
     fifo_name = concat(ctx, stmt->u.i.fifo_name, "out");
     p = isl_printer_start_line(p);
     if (hls->target == XILINX_HW)
-      p = print_fifo_rw_xilinx(p, fifo_name, 0);    
+      p = print_fifo_rw_xilinx(p, fifo_name, 0);   
+    else if (hls->target == INTEL_HW) 
+      p = print_fifo_rw_intel(p, fifo_name, 0);
     p = isl_printer_print_str(p, "fifo_data);");
     p = isl_printer_end_line(p);
     free(fifo_name);
@@ -2685,9 +2736,10 @@ static __isl_give isl_printer *autosa_kernel_print_io_transfer_data_pack(
     /* fifo_data = fifo.read(); */
     p = isl_printer_start_line(p);
     p = isl_printer_print_str(p, "fifo_data = ");
-    if (hls->target == XILINX_HW) {
+    if (hls->target == XILINX_HW)
       p = print_fifo_rw_xilinx(p, fifo_name, 1);
-    }
+    else if (hls->target == INTEL_HW)
+      p = print_fifo_rw_intel(p, fifo_name, 1);
     p = isl_printer_print_str(p, ";");
     p = isl_printer_end_line(p);
 
@@ -2798,9 +2850,10 @@ static __isl_give isl_printer *autosa_kernel_print_io_transfer_data_pack(
 
     /* fifo.write(fifo_data); */
     p = isl_printer_start_line(p);
-    if (hls->target == XILINX_HW) {
+    if (hls->target == XILINX_HW)
       p = print_fifo_rw_xilinx(p, fifo_name, 0);
-    }
+    else if (hls->target == INTEL_HW)
+      p = print_fifo_rw_intel(p, fifo_name, 0);
     p = isl_printer_print_str(p, "fifo_data);");
     p = isl_printer_end_line(p);
 
@@ -3007,6 +3060,8 @@ __isl_give isl_printer *autosa_kernel_print_io_dram(__isl_take isl_printer *p,
       p = isl_printer_start_line(p);
       if (hls->target == XILINX_HW)
         p = print_fifo_rw_xilinx(p, fifo_name, 0);      
+      else if (hls->target == INTEL_HW)
+        p = print_fifo_rw_intel(p, fifo_name, 0);
       p = isl_printer_print_str(p, "fifo_data);");
       p = isl_printer_end_line(p);
       free(fifo_name);
@@ -3022,7 +3077,9 @@ __isl_give isl_printer *autosa_kernel_print_io_dram(__isl_take isl_printer *p,
       p = isl_printer_print_str(p, "fifo_data = ");
       fifo_name = concat(ctx, stmt->u.i.fifo_name, "in");
       if (hls->target == XILINX_HW)
-        p = print_fifo_rw_xilinx(p, fifo_name, 1);      
+        p = print_fifo_rw_xilinx(p, fifo_name, 1);  
+      else if (hls->target == INTEL_HW)
+        p = print_fifo_rw_intel(p, fifo_name, 1);
       p = isl_printer_print_str(p, ";");
       p = isl_printer_end_line(p);
       free(fifo_name);

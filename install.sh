@@ -14,7 +14,7 @@ cd -
 
 # Compilation
 cd src
-#./autogen.sh
+./autogen.sh
 ./configure
 make
 #make check

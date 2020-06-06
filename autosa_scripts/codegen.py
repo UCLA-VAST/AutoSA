@@ -7,17 +7,17 @@ import re
 import numpy as np
 
 def print_module_def(f, arg_map, module_def, def_args, call_args_type):
-  """Print out module definitions
+  """Print out module definitions for Intel OpenCL
 
-  This function prints out the module definition with all arguments
+  This function prints out the module definition with all arguments in the code
   replaced by the calling arugments.
 
   Args:
     f: file handle
     arg_map: maps from module definition args to module call args
-    module_def (list): stores the module definition texts
-    def_args (list): stores the module definition arguments
-    call_args_type (list): stores the type of each module call arg
+    module_def: a list storing the module definition texts
+    def_args: a list storing the module definition arguments
+    call_args_type: a list storing the type of each module call arg
   """
   # Extract module ids and fifos from def_args
   module_id_args = []
@@ -31,7 +31,7 @@ def print_module_def(f, arg_map, module_def, def_args, call_args_type):
       fifo_args.append(def_arg)
 
   for line in module_def:
-    if line.find('__kernel') != -1:
+    if line.find('void') != -1:
       # This line is kernel argument.
       # All module id and fifo arguments are deleted
       m = re.search('(.+)\(', line)
@@ -73,6 +73,18 @@ def print_module_def(f, arg_map, module_def, def_args, call_args_type):
       f.write(line)
 
 def generate_intel_kernel(kernel, headers, module_defs, module_calls, fifo_decls):
+  """ Generate the final Intel code
+
+  This function plugs in the module definitions into each module call and replace
+  index ids and fifo arguments.
+
+  Args:
+    kernel: the output file
+    headers: list containing the headers to be printed
+    module_defs: list containing the module definitions
+    module_calls: list containing the module calls
+    fifo_decls: list containing the fifo declarations
+  """
   with open(kernel, 'w') as f:
     # print out headers
     for header in headers:
@@ -100,7 +112,7 @@ def generate_intel_kernel(kernel, headers, module_defs, module_calls, fifo_decls
       module_def = module_defs[module_name]
       # extract the arg list in module definition
       for line in module_def:
-        if line.find('__kernel') != -1:
+        if line.find('void') != -1:
           m = re.search('\((.+?)\)', line)
           if m:
             def_args_old = m.group(1)
@@ -262,6 +274,13 @@ def insert_xlnx_pragmas(lines):
 
   return lines
 
+def float_to_int(matchobj):
+  str_expr = matchobj.group(0)
+  if float(str_expr) == int(float(str_expr)):
+    return str(int(float(str_expr)))
+  else:
+    return str_expr
+
 def index_simplify(matchobj):
   str_expr = matchobj.group(0)
   expr = sympy.sympify(str_expr[1 : len(str_expr) - 1])
@@ -276,7 +295,10 @@ def index_simplify(matchobj):
   """
   expr = sympy.simplify(expr)
   new_str_expr = sympy.printing.ccode(expr)
-  if 'floor' in new_str_expr or 'ceil' in new_str_expr or '.0L' in new_str_expr:
+#  # We will try to replace floats with integers if values won't change
+#  new_str_expr = re.sub('\d+\.\d+', float_to_int, new_str_expr)
+
+  if 'floor' in new_str_expr or 'ceil' in new_str_expr or '.0' in new_str_expr:
     return str_expr
   else:
     return '[' + new_str_expr + ']'
@@ -298,7 +320,6 @@ def simplify_expressions(lines):
   Args:
     lines: contains the codelines of the program
   """
-
   code_len = len(lines)
   # Simplify array index expressions
   for pos in range(code_len):
@@ -525,15 +546,15 @@ def xilinx_run(kernel_call, kernel_def, kernel='autosa.tmp/output/src/kernel_ker
       lines = reorder_module_calls(lines)
       f.writelines(lines)
 
-def intel_run(kernel_call, kernel_def, kernel='autosa.tmp/output/src/kernel_autosa_opencl.cpp'):
+def intel_run(kernel_call, kernel_def, kernel='autosa.tmp/output/src/kernel_kernel.cpp'):
   """ Generate the kernel file for Intel platform
 
-  We will exrtract all teh fifo declarations and module calls.
+  We will extract all the fifo declarations and module calls.
   Then plug in the module definitions into each module call.
 
   Args:
-    kernel_call: file contains kernel calls
-    kernel_def: file contains kernel definitions
+    kernel_call: file containing kernel calls
+    kernel_def: file containing kernel definitions
     kernel: output kernel file
   """
 
@@ -595,7 +616,7 @@ def intel_run(kernel_call, kernel_def, kernel='autosa.tmp/output/src/kernel_auto
       if add:
         module_def.append(line)
         # Extract the module name
-        if (line.find('__kernel')) != -1:
+        if (line.find('void')) != -1:
           m = re.search('void (.+?)\(', line)
           if m:
             module_name = m.group(1)
@@ -621,7 +642,6 @@ if __name__ == "__main__":
   args = parser.parse_args()
 
   if args.target == 'autosa_opencl':
-    print("Intel OpenCL is not supported!")
-    # intel_run(args.kernel_call, args.kernel_def, args.output)
+    intel_run(args.kernel_call, args.kernel_def, args.output)
   elif args.target == 'autosa_hls_c':
     xilinx_run(args.kernel_call, args.kernel_def, args.output, args.host)

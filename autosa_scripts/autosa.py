@@ -43,6 +43,7 @@ if __name__ == "__main__":
     sys.exit()  
 
   # Generate the top module
+  print("[AutoSA] Post-processing the generated code...")
   if not os.path.exists(output_dir + '/src/' + src_file_prefix + '_top_gen.cpp'):
     sys.exit()
   cmd = 'g++ -o '   + output_dir + '/src/top_gen ' + output_dir + \
@@ -55,11 +56,18 @@ if __name__ == "__main__":
   cmd = output_dir + '/src/top_gen'
   process = subprocess.run(cmd.split(), env=my_env)
 
-  # Generate the final code
-  cmd = './autosa_scripts/codegen.py -c ' + output_dir + \
-        '/src/top.cpp -d ' + output_dir + '/src/' + src_file_prefix + \
-        '_kernel_modules.cpp -t ' + target + ' -o ' + output_dir + '/src/' + \
-        src_file_prefix + '_kernel.cpp'
+  # Generate the final code  
+  if target == 'autosa_hls_c':
+    cmd = './autosa_scripts/codegen.py -c ' + output_dir + \
+          '/src/top.cpp -d ' + output_dir + '/src/' + src_file_prefix + \
+          '_kernel_modules.cpp -t ' + target + ' -o ' + output_dir + '/src/' + \
+          src_file_prefix + '_kernel.cpp'
+  elif target == 'autosa_opencl':
+    cmd = './autosa_scripts/codegen.py -c ' + output_dir + \
+          '/src/top.cpp -d ' + output_dir + '/src/' + src_file_prefix + \
+          '_kernel_modules.cl -t ' + target + ' -o ' + output_dir + '/src/' + \
+          src_file_prefix + '_kernel.cl'
+
   if target == 'autosa_hls_c':
     cmd += ' --host '
     cmd += xilinx_host
