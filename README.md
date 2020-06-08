@@ -39,6 +39,7 @@ The structure of this repo is as follows:
 7. [Version History](#version-history)
 
 ## Latest Features
++ [2020/6/8] Docker image is released.
 + [2020/5/24] Added HBM support.
 + [2020/5/17] Version 0.01 is released.
 
@@ -73,6 +74,10 @@ install LLVM/clang from source.
 ### Compilation
 ```bash
 ./install.sh
+```
+Alternatively, we offer a Docker image for quick start. Run the following command to pull the AutoSA Docker image:
+```bash
+docker pull whbldhwj/autosa:latest
 ```
 
 ### Use AutoSA to Generate HLS Code
