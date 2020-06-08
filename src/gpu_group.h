@@ -11,7 +11,8 @@
  * Note that if both private_tile and shared_tile are set, then shared_tile
  * is only used inside group_common_shared_memory_tile.
  */
-struct gpu_array_ref_group {
+struct gpu_array_ref_group
+{
 	/* The references in this group access this local array. */
 	struct gpu_local_array_info *local_array;
 	/* This is the corresponding array. */
@@ -47,19 +48,19 @@ struct gpu_array_ref_group {
 };
 
 int gpu_group_references(struct ppcg_kernel *kernel,
-	__isl_keep isl_schedule_node *node);
+												 __isl_keep isl_schedule_node *node);
 
 __isl_give isl_printer *gpu_array_ref_group_print_name(
-	struct gpu_array_ref_group *group, __isl_take isl_printer *p);
+		struct gpu_array_ref_group *group, __isl_take isl_printer *p);
 void gpu_array_ref_group_compute_tiling(struct gpu_array_ref_group *group);
 __isl_give isl_union_map *gpu_array_ref_group_access_relation(
-	struct gpu_array_ref_group *group, int read, int write);
+		struct gpu_array_ref_group *group, int read, int write);
 int gpu_array_ref_group_requires_unroll(struct gpu_array_ref_group *group);
 enum ppcg_group_access_type gpu_array_ref_group_type(
-	struct gpu_array_ref_group *group);
+		struct gpu_array_ref_group *group);
 struct gpu_array_tile *gpu_array_ref_group_tile(
-	struct gpu_array_ref_group *group);
+		struct gpu_array_ref_group *group);
 struct gpu_array_ref_group *gpu_array_ref_group_free(
-	struct gpu_array_ref_group *group);
+		struct gpu_array_ref_group *group);
 
 #endif

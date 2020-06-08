@@ -29,14 +29,15 @@
 #include "util.h"
 
 #ifdef __cplusplus
-extern "C" {
+extern "C"
+{
 #endif
 
 #define _DEBUG
 
-#define DBGVAR( os, var ) \
-   (os) << "DBG: " << __FILE__ << "(" << __LINE__ << ") "\
-        << #var << " = [" << (var) << "]" << std::endl
+#define DBGVAR(os, var)                                  \
+  (os) << "DBG: " << __FILE__ << "(" << __LINE__ << ") " \
+       << #var << " = [" << (var) << "]" << std::endl
 #ifdef __cplusplus
 }
 #endif
@@ -47,17 +48,19 @@ extern "C" {
 #define D(x)
 #endif
 
-#define min(a, b)  (((a) < (b)) ? (a) : (b))
-#define max(a, b)  (((a) > (b)) ? (a) : (b))
+#define min(a, b) (((a) < (b)) ? (a) : (b))
+#define max(a, b) (((a) > (b)) ? (a) : (b))
 
-enum autosa_group_access_type {
+enum autosa_group_access_type
+{
   AUTOSA_ACCESS_GLOBAL,
   AUTOSA_ACCESS_LOCAL,
   AUTOSA_ACCESS_SHARED,
   AUTOSA_ACCESS_PRIVATE
 };
 
-enum autosa_kernel_stmt_type {
+enum autosa_kernel_stmt_type
+{
   AUTOSA_KERNEL_STMT_COPY,
   AUTOSA_KERNEL_STMT_DOMAIN,
   AUTOSA_KERNEL_STMT_SYNC,
@@ -76,7 +79,8 @@ enum autosa_kernel_stmt_type {
   AUTOSA_KERNEL_STMT_IO_MODULE_CALL_STATE_HANDLE
 };
 
-enum autosa_dep_type {
+enum autosa_dep_type
+{
   AUTOSA_DEP_RAW,
   AUTOSA_DEP_RAR,
   AUTOSA_DEP_WAR,
@@ -84,13 +88,15 @@ enum autosa_dep_type {
   AUTOSA_DEP_UNKNOWN
 };
 
-enum autosa_io_type {
+enum autosa_io_type
+{
   AUTOSA_INT_IO,
   AUTOSA_EXT_IO,
   AUTOSA_UNKNOWN_IO
 };
 
-enum autosa_io_dir {
+enum autosa_io_dir
+{
   IO_IN,
   IO_OUT,
   IO_INOUT,
@@ -98,31 +104,36 @@ enum autosa_io_dir {
   IO_UNKNOWN
 };
 
-enum autosa_module_type {
+enum autosa_module_type
+{
   PE_MODULE,
   IO_MODULE,
   DRAIN_MODULE
 };
 
-enum autosa_group_type {
+enum autosa_group_type
+{
   AUTOSA_IO_GROUP,
   AUTOSA_PE_GROUP,
   AUTOSA_DRAIN_GROUP,
   AUTOSA_UNKNOWN_GROUP
 };
 
-enum autosa_array_type {
+enum autosa_array_type
+{
   AUTOSA_EXT_ARRAY,
   AUTOSA_INT_ARRAY
 };
 
-enum platform {
+enum platform
+{
   INTEL_HW,
   XILINX_HW
 };
 
-struct autosa_dep {
-  isl_id *src; 
+struct autosa_dep
+{
+  isl_id *src;
   isl_id *dest;
   isl_vec *disvec;
   enum autosa_dep_type type;
@@ -135,12 +146,14 @@ struct autosa_dep {
 
 /* A sequence of "n" names of types.
  */
-struct autosa_types {
+struct autosa_types
+{
   int n;
   char **name;
 };
 
-struct autosa_iter {
+struct autosa_iter
+{
   char *name;
   isl_aff *lb;
   isl_aff *ub;
@@ -150,7 +163,8 @@ struct autosa_iter {
 
 /* Representation of a local variable in a kernel 
  */
-struct autosa_kernel_var {
+struct autosa_kernel_var
+{
   struct autosa_array_info *array;
   enum autosa_group_access_type type;
   char *name;
@@ -158,10 +172,11 @@ struct autosa_kernel_var {
   /* Data packing factors */
   int n_lane;
   /* Array partition factors */
-  int n_part; 
+  int n_part;
 };
 
-struct autosa_kernel {
+struct autosa_kernel
+{
   isl_ctx *ctx;
   isl_schedule *schedule;
   struct ppcg_scop *scop;
@@ -191,7 +206,7 @@ struct autosa_kernel {
    * kernel. 
    */
   isl_union_set *core;
-  /* The set of possibly accessed outer array elements. */  
+  /* The set of possibly accessed outer array elements. */
   isl_union_set *arrays;
   /* "n_array" is the total number of arrays in the input program and also
    * the number of elements in the "array".
@@ -217,7 +232,7 @@ struct autosa_kernel {
   isl_ast_node *tree;
 
   /* Local variables in a kernel. */
-  int n_var; 
+  int n_var;
   struct autosa_kernel_var *var;
 
   /* Contains the list of block identifiers for this kernel. */
@@ -276,7 +291,8 @@ struct autosa_kernel {
   int single_statement;
 };
 
-struct autosa_io_info {
+struct autosa_io_info
+{
   enum autosa_io_type io_type;
   struct autosa_dep *dep;
   isl_vec *dir;
@@ -290,26 +306,27 @@ struct autosa_io_info {
  * If the access relation is empty, then the output dimension may
  * not be equal to the dimension of the corresponding array.
  */
-struct autosa_stmt_access {
-	/* Access reads elements */
-	int read;
-	/* Access writes elements */
-	int write;
-	/* All writes are definite writes. */
-	int exact_write;
-	/* Is a single, fixed element being accessed? */
-	isl_bool fixed_element;
-	/* The number of index expressions specified in the access. */
-	int n_index;
+struct autosa_stmt_access
+{
+  /* Access reads elements */
+  int read;
+  /* Access writes elements */
+  int write;
+  /* All writes are definite writes. */
+  int exact_write;
+  /* Is a single, fixed element being accessed? */
+  isl_bool fixed_element;
+  /* The number of index expressions specified in the access. */
+  int n_index;
 
-	/* May access relation */
-	isl_map *access;
-	/* May access relation with as domain a mapping from iteration domain
+  /* May access relation */
+  isl_map *access;
+  /* May access relation with as domain a mapping from iteration domain
 	 * to a reference identifier.
 	 */
-	isl_map *tagged_access;
-	/* The reference id of the corresponding pet_expr. */
-	isl_id *ref_id;
+  isl_map *tagged_access;
+  /* The reference id of the corresponding pet_expr. */
+  isl_id *ref_id;
 
   /* AutoSA extended */
   struct autosa_io_info **io_info;
@@ -323,7 +340,7 @@ struct autosa_stmt_access {
   int simd_stride;
   /* AutoSA extended */
 
-	struct autosa_stmt_access *next;  
+  struct autosa_stmt_access *next;
 };
 
 /* Internal data structure for extract_access.
@@ -333,10 +350,11 @@ struct autosa_stmt_access {
  * an expression statement (i.e., a statement without internal control).
  * "any_to_outer" maps all intermediate arrays to their outer arrays.
  */
-struct ppcg_extract_access_data {
-	struct autosa_stmt_access **next_access;
-	int single_expression;
-	isl_union_map *any_to_outer;
+struct ppcg_extract_access_data
+{
+  struct autosa_stmt_access **next_access;
+  int single_expression;
+  isl_union_map *any_to_outer;
 };
 
 /* A representation of a user statement.
@@ -347,7 +365,8 @@ struct ppcg_extract_access_data {
  * then this linked list may be empty even if the actual statement does
  * perform accesses.
  */
-struct autosa_stmt {
+struct autosa_stmt
+{
   isl_id *id;
   struct pet_stmt *stmt;
 
@@ -356,62 +375,63 @@ struct autosa_stmt {
 
 /* Represents an outer array possibly accessed by a autosa_prog.
  */
-struct autosa_array_info {
-	/* The array data space. */
-	isl_space *space;
-	/* Element type. */
-	char *type;
-	/* Element size. */
-	int size;
-	/* Name of the array. */
-	char *name;
-	/* Declared extent of original array. */
-	isl_set *declared_extent;
-	/* AST expression for declared size of original array. */
-	isl_ast_expr *declared_size;
-	/* Extent of the array that needs to be copied. */
-	isl_set *extent;
-	/* Number of indices. */
-	unsigned n_index;
-	/* For each index, a bound on "extent" in that direction. */
-	isl_multi_pw_aff *bound;
-	/* The corresponding access AST expression, if the array needs
+struct autosa_array_info
+{
+  /* The array data space. */
+  isl_space *space;
+  /* Element type. */
+  char *type;
+  /* Element size. */
+  int size;
+  /* Name of the array. */
+  char *name;
+  /* Declared extent of original array. */
+  isl_set *declared_extent;
+  /* AST expression for declared size of original array. */
+  isl_ast_expr *declared_size;
+  /* Extent of the array that needs to be copied. */
+  isl_set *extent;
+  /* Number of indices. */
+  unsigned n_index;
+  /* For each index, a bound on "extent" in that direction. */
+  isl_multi_pw_aff *bound;
+  /* The corresponding access AST expression, if the array needs
 	 * to be allocated on the device.
 	 */
-	isl_ast_expr *bound_expr;
+  isl_ast_expr *bound_expr;
 
-	/* All references to this array; point to elements of a linked list. */
-	int n_ref;
-	struct autosa_stmt_access **refs;
+  /* All references to this array; point to elements of a linked list. */
+  int n_ref;
+  struct autosa_stmt_access **refs;
 
-	/* Is this array accessed at all by the program? */
-	int accessed;
+  /* Is this array accessed at all by the program? */
+  int accessed;
 
-	/* Is this a scalar that is read-only within the entire program? */
-	int read_only_scalar;
+  /* Is this a scalar that is read-only within the entire program? */
+  int read_only_scalar;
 
-	/* Are the elements of the array structures? */
-	int has_compound_element;
+  /* Are the elements of the array structures? */
+  int has_compound_element;
 
-	/* Are the elements only accessed through constant index expressions? */
-	int only_fixed_element;
+  /* Are the elements only accessed through constant index expressions? */
+  int only_fixed_element;
 
-	/* Is the array local to the scop? */
-	int local;
-	/* Is the array local and should it be declared on the host? */
-	int declare_local;
+  /* Is the array local to the scop? */
+  int local;
+  /* Is the array local and should it be declared on the host? */
+  int declare_local;
 
-	/* Is the corresponding global device memory accessed in any way? */
-	int global;
+  /* Is the corresponding global device memory accessed in any way? */
+  int global;
 
-	/* Should the array be linearized? */
-	int linearize;
+  /* Should the array be linearized? */
+  int linearize;
 
-	/* Order dependences on this array.
+  /* Order dependences on this array.
 	 * Only used if live_range_reordering option is set.
 	 * It is set to NULL otherwise.
 	 */
-	isl_union_map *dep_order;
+  isl_union_map *dep_order;
 
   /* AutoSA Extended */
   int n_lane;
@@ -426,7 +446,8 @@ struct autosa_array_info {
   /* AutoSA Extended */
 };
 
-struct autosa_io_buffer {
+struct autosa_io_buffer
+{
   /* The local buffer tile, NULL if none. */
   struct autosa_array_tile *tile;
   /* The buffer is located at io_L"level". */
@@ -437,7 +458,8 @@ struct autosa_io_buffer {
 
 /* A group of array references in a kernel that should be handled together. 
  */
-struct autosa_array_ref_group {
+struct autosa_array_ref_group
+{
   /* The references in this group access this local array. */
   struct autosa_local_array_info *local_array;
   /* This is the corresponding array. */
@@ -445,7 +467,7 @@ struct autosa_array_ref_group {
   /* Position of this group in the list of reference group of array. */
   int nr;
 
-	/* The following fields are use during the construction of the groups.
+  /* The following fields are use during the construction of the groups.
 	 * access is the combined access relation relative to the private
 	 * memory tiling.  In particular, the domain of the map corresponds
 	 * to the first thread_depth dimensions of the kernel schedule.
@@ -455,30 +477,30 @@ struct autosa_array_ref_group {
 	 * that refers to more than one element
 	 * "min_depth" is the minimum of the tile depths and thread_depth.
 	 */
-	isl_map *access;
-	int write;
-	int exact_write;
-	int slice;
-	int min_depth;
+  isl_map *access;
+  int write;
+  int exact_write;
+  int slice;
+  int min_depth;
 
-	/* The shared memory tile, NULL if none. */
-	struct autosa_array_tile *shared_tile;
+  /* The shared memory tile, NULL if none. */
+  struct autosa_array_tile *shared_tile;
 
-	/* The private memory tile, NULL if none. */
-	struct autosa_array_tile *private_tile;
+  /* The private memory tile, NULL if none. */
+  struct autosa_array_tile *private_tile;
 
   /* The local memory tile, NULL if none. */
   struct autosa_array_tile *local_tile;
 
-	/* References in this group; point to elements of a linked list. */
-	int n_ref;
-	struct autosa_stmt_access **refs;  
+  /* References in this group; point to elements of a linked list. */
+  int n_ref;
+  struct autosa_stmt_access **refs;
 
   /* AutoSA Extended */
   /* The local memory tile inside PEs. This is for internal array with interior I/O */
   struct autosa_array_tile *pe_tile;
   /* I/O buffers inserted at each IO level */
-  struct autosa_io_buffer **io_buffers;   
+  struct autosa_io_buffer **io_buffers;
   int n_io_buffer;
   /* I/O type: interior/exterior I/O */
   enum autosa_io_type io_type;
@@ -493,11 +515,11 @@ struct autosa_array_ref_group {
   /* I/O direction at the array level */
   enum autosa_io_dir array_io_dir;
   /* Maps PE identifiers to I/O identifiers */
-  isl_multi_aff *io_trans; /* pe ids -> io ids */ 
+  isl_multi_aff *io_trans;    /* pe ids -> io ids */
   isl_multi_aff *io_L1_trans; /* pe ids -> L1 io ids */
   /* AST expression maps L1 I/O identifiers to PE identifiers */
-  isl_ast_expr *io_pe_expr; /* io ids -> pe ids */ 
-  isl_ast_expr *io_L1_pe_expr; /* L1 io ids -> pe ids */ 
+  isl_ast_expr *io_pe_expr;    /* io ids -> pe ids */
+  isl_ast_expr *io_L1_pe_expr; /* L1 io ids -> pe ids */
   isl_ast_expr *io_pe_expr_boundary;
   isl_ast_expr *io_L1_pe_expr_boundary;
   /* I/O schedule */
@@ -523,8 +545,9 @@ struct autosa_array_ref_group {
   /* AutoSA Extended */
 };
 
-struct autosa_array_ref_group_pair {
-  struct autosa_array_ref_group *local_group; 
+struct autosa_array_ref_group_pair
+{
+  struct autosa_array_ref_group *local_group;
   struct autosa_array_ref_group *io_group;
   struct autosa_array_tile *local_tile; /* Compute the local tile */
   int in_use;
@@ -542,12 +565,13 @@ struct autosa_array_ref_group_pair {
  * "bound" is equal to array->bound specialized to the current kernel.
  * "bound_expr" is the corresponding access AST expression.
  */
-struct autosa_local_array_info {
-	struct autosa_array_info *array;
+struct autosa_local_array_info
+{
+  struct autosa_array_info *array;
 
   /* PE groups */
-	int n_pe_group;
-	struct autosa_array_ref_group **pe_groups;
+  int n_pe_group;
+  struct autosa_array_ref_group **pe_groups;
 
   /* IO groups */
   int n_io_group;
@@ -564,7 +588,7 @@ struct autosa_local_array_info {
   /* Number of external memory ports that this array is allocated. */
   int n_mem_ports;
   /* Map from io_group_ref to mem_port. */
-  std::vector<std::pair<int,int> > group_ref_mem_port_map;
+  std::vector<std::pair<int, int> > group_ref_mem_port_map;
 
   /* Default groups */
   int n_group;
@@ -573,12 +597,12 @@ struct autosa_local_array_info {
   enum autosa_array_type array_type;
   int n_lane;
 
-	int force_private;
-	int global;
+  int force_private;
+  int global;
 
-	unsigned n_index;
-	isl_multi_pw_aff *bound;
-	isl_ast_expr *bound_expr;
+  unsigned n_index;
+  isl_multi_pw_aff *bound;
+  isl_ast_expr *bound_expr;
 };
 
 /* "read" and "write" contain the original access relations, possibly 
@@ -587,7 +611,8 @@ struct autosa_local_array_info {
  * The elements of "array", as well as the ranges of "copy_in" and "copy_out"
  * only refer to the outer arrays of any possible member accesses.
  */
-struct autosa_prog {
+struct autosa_prog
+{
   isl_ctx *ctx;
 
   struct ppcg_scop *scop;
@@ -612,23 +637,24 @@ struct autosa_prog {
   isl_union_map *to_outer;
   /* A mapping from all the outer arrays to all corresponding inner arrays */
   isl_union_map *to_inner;
-	/* A mapping from all intermediate arrays to their outer arrays,
+  /* A mapping from all intermediate arrays to their outer arrays,
 	 * including an identity mapping from the anonymous 1D space to itself.
 	 */
-	isl_union_map *any_to_outer;
+  isl_union_map *any_to_outer;
 
-	/* Order dependences on non-scalars. */
-	isl_union_map *array_order;
+  /* Order dependences on non-scalars. */
+  isl_union_map *array_order;
 
-	/* Array of statements */
-	int n_stmts;
-	struct autosa_stmt *stmts;
+  /* Array of statements */
+  int n_stmts;
+  struct autosa_stmt *stmts;
 
-	int n_array;
-	struct autosa_array_info *array;  
+  int n_array;
+  struct autosa_array_info *array;
 };
 
-struct autosa_hw_top_module {
+struct autosa_hw_top_module
+{
   int n_fifo_decls;
   int n_module_calls;
   isl_schedule **fifo_decl_scheds;
@@ -655,7 +681,8 @@ struct autosa_hw_top_module {
   isl_ast_node **ext_module_wrapped_trees;
 };
 
-struct autosa_pe_dummy_module {
+struct autosa_pe_dummy_module
+{
   struct autosa_hw_module *module;
   struct autosa_array_ref_group *io_group;
   isl_schedule *sched;
@@ -663,7 +690,8 @@ struct autosa_pe_dummy_module {
   isl_ast_node *device_tree;
 };
 
-struct autosa_drain_merge_func {
+struct autosa_drain_merge_func
+{
   struct autosa_array_ref_group *group;
   struct autosa_kernel *kernel;
   isl_id_list *inst_ids;
@@ -672,7 +700,8 @@ struct autosa_drain_merge_func {
   isl_ast_node *device_tree;
 };
 
-struct autosa_hw_module {
+struct autosa_hw_module
+{
   struct ppcg_options *options;
 
   enum autosa_module_type type;
@@ -699,7 +728,7 @@ struct autosa_hw_module {
   /* I/O module copy-in/out */
   int in;
   /* Connect to external memory */
-  int to_mem; 
+  int to_mem;
   /* Connect to PE */
   int to_pe;
   /* Contains buffer */
@@ -711,7 +740,7 @@ struct autosa_hw_module {
   isl_schedule *outer_sched; /* Outer loops */
   isl_schedule *inter_sched; /* Inter transfer */
   isl_schedule *intra_sched; /* Intra transfer */
-  
+
   isl_schedule *boundary_outer_sched; /* Outer loops in boundary module */
   isl_schedule *boundary_inter_sched; /* Inter transfer in boundary module */
 
@@ -721,7 +750,7 @@ struct autosa_hw_module {
 
   isl_ast_node *inter_tree;
   isl_ast_node *intra_tree;
-  
+
   isl_ast_node *boundary_outer_tree;
   isl_ast_node *boundary_inter_tree;
 
@@ -749,20 +778,21 @@ struct autosa_hw_module {
   struct autosa_kernel *kernel;
 };
 
-struct autosa_gen {
+struct autosa_gen
+{
   isl_ctx *ctx;
   struct ppcg_options *options;
 
   /* Callback for printing of AST in appropriate format. */
   __isl_give isl_printer *(*print)(__isl_take isl_printer *p,
-    struct autosa_prog *prog, __isl_keep isl_ast_node *tree, 
-    struct autosa_hw_module **modules, int n_modules,
-    struct autosa_hw_top_module *top_module,
-    struct autosa_drain_merge_func **drain_merge_funcs, int n_drain_merge_funcs,
-    struct autosa_types *types, void *user);
+                                   struct autosa_prog *prog, __isl_keep isl_ast_node *tree,
+                                   struct autosa_hw_module **modules, int n_modules,
+                                   struct autosa_hw_top_module *top_module,
+                                   struct autosa_drain_merge_func **drain_merge_funcs, int n_drain_merge_funcs,
+                                   struct autosa_types *types, void *user);
   void *print_user;
 
-  struct autosa_prog *prog;  
+  struct autosa_prog *prog;
   struct autosa_kernel *kernel;
   /* The default AST */
   isl_ast_node *tree;
@@ -829,22 +859,26 @@ struct autosa_gen {
  * local_array is a pointer to the appropriate element in the "array"
  *  array of the autosa_kernel to which this copy access belongs
  */
-struct autosa_kernel_stmt {
-	enum autosa_kernel_stmt_type type;
+struct autosa_kernel_stmt
+{
+  enum autosa_kernel_stmt_type type;
 
-	union {
-		struct {
-			int read;
-			isl_ast_expr *index;
-			isl_ast_expr *local_index;
-			struct autosa_array_info *array;
-			struct autosa_local_array_info *local_array;
-		} c;
-		struct {
-			struct autosa_stmt *stmt;
-			isl_id_to_ast_expr *ref2expr;
-		} d;
-    struct {
+  union {
+    struct
+    {
+      int read;
+      isl_ast_expr *index;
+      isl_ast_expr *local_index;
+      struct autosa_array_info *array;
+      struct autosa_local_array_info *local_array;
+    } c;
+    struct
+    {
+      struct autosa_stmt *stmt;
+      isl_id_to_ast_expr *ref2expr;
+    } d;
+    struct
+    {
       int in;
       int buf;
       int filter;
@@ -866,7 +900,8 @@ struct autosa_kernel_stmt {
       struct autosa_array_ref_group *group;
       struct autosa_hw_module *module;
     } i;
-    struct {
+    struct
+    {
       struct autosa_hw_module *module;
       struct autosa_pe_dummy_module *pe_dummy_module;
       struct autosa_array_ref_group *group;
@@ -876,18 +911,21 @@ struct autosa_kernel_stmt {
       int lower;
       char *module_name;
     } m;
-    struct {
+    struct
+    {
       struct autosa_hw_module *module;
       int boundary;
     } f;
-    struct {
+    struct
+    {
       struct autosa_drain_merge_func *func;
       isl_ast_expr *index;
     } dm;
-	} u;
+  } u;
 };
 
-struct autosa_acc {
+struct autosa_acc
+{
   isl_map *tagged_map;
   isl_map *map;
   isl_space *id;
@@ -895,7 +933,8 @@ struct autosa_acc {
   int rw; // 0 - read 1 - write
 };
 
-struct autosa_node_band_prop {
+struct autosa_node_band_prop
+{
   int permutable;
   int *coincident;
   enum autosa_loop_type *pe_opt;
@@ -904,7 +943,8 @@ struct autosa_node_band_prop {
   isl_multi_union_pw_aff *mupa;
 };
 
-struct autosa_ast_node_userinfo {
+struct autosa_ast_node_userinfo
+{
   int is_pipeline;
   int is_unroll;
 };
@@ -917,12 +957,13 @@ struct autosa_ast_node_userinfo {
  *
  *	D -> [b]
  */
-struct autosa_array_bound {
-	isl_val *size;
-	isl_aff *lb;
+struct autosa_array_bound
+{
+  isl_val *size;
+  isl_aff *lb;
 
-	isl_val *stride;
-	isl_aff *shift;
+  isl_val *stride;
+  isl_aff *shift;
 };
 
 /* A tile of an outer array.
@@ -945,82 +986,84 @@ struct autosa_array_bound {
  * where D represents the initial "depth" dimensions
  * of the computed schedule.
  */
-struct autosa_array_tile {
-	isl_ctx *ctx;
-	int requires_unroll;
-	int depth;
-	int n;
-	struct autosa_array_bound *bound;
-	isl_multi_aff *tiling;
+struct autosa_array_tile
+{
+  isl_ctx *ctx;
+  int requires_unroll;
+  int depth;
+  int n;
+  struct autosa_array_bound *bound;
+  isl_multi_aff *tiling;
 };
 
-struct hls_info {
-  FILE *host_c;          /* OpenCL host. */
-  FILE *host_h;          /* OpenCL host header. */
-  FILE *kernel_c;        /* Definition of hardware modules. */
-  FILE *kernel_h;        /* Declaration of hardware modules. */
-  FILE *top_gen_c;       /* Prints out the top module that connects the 
+struct hls_info
+{
+  FILE *host_c;    /* OpenCL host. */
+  FILE *host_h;    /* OpenCL host header. */
+  FILE *kernel_c;  /* Definition of hardware modules. */
+  FILE *kernel_h;  /* Declaration of hardware modules. */
+  FILE *top_gen_c; /* Prints out the top module that connects the 
                             hardware modules. */
-  FILE *top_gen_h;        
+  FILE *top_gen_h;
 
   enum platform target;
-  int hls;               /* Generate HLS host instead of OpenCL host */
-  char *output_dir;      /* Output directory */
+  int hls;          /* Generate HLS host instead of OpenCL host */
+  char *output_dir; /* Output directory */
   isl_ctx *ctx;
 };
 
 /* Band node */
 __isl_give isl_multi_val *construct_band_tile_sizes(
-  __isl_keep isl_schedule_node *node, int *tile_size);
+    __isl_keep isl_schedule_node *node, int *tile_size);
 struct autosa_node_band_prop *extract_node_band_prop(__isl_keep isl_schedule_node *node);
 struct autosa_node_band_prop *autosa_node_band_prop_free(
-  __isl_take struct autosa_node_band_prop *prop);
+    __isl_take struct autosa_node_band_prop *prop);
 isl_bool is_permutable_node(__isl_keep isl_schedule_node *node);
 isl_bool has_single_permutable_node(__isl_keep isl_schedule *schedule);
 isl_bool is_dep_uniform_at_node(__isl_keep isl_schedule_node *node, void *user);
 isl_bool is_dep_uniform(__isl_keep isl_basic_map *bmap, void *user);
 isl_bool is_dep_uniform_wrap(__isl_keep isl_map *map, void *user);
 isl_bool uniform_dep_check(__isl_keep isl_schedule *schedule, struct ppcg_scop *scop);
-__isl_give isl_vec *get_dep_dis_at_schedule(__isl_keep isl_basic_map *dep, 
-  __isl_keep isl_schedule *schedule);
-__isl_give isl_vec *get_dep_dis_at_node(__isl_keep isl_basic_map *dep, 
-  __isl_keep isl_schedule_node *band);
+__isl_give isl_vec *get_dep_dis_at_schedule(__isl_keep isl_basic_map *dep,
+                                            __isl_keep isl_schedule *schedule);
+__isl_give isl_vec *get_dep_dis_at_node(__isl_keep isl_basic_map *dep,
+                                        __isl_keep isl_schedule_node *band);
 __isl_give isl_schedule *loop_interchange_at_node(
-  __isl_take isl_schedule_node *node, isl_size level1, isl_size level2);
+    __isl_take isl_schedule_node *node, isl_size level1, isl_size level2);
 __isl_give isl_schedule_node *get_outermost_permutable_node(
-  __isl_keep isl_schedule *schedule);
+    __isl_keep isl_schedule *schedule);
 __isl_give isl_schedule_node *get_innermost_permutable_node(
-  __isl_keep isl_schedule *schedule);
+    __isl_keep isl_schedule *schedule);
 __isl_give isl_schedule_node *tile_band(
-  __isl_take isl_schedule_node *node, __isl_take isl_multi_val *sizes);
+    __isl_take isl_schedule_node *node, __isl_take isl_multi_val *sizes);
 __isl_give isl_schedule_node *autosa_tile_band(
-  __isl_take isl_schedule_node *node, __isl_keep int *sizes);	
+    __isl_take isl_schedule_node *node, __isl_keep int *sizes);
 __isl_give isl_schedule_node *autosa_node_band_tile_loop(
-  __isl_take isl_schedule_node *node, int tile_size, int pos);
+    __isl_take isl_schedule_node *node, int tile_size, int pos);
 __isl_give isl_schedule_node *clear_pe_opt_prop(
-  __isl_take isl_schedule_node *node, void *user);
+    __isl_take isl_schedule_node *node, void *user);
 __isl_give isl_schedule_node *restore_node_band_prop(
-  __isl_take isl_schedule_node *node, 
-  __isl_take struct autosa_node_band_prop *prop);
+    __isl_take isl_schedule_node *node,
+    __isl_take struct autosa_node_band_prop *prop);
 __isl_give isl_schedule_node *autosa_node_interchange(
-  __isl_take isl_schedule_node *node);
+    __isl_take isl_schedule_node *node);
 __isl_give isl_schedule_node *autosa_node_interchange_up(
-  __isl_take isl_schedule_node *node);  
+    __isl_take isl_schedule_node *node);
 isl_bool no_permutable_node(__isl_keep isl_schedule_node *node, void *user);
 isl_bool all_parallel_node(__isl_keep isl_schedule_node *node, void *user);
 isl_bool isl_schedule_node_is_io_mark(__isl_keep isl_schedule_node *node, int io_level);
 int is_node_under_simd(__isl_keep isl_schedule_node *node);
 int is_node_under_latency(__isl_keep isl_schedule_node *node);
-int *extract_band_upper_bounds(struct autosa_kernel *kernel, 
-  __isl_keep isl_schedule_node *node);
+int *extract_band_upper_bounds(struct autosa_kernel *kernel,
+                               __isl_keep isl_schedule_node *node);
 __isl_give isl_union_set *set_schedule_eq(
-  __isl_keep isl_schedule_node *node, __isl_keep isl_id_list *names);  
+    __isl_keep isl_schedule_node *node, __isl_keep isl_id_list *names);
 isl_bool is_flow_dep_carried_by_array_part_loops(__isl_keep isl_schedule *schedule,
-  struct autosa_array_ref_group *group, struct autosa_kernel *kernel);
+                                                 struct autosa_array_ref_group *group, struct autosa_kernel *kernel);
 
 /* Schedule */
 __isl_give isl_schedule *compute_schedule(struct autosa_gen *gen);
-__isl_give isl_schedule *get_schedule(struct autosa_gen *gen);  
+__isl_give isl_schedule *get_schedule(struct autosa_gen *gen);
 
 /* AutoSA kernel */
 void *autosa_kernel_free(struct autosa_kernel *kernel);
@@ -1045,16 +1088,16 @@ int autosa_array_is_read_only_scalar(struct autosa_array_info *array);
 int autosa_array_is_scalar(struct autosa_array_info *array);
 int autosa_kernel_requires_array_argument(struct autosa_kernel *kernel, int i);
 struct autosa_array_ref_group *autosa_array_ref_group_free(
-	struct autosa_array_ref_group *group);
+    struct autosa_array_ref_group *group);
 struct autosa_array_ref_group *autosa_array_ref_group_init(
-  struct autosa_array_ref_group *group);
+    struct autosa_array_ref_group *group);
 struct autosa_array_tile *autosa_array_tile_free(struct autosa_array_tile *tile);
 struct autosa_array_tile *autosa_array_tile_create(isl_ctx *ctx, int n_index);
-__isl_give isl_val *autosa_array_tile_size(struct autosa_array_tile *tile);  
+__isl_give isl_val *autosa_array_tile_size(struct autosa_array_tile *tile);
 
 /* AutoSA statement */
 struct autosa_stmt *extract_stmts(isl_ctx *ctx, struct ppcg_scop *scop,
-  __isl_keep isl_union_map *any_to_outer);
+                                  __isl_keep isl_union_map *any_to_outer);
 void autosa_kernel_stmt_free(void *user);
 struct autosa_stmt *find_stmt(struct autosa_prog *prog, __isl_keep isl_id *id);
 
@@ -1077,7 +1120,7 @@ struct autosa_ast_node_userinfo *alloc_ast_node_userinfo();
 
 /* AutoSA PE opt */
 __isl_give isl_set *extract_sa_sizes(__isl_keep isl_union_map *sizes,
-    const char *type, int id);
+                                     const char *type, int id);
 int *read_hbm_tile_sizes(struct autosa_kernel *kernel, int tile_len, char *name);
 int *read_default_hbm_tile_sizes(struct autosa_kernel *sa, int tile_len);
 int *read_array_part_tile_sizes(struct autosa_kernel *kernel, int tile_len);
@@ -1091,9 +1134,9 @@ int *read_array_part_L2_tile_sizes(struct autosa_kernel *kernel, int tile_len);
 int *read_default_array_part_L2_tile_sizes(struct autosa_kernel *kernel, int tile_len);
 
 /* AutoSA latency and resource estimation */
-isl_stat sa_extract_loop_info(struct autosa_gen *gen, struct autosa_hw_module *module); 
+isl_stat sa_extract_loop_info(struct autosa_gen *gen, struct autosa_hw_module *module);
 isl_stat sa_extract_array_info(struct autosa_kernel *kernel);
-int extract_memory_type(struct autosa_hw_module *module, 
-  struct autosa_kernel_var *var, int uram);
-isl_stat sa_extract_design_info(struct autosa_gen *gen) ;
+int extract_memory_type(struct autosa_hw_module *module,
+                        struct autosa_kernel_var *var, int uram);
+isl_stat sa_extract_design_info(struct autosa_gen *gen);
 #endif

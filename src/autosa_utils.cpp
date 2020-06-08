@@ -14,13 +14,16 @@ __isl_give isl_union_map *extract_sizes_from_str(isl_ctx *ctx, const char *str)
 
 /* Concat the basic maps in the map "el" with the basic map list "user". 
  */
-static isl_stat concat_basic_map(__isl_take isl_map *el, void *user) 
+static isl_stat concat_basic_map(__isl_take isl_map *el, void *user)
 {
   isl_basic_map_list **bmap_list = (isl_basic_map_list **)(user);
   isl_basic_map_list *bmap_list_sub = isl_map_get_basic_map_list(el);
-  if (!(*bmap_list)) {
+  if (!(*bmap_list))
+  {
     *bmap_list = bmap_list_sub;
-  } else {
+  }
+  else
+  {
     *bmap_list = isl_basic_map_list_concat(*bmap_list, bmap_list_sub);
   }
 
@@ -31,7 +34,7 @@ static isl_stat concat_basic_map(__isl_take isl_map *el, void *user)
 /* Extract the basic map list from the union map "umap".
  */
 __isl_give isl_basic_map_list *isl_union_map_get_basic_map_list(
-  __isl_keep isl_union_map *umap)
+    __isl_keep isl_union_map *umap)
 {
   isl_map_list *map_list = isl_union_map_get_map_list(umap);
   isl_basic_map_list *bmap_list = NULL;
@@ -85,7 +88,7 @@ __isl_give isl_basic_map *isl_basic_map_from_map(__isl_take isl_map *map)
  * If there are no elements, then simply return the entire domain.
  */
 __isl_give isl_union_set *isl_multi_union_pw_aff_nonneg_union_set(
-  __isl_take isl_multi_union_pw_aff *mupa)
+    __isl_take isl_multi_union_pw_aff *mupa)
 {
   int i;
   isl_size n;
@@ -104,7 +107,8 @@ __isl_give isl_union_set *isl_multi_union_pw_aff_nonneg_union_set(
   upa = isl_multi_union_pw_aff_get_union_pw_aff(mupa, 0);
   nonneg = isl_union_pw_aff_nonneg_union_set(upa);
 
-  for (i = 1; i < n; ++i) {
+  for (i = 1; i < n; ++i)
+  {
     isl_union_set *nonneg_i;
 
     upa = isl_multi_union_pw_aff_get_union_pw_aff(mupa, i);
@@ -133,7 +137,7 @@ static isl_stat nonneg_union_set(__isl_take isl_pw_aff *pa, void *user)
  * of "upa" where it is nonnegative.
  */
 __isl_give isl_union_set *isl_union_pw_aff_nonneg_union_set(
-  __isl_take isl_union_pw_aff *upa)
+    __isl_take isl_union_pw_aff *upa)
 {
   isl_union_set *nonneg;
 
@@ -151,7 +155,7 @@ __isl_give isl_union_set *isl_union_pw_aff_nonneg_union_set(
  * If there are no elements, then simply return the entire domain.
  */
 __isl_give isl_union_set *isl_multi_union_pw_aff_non_zero_union_set(
-  __isl_take isl_multi_union_pw_aff *mupa)
+    __isl_take isl_multi_union_pw_aff *mupa)
 {
   int i;
   isl_size n;
@@ -170,7 +174,8 @@ __isl_give isl_union_set *isl_multi_union_pw_aff_non_zero_union_set(
   upa = isl_multi_union_pw_aff_get_union_pw_aff(mupa, 0);
   non_zero = isl_union_pw_aff_non_zero_union_set(upa);
 
-  for (i = 1; i < n; ++i) {
+  for (i = 1; i < n; ++i)
+  {
     isl_union_set *non_zero_i;
 
     upa = isl_multi_union_pw_aff_get_union_pw_aff(mupa, i);
@@ -198,7 +203,7 @@ static isl_stat non_zero_union_set(__isl_take isl_pw_aff *pa, void *user)
  * of "upa" where it is non zero.
  */
 __isl_give isl_union_set *isl_union_pw_aff_non_zero_union_set(
-  __isl_take isl_union_pw_aff *upa)
+    __isl_take isl_union_pw_aff *upa)
 {
   isl_union_set *non_zero;
 
@@ -212,11 +217,13 @@ __isl_give isl_union_set *isl_union_pw_aff_non_zero_union_set(
 
 /* Print the isl_mat "mat" to "fp".
  */
-void print_mat(FILE *fp, __isl_keep isl_mat *mat) 
+void print_mat(FILE *fp, __isl_keep isl_mat *mat)
 {
   isl_printer *printer = isl_printer_to_file(isl_mat_get_ctx(mat), fp);
-  for (int i = 0; i < isl_mat_rows(mat); i++) {
-    for (int j = 0; j < isl_mat_cols(mat); j++) {
+  for (int i = 0; i < isl_mat_rows(mat); i++)
+  {
+    for (int j = 0; j < isl_mat_cols(mat); j++)
+    {
       isl_printer_print_val(printer, isl_mat_get_element_val(mat, i, j));
       fprintf(fp, " ");
     }
@@ -232,7 +239,8 @@ int isl_vec_cmp(__isl_keep isl_vec *vec1, __isl_keep isl_vec *vec2)
   if (isl_vec_size(vec1) != isl_vec_size(vec2))
     return 1;
 
-  for (int i = 0; i < isl_vec_size(vec1); i++) {
+  for (int i = 0; i < isl_vec_size(vec1); i++)
+  {
     if (isl_vec_cmp_element(vec1, vec2, i))
       return 1;
   }
@@ -244,25 +252,27 @@ int isl_vec_cmp(__isl_keep isl_vec *vec1, __isl_keep isl_vec *vec2)
  */
 char *concat(isl_ctx *ctx, const char *a, const char *b)
 {
-	isl_printer *p;
-	char *s;
+  isl_printer *p;
+  char *s;
 
-	p = isl_printer_to_str(ctx);
-	p = isl_printer_print_str(p, a);
-	p = isl_printer_print_str(p, "_");
-	p = isl_printer_print_str(p, b);
-	s = isl_printer_get_str(p);
-	isl_printer_free(p);
+  p = isl_printer_to_str(ctx);
+  p = isl_printer_print_str(p, a);
+  p = isl_printer_print_str(p, "_");
+  p = isl_printer_print_str(p, b);
+  s = isl_printer_get_str(p);
+  isl_printer_free(p);
 
-	return s;
+  return s;
 }
 
 bool isl_vec_is_zero(__isl_keep isl_vec *vec)
 {
   int n = isl_vec_size(vec);
-  for (int i = 0; i < n; i++) {
+  for (int i = 0; i < n; i++)
+  {
     isl_val *val = isl_vec_get_element_val(vec, i);
-    if (!isl_val_is_zero(val)) {
+    if (!isl_val_is_zero(val))
+    {
       isl_val_free(val);
       return false;
     }
@@ -274,7 +284,7 @@ bool isl_vec_is_zero(__isl_keep isl_vec *vec)
 int suffixcmp(const char *s, const char *suffix)
 {
   int start = strlen(s) - strlen(suffix);
-  if (start < 0) 
+  if (start < 0)
     return 1;
   else
     return strncmp(s + start, suffix, strlen(suffix));
@@ -288,44 +298,46 @@ int suffixcmp(const char *s, const char *suffix)
  * or an overapproximation.
  */
 __isl_give isl_set *add_bounded_parameters_dynamic(
-	__isl_take isl_set *set, __isl_keep isl_multi_pw_aff *size,
-	__isl_keep isl_id_list *ids)
+    __isl_take isl_set *set, __isl_keep isl_multi_pw_aff *size,
+    __isl_keep isl_id_list *ids)
 {
-	int i, len;
-	unsigned nparam;
-	isl_space *space;
-	isl_local_space *ls;
+  int i, len;
+  unsigned nparam;
+  isl_space *space;
+  isl_local_space *ls;
 
-	len = isl_multi_pw_aff_dim(size, isl_dim_out);
-	nparam = isl_set_dim(set, isl_dim_param);
-	set = isl_set_add_dims(set, isl_dim_param, len);
+  len = isl_multi_pw_aff_dim(size, isl_dim_out);
+  nparam = isl_set_dim(set, isl_dim_param);
+  set = isl_set_add_dims(set, isl_dim_param, len);
 
-	for (i = 0; i < len; ++i) {
-		isl_id *id;
+  for (i = 0; i < len; ++i)
+  {
+    isl_id *id;
 
-		id = isl_id_list_get_id(ids, i);
-		set = isl_set_set_dim_id(set, isl_dim_param, nparam + i, id);
-	}
+    id = isl_id_list_get_id(ids, i);
+    set = isl_set_set_dim_id(set, isl_dim_param, nparam + i, id);
+  }
 
-	space = isl_space_params(isl_set_get_space(set));
-	ls = isl_local_space_from_space(space);
-	for (i = 0; i < len; ++i) {
-		isl_pw_aff *param, *size_i, *zero;
-		isl_set *bound;
+  space = isl_space_params(isl_set_get_space(set));
+  ls = isl_local_space_from_space(space);
+  for (i = 0; i < len; ++i)
+  {
+    isl_pw_aff *param, *size_i, *zero;
+    isl_set *bound;
 
-		param = isl_pw_aff_var_on_domain(isl_local_space_copy(ls),
-						isl_dim_param, nparam + i);
+    param = isl_pw_aff_var_on_domain(isl_local_space_copy(ls),
+                                     isl_dim_param, nparam + i);
 
-		size_i = isl_multi_pw_aff_get_pw_aff(size, i);
-		bound = isl_pw_aff_lt_set(isl_pw_aff_copy(param), size_i);
-		bound = isl_set_from_basic_set(isl_set_simple_hull(bound));
-		set = isl_set_intersect_params(set, bound);
+    size_i = isl_multi_pw_aff_get_pw_aff(size, i);
+    bound = isl_pw_aff_lt_set(isl_pw_aff_copy(param), size_i);
+    bound = isl_set_from_basic_set(isl_set_simple_hull(bound));
+    set = isl_set_intersect_params(set, bound);
 
-		zero = isl_pw_aff_zero_on_domain(isl_local_space_copy(ls));
-		bound = isl_pw_aff_ge_set(param, zero);
-		set = isl_set_intersect_params(set, bound);
-	}
-	isl_local_space_free(ls);
+    zero = isl_pw_aff_zero_on_domain(isl_local_space_copy(ls));
+    bound = isl_pw_aff_ge_set(param, zero);
+    set = isl_set_intersect_params(set, bound);
+  }
+  isl_local_space_free(ls);
 
-	return set;
+  return set;
 }

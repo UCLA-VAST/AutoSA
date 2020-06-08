@@ -3,6 +3,6 @@
 #include "math.h"
 
 typedef float data_t;
-#define I 32 
-#define J 32 
-#define K 32 
+#define I 32
+#define J 32
+#define K 32

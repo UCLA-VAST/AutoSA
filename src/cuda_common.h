@@ -3,7 +3,8 @@
 
 #include <stdio.h>
 
-struct cuda_info {
+struct cuda_info
+{
 	FILE *host_c;
 	FILE *kernel_c;
 	FILE *kernel_h;

@@ -13,7 +13,8 @@
  *
  *	D -> [b]
  */
-struct gpu_array_bound {
+struct gpu_array_bound
+{
 	isl_val *size;
 	isl_aff *lb;
 
@@ -41,7 +42,8 @@ struct gpu_array_bound {
  * where D represents the initial "depth" dimensions
  * of the computed schedule.
  */
-struct gpu_array_tile {
+struct gpu_array_tile
+{
 	isl_ctx *ctx;
 	int requires_unroll;
 	int depth;

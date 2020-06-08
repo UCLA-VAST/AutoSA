@@ -5,11 +5,12 @@
 #include "ppcg.h"
 
 #ifdef __cplusplus
-extern "C" {
+extern "C"
+{
 #endif
 
-int generate_cuda(isl_ctx *ctx, struct ppcg_options *options,
-	const char *input);
+	int generate_cuda(isl_ctx *ctx, struct ppcg_options *options,
+										const char *input);
 
 #ifdef __cplusplus
 }

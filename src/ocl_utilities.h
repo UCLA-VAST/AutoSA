@@ -21,12 +21,12 @@ cl_device_id opencl_create_device(int use_gpu);
 /* Create an OpenCL program from a string and compile it.
  */
 cl_program opencl_build_program_from_string(cl_context ctx, cl_device_id dev,
-	const char *program_source, size_t program_size,
-	const char *opencl_options);
+																						const char *program_source, size_t program_size,
+																						const char *opencl_options);
 
 /* Create an OpenCL program from a source file and compile it.
  */
 cl_program opencl_build_program_from_file(cl_context ctx, cl_device_id dev,
-	const char* filename, const char* opencl_options);
+																					const char *filename, const char *opencl_options);
 
 #endif

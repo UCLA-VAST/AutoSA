@@ -7,7 +7,7 @@
 #include "hybrid.h"
 
 __isl_give isl_schedule_node *gpu_hybrid_tile(struct gpu_gen *gen,
-	__isl_take isl_schedule_node *node, __isl_take ppcg_ht_bounds *bounds,
-	int *tile_sizes);
+																							__isl_take isl_schedule_node *node, __isl_take ppcg_ht_bounds *bounds,
+																							int *tile_sizes);
 
 #endif
