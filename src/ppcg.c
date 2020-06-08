@@ -21,6 +21,7 @@
 #include <isl/set.h>
 #include <isl/union_set.h>
 #include <isl/union_map.h>
+#include <isl/space.h>
 #include <isl/aff.h>
 #include <isl/flow.h>
 #include <isl/options.h>
@@ -31,6 +32,7 @@
 #include <isl/schedule.h>
 #include <isl/constraint.h>
 #include <pet.h>
+#include <math.h>
 #include "ppcg.h"
 #include "ppcg_options.h"
 #include "cuda.h"

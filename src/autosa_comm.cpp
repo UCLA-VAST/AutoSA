@@ -1140,7 +1140,7 @@ static __isl_give isl_schedule_node *hbm_optimize(
   int tile_len = 1;
   int *tile_size = NULL;
   cJSON *hbm_json, *hbm_mode_json;
-  char *hbm_mode;
+  const char *hbm_mode;
   isl_printer *p_str;
   char *module_name;
   int *ubs = NULL;
@@ -1800,6 +1800,8 @@ struct autosa_array_tile *autosa_array_ref_group_tile(
     case AUTOSA_ACCESS_LOCAL:
       return group->local_tile;
 	}
+
+  return NULL;
 }
 
 /* Should this array reference group be mapped to local or global

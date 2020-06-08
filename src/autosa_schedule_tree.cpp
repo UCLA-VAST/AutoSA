@@ -1643,7 +1643,7 @@ static int node_is_kernel(__isl_keep isl_schedule_node *node)
 
 /* Is "node" a mark node with an identifier called "mark"?
  */
-static int node_is_mark(__isl_keep isl_schedule_node *node, char *mark)
+static int node_is_mark(__isl_keep isl_schedule_node *node, const char *mark)
 {
   return is_marked(node, mark);
 }
@@ -1893,7 +1893,7 @@ __isl_give isl_schedule_node *autosa_tree_move_up_to_pe(
  * mark is identified by the domain elements in "core".
  */
 __isl_give isl_schedule_node *autosa_tree_move_down_to_mark(
-  __isl_take isl_schedule_node *node, __isl_keep isl_union_set *core, char *mark)
+  __isl_take isl_schedule_node *node, __isl_keep isl_union_set *core, const char *mark)
 {
   int is_mark;
 
@@ -1909,7 +1909,7 @@ __isl_give isl_schedule_node *autosa_tree_move_down_to_mark(
 /* Move up the tree underneath the "mark" mark until the "mark" mark is reached. 
  */
 __isl_give isl_schedule_node *autosa_tree_move_up_to_mark(
-  __isl_take isl_schedule_node *node, char *mark)
+  __isl_take isl_schedule_node *node, const char *mark)
 {
   int is_mark;
 

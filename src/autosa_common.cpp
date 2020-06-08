@@ -909,6 +909,8 @@ struct autosa_array_ref_group *autosa_array_ref_group_init(
   group->n_lane = 0;
   group->copy_schedule_dim = 0;
   group->copy_schedule = NULL;
+
+  return group;
 }
 
 struct autosa_array_tile *autosa_array_tile_free(struct autosa_array_tile *tile)
@@ -2474,7 +2476,7 @@ int extract_memory_type(struct autosa_hw_module *module,
 
 static cJSON *extract_buffer_info_from_module(struct autosa_gen *gen, 
   struct autosa_hw_module *module,
-  struct autosa_kernel_var *var, char *suffix)
+  struct autosa_kernel_var *var, const char *suffix)
 {
   cJSON *buffer = cJSON_CreateObject();
   

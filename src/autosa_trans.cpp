@@ -430,6 +430,8 @@ struct autosa_kernel **sa_space_time_transform_at_dim(
   } else if (scop->options->autosa->sa_type == AUTOSA_SA_TYPE_SYNC) {
     return sa_space_time_transform_at_dim_sync(schedule, scop, dim, num_sa);
   }
+
+  return NULL;
 }
 
 /* Apply space-time transformation to generate different systolic array candidates. */

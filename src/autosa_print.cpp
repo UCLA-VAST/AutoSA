@@ -542,6 +542,8 @@ __isl_give isl_printer *print_fifo_type_xilinx(__isl_take isl_printer *p,
     p = isl_printer_print_int(p, n_lane);
   }
   p = isl_printer_print_str(p, ">");
+
+  return p;
 }
 
 /* Print out
@@ -1105,7 +1107,7 @@ static __isl_give isl_printer *print_top_gen_header(__isl_take isl_printer *p,
   return p;
 }
 
-__isl_give isl_printer *print_top_gen_headers(
+void print_top_gen_headers(
   struct autosa_prog *prog, struct autosa_hw_top_module *top, struct hls_info *hls)
 {
   isl_printer *p;

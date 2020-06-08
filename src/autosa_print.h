@@ -56,7 +56,7 @@ __isl_give isl_printer *print_pe_dummy_module_arguments(
   struct autosa_pe_dummy_module *pe_dummy_module, 
   int types,
   enum platform target);  
-__isl_give isl_printer *print_top_gen_headers(
+void print_top_gen_headers(
   struct autosa_prog *prog, struct autosa_hw_top_module *top, struct hls_info *hls);  
 __isl_give isl_printer *print_top_gen_arguments(__isl_take isl_printer *p,
   struct autosa_prog *prog, struct autosa_kernel *kernel, int types);

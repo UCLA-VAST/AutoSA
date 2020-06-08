@@ -264,6 +264,8 @@ __isl_give isl_printer *isl_printer_print_schedule_tree_mark(
 	int n_ancestor, int *child_pos);
 
 /* AutoSA Extended */
+__isl_take isl_schedule_tree *isl_schedule_tree_dup(
+  __isl_keep isl_schedule_tree *tree);
 enum autosa_loop_type isl_schedule_tree_band_member_get_space_time(
 	__isl_keep isl_schedule_tree *tree, int pos);
 __isl_give isl_schedule_tree *isl_schedule_tree_band_member_set_space_time(

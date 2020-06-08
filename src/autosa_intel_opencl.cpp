@@ -2815,4 +2815,6 @@ int generate_autosa_intel_opencl(isl_ctx *ctx, struct ppcg_options *options,
   r = generate_sa(ctx, input, hls.host_c, options, &print_hw, &hls);
 
   opencl_close_files(&hls);    
+
+  return r;
 }

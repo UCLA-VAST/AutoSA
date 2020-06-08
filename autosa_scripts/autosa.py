@@ -1,10 +1,10 @@
-#!/usr/bin/env python3.6
+#!/usr/bin/env python3
 import sys
 import subprocess
 import os
 
 if __name__ == "__main__":
-  n_arg = len(sys.argv)  
+  n_arg = len(sys.argv)
   argv = sys.argv
   argv[0] = './src/autosa'
   output_dir = './autosa.tmp/output'
@@ -24,13 +24,13 @@ if __name__ == "__main__":
     # Check whether to generate HLS or OpenCL host for Xilinx FPGAs
     for arg in argv:
       if 'AutoSA-hls' in arg:
-        xilinx_host = 'hls'        
+        xilinx_host = 'hls'
 
   # Check if the output directory exists
   if not os.path.isdir("./autosa.tmp"):
     os.mkdir("./autosa.tmp")
   if not os.path.isdir(output_dir):
-    os.mkdir(output_dir)    
+    os.mkdir(output_dir)
     os.mkdir(output_dir + '/src')
     os.mkdir(output_dir + '/latency_est')
     os.mkdir(output_dir + '/resource_est')
@@ -40,7 +40,7 @@ if __name__ == "__main__":
   if process.returncode != 0:
     sys.exit()
   if not os.path.exists(output_dir + '/src/completed'):
-    sys.exit()  
+    sys.exit()
 
   # Generate the top module
   print("[AutoSA] Post-processing the generated code...")
@@ -52,11 +52,14 @@ if __name__ == "__main__":
   process = subprocess.run(cmd.split())
   my_env = os.environ.copy()
   cwd = os.getcwd()
-  my_env['LD_LIBRARY_PATH'] += os.pathsep +  cwd + '/src/isl/.libs' 
+  if 'LD_LIBRARY_PATH' in my_env:
+    my_env['LD_LIBRARY_PATH'] += os.pathsep +  cwd + '/src/isl/.libs'
+  else:
+    my_env['LD_LIBRARY_PATH'] = os.pathsep +  cwd + '/src/isl/.libs'
   cmd = output_dir + '/src/top_gen'
   process = subprocess.run(cmd.split(), env=my_env)
 
-  # Generate the final code  
+  # Generate the final code
   if target == 'autosa_hls_c':
     cmd = './autosa_scripts/codegen.py -c ' + output_dir + \
           '/src/top.cpp -d ' + output_dir + '/src/' + src_file_prefix + \
@@ -71,7 +74,7 @@ if __name__ == "__main__":
   if target == 'autosa_hls_c':
     cmd += ' --host '
     cmd += xilinx_host
-  process = subprocess.run(cmd.split())  
+  process = subprocess.run(cmd.split())
 
   cmd = 'cp ' + argv[1] + ' ' + output_dir + '/src/'
   process = subprocess.run(cmd.split())

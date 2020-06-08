@@ -376,6 +376,8 @@ static __isl_give isl_printer *find_device_xilinx(__isl_take isl_printer *p)
 //  p = isl_printer_indent(p, -4);
 //  p = print_str_new_line(p, "}");
   p = isl_printer_end_line(p);
+
+  return p;
 }
 
 static __isl_give isl_printer *declare_and_allocate_device_arrays_xilinx(
@@ -2950,5 +2952,7 @@ int generate_autosa_xilinx_hls_c(isl_ctx *ctx, struct ppcg_options *options,
 
   r = generate_sa(ctx, input, hls.host_c, options, &print_hw, &hls);
 
-  hls_close_files(&hls);  
+  hls_close_files(&hls); 
+
+  return r;
 }
