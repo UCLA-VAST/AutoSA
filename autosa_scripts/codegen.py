@@ -6,16 +6,41 @@ import argparse
 import re
 import numpy as np
 
-def print_module_def(f, arg_map, module_def, def_args, call_args_type):
+def delete_arg_from_arg_list(line, arg):
+  """ Delete the argument from the argument list 
+
+  Args:
+    line: codeline containing the argument list
+    arg: argument to be deleted
+  """
+  line = re.sub(r'( )(' + re.escape(arg) + r')(,)', 
+                '', line)
+  line = re.sub(r'( )(' + re.escape(arg) + r')(\))',
+                '\g<3>', line)        
+  line = re.sub(r'(\()(' + re.escape(arg) + r')(, )',
+                '\g<1>', line)        
+  line = re.sub(r'(\()(' + re.escape(arg) + r')(\))',
+                '\g<1>\g<3>', line)
+  return line
+
+def print_module_def(f, arg_map, module_def, inline_module_defs, def_args, call_args_type):
   """Print out module definitions for Intel OpenCL
 
   This function prints out the module definition with all arguments in the code
-  replaced by the calling arugments.
+  replaced by the calling arguments.
+  We will first extract the module ids and fifos from the module definition
+  argument lists. These arguments are deleted from the argument lists as we will
+  plug in the exact module ids and fifos from a call of this modules.
+  As an example, the original module
+    void A_IO_L3_in(int idx, fifo_type fifo)
+  will be modified to
+    void A_IO_L3_in_[arg_map[idx]]()    
 
   Args:
     f: file handle
     arg_map: maps from module definition args to module call args
     module_def: a list storing the module definition texts
+    inline_module_defs: a dict containing all the inline module definitions
     def_args: a list storing the module definition arguments
     call_args_type: a list storing the type of each module call arg
   """
@@ -34,10 +59,10 @@ def print_module_def(f, arg_map, module_def, def_args, call_args_type):
     if line.find('void') != -1:
       # This line is kernel argument.
       # All module id and fifo arguments are deleted
-      m = re.search('(.+)\(', line)
+      m = re.search(r'(.+?)\(', line)
       if m:
         prefix = m.group(1)
-      m = re.search('\((.+?)\)', line)
+      m = re.search(r'\((.+?)\)', line)
       if m:
         def_args = m.group(1)
       def_args = def_args.split(', ')
@@ -45,7 +70,11 @@ def print_module_def(f, arg_map, module_def, def_args, call_args_type):
       for i in range(len(def_args)):
         if call_args_type[i] != 'module id' and call_args_type[i] != 'fifo':
           new_def_args.append(def_args[i])
-      f.write(prefix + '(')
+      # f.write(prefix + '(')
+      f.write(prefix)
+      for module_id in module_id_args:
+        f.write('_' + arg_map[module_id])     
+      f.write('(')
       first = True
       for arg in new_def_args:
         if not first:
@@ -53,23 +82,33 @@ def print_module_def(f, arg_map, module_def, def_args, call_args_type):
         f.write(arg)
         first = False
       f.write(')\n')
-    elif line.find('// module id') != -1:
-      # This line is module id initialization
-      # All module ids are replaced by call args
-      for i in range(len(module_id_args)):
-        def_arg = module_id_args[i]
-        call_arg = arg_map[def_arg]
-        line = line.replace(def_arg, call_arg)
-      f.write(line)
-    elif line.find('read_channel_intel') != -1 or line.find('write_channel_intel') != -1:
-      # This line is fifo read/write
-      # All fifo name is replaced by call args
-      for i in range(len(fifo_args)):
-        def_arg = fifo_args[i]
-        call_arg = arg_map[def_arg]
-        line = line.replace(def_arg, call_arg)
-      f.write(line)
     else:
+      # module ids
+      for module_id in module_id_args:
+        if line.find(module_id) != -1:
+          # Test if it is inside an argument list
+          m = re.search(r'[\(| ]' + re.escape(module_id) + r'[,|\)]', line)
+          if m:
+            # Delete if from the argument list
+            line = delete_arg_from_arg_list(line, module_id)
+          else:
+            # Plug in module ids            
+            line = re.sub(r'([^a-zA-Z_])(' + re.escape(module_id) + r')([^a-zA-Z0-9_])', 
+                          '\g<1>' + re.escape(arg_map[module_id]) + '\g<3>', line)        
+      # fifos                          
+      for fifo in fifo_args:
+        if line.find(fifo) != -1:
+          # Test if it is inside a read/write API call      
+          if line.find('read_channel_intel') != -1 or line.find('write_channel_intel') != -1:
+            # Plug in fifos      
+            line = re.sub(r'([^a-zA-Z_])(' + re.escape(fifo) + r')([^a-zA-Z0-9_])', 
+                          '\g<1>' + re.escape(arg_map[fifo]) + '\g<3>', line)        
+          else:
+            # Test if it is inside an argument list
+            m = re.search(r'[\(| )]' + re.escape(fifo) + r'[,|\)]', line)
+            if m:
+              # Delete it from the argument list
+              line = delete_arg_from_arg_list(line, fifo)
       f.write(line)
 
 def generate_intel_kernel(kernel, headers, module_defs, module_calls, fifo_decls):
@@ -81,21 +120,38 @@ def generate_intel_kernel(kernel, headers, module_defs, module_calls, fifo_decls
   Args:
     kernel: the output file
     headers: list containing the headers to be printed
-    module_defs: list containing the module definitions
+    module_defs: dict containing the module definitions
     module_calls: list containing the module calls
     fifo_decls: list containing the fifo declarations
   """
+  inline_module_defs = {}
   with open(kernel, 'w') as f:
-    # print out headers
+    # Print out headers
     for header in headers:
       f.write(header + '\n')
     f.write('\n')
 
-    # print out channels
+    # Print out channels
     f.write('/* Channel Declaration */\n')
     for fifo_decl in fifo_decls:
       f.write(fifo_decl + '\n')
     f.write('/* Channel Declaration */\n\n')
+
+    # Extract the inline modules
+    # These modules are those that exist in the module_defs but not in the 
+    # module_calls.
+    for module_name in module_defs:
+      inline_module = 1
+      for module_call in module_calls:
+        line = module_call[0]
+        m = re.search(r'(.+?)\(', line)
+        if m:
+          cur_module_name = m.group(1)
+        if module_name == cur_module_name:
+          inline_module = 0
+          break
+      if inline_module:
+        inline_module_defs[module_name] = module_defs[module_name]
 
     # print out module definitions
     for module_call in module_calls:
@@ -106,14 +162,14 @@ def generate_intel_kernel(kernel, headers, module_defs, module_calls, fifo_decls
       arg_map = {}
       # Extract the module name
       line = module_call[0]
-      m = re.search('(.+?)\(', line)
+      m = re.search(r'(.+?)\(', line)
       if m:
         module_name = m.group(1)
       module_def = module_defs[module_name]
       # extract the arg list in module definition
       for line in module_def:
         if line.find('void') != -1:
-          m = re.search('\((.+?)\)', line)
+          m = re.search(r'\((.+?)\)', line)
           if m:
             def_args_old = m.group(1)
       def_args_old = def_args_old.split(', ')
@@ -123,11 +179,11 @@ def generate_intel_kernel(kernel, headers, module_defs, module_calls, fifo_decls
 
       # extract the arg list in module call
       for line in module_call:
-        m = re.search('/\*(.+?)\*/', line)
+        m = re.search(r'/\*(.+?)\*/', line)
         if m:
           arg_type = m.group(1).strip()
           call_args_type.append(arg_type)
-          n = re.search('\*/ (.+)', line)
+          n = re.search(r'\*/ (.+)', line)
           if n:
             call_arg = n.group(1).strip(',')
             call_args.append(call_arg)
@@ -141,7 +197,7 @@ def generate_intel_kernel(kernel, headers, module_defs, module_calls, fifo_decls
           arg_map[def_arg] = call_arg
 
       # print out the module definition with call args plugged in
-      print_module_def(f, arg_map, module_def, def_args, call_args_type)
+      print_module_def(f, arg_map, module_def, inline_module_defs, def_args, call_args_type)
       f.write('/* Module Definition */\n\n')
 
 def contains_pipeline_for(pos, lines):
@@ -324,13 +380,13 @@ def simplify_expressions(lines):
   # Simplify array index expressions
   for pos in range(code_len):
     line = lines[pos]
-    line = re.sub('\[(.+?)\]', index_simplify, line)
+    line = re.sub(r'\[(.+?)\]', index_simplify, line)
     lines[pos] = line
 
   # Simplify mod expressions
   for pos in range(code_len):
     line = lines[pos]
-    line = re.sub('\((.+?)\) %', mod_simplify, line)
+    line = re.sub(r'\((.+?)\) %', mod_simplify, line)
     lines[pos] = line
 
   return lines
@@ -617,7 +673,7 @@ def intel_run(kernel_call, kernel_def, kernel='autosa.tmp/output/src/kernel_kern
         module_def.append(line)
         # Extract the module name
         if (line.find('void')) != -1:
-          m = re.search('void (.+?)\(', line)
+          m = re.search(r'void (.+?)\(', line)
           if m:
             module_name = m.group(1)
       if line.find('/* Module Definition */') != -1:

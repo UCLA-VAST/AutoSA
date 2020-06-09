@@ -6,10 +6,12 @@
 #include "autosa_comm.h"
 #include "print.h"
 
+const char *vector_index[] = {"0", "1", "2", "3", "4", "5", "6", "7",
+                              "8", "9", "a", "b", "c", "d", "e", "f"};
+
 /* Print the call of an array argument.
  */
-__isl_give isl_printer *autosa_array_info_print_call_argument(
-    __isl_take isl_printer *p, struct autosa_array_info *array, int n_ref)
+__isl_give isl_printer *autosa_array_info_print_call_argument(__isl_take isl_printer *p, struct autosa_array_info *array, int n_ref)
 {
   if (autosa_array_is_read_only_scalar(array))
     return isl_printer_print_str(p, array->name);
@@ -2935,7 +2937,6 @@ static __isl_give isl_printer *autosa_kernel_print_io_transfer_data_pack(
   p = isl_printer_end_line(p);
 
   /* [type] buf_data_split[]; */
-  // TODO: move it outside the loop.
   p = isl_printer_start_line(p);
   if (nxt_n_lane == 1)
   {
@@ -2979,6 +2980,11 @@ static __isl_give isl_printer *autosa_kernel_print_io_transfer_data_pack(
   p = isl_printer_print_str(p, ";");
   p = isl_printer_end_line(p);
 
+  if (hls->target == INTEL_HW)
+  {
+    p = print_str_new_line(p, "#pragma unroll");
+  }
+
   p = isl_printer_start_line(p);
   p = isl_printer_print_str(p, "for (int n = 0; n < ");
   p = isl_printer_print_int(p, n_lane / nxt_n_lane);
@@ -2988,14 +2994,33 @@ static __isl_give isl_printer *autosa_kernel_print_io_transfer_data_pack(
   p = isl_printer_indent(p, 4);
   if (hls->target == XILINX_HW)
   {
+    p = isl_printer_indent(p, -4);
     p = isl_printer_start_line(p);
     p = isl_printer_print_str(p, "#pragma HLS UNROLL");
     p = isl_printer_end_line(p);
+    p = isl_printer_indent(p, 4);
 
     p = isl_printer_start_line(p);
     p = isl_printer_print_str(p, "buf_data_split[n] = buf_data(");
     p = isl_printer_print_int(p, group->array->size * 8 * nxt_n_lane - 1);
     p = isl_printer_print_str(p, ", 0);");
+    p = isl_printer_end_line(p);
+
+    p = isl_printer_start_line(p);
+    p = isl_printer_print_str(p, "buf_data = buf_data >> ");
+    p = isl_printer_print_int(p, group->array->size * 8 * nxt_n_lane);
+    p = isl_printer_print_str(p, ";");
+    p = isl_printer_end_line(p);
+  }
+  else
+  {
+    p = isl_printer_start_line(p);
+    p = isl_printer_print_str(p, "buf_data_split[n] = buf_data.s");
+    for (int i = 0; i < nxt_n_lane; i++)
+    {
+      p = isl_printer_print_str(p, vector_index[i]);
+    }
+    p = isl_printer_print_str(p, ";");
     p = isl_printer_end_line(p);
 
     p = isl_printer_start_line(p);
