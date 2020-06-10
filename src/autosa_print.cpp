@@ -2940,9 +2940,16 @@ static __isl_give isl_printer *autosa_kernel_print_io_transfer_data_pack(
   p = isl_printer_start_line(p);
   if (nxt_n_lane == 1)
   {
-    p = isl_printer_print_str(p, "ap_uint<");
-    p = isl_printer_print_int(p, group->array->size * 8);
-    p = isl_printer_print_str(p, ">");
+    if (hls->target == XILINX_HW)
+    {
+      p = isl_printer_print_str(p, "ap_uint<");
+      p = isl_printer_print_int(p, group->array->size * 8);
+      p = isl_printer_print_str(p, ">");
+    }
+    else if (hls->target == INTEL_HW)
+    {
+      p = isl_printer_print_str(p, group->array->type);
+    }
   }
   else
   {
@@ -3012,7 +3019,7 @@ static __isl_give isl_printer *autosa_kernel_print_io_transfer_data_pack(
     p = isl_printer_print_str(p, ";");
     p = isl_printer_end_line(p);
   }
-  else
+  else if (hls->target == INTEL_HW)
   {
     p = isl_printer_start_line(p);
     p = isl_printer_print_str(p, "buf_data_split[n] = buf_data.s");
@@ -3104,6 +3111,10 @@ static __isl_give isl_printer *autosa_kernel_print_io_transfer_data_pack(
         p = isl_printer_print_str(p, "fifo_data;");
       }
     }
+    else if (hls->target == INTEL_HW)
+    {
+      p = isl_printer_print_str(p, "fifo_data");
+    }
     p = isl_printer_end_line(p);
 
     if (stmt->u.i.coalesce_depth >= 0)
@@ -3134,6 +3145,33 @@ static __isl_give isl_printer *autosa_kernel_print_io_transfer_data_pack(
       {
         if (!first)
           p = isl_printer_print_str(p, ", ");
+        p = isl_printer_print_str(p, "buf_data_split[");
+        p = isl_printer_print_int(p, i);
+        p = isl_printer_print_str(p, "]");
+
+        first = 0;
+      }
+      p = isl_printer_print_str(p, ");");
+    }
+    else if (hls->target == INTEL_HW)
+    {
+      int first = 1;
+      p = isl_printer_print_str(p, "(");
+      p = isl_printer_print_str(p, group->array->name);
+      p = isl_printer_print_str(p, "_t");
+      p = isl_printer_print_int(p, n_lane);
+      p = isl_printer_print_str(p, ")buf_data = (");
+      for (int i = n_lane / nxt_n_lane - 1; i >= 0; i--)
+      {
+        if (!first)
+          p = isl_printer_print_str(p, ", ");
+        p = isl_printer_print_str(p, "(");        
+        p = isl_printer_print_str(p, group->array->name);
+        if (nxt_n_lane > 1) {
+          p = isl_printer_print_str(p, "_");
+          p = isl_printer_print_int(p, nxt_n_lane);
+        }
+        p = isl_printer_print_str(p, ")");
         p = isl_printer_print_str(p, "buf_data_split[");
         p = isl_printer_print_int(p, i);
         p = isl_printer_print_str(p, "]");
@@ -3191,6 +3229,10 @@ static __isl_give isl_printer *autosa_kernel_print_io_transfer_data_pack(
       {
         p = isl_printer_print_str(p, "buf_data_split[split_i]");
       }
+    }
+    else if (hls->target == INTEL_HW)
+    {
+      p = isl_printer_print_str(p, "buf_data_split[split_i]");
     }
     p = isl_printer_print_str(p, ";");
     p = isl_printer_end_line(p);

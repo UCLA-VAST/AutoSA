@@ -16,11 +16,11 @@ def delete_arg_from_arg_list(line, arg):
   line = re.sub(r'( )(' + re.escape(arg) + r')(,)', 
                 '', line)
   line = re.sub(r'( )(' + re.escape(arg) + r')(\))',
-                '\g<3>', line)        
+                r'\g<3>', line)        
   line = re.sub(r'(\()(' + re.escape(arg) + r')(, )',
-                '\g<1>', line)        
+                r'\g<1>', line)        
   line = re.sub(r'(\()(' + re.escape(arg) + r')(\))',
-                '\g<1>\g<3>', line)
+                r'\g<1>\g<3>', line)
   return line
 
 def print_module_def(f, arg_map, module_def, inline_module_defs, def_args, call_args_type):
@@ -94,7 +94,7 @@ def print_module_def(f, arg_map, module_def, inline_module_defs, def_args, call_
           else:
             # Plug in module ids            
             line = re.sub(r'([^a-zA-Z_])(' + re.escape(module_id) + r')([^a-zA-Z0-9_])', 
-                          '\g<1>' + re.escape(arg_map[module_id]) + '\g<3>', line)        
+                          r'\g<1>' + re.escape(arg_map[module_id]) + r'\g<3>', line)        
       # fifos                          
       for fifo in fifo_args:
         if line.find(fifo) != -1:
@@ -102,7 +102,7 @@ def print_module_def(f, arg_map, module_def, inline_module_defs, def_args, call_
           if line.find('read_channel_intel') != -1 or line.find('write_channel_intel') != -1:
             # Plug in fifos      
             line = re.sub(r'([^a-zA-Z_])(' + re.escape(fifo) + r')([^a-zA-Z0-9_])', 
-                          '\g<1>' + re.escape(arg_map[fifo]) + '\g<3>', line)        
+                          r'\g<1>' + re.escape(arg_map[fifo]) + r'\g<3>', line)        
           else:
             # Test if it is inside an argument list
             m = re.search(r'[\(| )]' + re.escape(fifo) + r'[,|\)]', line)
@@ -559,7 +559,6 @@ def xilinx_run(kernel_call, kernel_def, kernel='autosa.tmp/output/src/kernel_ker
     kernel_call: file containing kernel calls
     kernel_def: file containing kernel definitions
     kernel: output kernel file
-
   """
 
   # Load kernel definition file
@@ -613,7 +612,6 @@ def intel_run(kernel_call, kernel_def, kernel='autosa.tmp/output/src/kernel_kern
     kernel_def: file containing kernel definitions
     kernel: output kernel file
   """
-
   # Load kernel call file
   module_calls = []
   fifo_decls = []
@@ -667,7 +665,7 @@ def intel_run(kernel_call, kernel_def, kernel='autosa.tmp/output/src/kernel_kern
     while True:
       line = f.readline()
       if not line:
-        break
+        break      
       # Extract the module definition and add to the dict
       if add:
         module_def.append(line)
@@ -681,6 +679,9 @@ def intel_run(kernel_call, kernel_def, kernel='autosa.tmp/output/src/kernel_kern
           module_def.pop(len(module_def) - 1)
           module_defs[module_name] = module_def.copy()
           module_def.clear()
+          # Post-process the module definition
+          # Simplify the expressions            
+          module_defs[module_name] = simplify_expressions(module_defs[module_name])          
         add = not add
 
   # compose the kernel file
