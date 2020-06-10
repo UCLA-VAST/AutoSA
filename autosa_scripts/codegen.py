@@ -44,6 +44,44 @@ def print_module_def(f, arg_map, module_def, inline_module_defs, def_args, call_
     def_args: a list storing the module definition arguments
     call_args_type: a list storing the type of each module call arg
   """
+  # Print inline module definitions
+  for inline_module in inline_module_defs:
+    # Search for the inline modules
+    for line in module_def:
+      if line.find(inline_module + '(') != -1:
+        # The current line contains the inline module call
+        # Print the inline module definition
+        inline_module_call_args = []
+        inline_module_def_args = []
+        inline_module_arg_map = {}        
+        inline_module_name = inline_module
+        inline_module_def = inline_module_defs[inline_module_name]
+        # Extract the arg list in module definition
+        for inline_module_line in inline_module_def:
+          if inline_module_line.find('void') != -1:
+            m = re.search(r'\((.+?)\)', inline_module_line)
+            if m:
+              def_args_old = m.group(1)
+        def_args_old = def_args_old.split(', ')
+        for arg in def_args_old:
+          arg = arg.split()[-1]
+          inline_module_def_args.append(arg)
+        # Extract the arg list in module call        
+        m = re.search(re.escape(inline_module_name) + r'\((.+?)\)', line)
+        if m:          
+          call_args_list = m.group(1).split(', ')
+          for arg in call_args_list:
+            arg = arg.split()[-1]
+            inline_module_call_args.append(arg)
+        # Build a mapping between the def_arg to call_arg
+        for i in range(len(inline_module_def_args)):
+          def_arg = inline_module_def_args[i]
+          call_arg = inline_module_call_args[i]
+          inline_module_arg_map[def_arg] = call_arg
+        # print_inline_module_def(f, inline_module_arg_map, inline_module_def, \
+                                # inline_module_def_args) # TODO
+        # Replace the inline module call with the new inline module name        
+
   # Extract module ids and fifos from def_args
   module_id_args = []
   fifo_args = []
@@ -55,6 +93,7 @@ def print_module_def(f, arg_map, module_def, inline_module_defs, def_args, call_
     if arg_type == 'fifo':
       fifo_args.append(def_arg)
 
+  f.write('/* Module Definition */\n')
   for line in module_def:
     if line.find('void') != -1:
       # This line is kernel argument.
@@ -110,6 +149,7 @@ def print_module_def(f, arg_map, module_def, inline_module_defs, def_args, call_
               # Delete it from the argument list
               line = delete_arg_from_arg_list(line, fifo)
       f.write(line)
+  f.write('/* Module Definition */\n\n')
 
 def generate_intel_kernel(kernel, headers, module_defs, module_calls, fifo_decls):
   """ Generate the final Intel code
@@ -155,7 +195,7 @@ def generate_intel_kernel(kernel, headers, module_defs, module_calls, fifo_decls
 
     # print out module definitions
     for module_call in module_calls:
-      f.write('/* Module Definition */\n')
+      # f.write('/* Module Definition */\n')
       def_args = []
       call_args = []
       call_args_type = []
@@ -198,7 +238,7 @@ def generate_intel_kernel(kernel, headers, module_defs, module_calls, fifo_decls
 
       # print out the module definition with call args plugged in
       print_module_def(f, arg_map, module_def, inline_module_defs, def_args, call_args_type)
-      f.write('/* Module Definition */\n\n')
+      # f.write('/* Module Definition */\n\n')
 
 def contains_pipeline_for(pos, lines):
   """ Examine if there is any for loop with hls_pipeline annotation inside the current for loop

@@ -688,11 +688,22 @@ __isl_give isl_printer *print_module_arguments(
   for (int i = 0; i < n; ++i)
   {
     if (!first)
+    {
       p = isl_printer_print_str(p, ", ");
+      if (!types)
+      {
+        p = isl_printer_end_line(p);
+        p = isl_printer_start_line(p);
+      }
+    }
     if (types)
     {
       p = isl_printer_print_str(p, type);
       p = isl_printer_print_str(p, " ");
+    }
+    if (!types)
+    {
+      p = isl_printer_print_str(p, "/* module id */ ");
     }
     p = isl_printer_print_str(p, dims[i]);
 
@@ -709,9 +720,18 @@ __isl_give isl_printer *print_module_arguments(
     name = isl_space_get_dim_name(space, isl_dim_param, i);
 
     if (!first)
+    {
       p = isl_printer_print_str(p, ", ");
+      if (!types)
+      {
+        p = isl_printer_end_line(p);
+        p = isl_printer_start_line(p);
+      }
+    }
     if (types)
       p = isl_printer_print_str(p, "int ");
+    if (!types)
+      p = isl_printer_print_str(p, "/* param */ ");
     p = isl_printer_print_str(p, name);
 
     first = 0;
@@ -732,12 +752,23 @@ __isl_give isl_printer *print_module_arguments(
     const char *name;
 
     if (!first)
+    {
       p = isl_printer_print_str(p, ", ");
+      if (!types)
+      {
+        p = isl_printer_end_line(p);
+        p = isl_printer_start_line(p);
+      }
+    }
     name = isl_space_get_dim_name(space, isl_dim_set, i);
     if (types)
     {
       p = isl_printer_print_str(p, type);
       p = isl_printer_print_str(p, " ");
+    }
+    if (!types)
+    {
+      p = isl_printer_print_str(p, "/* host iter */ ");
     }
     p = isl_printer_print_str(p, name);
     if (module->double_buffer && inter != -1)
@@ -767,6 +798,11 @@ __isl_give isl_printer *print_module_arguments(
     if (!first)
     {
       p = isl_printer_print_str(p, ", ");
+      if (!types)
+      {
+        p = isl_printer_end_line(p);
+        p = isl_printer_start_line(p);
+      }
     }
     if (types)
     {
@@ -776,6 +812,7 @@ __isl_give isl_printer *print_module_arguments(
     }
     else
     {
+      p = isl_printer_print_str(p, "/* array */ ");
       p = autosa_module_array_info_print_call_argument(p,
                                                        module->io_groups[0]->array);
     }
@@ -799,13 +836,21 @@ __isl_give isl_printer *print_module_arguments(
         if (!first)
         {
           p = isl_printer_print_str(p, ", ");
+          if (!types)
+          {
+            p = isl_printer_end_line(p);
+            p = isl_printer_start_line(p);
+          }
         }
         if (types)
           p = autosa_array_info_print_declaration_argument(p,
                                                            &prog->array[i], 1, NULL, -1);
         else
+        {
+          p = isl_printer_print_str(p, "/* scalar */ ");
           p = autosa_array_info_print_call_argument(p,
                                                     &prog->array[i], -1);
+        }
         first = 0;
       }
     }
@@ -820,8 +865,14 @@ __isl_give isl_printer *print_module_arguments(
 
       var = (struct autosa_kernel_var *)&module->var[i];
       if (!first)
+      {
         p = isl_printer_print_str(p, ", ");
-
+        if (!types)
+        {
+          p = isl_printer_end_line(p);
+          p = isl_printer_start_line(p);
+        }
+      }
       if (types)
       {
         if (module->data_pack_inter == 1)
@@ -849,6 +900,7 @@ __isl_give isl_printer *print_module_arguments(
       }
       else
       {
+        p = isl_printer_print_str(p, "/* array */ ");
         if (!module->double_buffer)
         {
           p = isl_printer_print_str(p, var->name);
@@ -885,6 +937,11 @@ __isl_give isl_printer *print_module_arguments(
         if (!first)
         {
           p = isl_printer_print_str(p, ", ");
+          if (!types)
+          {
+            p = isl_printer_end_line(p);
+            p = isl_printer_start_line(p);
+          }
         }
         if (types)
         {
@@ -892,21 +949,34 @@ __isl_give isl_printer *print_module_arguments(
                                                       module->io_groups[i], n_lane, "in", target);
         }
         else
+        {
+          p = isl_printer_print_str(p, "/* fifo */ ");
           p = autosa_fifo_print_call_argument(p,
                                               module->io_groups[i], "in", target);
+        }
         first = 0;
       }
       if (module->io_groups[i]->pe_io_dir == IO_OUT ||
           module->io_groups[i]->pe_io_dir == IO_INOUT)
       {
         if (!first)
+        {
           p = isl_printer_print_str(p, ", ");
+          if (!types)
+          {
+            p = isl_printer_end_line(p);
+            p = isl_printer_start_line(p);
+          }
+        }
         if (types)
           p = autosa_fifo_print_declaration_arguments(p,
                                                       module->io_groups[i], n_lane, "out", target);
         else
+        {
+          p = isl_printer_print_str(p, "/* fifo */ ");
           p = autosa_fifo_print_call_argument(p,
                                               module->io_groups[i], "out", target);
+        }
         first = 0;
       }
     }
@@ -922,14 +992,22 @@ __isl_give isl_printer *print_module_arguments(
           if (!first)
           {
             p = isl_printer_print_str(p, ", ");
+            if (!types)
+            {
+              p = isl_printer_end_line(p);
+              p = isl_printer_start_line(p);
+            }
           }
           /* in */
           if (types)
             p = autosa_fifo_print_declaration_arguments(p,
                                                         module->io_groups[i], module->data_pack_inter, "in", target);
           else
+          {
+            p = isl_printer_print_str(p, "/* fifo */ ");
             p = autosa_fifo_print_call_argument(p,
                                                 module->io_groups[i], "in", target);
+          }
           first = 0;
         }
 
@@ -937,13 +1015,23 @@ __isl_give isl_printer *print_module_arguments(
         {
           /* out */
           if (!first)
+          {
             p = isl_printer_print_str(p, ", ");
+            if (!types)
+            {
+              p = isl_printer_end_line(p);
+              p = isl_printer_start_line(p);
+            }
+          }
           if (types)
             p = autosa_fifo_print_declaration_arguments(p,
                                                         module->io_groups[i], module->data_pack_inter, "out", target);
           else
+          {
+            p = isl_printer_print_str(p, "/* fifo */ ");
             p = autosa_fifo_print_call_argument(p,
                                                 module->io_groups[i], "out", target);
+          }
           first = 0;
         }
       }
@@ -951,15 +1039,25 @@ __isl_give isl_printer *print_module_arguments(
       if (inter != 1)
       {
         if (!first)
+        {
           p = isl_printer_print_str(p, ", ");
+          if (!types)
+          {
+            p = isl_printer_end_line(p);
+            p = isl_printer_start_line(p);
+          }
+        }
         /* local */
         if (types)
           p = autosa_fifo_print_declaration_arguments(p,
                                                       module->io_groups[i], module->data_pack_intra,
                                                       module->in ? "local_out" : "local_in", target);
         else
+        {
+          p = isl_printer_print_str(p, "/* fifo */ ");
           p = autosa_fifo_print_call_argument(p,
                                               module->io_groups[i], module->in ? "local_out" : "local_in", target);
+        }
         first = 0;
       }
     }
@@ -971,6 +1069,11 @@ __isl_give isl_printer *print_module_arguments(
     if (!first)
     {
       p = isl_printer_print_str(p, ", ");
+      if (!types)
+      {
+        p = isl_printer_end_line(p);
+        p = isl_printer_start_line(p);
+      }
     }
     if (types)
     {
@@ -985,6 +1088,7 @@ __isl_give isl_printer *print_module_arguments(
     }
     else
     {
+      p = isl_printer_print_str(p, "/* credit */ ");
       p = isl_printer_print_str(p, "credit");
     }
 
@@ -997,6 +1101,11 @@ __isl_give isl_printer *print_module_arguments(
     if (!first)
     {
       p = isl_printer_print_str(p, ", ");
+      if (!types)
+      {
+        p = isl_printer_end_line(p);
+        p = isl_printer_start_line(p);
+      }
     }
     if (types)
     {
@@ -1004,6 +1113,7 @@ __isl_give isl_printer *print_module_arguments(
     }
     else
     {
+      p = isl_printer_print_str(p, "/* enable */ ");
       p = isl_printer_print_str(p, inter == 0 ? "intra_trans_en" : "inter_trans_en");
     }
 
@@ -3165,9 +3275,10 @@ static __isl_give isl_printer *autosa_kernel_print_io_transfer_data_pack(
       {
         if (!first)
           p = isl_printer_print_str(p, ", ");
-        p = isl_printer_print_str(p, "(");        
+        p = isl_printer_print_str(p, "(");
         p = isl_printer_print_str(p, group->array->name);
-        if (nxt_n_lane > 1) {
+        if (nxt_n_lane > 1)
+        {
           p = isl_printer_print_str(p, "_");
           p = isl_printer_print_int(p, nxt_n_lane);
         }
@@ -3525,8 +3636,14 @@ static __isl_give isl_printer *print_inter_trans_module_call(
   if (boundary)
     p = isl_printer_print_str(p, "_boundary");
   p = isl_printer_print_str(p, "(");
+  p = isl_printer_end_line(p);
+  p = isl_printer_indent(p, 4);
+  p = isl_printer_start_line(p);
   p = print_module_arguments(p, prog, kernel, module, 0,
                              hls->target, 1, arb, boundary);
+  p = isl_printer_end_line(p);
+  p = isl_printer_indent(p, -4);
+  p = isl_printer_start_line(p);
   p = isl_printer_print_str(p, ");");
   p = isl_printer_end_line(p);
 
@@ -3581,7 +3698,13 @@ static __isl_give isl_printer *print_intra_trans_module_call(
   p = isl_printer_start_line(p);
   p = isl_printer_print_str(p, module->name);
   p = isl_printer_print_str(p, "_intra_trans(");
+  p = isl_printer_end_line(p);
+  p = isl_printer_indent(p, 4);
+  p = isl_printer_start_line(p);
   p = print_module_arguments(p, prog, kernel, module, 0, hls->target, 0, arb, 0);
+  p = isl_printer_end_line(p);
+  p = isl_printer_indent(p, -4);
+  p = isl_printer_start_line(p);
   p = isl_printer_print_str(p, ");");
   p = isl_printer_end_line(p);
 
