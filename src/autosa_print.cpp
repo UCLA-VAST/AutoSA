@@ -771,7 +771,7 @@ __isl_give isl_printer *print_module_arguments(
       p = isl_printer_print_str(p, "/* host iter */ ");
     }
     p = isl_printer_print_str(p, name);
-    if (module->double_buffer && inter != -1)
+    if (module->double_buffer && inter != -1 && !types)
     {
       if (module->in && inter == 0)
       {

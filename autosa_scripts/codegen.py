@@ -6,12 +6,21 @@ import argparse
 import re
 import numpy as np
 
-def delete_arg_from_arg_list(line, arg):
+def delete_arg_from_arg_list(line, arg, content):
   """ Delete the argument from the argument list 
 
   Args:
     line: codeline containing the argument list
     arg: argument to be deleted
+    line_id: the current line id
+    content: the printed content before current line
+  """
+  line = line.strip()
+  if line[-1] != ',':
+    #print(line)
+    #print(content[line_id - 1])
+    content[-1] = content[-1][:-1]
+
   """
   line = re.sub(r'( )(' + re.escape(arg) + r')(,)', 
                 '', line)
@@ -21,10 +30,10 @@ def delete_arg_from_arg_list(line, arg):
                 r'\g<1>', line)        
   line = re.sub(r'(\()(' + re.escape(arg) + r')(\))',
                 r'\g<1>\g<3>', line)
-  return line
+  """  
 
 def print_module_def(f, arg_map, module_def, inline_module_defs, def_args, call_args_type):
-  """Print out module definitions for Intel OpenCL
+  """ Print out module definitions for Intel OpenCL
 
   This function prints out the module definition with all arguments in the code
   replaced by the calling arguments.
@@ -44,47 +53,93 @@ def print_module_def(f, arg_map, module_def, inline_module_defs, def_args, call_
     def_args: a list storing the module definition arguments
     call_args_type: a list storing the type of each module call arg
   """
-  # Print inline module definitions
-  for inline_module in inline_module_defs:
-    # Search for the inline modules
-    for line in module_def:
-      if line.find(inline_module + '(') != -1:
-        # The current line contains the inline module call
-        # Print the inline module definition
-        inline_module_call_args = []
-        inline_module_def_args = []
-        inline_module_arg_map = {}        
-        inline_module_name = inline_module
-        inline_module_def = inline_module_defs[inline_module_name]
-        # Extract the arg list in module definition
-        for inline_module_line in inline_module_def:
-          if inline_module_line.find('void') != -1:
-            m = re.search(r'\((.+?)\)', inline_module_line)
-            if m:
-              def_args_old = m.group(1)
-        def_args_old = def_args_old.split(', ')
-        for arg in def_args_old:
-          arg = arg.split()[-1]
-          inline_module_def_args.append(arg)
-        # Extract the arg list in module call        
-        m = re.search(re.escape(inline_module_name) + r'\((.+?)\)', line)
-        if m:          
-          call_args_list = m.group(1).split(', ')
-          for arg in call_args_list:
+  # Print inline module definitions  
+  if inline_module_defs:
+    # Each inline module should be only printed once. 
+    # We assume the module ids and fifos are unchanged in multiple inline module
+    # calls. Therefore, only the first encounter will be handled.
+    inline_module_handled = []
+    for inline_module in inline_module_defs:      
+      # Search for the inline modules
+      for line_id in range(len(module_def)):
+        line = module_def[line_id]          
+        if line.find(inline_module + '(') != -1:
+          # The current line contains the inline module call
+          if inline_module in inline_module_handled:
+            # Replace the module call
+            line_indent = line.find(inline_module)          
+            line = ' ' * line_indent + inline_module
+            for i in range(len(def_args)):
+              def_arg = def_args[i]
+              arg_type = call_args_type[i]
+              if arg_type == 'module id':
+                line += '_'
+                line += arg_map[def_arg]
+            line += '(\n'
+            module_def[line_id] = line
+            continue
+          else:
+            inline_module_handled.append(inline_module)
+          # Print the inline module definition
+          inline_module_call_args = []
+          inline_module_call_args_type = []
+          inline_module_def_args = []
+          inline_module_arg_map = {}        
+          inline_module_name = inline_module
+          inline_module_def = inline_module_defs[inline_module_name]
+          # Extract the arg list in module definition
+          for inline_module_line in inline_module_def:
+            if inline_module_line.find('void') != -1:
+              m = re.search(r'\((.+?)\)', inline_module_line)
+              if m:
+                def_args_old = m.group(1)
+          def_args_old = def_args_old.split(', ')
+          for arg in def_args_old:
             arg = arg.split()[-1]
-            inline_module_call_args.append(arg)
-        # Build a mapping between the def_arg to call_arg
-        for i in range(len(inline_module_def_args)):
-          def_arg = inline_module_def_args[i]
-          call_arg = inline_module_call_args[i]
-          inline_module_arg_map[def_arg] = call_arg
-        # print_inline_module_def(f, inline_module_arg_map, inline_module_def, \
-                                # inline_module_def_args) # TODO
-        # Replace the inline module call with the new inline module name        
+            inline_module_def_args.append(arg)
+          # Extract the arg list in module call        
+          next_line_id = line_id + 1
+          next_line = module_def[next_line_id]
+          while next_line.find(');') == -1:
+            m = re.search(r'/\*(.+?)\*/', next_line)
+            if m:
+              arg_type = m.group(1).strip()
+              inline_module_call_args_type.append(arg_type)
+              m = re.search(r'\*/ (.+)', next_line)
+              if m:
+                call_arg = m.group(1).split(',')[0]                
+                inline_module_call_args.append(call_arg)        
+            next_line_id += 1
+            next_line = module_def[next_line_id]
+          # Build a mapping between the def_arg to call_arg
+          for i in range(len(inline_module_def_args)):
+            def_arg = inline_module_def_args[i]
+            call_arg = inline_module_call_args[i]
+            inline_module_arg_map[def_arg] = call_arg
+          # Replace the module ids and fifos from the upper module          
+          for def_arg in inline_module_arg_map:
+            call_arg = inline_module_arg_map[def_arg]                        
+            if call_arg in arg_map:                            
+              inline_module_arg_map[def_arg] = arg_map[call_arg]            
+          print_module_def(f, inline_module_arg_map, inline_module_def, None, \
+                           inline_module_def_args, inline_module_call_args_type)
+          # Replace the inline module call with the new inline module name
+          line_indent = line.find(inline_module)          
+          line = ' ' * line_indent + inline_module
+          for i in range(len(def_args)):
+            def_arg = def_args[i]
+            arg_type = call_args_type[i]
+            if arg_type == 'module id':
+              line += '_'
+              line += arg_map[def_arg]
+          line += '(\n'
+          module_def[line_id] = line
 
   # Extract module ids and fifos from def_args
   module_id_args = []
   fifo_args = []
+  # print(def_args)
+  # print(call_args_type)
   for i in range(len(def_args)):
     def_arg = def_args[i]
     arg_type = call_args_type[i]
@@ -93,7 +148,10 @@ def print_module_def(f, arg_map, module_def, inline_module_defs, def_args, call_
     if arg_type == 'fifo':
       fifo_args.append(def_arg)
 
-  f.write('/* Module Definition */\n')
+  # Start printing
+  print_content = []
+  print_content.append('/* Module Definition */\n')
+  line_id = 0
   for line in module_def:
     if line.find('void') != -1:
       # This line is kernel argument.
@@ -110,46 +168,56 @@ def print_module_def(f, arg_map, module_def, inline_module_defs, def_args, call_
         if call_args_type[i] != 'module id' and call_args_type[i] != 'fifo':
           new_def_args.append(def_args[i])
       # f.write(prefix + '(')
-      f.write(prefix)
+      # Print the module_name
+      print_content.append(prefix)
       for module_id in module_id_args:
-        f.write('_' + arg_map[module_id])     
-      f.write('(')
+        print_content.append('_' + arg_map[module_id])     
+      print_content.append('(')
       first = True
       for arg in new_def_args:
         if not first:
-          f.write(', ')
-        f.write(arg)
+          print_content.append(', ')
+        print_content.append(arg)
         first = False
-      f.write(')\n')
+      print_content.append(')\n')
     else:
       # module ids
       for module_id in module_id_args:
         if line.find(module_id) != -1:
           # Test if it is inside an argument list
-          m = re.search(r'[\(| ]' + re.escape(module_id) + r'[,|\)]', line)
-          if m:
+          m = re.search(r'/\* module id \*/ ' + re.escape(module_id), line)
+          if m:          
             # Delete if from the argument list
-            line = delete_arg_from_arg_list(line, module_id)
+            delete_arg_from_arg_list(line, module_id, print_content)
+            line = None            
+            break
           else:
             # Plug in module ids            
             line = re.sub(r'([^a-zA-Z_])(' + re.escape(module_id) + r')([^a-zA-Z0-9_])', 
-                          r'\g<1>' + re.escape(arg_map[module_id]) + r'\g<3>', line)        
-      # fifos                          
-      for fifo in fifo_args:
-        if line.find(fifo) != -1:
-          # Test if it is inside a read/write API call      
-          if line.find('read_channel_intel') != -1 or line.find('write_channel_intel') != -1:
-            # Plug in fifos      
-            line = re.sub(r'([^a-zA-Z_])(' + re.escape(fifo) + r')([^a-zA-Z0-9_])', 
-                          r'\g<1>' + re.escape(arg_map[fifo]) + r'\g<3>', line)        
-          else:
-            # Test if it is inside an argument list
-            m = re.search(r'[\(| )]' + re.escape(fifo) + r'[,|\)]', line)
-            if m:
-              # Delete it from the argument list
-              line = delete_arg_from_arg_list(line, fifo)
-      f.write(line)
-  f.write('/* Module Definition */\n\n')
+                          r'\g<1>' + re.escape(arg_map[module_id]) + r'\g<3>', line)                  
+      # fifos          
+      if line:                
+        for fifo in fifo_args:
+          if line.find(fifo) != -1:
+            # Test if it is inside a read/write API call      
+            if line.find('read_channel_intel') != -1 or line.find('write_channel_intel') != -1:
+              # Plug in fifos      
+              line = re.sub(r'([^a-zA-Z_])(' + re.escape(fifo) + r')([^a-zA-Z0-9_])', 
+                            r'\g<1>' + re.escape(arg_map[fifo]) + r'\g<3>', line)        
+            else:
+              # Test if it is inside an argument list
+              m = re.search(r'/\* fifo \*/ ' + re.escape(fifo), line)
+              if m:            
+                # Delete it from the argument list
+                delete_arg_from_arg_list(line, fifo, print_content)
+                line = None
+                break
+      if line != None:
+        print_content.append(line)
+    line_id += 1
+  print_content.append('/* Module Definition */\n\n')
+
+  f.writelines(print_content)
 
 def generate_intel_kernel(kernel, headers, module_defs, module_calls, fifo_decls):
   """ Generate the final Intel code
