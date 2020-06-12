@@ -3535,11 +3535,20 @@ static __isl_give isl_schedule_node *insert_unroll_mark(
     {
       isl_id *hls_id;
       hls_id = isl_id_alloc(ctx, "hls_unroll", NULL);
+      //if (kernel->options->target == AUTOSA_TARGET_XILINX_HLS_C)
+      //{
       node = isl_schedule_node_child(node, 0);
       node = isl_schedule_node_child(node, 0);
       node = isl_schedule_node_insert_mark(node, hls_id);
       node = isl_schedule_node_parent(node);
       node = isl_schedule_node_parent(node);
+      //}
+      //else if (kernel->options->target == AUTOSA_TARGET_INTEL_OPENCL)
+      //{
+      //  node = isl_schedule_node_child(node, 0);
+      //  node = isl_schedule_node_insert_mark(node, hls_id);
+      //  node = isl_schedule_node_parent(node);
+      //}
     }
     isl_id_free(id);
   }

@@ -16,10 +16,13 @@ def delete_arg_from_arg_list(line, arg, content):
     content: the printed content before current line
   """
   line = line.strip()
+  #print(line)
   if line[-1] != ',':
+    #print('test\n')
     #print(line)
-    #print(content[line_id - 1])
-    content[-1] = content[-1][:-1]
+    #print(content[-1])
+    comma_pos = content[-1].find(',')
+    content[-1] = content[-1][:comma_pos] + '\n'
 
   """
   line = re.sub(r'( )(' + re.escape(arg) + r')(,)', 
@@ -53,13 +56,13 @@ def print_module_def(f, arg_map, module_def, inline_module_defs, def_args, call_
     def_args: a list storing the module definition arguments
     call_args_type: a list storing the type of each module call arg
   """
-  # Print inline module definitions  
-  if inline_module_defs:
+  # Print inline module definitions    
+  if inline_module_defs:    
     # Each inline module should be only printed once. 
     # We assume the module ids and fifos are unchanged in multiple inline module
     # calls. Therefore, only the first encounter will be handled.
     inline_module_handled = []
-    for inline_module in inline_module_defs:      
+    for inline_module in inline_module_defs:            
       # Search for the inline modules
       for line_id in range(len(module_def)):
         line = module_def[line_id]          
@@ -121,11 +124,11 @@ def print_module_def(f, arg_map, module_def, inline_module_defs, def_args, call_
             call_arg = inline_module_arg_map[def_arg]                        
             if call_arg in arg_map:                            
               inline_module_arg_map[def_arg] = arg_map[call_arg]            
-          print_module_def(f, inline_module_arg_map, inline_module_def, None, \
+          print_module_def(f, inline_module_arg_map, inline_module_def.copy(), None, \
                            inline_module_def_args, inline_module_call_args_type)
           # Replace the inline module call with the new inline module name
           line_indent = line.find(inline_module)          
-          line = ' ' * line_indent + inline_module
+          line = ' ' * line_indent + inline_module                    
           for i in range(len(def_args)):
             def_arg = def_args[i]
             arg_type = call_args_type[i]
@@ -239,6 +242,8 @@ def generate_intel_kernel(kernel, headers, module_defs, module_calls, fifo_decls
       f.write(header + '\n')
     f.write('\n')
 
+    f.write('#pragma OPENCL EXTENSION cl_intel_channels : enable\n\n')
+
     # Print out channels
     f.write('/* Channel Declaration */\n')
     for fifo_decl in fifo_decls:
@@ -305,7 +310,7 @@ def generate_intel_kernel(kernel, headers, module_defs, module_calls, fifo_decls
           arg_map[def_arg] = call_arg
 
       # print out the module definition with call args plugged in
-      print_module_def(f, arg_map, module_def, inline_module_defs, def_args, call_args_type)
+      print_module_def(f, arg_map, module_def.copy(), inline_module_defs, def_args, call_args_type)
       # f.write('/* Module Definition */\n\n')
 
 def contains_pipeline_for(pos, lines):
@@ -709,6 +714,39 @@ def xilinx_run(kernel_call, kernel_def, kernel='autosa.tmp/output/src/kernel_ker
       lines = reorder_module_calls(lines)
       f.writelines(lines)
 
+def insert_intel_pragmas(lines):
+  """ Insert Intel OpenCL pragmas for Intel program
+
+  Replace the comments of "// hls_unroll" with OpenCL pragmas.
+  For "hls unroll", find the previous for loop before hitting the "simd" mark.
+  Insert "#pragma unroll" above the for loop.
+
+  Args:
+    lines: contains the codelines of the program
+  """
+  code_len = len(lines)
+  pos = 0
+  while pos < code_len:
+    line = lines[pos]
+    if line.find('// hls_unroll') != -1:
+      # Find the for loop above before hitting any "simd"
+      prev_pos = pos - 1
+      find_for = 0
+      while prev_pos >= 0 and lines[prev_pos].find('simd') == -1:
+        if lines[prev_pos].find('for') != -1:
+          find_for = 1
+          break
+        prev_pos -= 1
+      if find_for == 1:
+        # Insert the pragma right before the for loop
+        indent = lines[prev_pos].find('for')
+        new_line = ' ' * indent + "#pragma unroll\n"
+        lines.insert(prev_pos, new_line)
+        del lines[pos + 1]
+    pos = pos + 1
+  
+  return lines
+
 def intel_run(kernel_call, kernel_def, kernel='autosa.tmp/output/src/kernel_kernel.cpp'):
   """ Generate the kernel file for Intel platform
 
@@ -790,6 +828,8 @@ def intel_run(kernel_call, kernel_def, kernel='autosa.tmp/output/src/kernel_kern
           # Post-process the module definition
           # Simplify the expressions            
           module_defs[module_name] = simplify_expressions(module_defs[module_name])          
+          # Insert the OpenCL pragmas
+          module_defs[module_name] = insert_intel_pragmas(module_defs[module_name])
         add = not add
 
   # compose the kernel file

@@ -42,6 +42,8 @@ static void print_intel_host_header(FILE *fp)
   fprintf(fp, "#include <sys/time.h>\n");
   fprintf(fp, "#endif\n");
   fprintf(fp, "#include <CL/opencl.h>\n");
+  fprintf(fp, "#include <CL/cl_ext_intelfpga.h>\n");
+  fprintf(fp, "#include <chrono>\n");
   fprintf(fp, "#include \"AOCLUtils/aocl_utils.h\"\n\n");
 
   fprintf(fp, "using namespace aocl_utils;\n\n");
@@ -87,6 +89,29 @@ static void print_intel_host_header(FILE *fp)
   fprintf(fp, "if (status != CL_SUCCESS) { \\\n");
   fprintf(fp, "    fprintf(stderr, \"error %%d in line %%d.\\n\", status, __LINE__); \\\n");
   fprintf(fp, "}\n\n");
+
+  fprintf(fp, "template <typename T>\n");
+  fprintf(fp, "struct aligned_allocator\n");
+  fprintf(fp, "{\n");
+  fprintf(fp, "  using value_type = T;\n");
+  fprintf(fp, "  T* allocate(std::size_t num)\n");
+  fprintf(fp, "  {\n");
+  fprintf(fp, "    void* ptr = nullptr;\n");
+  fprintf(fp, "    if (posix_memalign(&ptr, ACL_ALIGNMENT, num*sizeof(T)))\n");
+  fprintf(fp, "      throw std::bad_alloc();\n");
+  fprintf(fp, "    return reinterpret_cast<T*>(ptr);\n");
+  fprintf(fp, "  }\n");
+  fprintf(fp, "  void deallocate(T* p, std::size_t num)\n");
+  fprintf(fp, "  {\n");
+  fprintf(fp, "    free(p);\n");
+  fprintf(fp, "  }\n");
+  fprintf(fp, "};\n\n");
+
+  fprintf(fp, "void cleanup()\n");
+  fprintf(fp, "{\n");
+  fprintf(fp, "  // Place holder. Prohibit the function from elimination.\n");
+  fprintf(fp, "  printf(\"Cleanup...\\n\");\n");
+  fprintf(fp, "}\n");
 }
 
 /* Open the host .cpp file and the kernel .h and .cpp files for writing.
@@ -276,10 +301,29 @@ static isl_stat print_data_types_intel(
       if (data_pack_factors[n] != 1)
       {
         p = isl_printer_start_line(p);
-        p = isl_printer_print_str(p, "typedef ");
+        p = isl_printer_print_str(p, "struct ");
+        p = isl_printer_print_str(p, local->array->name);
+        p = isl_printer_print_str(p, "_t");
+        p = isl_printer_print_int(p, data_pack_factors[n]);
+        p = isl_printer_print_str(p, "_t {");
+        p = isl_printer_end_line(p);
+
+        p = isl_printer_indent(p, 4);
+        p = isl_printer_start_line(p);
         p = isl_printer_print_str(p, local->array->type);
         p = isl_printer_print_int(p, data_pack_factors[n]);
-        p = isl_printer_print_str(p, " ");
+        p = isl_printer_print_str(p, " data;");
+        p = isl_printer_end_line(p);
+
+        p = isl_printer_indent(p, -4);
+        p = print_str_new_line(p, "};");
+
+        p = isl_printer_start_line(p);
+        p = isl_printer_print_str(p, "typedef struct ");
+        p = isl_printer_print_str(p, local->array->name);
+        p = isl_printer_print_str(p, "_t");
+        p = isl_printer_print_int(p, data_pack_factors[n]);
+        p = isl_printer_print_str(p, "_t ");
         p = isl_printer_print_str(p, local->array->name);
         p = isl_printer_print_str(p, "_t");
         p = isl_printer_print_int(p, data_pack_factors[n]);
@@ -393,7 +437,7 @@ static __isl_give isl_printer *print_drain_merge_arguments_intel(
       p = isl_printer_print_str(p, local_array->array->type);
       p = isl_printer_print_str(p, ", aligned_allocator<");
       p = isl_printer_print_str(p, local_array->array->type);
-      p = isl_printer_print_str(p, ", ACL_ALIGNMENT>> &");
+      p = isl_printer_print_str(p, ">> &");
     }
     p = isl_printer_print_str(p, local_array->array->name);
     p = isl_printer_print_str(p, "_to");
@@ -421,7 +465,7 @@ static __isl_give isl_printer *print_drain_merge_arguments_intel(
       p = isl_printer_print_str(p, local_array->array->type);
       p = isl_printer_print_str(p, ", aligned_allocator<");
       p = isl_printer_print_str(p, local_array->array->type);
-      p = isl_printer_print_str(p, ", ACL_ALIGNMENT>> &");
+      p = isl_printer_print_str(p, ">> &");
     }
     p = isl_printer_print_str(p, local_array->array->name);
     p = isl_printer_print_str(p, "_from");
@@ -554,10 +598,12 @@ static __isl_give isl_printer *find_device_intel(__isl_take isl_printer *p,
   int indent;
 
   p = print_str_new_line(p, "// OpenCL host code starts from here");
-  p = print_str_new_line(p, "bool use_emulator = false; // control whether the emulator should be used.");
+  //p = print_str_new_line(p, "bool use_emulator = false; // control whether the emulator should be used.");
   p = print_str_new_line(p, "cl_int status;");
   p = print_str_new_line(p, "cl_platform_id platform = NULL;");
   p = print_str_new_line(p, "cl_device_id *devices = NULL;");
+  p = print_str_new_line(p, "cl_context context = NULL;");
+  p = print_str_new_line(p, "cl_program program = NULL;");
 
   int q_id = 0;
   for (int i = 0; i < top->n_hw_modules; i++)
@@ -595,32 +641,34 @@ static __isl_give isl_printer *find_device_intel(__isl_take isl_printer *p,
   p = print_str_new_line(p, "cl_command_queue cmdQueue[NUM_QUEUES_TO_CREATE];");
 
   p = isl_printer_end_line(p);
-  p = print_str_new_line(p, "// Parse command line arguments");
-  p = print_str_new_line(p, "Options options(argc, argv);");
-  p = print_str_new_line(p, "if (options.has(\"emulator\")) {");
-  p = isl_printer_indent(p, 4);
-  p = print_str_new_line(p, "use_emulator = options.get<bool>(\"emulator\")");
-  p = isl_printer_indent(p, -4);
-  p = print_str_new_line(p, "}");
+  //p = print_str_new_line(p, "// Parse command line arguments");
+  //p = print_str_new_line(p, "Options options(argc, argv);");
+  //p = print_str_new_line(p, "if (options.has(\"emulator\")) {");
+  //p = isl_printer_indent(p, 4);
+  //p = print_str_new_line(p, "use_emulator = options.get<bool>(\"emulator\");");
+  //p = isl_printer_indent(p, -4);
+  //p = print_str_new_line(p, "}");
   p = print_str_new_line(p, "if (!setCwdToExeDir()) {");
   p = isl_printer_indent(p, 4);
   p = print_str_new_line(p, "return false;");
   p = isl_printer_indent(p, -4);
+  p = print_str_new_line(p, "}");
   p = isl_printer_end_line(p);
 
   p = print_str_new_line(p, "// Get the OpenCL platform");
-  p = print_str_new_line(p, "if (use_emulator) {");
-  p = isl_printer_indent(p, 4);
-  p = print_str_new_line(p, "platform = findPlatform(\"Intel(R) FPGA Emulation Platform for OpenCL(TM)\");");
-  p = isl_printer_indent(p, -4);
-  p = print_str_new_line(p, "} else {");
-  p = isl_printer_indent(p, 4);
-  p = print_str_new_line(p, "platform = findPlatform(\"Intel(R) FPGA SDK for OpenCL(TM)\");");
-  p = isl_printer_indent(p, -4);
-  p = print_str_new_line(p, "}");
+  //p = print_str_new_line(p, "if (use_emulator) {");
+  //p = isl_printer_indent(p, 4);
+  //p = print_str_new_line(p, "platform = findPlatform(\"Intel(R) FPGA Emulation Platform for OpenCL(TM)\");");
+  //p = isl_printer_indent(p, -4);
+  //p = print_str_new_line(p, "} else {");
+  //p = isl_printer_indent(p, 4);
+  //p = print_str_new_line(p, "platform = findPlatform(\"Intel(R) FPGA SDK for OpenCL(TM)\");");
+  //p = isl_printer_indent(p, -4);
+  //p = print_str_new_line(p, "}");
+  p = print_str_new_line(p, "platform = findPlatform(\"Intel\");");
   p = print_str_new_line(p, "if (platform == NULL) {");
   p = isl_printer_indent(p, 4);
-  p = print_str_new_line(p, "printf(\"ERROR: Unable to find Intel(R) FPGA OpenCL platform\");");
+  p = print_str_new_line(p, "printf(\"ERROR: Unable to find Intel(R) FPGA OpenCL platform\\n\");");
   p = print_str_new_line(p, "return -1;");
   p = isl_printer_indent(p, -4);
   p = print_str_new_line(p, "}");
@@ -769,7 +817,7 @@ static __isl_give isl_printer *find_device_intel(__isl_take isl_printer *p,
   p = print_str_new_line(p, "// Create the program from binaries");
   p = print_str_new_line(p, "size_t binary_length;");
   p = print_str_new_line(p, "const unsigned char *binary;");
-  p = print_str_new_line(p, "printf(\"\\nAOCX file: %%s\\n\\n\", AOCX_FILE);");
+  p = print_str_new_line(p, "printf(\"\\nAOCX file: %s\\n\\n\", AOCX_FILE);");
   p = print_str_new_line(p, "FILE *fp = fopen(AOCX_FILE, \"rb\");");
   p = print_str_new_line(p, "if (fp == NULL) {");
   p = isl_printer_indent(p, 4);
@@ -797,7 +845,7 @@ static __isl_give isl_printer *find_device_intel(__isl_take isl_printer *p,
   p = isl_printer_indent(p, 4);
   p = print_str_new_line(p, "printf(\"Failed to read from the AOCX file (fread).\\n\");");
   p = print_str_new_line(p, "fclose(fp);");
-  p = print_str_new_line(p, "free(const_char<unsigned char *>(binary))");
+  p = print_str_new_line(p, "free(const_cast<unsigned char *>(binary));");
   p = print_str_new_line(p, "return -1;");
   p = isl_printer_indent(p, -4);
   p = print_str_new_line(p, "}");
@@ -821,7 +869,7 @@ static __isl_give isl_printer *find_device_intel(__isl_take isl_printer *p,
   p = isl_printer_indent(p, 4);
   p = print_str_new_line(p, "char log[10000] = {0};");
   p = print_str_new_line(p, "clGetProgramBuildInfo(program, devices[0], CL_PROGRAM_BUILD_LOG, 10000, log, NULL);");
-  p = print_str_new_line(p, "printf(\"%%s\\n\", log);");
+  p = print_str_new_line(p, "printf(\"%s\\n\", log);");
   p = print_str_new_line(p, "CHECK(status);");
   p = isl_printer_indent(p, -4);
   p = print_str_new_line(p, "}");
@@ -886,7 +934,7 @@ static __isl_give isl_printer *declare_and_allocate_device_arrays_intel(
       p = isl_printer_print_str(p, local_array->array->type);
       p = isl_printer_print_str(p, ", aligned_allocator<");
       p = isl_printer_print_str(p, local_array->array->type);
-      p = isl_printer_print_str(p, ", ACL_ALIGNMENT>>> ");
+      p = isl_printer_print_str(p, ">>> ");
       p = isl_printer_print_str(p, "dev_");
       p = isl_printer_print_str(p, local_array->array->name);
       p = isl_printer_print_str(p, ";");
@@ -904,7 +952,7 @@ static __isl_give isl_printer *declare_and_allocate_device_arrays_intel(
       p = isl_printer_print_str(p, local_array->array->type);
       p = isl_printer_print_str(p, ", aligned_allocator<");
       p = isl_printer_print_str(p, local_array->array->type);
-      p = isl_printer_print_str(p, ", ACL_ALIGNMENT>> ");
+      p = isl_printer_print_str(p, ">> ");
       p = isl_printer_print_str(p, "dev_");
       p = isl_printer_print_str(p, local_array->array->name);
       p = isl_printer_print_str(p, "_tmp");
@@ -932,7 +980,7 @@ static __isl_give isl_printer *declare_and_allocate_device_arrays_intel(
       p = isl_printer_print_str(p, local_array->array->type);
       p = isl_printer_print_str(p, ", aligned_allocator<");
       p = isl_printer_print_str(p, local_array->array->type);
-      p = isl_printer_print_str(p, ", ACL_ALIGNMENT>> ");
+      p = isl_printer_print_str(p, ">> ");
       p = isl_printer_print_str(p, "dev_");
       p = isl_printer_print_str(p, local_array->array->name);
       p = isl_printer_print_str(p, "(");
@@ -1039,7 +1087,6 @@ static __isl_give isl_printer *declare_and_allocate_device_arrays_intel(
     p = isl_printer_indent(p, strlen("cl_mem buffer_") +
                                   strlen(local_array->array->name) + strlen("_tmp") + strlen(" = clCreateBuffer("));
     p = isl_printer_start_line(p);
-    p = isl_printer_print_str(p, "CL_MEM_USE_HOST_PTR | ");
     if (local_array->array->copy_in && local_array->array->copy_out)
     {
       p = isl_printer_print_str(p, "CL_MEM_READ_WRITE");
@@ -1243,8 +1290,8 @@ static __isl_give isl_printer *copy_array_to_device_intel(__isl_take isl_printer
   p = isl_printer_print_str(p, array->name);
   p = isl_printer_print_str(p, "[i],");
   p = isl_printer_end_line(p);
-  p = print_str_new_line(p, "CL_TRUE");
-  p = print_str_new_line(p, "0");
+  p = print_str_new_line(p, "CL_TRUE,");
+  p = print_str_new_line(p, "0,");
   p = isl_printer_start_line(p);
   p = autosa_array_info_print_size(p, array);
   p = isl_printer_print_str(p, ",");
@@ -1258,8 +1305,8 @@ static __isl_give isl_printer *copy_array_to_device_intel(__isl_take isl_printer
   }
   p = isl_printer_print_str(p, ".data(),");
   p = isl_printer_end_line(p);
-  p = print_str_new_line(p, "0");
-  p = print_str_new_line(p, "NULL");
+  p = print_str_new_line(p, "0,");
+  p = print_str_new_line(p, "NULL,");
   p = print_str_new_line(p, "NULL); CHECK(status);");
   p = isl_printer_indent(p, -indent);
 
@@ -1862,8 +1909,8 @@ static __isl_give isl_printer *print_module_header_intel(
     int inter, int boundary)
 {
   p = isl_printer_start_line(p);
-  if (module->to_mem)
-    p = isl_printer_print_str(p, "__kernel void ");
+  if (inter == -1)
+    p = isl_printer_print_str(p, "kernel void ");
   else
     p = isl_printer_print_str(p, "void ");
   p = isl_printer_print_str(p, module->name);
@@ -1892,12 +1939,12 @@ static isl_stat print_module_headers_intel(
 {
   isl_printer *p;
 
-  p = isl_printer_to_file(prog->ctx, hls->kernel_h);
-  p = isl_printer_set_output_format(p, ISL_FORMAT_C);
-  p = print_module_header_intel(p, prog, module, inter, boundary);
-  p = isl_printer_print_str(p, ";");
-  p = isl_printer_end_line(p);
-  isl_printer_free(p);
+  //  p = isl_printer_to_file(prog->ctx, hls->kernel_h);
+  //  p = isl_printer_set_output_format(p, ISL_FORMAT_C);
+  //  p = print_module_header_intel(p, prog, module, inter, boundary);
+  //  p = isl_printer_print_str(p, ";");
+  //  p = isl_printer_end_line(p);
+  //  isl_printer_free(p);
 
   p = isl_printer_to_file(prog->ctx, hls->kernel_c);
   p = isl_printer_set_output_format(p, ISL_FORMAT_C);
@@ -2195,8 +2242,8 @@ static __isl_give isl_printer *autosa_print_default_module(
   //    p = print_module_core_headers_xilinx(p, prog, module, hls, -1, boundary, 0);
   //    p = isl_printer_print_str(p, ";");
   //    p = isl_printer_end_line(p);
-  //
   //    p = isl_printer_indent(p, -4);
+  //
   //    fprintf(hls->kernel_c, "}\n");
   //    p = isl_printer_start_line(p);
   //    p = isl_printer_print_str(p, "/* Module Definition */");
@@ -2260,7 +2307,7 @@ static __isl_give isl_printer *print_pe_dummy_module_header_intel(
   struct autosa_array_ref_group *group = module->io_group;
 
   p = isl_printer_start_line(p);
-  p = isl_printer_print_str(p, "void ");
+  p = isl_printer_print_str(p, "kernel void ");
   // group_name
   p = isl_printer_print_str(p, group->array->name);
   if (group->group_type == AUTOSA_IO_GROUP)
@@ -2297,16 +2344,17 @@ static isl_stat print_pe_dummy_module_headers_intel(
 {
   isl_printer *p;
 
-  p = isl_printer_to_file(prog->ctx, hls->kernel_h);
-  p = isl_printer_set_output_format(p, ISL_FORMAT_C);
-  p = print_pe_dummy_module_header_intel(p, prog, module, inter, boundary);
-  p = isl_printer_print_str(p, ";");
-  p = isl_printer_end_line(p);
-  isl_printer_free(p);
+  //  p = isl_printer_to_file(prog->ctx, hls->kernel_h);
+  //  p = isl_printer_set_output_format(p, ISL_FORMAT_C);
+  //  p = print_pe_dummy_module_header_intel(p, prog, module, inter, boundary);
+  //  p = isl_printer_print_str(p, ";");
+  //  p = isl_printer_end_line(p);
+  //  isl_printer_free(p);
 
   p = isl_printer_to_file(prog->ctx, hls->kernel_c);
   p = isl_printer_set_output_format(p, ISL_FORMAT_C);
   p = print_str_new_line(p, "__attribute__((max_global_work_dim(0)))");
+  p = print_str_new_line(p, "__attribute__((autorun))");
   p = print_pe_dummy_module_header_intel(p, prog, module, inter, boundary);
   p = isl_printer_end_line(p);
   isl_printer_free(p);
