@@ -5984,6 +5984,8 @@ struct autosa_at_domain_data
   int in_pipeline_for;
   /* Inside a "unroll" for loop */
   int in_unroll_for;
+  /* Inside a for loop */
+  int in_for;
 };
 
 /* Internal data structure for the index and AST expression transformation
@@ -6975,6 +6977,7 @@ static void autosa_at_domain_data_init(
   data->under_pipeline = 0;
   data->in_unroll_for = 0;
   data->in_pipeline_for = 0;
+  data->in_for = 0;
   data->boundary = 0;
   data->pe_dummy = 0;
   data->pe_dummy_module = NULL;
@@ -8413,11 +8416,13 @@ static isl_stat before_mark_module(__isl_keep isl_id *mark,
   if (!strcmp(isl_id_get_name(mark), "pe_dummy_module"))
   {
     data->pe_dummy_module = (struct autosa_pe_dummy_module *)isl_id_get_user(mark);
+    data->in_for = 0;
   }
   if (!strcmp(isl_id_get_name(mark), "io_module.inter_trans") ||
       !strcmp(isl_id_get_name(mark), "io_module.intra_trans"))
   {
     data->filter_buffer = 1;
+    data->in_for = 0;
   }
   if (!strcmp(isl_id_get_name(mark), "hls_pipeline"))
   {
@@ -8601,6 +8606,46 @@ static __isl_give isl_ast_node *after_mark_module(__isl_take isl_ast_node *node,
   return node;
 }
 
+static __isl_give isl_id *before_for_module(
+    __isl_keep isl_ast_build *build, void *user)
+{
+  isl_id *id;
+  struct autosa_at_domain_data *data = (struct autosa_at_domain_data *)user;
+  struct autosa_ast_node_userinfo *node_info;
+
+  node_info = alloc_ast_node_userinfo();
+  id = isl_id_alloc(isl_ast_build_get_ctx(build), "", node_info);
+  id = isl_id_set_free_user(id, free_ast_node_userinfo);
+
+  if (!data->in_for)
+  {
+    data->in_for = 1;
+    node_info->is_outermost_for = 1;
+  }
+
+  return id;
+}
+
+static __isl_give isl_ast_node *after_for_module(
+    __isl_take isl_ast_node *node, __isl_keep isl_ast_build *build,
+    void *user)
+{
+  isl_id *id;
+  struct autosa_at_domain_data *data = (struct autosa_at_domain_data *)user;
+  struct autosa_ast_node_userinfo *node_info;
+
+  id = isl_ast_node_get_annotation(node);
+  node_info = (struct autosa_ast_node_userinfo *)isl_id_get_user(id);
+  if (node_info->is_outermost_for)
+  {
+    data->in_for = 0;
+  }
+
+  isl_id_free(id);
+
+  return node;
+}
+
 /* Generate AST from the schedule for AutoSA hardware modules. 
  */
 static __isl_give isl_ast_node *autosa_generate_ast_from_schedule(
@@ -8625,6 +8670,8 @@ static __isl_give isl_ast_node *autosa_generate_ast_from_schedule(
   build = isl_ast_build_set_at_each_domain(build, &at_domain_module, &data);
   build = isl_ast_build_set_before_each_mark(build, &before_mark_module, &data);
   build = isl_ast_build_set_after_each_mark(build, &after_mark_module, &data);
+  build = isl_ast_build_set_before_each_for(build, &before_for_module, &data);
+  build = isl_ast_build_set_after_each_for(build, &after_for_module, &data);
 
   if (gen->prog->scop->options->debug->dump_final_schedule)
     isl_schedule_dump(schedule);
@@ -8696,7 +8743,7 @@ isl_stat sa_filter_buffer_io_module_generate_code(struct autosa_gen *gen,
 
   /* Generate AST for inter transfer function call. */
   schedule = module->inter_sched;
-  schedule = insert_top_loop_coalesce(schedule);
+  //schedule = insert_top_loop_coalesce(schedule);
   autosa_at_domain_data_init(&data, gen);
   tree = autosa_generate_ast_from_schedule(schedule, data, gen);
   isl_ast_node_free(tree);
@@ -8705,7 +8752,7 @@ isl_stat sa_filter_buffer_io_module_generate_code(struct autosa_gen *gen,
   {
     /* Generate boundary module AST. */
     schedule = module->boundary_inter_sched;
-    schedule = insert_top_loop_coalesce(schedule);
+    //schedule = insert_top_loop_coalesce(schedule);
     autosa_at_domain_data_init(&data, gen);
     data.boundary = 1;
     tree = autosa_generate_ast_from_schedule(schedule, data, gen);
@@ -8714,7 +8761,7 @@ isl_stat sa_filter_buffer_io_module_generate_code(struct autosa_gen *gen,
 
   /* Generate AST for intra transfer function call. */
   schedule = module->intra_sched;
-  schedule = insert_top_loop_coalesce(schedule);
+  //schedule = insert_top_loop_coalesce(schedule);
   autosa_at_domain_data_init(&data, gen);
   tree = autosa_generate_ast_from_schedule(schedule, data, gen);
   isl_ast_node_free(tree);
@@ -8727,7 +8774,7 @@ isl_stat sa_filter_buffer_io_module_generate_code(struct autosa_gen *gen,
   //  isl_printer_free(pd);
   //#endif
   schedule = module->outer_sched;
-  schedule = insert_top_loop_coalesce(schedule);
+  //schedule = insert_top_loop_coalesce(schedule);
   autosa_at_domain_data_init(&data, gen);
   tree = autosa_generate_ast_from_schedule(schedule, data, gen);
   module->tree = tree;
@@ -8736,7 +8783,7 @@ isl_stat sa_filter_buffer_io_module_generate_code(struct autosa_gen *gen,
   {
     /* Generate boundary module AST. */
     schedule = module->boundary_outer_sched;
-    schedule = insert_top_loop_coalesce(schedule);
+    //schedule = insert_top_loop_coalesce(schedule);
     autosa_at_domain_data_init(&data, gen);
     data.boundary = 1;
     tree = autosa_generate_ast_from_schedule(schedule, data, gen);
@@ -8761,7 +8808,7 @@ isl_stat sa_module_generate_code(struct autosa_gen *gen,
   isl_ast_node *tree;
 
   schedule = module->sched;
-  schedule = insert_top_loop_coalesce(schedule);
+  //schedule = insert_top_loop_coalesce(schedule);
   //#ifdef _DEBUG
   //  isl_printer *pd = isl_printer_to_file(gen->ctx, stdout);
   //  pd = isl_printer_set_yaml_style(pd, ISL_YAML_STYLE_BLOCK);

@@ -947,6 +947,7 @@ struct autosa_ast_node_userinfo
 {
   int is_pipeline;
   int is_unroll;
+  int is_outermost_for;
 };
 
 /* The current index is such that if you add "shift",
@@ -1117,6 +1118,7 @@ void *autosa_drain_merge_func_free(struct autosa_drain_merge_func *func);
 
 /* AutoSA AST node */
 struct autosa_ast_node_userinfo *alloc_ast_node_userinfo();
+void free_ast_node_userinfo(void *ptr);
 
 /* AutoSA PE opt */
 __isl_give isl_set *extract_sa_sizes(__isl_keep isl_union_map *sizes,

@@ -482,6 +482,46 @@ static __isl_give isl_printer *print_drain_merge_arguments_intel(
   return p;
 }
 
+static __isl_give isl_printer *print_for_with_coalesce(__isl_keep isl_ast_node *node,
+                                                       __isl_take isl_printer *p,
+                                                       __isl_take isl_ast_print_options *print_options)
+{
+  p = isl_printer_start_line(p);
+  p = isl_printer_print_str(p, "#pragma loop_coalesce");
+  p = isl_printer_end_line(p);
+
+  p = isl_ast_node_for_print(node, p, print_options);
+
+  return p;
+}
+
+static __isl_give isl_printer *print_module_for(__isl_take isl_printer *p,
+                                                __isl_take isl_ast_print_options *print_options,
+                                                __isl_keep isl_ast_node *node, void *user)
+{
+  isl_id *id;
+  int outermost_for;
+
+  outermost_for = 0;
+  id = isl_ast_node_get_annotation(node);
+  if (id)
+  {
+    struct autosa_ast_node_userinfo *info;
+    info = (struct autosa_ast_node_userinfo *)isl_id_get_user(id);
+    if (info && info->is_outermost_for)
+      outermost_for = 1;
+  }
+
+  if (outermost_for)
+    p = print_for_with_coalesce(node, p, print_options);
+  else
+    p = isl_ast_node_for_print(node, p, print_options);
+
+  isl_id_free(id);
+
+  return p;
+}
+
 static __isl_give isl_printer *print_module_stmt(__isl_take isl_printer *p,
                                                  __isl_take isl_ast_print_options *print_options,
                                                  __isl_keep isl_ast_node *node, void *user)
@@ -2123,8 +2163,10 @@ static __isl_give isl_printer *autosa_print_intra_trans_module(
   print_options = isl_ast_print_options_alloc(ctx);
   print_options = isl_ast_print_options_set_print_user(print_options,
                                                        &print_module_stmt, &hw_data);
+  print_options = isl_ast_print_options_set_print_for(print_options,
+                                                      &print_module_for, &hw_data);
 
-  p = print_str_new_line(p, "#pragma loop_coalesce");
+  //p = print_str_new_line(p, "#pragma loop_coalesce");
   p = isl_ast_node_print(module->intra_tree, p, print_options);
   p = isl_printer_indent(p, -4);
 
@@ -2173,8 +2215,10 @@ static __isl_give isl_printer *autosa_print_inter_trans_module(
   print_options = isl_ast_print_options_alloc(ctx);
   print_options = isl_ast_print_options_set_print_user(print_options,
                                                        &print_module_stmt, &hw_data);
+  print_options = isl_ast_print_options_set_print_for(print_options,
+                                                      &print_module_for, &hw_data);
 
-  p = print_str_new_line(p, "#pragma loop_coalesce");
+  //p = print_str_new_line(p, "#pragma loop_coalesce");
   p = isl_ast_node_print((boundary == 0) ? module->inter_tree : module->boundary_inter_tree, p, print_options);
   p = isl_printer_indent(p, -4);
 
@@ -2220,6 +2264,8 @@ static __isl_give isl_printer *autosa_print_default_module(
   print_options = isl_ast_print_options_alloc(ctx);
   print_options = isl_ast_print_options_set_print_user(print_options,
                                                        &print_module_stmt, &hw_data);
+  print_options = isl_ast_print_options_set_print_for(print_options,
+                                                      &print_module_for, &hw_data);
 
   //p = print_str_new_line(p, "#pragma loop_coalesce");
   if (!boundary)
@@ -2403,6 +2449,8 @@ static __isl_give isl_printer *autosa_print_default_pe_dummy_module(
   print_options = isl_ast_print_options_alloc(ctx);
   print_options = isl_ast_print_options_set_print_user(print_options,
                                                        &print_module_stmt, &hw_data);
+  print_options = isl_ast_print_options_set_print_for(print_options,
+                                                      &print_module_for, &hw_data);
 
   p = isl_ast_node_print(pe_dummy_module->device_tree, p, print_options);
 

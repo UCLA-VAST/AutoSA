@@ -748,11 +748,11 @@ def insert_intel_pragmas(lines):
         new_line = ' ' * indent + "#pragma unroll\n"
         lines.insert(prev_pos, new_line)
         del lines[pos + 1]
-    if line.find('// hls_coalesce') != -1:
-      indent = line.find('// hls_coalesce')
-      new_line = ' ' * indent + "#pragma loop_coalesce\n"
-      del lines[pos]
-      lines.insert(pos, new_line)
+#    if line.find('// hls_coalesce') != -1:
+#      indent = line.find('// hls_coalesce')
+#      new_line = ' ' * indent + "#pragma loop_coalesce\n"
+#      del lines[pos]
+#      lines.insert(pos, new_line)
     pos = pos + 1
 
   return lines

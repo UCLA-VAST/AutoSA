@@ -1719,8 +1719,15 @@ struct autosa_ast_node_userinfo *alloc_ast_node_userinfo()
           struct autosa_ast_node_userinfo));
   info->is_pipeline = 0;
   info->is_unroll = 0;
+  info->is_outermost_for = 0;
 
   return info;
+}
+
+void free_ast_node_userinfo(void *ptr)
+{
+  struct autosa_ast_node_userinfo *info = (struct autosa_ast_node_userinfo *)ptr;
+  free(info);
 }
 
 /****************************************************************
