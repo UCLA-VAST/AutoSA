@@ -151,7 +151,7 @@ static void opencl_open_files(struct hls_info *info, const char *input)
   print_intel_host_header(info->host_h);
   fprintf(info->host_c, "#include \"%s\"\n", name);
   strcpy(name + len, "_kernel.aocx");
-  fprintf(info->host_c, "#define AOCX_FILE \"%s\"\n", name);
+  //fprintf(info->host_c, "#define AOCX_FILE \"%s\"\n", name);
 
   strcpy(name + len, "_kernel_modules.cl");
   strcpy(dir + len_dir, name);
@@ -171,6 +171,7 @@ static void opencl_open_files(struct hls_info *info, const char *input)
     exit(1);
   }
   fprintf(info->kernel_c, "#include \"%s\"\n", name);
+  fprintf(info->kernel_c, "#include \"ihc_apint.h\"\n");
   //fprintf(info->kernel_c, "#pragma OPENCL EXTENSION cl_intel_channels : enable\n\n");
 
   strcpy(name + len, "_top_gen.cpp");
@@ -599,11 +600,19 @@ static __isl_give isl_printer *find_device_intel(__isl_take isl_printer *p,
 
   p = print_str_new_line(p, "// OpenCL host code starts from here");
   //p = print_str_new_line(p, "bool use_emulator = false; // control whether the emulator should be used.");
+  p = print_str_new_line(p, "if (argc != 2) {");
+  p = isl_printer_indent(p, 4);
+  p = print_str_new_line(p, "std::cout << \"Usage: \" << argv[0] << \"<path/to/bitstream.aocx>\" << std::endl;");
+  p = print_str_new_line(p, "return -1;");
+  p = isl_printer_indent(p, -4);
+  p = print_str_new_line(p, "}");
+
   p = print_str_new_line(p, "cl_int status;");
   p = print_str_new_line(p, "cl_platform_id platform = NULL;");
   p = print_str_new_line(p, "cl_device_id *devices = NULL;");
   p = print_str_new_line(p, "cl_context context = NULL;");
   p = print_str_new_line(p, "cl_program program = NULL;");
+  p = print_str_new_line(p, "std::string binary_file = argv[1];");
 
   int q_id = 0;
   for (int i = 0; i < top->n_hw_modules; i++)
@@ -817,8 +826,8 @@ static __isl_give isl_printer *find_device_intel(__isl_take isl_printer *p,
   p = print_str_new_line(p, "// Create the program from binaries");
   p = print_str_new_line(p, "size_t binary_length;");
   p = print_str_new_line(p, "const unsigned char *binary;");
-  p = print_str_new_line(p, "printf(\"\\nAOCX file: %s\\n\\n\", AOCX_FILE);");
-  p = print_str_new_line(p, "FILE *fp = fopen(AOCX_FILE, \"rb\");");
+  p = print_str_new_line(p, "printf(\"\\nAOCX file: %s\\n\\n\", binary_file.c_str());");
+  p = print_str_new_line(p, "FILE *fp = fopen(binary_file.c_str(), \"rb\");");
   p = print_str_new_line(p, "if (fp == NULL) {");
   p = isl_printer_indent(p, 4);
   p = print_str_new_line(p, "printf(\"Failed to open the AOCX file (fopen).\\n\");");
@@ -2115,6 +2124,7 @@ static __isl_give isl_printer *autosa_print_intra_trans_module(
   print_options = isl_ast_print_options_set_print_user(print_options,
                                                        &print_module_stmt, &hw_data);
 
+  p = print_str_new_line(p, "#pragma loop_coalesce");
   p = isl_ast_node_print(module->intra_tree, p, print_options);
   p = isl_printer_indent(p, -4);
 
@@ -2164,6 +2174,7 @@ static __isl_give isl_printer *autosa_print_inter_trans_module(
   print_options = isl_ast_print_options_set_print_user(print_options,
                                                        &print_module_stmt, &hw_data);
 
+  p = print_str_new_line(p, "#pragma loop_coalesce");
   p = isl_ast_node_print((boundary == 0) ? module->inter_tree : module->boundary_inter_tree, p, print_options);
   p = isl_printer_indent(p, -4);
 
@@ -2210,6 +2221,7 @@ static __isl_give isl_printer *autosa_print_default_module(
   print_options = isl_ast_print_options_set_print_user(print_options,
                                                        &print_module_stmt, &hw_data);
 
+  //p = print_str_new_line(p, "#pragma loop_coalesce");
   if (!boundary)
     p = isl_ast_node_print(module->device_tree, p, print_options);
   else

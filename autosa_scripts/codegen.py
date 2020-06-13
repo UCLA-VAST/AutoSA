@@ -7,7 +7,7 @@ import re
 import numpy as np
 
 def delete_arg_from_arg_list(line, arg, content):
-  """ Delete the argument from the argument list 
+  """ Delete the argument from the argument list
 
   Args:
     line: codeline containing the argument list
@@ -25,15 +25,15 @@ def delete_arg_from_arg_list(line, arg, content):
     content[-1] = content[-1][:comma_pos] + '\n'
 
   """
-  line = re.sub(r'( )(' + re.escape(arg) + r')(,)', 
+  line = re.sub(r'( )(' + re.escape(arg) + r')(,)',
                 '', line)
   line = re.sub(r'( )(' + re.escape(arg) + r')(\))',
-                r'\g<3>', line)        
+                r'\g<3>', line)
   line = re.sub(r'(\()(' + re.escape(arg) + r')(, )',
-                r'\g<1>', line)        
+                r'\g<1>', line)
   line = re.sub(r'(\()(' + re.escape(arg) + r')(\))',
                 r'\g<1>\g<3>', line)
-  """  
+  """
 
 def print_module_def(f, arg_map, module_def, inline_module_defs, def_args, call_args_type):
   """ Print out module definitions for Intel OpenCL
@@ -46,7 +46,7 @@ def print_module_def(f, arg_map, module_def, inline_module_defs, def_args, call_
   As an example, the original module
     void A_IO_L3_in(int idx, fifo_type fifo)
   will be modified to
-    void A_IO_L3_in_[arg_map[idx]]()    
+    void A_IO_L3_in_[arg_map[idx]]()
 
   Args:
     f: file handle
@@ -56,21 +56,21 @@ def print_module_def(f, arg_map, module_def, inline_module_defs, def_args, call_
     def_args: a list storing the module definition arguments
     call_args_type: a list storing the type of each module call arg
   """
-  # Print inline module definitions    
-  if inline_module_defs:    
-    # Each inline module should be only printed once. 
+  # Print inline module definitions
+  if inline_module_defs:
+    # Each inline module should be only printed once.
     # We assume the module ids and fifos are unchanged in multiple inline module
     # calls. Therefore, only the first encounter will be handled.
     inline_module_handled = []
-    for inline_module in inline_module_defs:            
+    for inline_module in inline_module_defs:
       # Search for the inline modules
       for line_id in range(len(module_def)):
-        line = module_def[line_id]          
+        line = module_def[line_id]
         if line.find(inline_module + '(') != -1:
           # The current line contains the inline module call
           if inline_module in inline_module_handled:
             # Replace the module call
-            line_indent = line.find(inline_module)          
+            line_indent = line.find(inline_module)
             line = ' ' * line_indent + inline_module
             for i in range(len(def_args)):
               def_arg = def_args[i]
@@ -87,7 +87,7 @@ def print_module_def(f, arg_map, module_def, inline_module_defs, def_args, call_
           inline_module_call_args = []
           inline_module_call_args_type = []
           inline_module_def_args = []
-          inline_module_arg_map = {}        
+          inline_module_arg_map = {}
           inline_module_name = inline_module
           inline_module_def = inline_module_defs[inline_module_name]
           # Extract the arg list in module definition
@@ -100,7 +100,7 @@ def print_module_def(f, arg_map, module_def, inline_module_defs, def_args, call_
           for arg in def_args_old:
             arg = arg.split()[-1]
             inline_module_def_args.append(arg)
-          # Extract the arg list in module call        
+          # Extract the arg list in module call
           next_line_id = line_id + 1
           next_line = module_def[next_line_id]
           while next_line.find(');') == -1:
@@ -110,8 +110,8 @@ def print_module_def(f, arg_map, module_def, inline_module_defs, def_args, call_
               inline_module_call_args_type.append(arg_type)
               m = re.search(r'\*/ (.+)', next_line)
               if m:
-                call_arg = m.group(1).split(',')[0]                
-                inline_module_call_args.append(call_arg)        
+                call_arg = m.group(1).split(',')[0]
+                inline_module_call_args.append(call_arg)
             next_line_id += 1
             next_line = module_def[next_line_id]
           # Build a mapping between the def_arg to call_arg
@@ -119,16 +119,16 @@ def print_module_def(f, arg_map, module_def, inline_module_defs, def_args, call_
             def_arg = inline_module_def_args[i]
             call_arg = inline_module_call_args[i]
             inline_module_arg_map[def_arg] = call_arg
-          # Replace the module ids and fifos from the upper module          
+          # Replace the module ids and fifos from the upper module
           for def_arg in inline_module_arg_map:
-            call_arg = inline_module_arg_map[def_arg]                        
-            if call_arg in arg_map:                            
-              inline_module_arg_map[def_arg] = arg_map[call_arg]            
+            call_arg = inline_module_arg_map[def_arg]
+            if call_arg in arg_map:
+              inline_module_arg_map[def_arg] = arg_map[call_arg]
           print_module_def(f, inline_module_arg_map, inline_module_def.copy(), None, \
                            inline_module_def_args, inline_module_call_args_type)
           # Replace the inline module call with the new inline module name
-          line_indent = line.find(inline_module)          
-          line = ' ' * line_indent + inline_module                    
+          line_indent = line.find(inline_module)
+          line = ' ' * line_indent + inline_module
           for i in range(len(def_args)):
             def_arg = def_args[i]
             arg_type = call_args_type[i]
@@ -174,7 +174,7 @@ def print_module_def(f, arg_map, module_def, inline_module_defs, def_args, call_
       # Print the module_name
       print_content.append(prefix)
       for module_id in module_id_args:
-        print_content.append('_' + arg_map[module_id])     
+        print_content.append('_' + arg_map[module_id])
       print_content.append('(')
       first = True
       for arg in new_def_args:
@@ -189,28 +189,28 @@ def print_module_def(f, arg_map, module_def, inline_module_defs, def_args, call_
         if line.find(module_id) != -1:
           # Test if it is inside an argument list
           m = re.search(r'/\* module id \*/ ' + re.escape(module_id), line)
-          if m:          
+          if m:
             # Delete if from the argument list
             delete_arg_from_arg_list(line, module_id, print_content)
-            line = None            
+            line = None
             break
           else:
-            # Plug in module ids            
-            line = re.sub(r'([^a-zA-Z_])(' + re.escape(module_id) + r')([^a-zA-Z0-9_])', 
-                          r'\g<1>' + re.escape(arg_map[module_id]) + r'\g<3>', line)                  
-      # fifos          
-      if line:                
+            # Plug in module ids
+            line = re.sub(r'([^a-zA-Z_])(' + re.escape(module_id) + r')([^a-zA-Z0-9_])',
+                          r'\g<1>' + re.escape(arg_map[module_id]) + r'\g<3>', line)
+      # fifos
+      if line:
         for fifo in fifo_args:
           if line.find(fifo) != -1:
-            # Test if it is inside a read/write API call      
+            # Test if it is inside a read/write API call
             if line.find('read_channel_intel') != -1 or line.find('write_channel_intel') != -1:
-              # Plug in fifos      
-              line = re.sub(r'([^a-zA-Z_])(' + re.escape(fifo) + r')([^a-zA-Z0-9_])', 
-                            r'\g<1>' + re.escape(arg_map[fifo]) + r'\g<3>', line)        
+              # Plug in fifos
+              line = re.sub(r'([^a-zA-Z_])(' + re.escape(fifo) + r')([^a-zA-Z0-9_])',
+                            r'\g<1>' + re.escape(arg_map[fifo]) + r'\g<3>', line)
             else:
               # Test if it is inside an argument list
               m = re.search(r'/\* fifo \*/ ' + re.escape(fifo), line)
-              if m:            
+              if m:
                 # Delete it from the argument list
                 delete_arg_from_arg_list(line, fifo, print_content)
                 line = None
@@ -251,7 +251,7 @@ def generate_intel_kernel(kernel, headers, module_defs, module_calls, fifo_decls
     f.write('/* Channel Declaration */\n\n')
 
     # Extract the inline modules
-    # These modules are those that exist in the module_defs but not in the 
+    # These modules are those that exist in the module_defs but not in the
     # module_calls.
     for module_name in module_defs:
       inline_module = 1
@@ -504,11 +504,12 @@ def simplify_expressions(lines):
 
   return lines
 
-def shrink_bit_width(lines):
+def shrink_bit_width(lines, target):
   """ Calculate the bitwidth of the iterator and shrink it to the proper size
 
   Args:
     lines: contains the codelines of the program
+    target: xilinx|intel
   """
 
   code_len = len(lines)
@@ -522,7 +523,10 @@ def shrink_bit_width(lines):
         if ub.isnumeric():
           # Replace it with shallow bit width
           bitwidth = int(np.ceil(np.log2(float(ub) + 1))) + 1
-          new_iter_t = 'ap_uint<' + str(bitwidth) + '>'
+          if target == 'xilinx':
+            new_iter_t = 'ap_uint<' + str(bitwidth) + '>'
+          elif target == 'intel':
+            new_iter_t = 'uint' + str(bitwidth) + '_t'
           line = re.sub('int', new_iter_t, line)
           lines[pos] = line
       m = re.search('<(.+?);', line)
@@ -683,7 +687,7 @@ def xilinx_run(kernel_call, kernel_def, kernel='autosa.tmp/output/src/kernel_ker
   lines = simplify_expressions(lines)
 
   # Change the loop iterator type
-  lines = shrink_bit_width(lines)
+  lines = shrink_bit_width(lines, 'xilinx')
 
   # Insert the HLS pragmas
   lines = insert_xlnx_pragmas(lines)
@@ -720,6 +724,7 @@ def insert_intel_pragmas(lines):
   Replace the comments of "// hls_unroll" with OpenCL pragmas.
   For "hls unroll", find the previous for loop before hitting the "simd" mark.
   Insert "#pragma unroll" above the for loop.
+  Replace the comments of "// hls_coalesce" with OpenCL pragma "#pragma loop_coalesce".
 
   Args:
     lines: contains the codelines of the program
@@ -743,8 +748,13 @@ def insert_intel_pragmas(lines):
         new_line = ' ' * indent + "#pragma unroll\n"
         lines.insert(prev_pos, new_line)
         del lines[pos + 1]
+    if line.find('// hls_coalesce') != -1:
+      indent = line.find('// hls_coalesce')
+      new_line = ' ' * indent + "#pragma loop_coalesce\n"
+      del lines[pos]
+      lines.insert(pos, new_line)
     pos = pos + 1
-  
+
   return lines
 
 def intel_run(kernel_call, kernel_def, kernel='autosa.tmp/output/src/kernel_kernel.cpp'):
@@ -811,7 +821,7 @@ def intel_run(kernel_call, kernel_def, kernel='autosa.tmp/output/src/kernel_kern
     while True:
       line = f.readline()
       if not line:
-        break      
+        break
       # Extract the module definition and add to the dict
       if add:
         module_def.append(line)
@@ -826,10 +836,12 @@ def intel_run(kernel_call, kernel_def, kernel='autosa.tmp/output/src/kernel_kern
           module_defs[module_name] = module_def.copy()
           module_def.clear()
           # Post-process the module definition
-          # Simplify the expressions            
-          module_defs[module_name] = simplify_expressions(module_defs[module_name])          
+          # Simplify the expressions
+          module_defs[module_name] = simplify_expressions(module_defs[module_name])
           # Insert the OpenCL pragmas
           module_defs[module_name] = insert_intel_pragmas(module_defs[module_name])
+          # Change the loop iterator type
+          module_defs[module_name] = shrink_bit_width(module_defs[module_name], 'intel')
         add = not add
 
   # compose the kernel file

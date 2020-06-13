@@ -8634,6 +8634,49 @@ static __isl_give isl_ast_node *autosa_generate_ast_from_schedule(
   return tree;
 }
 
+static __isl_give isl_schedule_node *insert_coalesce_mark(
+    __isl_take isl_schedule_node *node, void *user)
+{
+  if (isl_schedule_node_get_type(node) == isl_schedule_node_band)
+  {
+    /* Examine if there is any other band node above this node. */
+    isl_bool is_top = isl_bool_true;
+    isl_schedule_node *visit_node = isl_schedule_node_copy(node);
+    while (isl_schedule_node_has_parent(visit_node))
+    {
+      visit_node = isl_schedule_node_parent(visit_node);
+      if (isl_schedule_node_get_type(visit_node) == isl_schedule_node_band)
+      {
+        is_top = isl_bool_false;
+        break;
+      }
+    }
+    isl_schedule_node_free(visit_node);
+
+    if (is_top)
+    {
+      /* Insert the mark. */
+      isl_ctx *ctx;
+      isl_id *id;
+
+      ctx = isl_schedule_node_get_ctx(node);
+      id = isl_id_alloc(ctx, "hls_coalesce", NULL);
+      node = isl_schedule_node_insert_mark(node, id);
+    }
+  }
+  return node;
+}
+
+/* Take in the schedule tree described by "schedule".
+ * Insert a "hls_coalesce" mark above the top-level band node. 
+ */
+static __isl_give isl_schedule *insert_top_loop_coalesce(__isl_take isl_schedule *schedule)
+{
+  schedule = isl_schedule_map_schedule_node_bottom_up(schedule,
+                                                      &insert_coalesce_mark, NULL);
+  return schedule;
+}
+
 /* There are three schedules to handle in this module:
  * - outer loop schedule
  * - inter trans schedule
@@ -8653,6 +8696,7 @@ isl_stat sa_filter_buffer_io_module_generate_code(struct autosa_gen *gen,
 
   /* Generate AST for inter transfer function call. */
   schedule = module->inter_sched;
+  schedule = insert_top_loop_coalesce(schedule);
   autosa_at_domain_data_init(&data, gen);
   tree = autosa_generate_ast_from_schedule(schedule, data, gen);
   isl_ast_node_free(tree);
@@ -8661,6 +8705,7 @@ isl_stat sa_filter_buffer_io_module_generate_code(struct autosa_gen *gen,
   {
     /* Generate boundary module AST. */
     schedule = module->boundary_inter_sched;
+    schedule = insert_top_loop_coalesce(schedule);
     autosa_at_domain_data_init(&data, gen);
     data.boundary = 1;
     tree = autosa_generate_ast_from_schedule(schedule, data, gen);
@@ -8669,12 +8714,20 @@ isl_stat sa_filter_buffer_io_module_generate_code(struct autosa_gen *gen,
 
   /* Generate AST for intra transfer function call. */
   schedule = module->intra_sched;
+  schedule = insert_top_loop_coalesce(schedule);
   autosa_at_domain_data_init(&data, gen);
   tree = autosa_generate_ast_from_schedule(schedule, data, gen);
   isl_ast_node_free(tree);
 
   /* Generate AST for outer loop function call. */
+  //#ifdef _DEBUG
+  //  isl_printer *pd = isl_printer_to_file(gen->ctx, stdout);
+  //  pd = isl_printer_set_yaml_style(pd, ISL_YAML_STYLE_BLOCK);
+  //  pd = isl_printer_print_schedule(pd, module->outer_sched);
+  //  isl_printer_free(pd);
+  //#endif
   schedule = module->outer_sched;
+  schedule = insert_top_loop_coalesce(schedule);
   autosa_at_domain_data_init(&data, gen);
   tree = autosa_generate_ast_from_schedule(schedule, data, gen);
   module->tree = tree;
@@ -8683,6 +8736,7 @@ isl_stat sa_filter_buffer_io_module_generate_code(struct autosa_gen *gen,
   {
     /* Generate boundary module AST. */
     schedule = module->boundary_outer_sched;
+    schedule = insert_top_loop_coalesce(schedule);
     autosa_at_domain_data_init(&data, gen);
     data.boundary = 1;
     tree = autosa_generate_ast_from_schedule(schedule, data, gen);
@@ -8707,6 +8761,7 @@ isl_stat sa_module_generate_code(struct autosa_gen *gen,
   isl_ast_node *tree;
 
   schedule = module->sched;
+  schedule = insert_top_loop_coalesce(schedule);
   //#ifdef _DEBUG
   //  isl_printer *pd = isl_printer_to_file(gen->ctx, stdout);
   //  pd = isl_printer_set_yaml_style(pd, ISL_YAML_STYLE_BLOCK);

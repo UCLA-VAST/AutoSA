@@ -2774,7 +2774,8 @@ __isl_give isl_printer *autosa_kernel_print_io(__isl_take isl_printer *p,
           p = isl_printer_print_int(p, data_pack);
         }
         p = isl_printer_print_str(p, ")(");
-        for (int i = data_pack / nxt_data_pack - 1; i >= 0; i--)
+        //for (int i = data_pack / nxt_data_pack - 1; i >= 0; i--)
+        for (int i = 0; i < data_pack / nxt_data_pack; i++)
         {
           isl_ast_expr *expr = stmt->u.i.local_index;
           isl_ast_expr *op;
@@ -3375,7 +3376,7 @@ static __isl_give isl_printer *autosa_kernel_print_io_transfer_data_pack(
       p = isl_printer_print_int(p, n_lane);
       p = isl_printer_print_str(p, ")(");
 
-      for (int i = n_lane / nxt_n_lane - 1; i >= 0; i--)
+      for (int i = 0; i < n_lane / nxt_n_lane; i++)
       {
         if (!first)
           p = isl_printer_print_str(p, ", ");
