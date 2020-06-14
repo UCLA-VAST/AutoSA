@@ -4369,7 +4369,7 @@ static isl_stat top_module_pe_gen_fifo_decl(struct autosa_gen *gen,
     p_str = isl_printer_print_str(p_str, "_");
     p_str = isl_printer_print_str(p_str, module->name);
     p_str = isl_printer_print_str(p_str, ".");
-    int n_lane = get_io_group_n_lane(module, group);
+    int n_lane = get_io_group_n_lane(module, NULL, group);
     int data_size = group->array->size;
     int width = data_size * n_lane; // in bytes
     p_str = isl_printer_print_int(p_str, width);
@@ -5023,7 +5023,7 @@ static isl_stat top_module_io_gen_fifo_decl(struct autosa_gen *gen,
   p_str = isl_printer_print_str(p_str, "_");
   p_str = isl_printer_print_str(p_str, module->name);
   p_str = isl_printer_print_str(p_str, ".");
-  int n_lane = get_io_group_n_lane(module, group);
+  int n_lane = get_io_group_n_lane(module, NULL, group);
   int data_size = group->array->size;
   int width = data_size * n_lane; // in bytes
   p_str = isl_printer_print_int(p_str, width);

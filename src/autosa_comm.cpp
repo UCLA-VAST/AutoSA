@@ -4388,11 +4388,12 @@ __isl_give isl_map *group_tile_buffer(struct autosa_array_ref_group *group,
  * (io_buffers[0]->n_lane) which is allocated inside the PE.
  */
 int get_io_group_n_lane(struct autosa_hw_module *module,
+                        struct autosa_pe_dummy_module *dummy_module,
                         struct autosa_array_ref_group *group)
 {
   int n_lane;
 
-  if (module->type == PE_MODULE)
+  if (module && module->type == PE_MODULE || dummy_module) 
   {
     n_lane = (group->local_array->array_type == AUTOSA_EXT_ARRAY) ? group->n_lane : ((group->group_type == AUTOSA_DRAIN_GROUP) ? group->n_lane : ((group->io_type == AUTOSA_EXT_IO) ? group->n_lane : group->io_buffers[0]->n_lane));
   }

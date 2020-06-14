@@ -61,6 +61,7 @@ __isl_give isl_map *group_tile(struct autosa_array_ref_group *group);
 __isl_give isl_map *group_tile_buffer(struct autosa_array_ref_group *group,
   struct autosa_array_tile *tile);
 int get_io_group_n_lane(struct autosa_hw_module *module, 
+  struct autosa_pe_dummy_module *dummy_module,
   struct autosa_array_ref_group *group);
 __isl_give isl_multi_aff *autosa_array_ref_group_recompute_tiling(
   struct autosa_array_tile *tile,

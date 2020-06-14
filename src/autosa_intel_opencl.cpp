@@ -6,6 +6,7 @@
 #include "autosa_trans.h"
 #include "autosa_codegen.h"
 #include "autosa_utils.h"
+#include "autosa_comm.h"
 
 struct print_host_user_data
 {
@@ -2441,18 +2442,46 @@ static __isl_give isl_printer *autosa_print_default_pe_dummy_module(
   print_pe_dummy_module_headers_intel(prog, pe_dummy_module, hls, -1, boundary);
 
   fprintf(hls->kernel_c, "{\n");
-  print_module_iterators(hls->kernel_c, module);
-
   p = isl_printer_indent(p, 4);
+  p = print_str_new_line(p, "while (1) {");
+  p = isl_printer_indent(p, 4);
+  
+  /* [type] fifo_data; */
+  struct autosa_array_ref_group *group = pe_dummy_module->io_group;
+  int n_lane = get_io_group_n_lane(NULL, pe_dummy_module, group);
+  p = isl_printer_start_line(p);
+  if (n_lane == 1) {
+    p = isl_printer_print_str(p, group->array->type);
+  } else {
+    p = isl_printer_print_str(p, group->array->name);
+    p = isl_printer_print_str(p, "_t");
+    p = isl_printer_print_int(p, n_lane);
+  }
+  p = isl_printer_print_str(p, " fifo_data;");
   p = isl_printer_end_line(p);
 
-  print_options = isl_ast_print_options_alloc(ctx);
-  print_options = isl_ast_print_options_set_print_user(print_options,
-                                                       &print_module_stmt, &hw_data);
-  print_options = isl_ast_print_options_set_print_for(print_options,
-                                                      &print_module_for, &hw_data);
+  /* fifo_data = fifo.read(); */
+  p = isl_printer_start_line(p);
+  p = isl_printer_print_str(p, "fifo_data = read_channel_intel(");
+  p = autosa_array_ref_group_print_fifo_name(group, p);
+  p = isl_printer_print_str(p, "_in);");
+  p = isl_printer_end_line(p);
 
-  p = isl_ast_node_print(pe_dummy_module->device_tree, p, print_options);
+  p = isl_printer_indent(p, -4);
+  p = print_str_new_line(p, "}");
+
+  //print_module_iterators(hls->kernel_c, module);
+//
+  //p = isl_printer_indent(p, 4);
+  //p = isl_printer_end_line(p);
+//
+  //print_options = isl_ast_print_options_alloc(ctx);
+  //print_options = isl_ast_print_options_set_print_user(print_options,
+  //                                                     &print_module_stmt, &hw_data);
+  //print_options = isl_ast_print_options_set_print_for(print_options,
+  //                                                    &print_module_for, &hw_data);
+//
+  //p = isl_ast_node_print(pe_dummy_module->device_tree, p, print_options);
 
   p = isl_printer_indent(p, -4);
   fprintf(hls->kernel_c, "}\n");
@@ -2461,28 +2490,6 @@ static __isl_give isl_printer *autosa_print_default_pe_dummy_module(
   p = isl_printer_end_line(p);
 
   p = isl_printer_end_line(p);
-
-  //  /* Print wrapper. */
-  //  if (hls->target == XILINX_HW) {
-  //    p = isl_printer_start_line(p);
-  //    p = isl_printer_print_str(p, "/* Module Definition */");
-  //    p = isl_printer_end_line(p);
-  //
-  //    print_pe_dummy_module_wrapper_headers_xilinx(prog, pe_dummy_module, hls);
-  //
-  //    fprintf(hls->kernel_c, "{\n");
-  //    p = isl_printer_indent(p, 4);
-  //    p = print_pe_dummy_module_core_headers_xilinx(p, prog, pe_dummy_module, hls, 0);
-  //    p = isl_printer_print_str(p, ";");
-  //    p = isl_printer_end_line(p);
-  //    p = isl_printer_indent(p, -4);
-  //    fprintf(hls->kernel_c, "}\n");
-  //    p = isl_printer_start_line(p);
-  //    p = isl_printer_print_str(p, "/* Module Definition */");
-  //    p = isl_printer_end_line(p);
-  //
-  //    p = isl_printer_end_line(p);
-  //  }
 
   return p;
 }

@@ -930,7 +930,7 @@ __isl_give isl_printer *print_module_arguments(
     for (int i = 0; i < module->n_io_group; i++)
     {
       struct autosa_array_ref_group *group = module->io_groups[i];
-      int n_lane = get_io_group_n_lane(module, group);
+      int n_lane = get_io_group_n_lane(module, NULL, group);
       if (module->io_groups[i]->pe_io_dir == IO_IN ||
           module->io_groups[i]->pe_io_dir == IO_INOUT)
       {
@@ -1236,7 +1236,7 @@ __isl_give isl_printer *print_pe_dummy_module_arguments(
 
   /* fifos */
   struct autosa_array_ref_group *group = pe_dummy_module->io_group;
-  int n_lane = (group->local_array->array_type == AUTOSA_EXT_ARRAY) ? group->n_lane : ((group->group_type == AUTOSA_DRAIN_GROUP) ? group->n_lane : ((group->io_type == AUTOSA_EXT_IO) ? group->n_lane : group->io_buffers[0]->n_lane));
+  int n_lane = get_io_group_n_lane(NULL, pe_dummy_module, group);  
 
   if (!first)
   {
@@ -1505,7 +1505,7 @@ static __isl_give isl_printer *print_fifo_decl_single(
   p = isl_printer_print_str(p, "p = isl_printer_print_str(p, \"");
   p = print_fifo_comment(p, module);
   p = isl_printer_print_str(p, " ");
-  n_lane = get_io_group_n_lane(module, group);
+  n_lane = get_io_group_n_lane(module, NULL, group);
   if (hls->target == XILINX_HW)
     p = print_fifo_type_xilinx(p, group, n_lane);
   else if (hls->target == INTEL_HW)
