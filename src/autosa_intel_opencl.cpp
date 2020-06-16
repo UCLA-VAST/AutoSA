@@ -1,3 +1,5 @@
+#include <vector>
+
 #include <isl/ctx.h>
 
 #include "autosa_intel_opencl.h"
@@ -2531,6 +2533,515 @@ static __isl_give isl_printer *autosa_print_default_pe_dummy_module(
   return p;
 }
 
+struct print_db_module_intel_data {
+  int inter; // -1: outer 0: intra 1: inter  
+  isl_printer *p_for;
+  isl_printer *p_user;
+  /* Outer */
+  std::vector<const char *> outer_for_logic;
+  std::vector<const char *> outer_user_logic;
+  std::vector<const char *> outer_iterator_name;
+  std::vector<const char *> outer_iterator_ub;
+  int outer_for_level;
+  /* Inter */
+  std::vector<const char *> inter_for_logic;
+  std::vector<const char *> inter_user_logic;
+  std::vector<const char *> inter_iterator_name;
+  std::vector<const char *> inter_iterator_ub;
+  int inter_for_level;
+  /* Intra */
+  std::vector<const char *> intra_for_logic;
+  std::vector<const char *> intra_user_logic;
+  std::vector<const char *> intra_iterator_name;
+  std::vector<const char *> intra_iterator_ub;
+  int intra_for_level;
+};
+
+static __isl_give isl_printer *print_double_buffer_module_vars_intel(
+  __isl_take isl_printer *p, struct autosa_hw_module *module, struct hls_info *hls,
+  struct print_db_module_intel_data *data)
+{
+  /* Inst ids */
+  print_module_iterators(hls->kernel_c, module);
+  /* Local buffer */
+  for (int i = 0; i < module->n_var; i++) {
+    struct autosa_kernel_var *var = &module->var[i];
+    p = isl_printer_start_line(p);
+    if (var->n_lane == 1) 
+      p = isl_printer_print_str(p, var->array->type);
+    else
+    {
+      p = isl_printer_print_str(p, var->array->name);
+      p = isl_printer_print_str(p, "_t");
+      p = isl_printer_print_int(p, var->n_lane);
+    }
+    p = isl_printer_print_str(p, " ");
+    p = isl_printer_print_str(p, var->name);
+    p = isl_printer_print_str(p, "[2]");
+    for (int j = 0; j < isl_vec_size(var->size); j++) {
+      isl_val *v;
+
+      p = isl_printer_print_str(p, "[");
+      v = isl_vec_get_element_val(var->size, j);
+      p = isl_printer_print_val(p, v);
+      isl_val_free(v);
+      p = isl_printer_print_str(p, "]");      
+    }
+    p = isl_printer_print_str(p, ";");
+    p = isl_printer_end_line(p);
+  }
+
+  /* State handle variables */
+  p = print_str_new_line(p, "bool arb = 0;");  
+  p = print_str_new_line(p, module->in? "bool inter_trans_en = 1;" : "bool inter_trans_en = 0;");
+  p = print_str_new_line(p, module->in? "bool intra_trans_en = 0;" : "bool intra_trans_en = 1;");
+  p = print_str_new_line(p, module->in? "bool inter_done = 0;" : "bool inter_done = 1;");
+  p = print_str_new_line(p, module->in? "bool intra_done = 1;" : "bool intra_done = 0;");
+  /* Iterators */
+  for (int i = 0; i < data->outer_iterator_name.size(); i++) {
+    p = isl_printer_start_line(p);
+    p = isl_printer_print_str(p, "int ");
+    p = isl_printer_print_str(p, data->outer_iterator_name[i]);
+    p = isl_printer_print_str(p, "; ");
+    p = isl_printer_print_str(p, "/* UB: ");
+    p = isl_printer_print_str(p, data->outer_iterator_ub[i]);
+    p = isl_printer_print_str(p, " */");
+    p = isl_printer_end_line(p);
+  }
+  for (int i = 0; i < data->inter_iterator_name.size(); i++) {
+    p = isl_printer_start_line(p);
+    p = isl_printer_print_str(p, "int ");
+    p = isl_printer_print_str(p, data->inter_iterator_name[i]);
+    p = isl_printer_print_str(p, "; ");
+    p = isl_printer_print_str(p, "/* UB: ");
+    p = isl_printer_print_str(p, data->inter_iterator_ub[i]);
+    p = isl_printer_print_str(p, " */");
+    p = isl_printer_end_line(p);
+  }
+  for (int i = 0; i < data->intra_iterator_name.size(); i++) {
+    p = isl_printer_start_line(p);
+    p = isl_printer_print_str(p, "int ");
+    p = isl_printer_print_str(p, data->intra_iterator_name[i]);
+    p = isl_printer_print_str(p, "; ");
+    p = isl_printer_print_str(p, "/* UB: ");
+    p = isl_printer_print_str(p, data->intra_iterator_ub[i]);
+    p = isl_printer_print_str(p, " */");
+    p = isl_printer_end_line(p);
+  }
+
+  return p;
+}
+
+/* Count the for level.
+ */
+static __isl_give isl_printer *count_module_for(__isl_take isl_printer *p,
+                                                __isl_take isl_ast_print_options *print_options,
+                                                __isl_keep isl_ast_node *node, void *user)
+{
+  struct print_db_module_intel_data *data = (struct print_db_module_intel_data *)user;
+  isl_ast_node *body;
+
+  if (data->inter == -1)
+    data->outer_for_level++;
+  else if (data->inter == 0)
+    data->intra_for_level++;
+  else if (data->inter == 1)
+    data->inter_for_level++;
+
+  body = isl_ast_node_for_get_body(node);
+  p = isl_ast_node_print(body, p, print_options);
+  isl_ast_node_free(body);
+
+  return p;
+}                                                
+
+/* Extract the loop information. 
+ */
+static __isl_give isl_printer *extract_module_for(__isl_take isl_printer *p,
+                                                  __isl_take isl_ast_print_options *print_options,
+                                                  __isl_keep isl_ast_node *node, void *user)
+{
+  struct print_db_module_intel_data *data = (struct print_db_module_intel_data *)user;
+  isl_ast_expr *iterator, *init, *cond, *ub;  
+  const char *iterator_suffix;
+  isl_printer *p_local, *p_str;  
+  const char *text;
+  std::vector<const char *> text_lines;
+  isl_ast_node *body;
+
+  if (data->inter == -1)
+    iterator_suffix = "outer_";
+  else if (data->inter == 0)
+    iterator_suffix = "intra_";
+  else
+    iterator_suffix = "inter_";
+  p_local = data->p_for;  
+
+  /* Extract the lower bound and upper bound. */
+  iterator = isl_ast_node_for_get_iterator(node);
+  init = isl_ast_node_for_get_init(node);
+  cond = isl_ast_node_for_get_cond(node);
+  ub = isl_ast_expr_op_get_arg(cond, 1);
+
+  p_str = isl_printer_to_str(isl_ast_node_get_ctx(node));
+  p_str = isl_printer_set_output_format(p_str, ISL_FORMAT_C);
+  p_str = isl_printer_print_str(p_str, iterator_suffix);
+  p_str = isl_printer_print_ast_expr(p_str, iterator);
+  if (data->inter == -1)
+    data->outer_iterator_name.push_back(isl_printer_get_str(p_str));
+  else if (data->inter == 0)
+    data->intra_iterator_name.push_back(isl_printer_get_str(p_str));
+  else if (data->inter == 1)
+    data->inter_iterator_name.push_back(isl_printer_get_str(p_str));
+  isl_printer_flush(p_str);
+
+  p_str = isl_printer_print_ast_expr(p_str, ub);
+  if (data->inter == -1)
+    data->outer_iterator_ub.push_back(isl_printer_get_str(p_str));
+  else if (data->inter == 0)
+    data->intra_iterator_ub.push_back(isl_printer_get_str(p_str));
+  else if (data->inter == 1)
+    data->inter_iterator_ub.push_back(isl_printer_get_str(p_str));
+  isl_printer_free(p_str);
+
+  p_local = isl_printer_indent(p_local, -4);
+
+  p_local = isl_printer_start_line(p_local);  
+  p_local = isl_printer_print_str(p_local, iterator_suffix);  
+  p_local = isl_printer_print_ast_expr(p_local, iterator);
+  p_local = isl_printer_print_str(p_local, "++;");
+  p_local = isl_printer_end_line(p_local);
+  text = isl_printer_get_str(p_local);
+  text_lines.push_back(text);
+  p_local = isl_printer_flush(p_local);
+
+  p_local = isl_printer_start_line(p_local);
+  p_local = isl_printer_print_str(p_local, "if (");
+  p_local = isl_printer_print_str(p_local, iterator_suffix);  
+  p_local = isl_printer_print_ast_expr(p_local, iterator);
+  p_local = isl_printer_print_str(p_local, " == "); 
+  p_local = isl_printer_print_ast_expr(p_local, ub);
+  p_local = isl_printer_print_str(p_local, " + 1) {"); 
+  p_local = isl_printer_end_line(p_local);
+//  if (data->inter == -1)
+//    data->outer_for_level++;
+//  else if (data->inter == 0)
+//    data->intra_for_level++;
+//  else if (data->inter == 1)
+//    data->inter_for_level++;
+  text = isl_printer_get_str(p_local);
+  text_lines.push_back(text);
+  p_local = isl_printer_flush(p_local);
+
+  p_local = isl_printer_indent(p_local, 4);
+  p_local = isl_printer_start_line(p_local);  
+  p_local = isl_printer_print_str(p_local, iterator_suffix);
+  p_local = isl_printer_print_ast_expr(p_local, iterator);
+  p_local = isl_printer_print_str(p_local, " = ");
+  p_local = isl_printer_print_ast_expr(p_local, init);
+  p_local = isl_printer_print_str(p_local, ";");
+  p_local = isl_printer_end_line(p_local);
+  text = isl_printer_get_str(p_local);
+  text_lines.push_back(text);
+  p_local = isl_printer_flush(p_local);
+
+  if (data->inter == -1)
+    data->outer_for_logic.insert(data->outer_for_logic.begin(), text_lines.begin(), text_lines.end());
+  else if (data->inter == 0)
+    data->inter_for_logic.insert(data->inter_for_logic.begin(), text_lines.begin(), text_lines.end());
+  else if (data->inter == 1)
+    data->intra_for_logic.insert(data->intra_for_logic.begin(), text_lines.begin(), text_lines.end());
+
+  isl_ast_expr_free(iterator);
+  isl_ast_expr_free(init);
+  isl_ast_expr_free(cond);
+  isl_ast_expr_free(ub);
+
+  p_local = isl_printer_indent(p_local, -4);
+
+  body = isl_ast_node_for_get_body(node);
+  p = isl_ast_node_print(body, p, print_options);
+  isl_ast_node_free(body);
+
+  return p;
+}                                                
+
+static void extract_double_buffer_module_intel_data(
+  struct autosa_hw_module *module, int boundary, 
+  struct print_db_module_intel_data *data)
+{
+  isl_ast_print_options *print_options;
+  isl_ctx *ctx = module->kernel->ctx;
+  isl_printer *p_for, *p_user, *p;
+  const char *for_logic, *user_logic;
+
+  /* Outer module */
+  data->inter = -1;
+  p = isl_printer_to_str(ctx);
+  p = isl_printer_set_output_format(p, ISL_FORMAT_C);
+  p_for = isl_printer_to_str(ctx);
+  p_for = isl_printer_set_output_format(p_for, ISL_FORMAT_C);
+  p_user = isl_printer_to_str(ctx);
+  p_user = isl_printer_set_output_format(p_user, ISL_FORMAT_C);
+  data->p_for = p_for;
+  data->p_user = p_user;
+  data->outer_for_level = 0;
+
+  /* Count the for level first. */
+  print_options = isl_ast_print_options_alloc(ctx);
+  print_options = isl_ast_print_options_set_print_for(print_options,
+                                                      &count_module_for, data);
+  if (!boundary)
+    p = isl_ast_node_print(module->device_tree, p, print_options);
+  else
+    p = isl_ast_node_print(module->boundary_tree, p, print_options);  
+
+  /* Extract the for logic. */
+  data->p_for = isl_printer_indent(data->p_for, 4 * data->outer_for_level);
+  print_options = isl_ast_print_options_alloc(ctx);
+//  print_options = isl_ast_print_options_set_print_user(print_options,
+                                                       //&extract_module_stmt, data);
+  print_options = isl_ast_print_options_set_print_for(print_options,
+                                                      &extract_module_for, data);
+  if (!boundary)
+    p = isl_ast_node_print(module->device_tree, p, print_options);
+  else
+    p = isl_ast_node_print(module->boundary_tree, p, print_options);
+  isl_printer_free(p);  
+  isl_printer_free(data->p_for);
+  isl_printer_free(data->p_user);
+
+  /* Intra module */
+  data->inter = 0;
+  p = isl_printer_to_str(ctx);
+  p = isl_printer_set_output_format(p, ISL_FORMAT_C);
+  p_for = isl_printer_to_str(ctx);
+  p_for = isl_printer_set_output_format(p_for, ISL_FORMAT_C);
+  p_user = isl_printer_to_str(ctx);
+  p_user = isl_printer_set_output_format(p_user, ISL_FORMAT_C);
+  data->p_for = p_for;
+  data->p_user = p_user;
+  data->intra_for_level = 0;
+
+  /* Count the for level first. */
+  print_options = isl_ast_print_options_alloc(ctx);
+  print_options = isl_ast_print_options_set_print_for(print_options,
+                                                      &count_module_for, data);
+  p = isl_ast_node_print(module->intra_tree, p, print_options);  
+
+  /* Extract the for logic. */
+  data->p_for = isl_printer_indent(data->p_for, 4 * data->intra_for_level);
+  print_options = isl_ast_print_options_alloc(ctx);
+//  print_options = isl_ast_print_options_set_print_user(print_options,
+                                                       //&extract_module_stmt, data);
+  print_options = isl_ast_print_options_set_print_for(print_options,
+                                                      &extract_module_for, data);  
+  p = isl_ast_node_print(module->intra_tree, p, print_options);  
+  isl_printer_free(p);  
+  isl_printer_free(data->p_for);
+  isl_printer_free(data->p_user);
+
+  /* Inter module */
+  data->inter = 1;
+  p = isl_printer_to_str(ctx);
+  p = isl_printer_set_output_format(p, ISL_FORMAT_C);
+  p_for = isl_printer_to_str(ctx);
+  p_for = isl_printer_set_output_format(p_for, ISL_FORMAT_C);
+  p_user = isl_printer_to_str(ctx);
+  p_user = isl_printer_set_output_format(p_user, ISL_FORMAT_C);
+  data->p_for = p_for;
+  data->p_user = p_user;
+  data->inter_for_level = 0;
+
+  /* Count the for level first. */
+  print_options = isl_ast_print_options_alloc(ctx);
+  print_options = isl_ast_print_options_set_print_for(print_options,
+                                                      &count_module_for, data);
+  if (!boundary)
+    p = isl_ast_node_print(module->inter_tree, p, print_options);
+  else
+    p = isl_ast_node_print(module->boundary_inter_tree, p, print_options);
+
+  /* Extract the for logic. */
+  data->p_for = isl_printer_indent(data->p_for, 4 * data->inter_for_level);
+  print_options = isl_ast_print_options_alloc(ctx);
+//  print_options = isl_ast_print_options_set_print_user(print_options,
+                                                       //&extract_module_stmt, data);
+  print_options = isl_ast_print_options_set_print_for(print_options,
+                                                      &extract_module_for, data);
+  if (!boundary)
+    p = isl_ast_node_print(module->inter_tree, p, print_options);
+  else
+    p = isl_ast_node_print(module->boundary_inter_tree, p, print_options);
+  isl_printer_free(p);  
+  isl_printer_free(data->p_for);
+  isl_printer_free(data->p_user);
+}
+
+/* Double buffer module on Intel devices needs to be handled specially.
+ * First, we will change the buffer to 
+ * local_buffer[2][...][...].
+ * Intel OpenCL compiler can't handle local_buffer_ping/local_buffer_pong properly.
+ * Specifically, when handling a code structure:
+ * [outer for loops]
+ * for ...
+ *   for ...
+ * [outer for loops]
+ * { 
+ *   if (arb) {
+ *     ld(local_buffer_ping, ld_en);
+ *     st(local_buffer_pong, st_en);
+ *   else {
+ *     ld(local_buffer_pong, ld_en);
+ *     st(local_buffer_ping, st_en);
+ *   }
+ *   [state handle logic]
+ *   arb = !arb;
+ *   [state handle logic]
+ * }
+ * [last batch]
+ * if (arb) {
+ *   st(local_buffer_pong, st_en);
+ * } else {
+ *   st(local_buffer_ping, st_en);
+ * }
+ * [last batch]
+ * We will convert it to a new code structure:
+ * while (1) {
+ *   if (ld_en) {
+ *     [inlined logic]
+ *     ld(local_buffer[arb][...]);
+ *     [inlined logic]
+ *   } 
+ *   if (st_en) {
+ *     [inlined logic]
+ *     st(local_buffer[!arb][...]);
+ *     [inlined logic]
+ *   }
+ *   [state handle logic]
+ *   arb = !arb;
+ *   ld_en = 1;
+ *   st_en = 1;
+ *   [state handle logic]
+ *   [outer for loops]
+ *   outer_iter0++;
+ *   if (outer_iter0 == ...) {
+ *     outer_iter0 = 0;
+ *     [last batch]
+ *     ld_en = 0;
+ *     [last batch]
+ *   }
+ *   [outer for loops]
+ * }
+ * 
+ * Note that this only works if each for loop structure is a perfectly 
+ * nested loop so that we could convert to a while loop.
+ */
+static __isl_give isl_printer *print_double_buffer_module_intel(
+  __isl_take isl_printer *p, struct autosa_hw_module *module,
+  struct autosa_prog *prog, struct hls_info *hls, int boundary)
+{
+  struct print_db_module_intel_data print_data;
+
+  /* Extract the code snippets. */
+  extract_double_buffer_module_intel_data(module, boundary, &print_data);
+
+  /* Print header */
+  p = isl_printer_start_line(p);
+  p = isl_printer_print_str(p, "/* Module Definition */");
+  p = isl_printer_end_line(p);
+
+  print_module_headers_intel(prog, module, hls, -1, boundary);
+  p = print_str_new_line(p, "{");
+  p = isl_printer_indent(p, 4);
+
+  /* Print variables */
+  p = print_str_new_line(p, "/* Variable Declaration */");
+  p = print_double_buffer_module_vars_intel(p, module, hls, &print_data);
+  p = print_str_new_line(p, "/* Variable Declaration */");
+  p = isl_printer_end_line(p);
+
+  /* Print content */
+  p = print_str_new_line(p, "while (1) {");
+  p = isl_printer_indent(p, 4);
+  
+  /* Print inter_trans */
+  p = print_str_new_line(p, "if (inter_trans_en) {");
+  p = isl_printer_indent(p, 4);
+  /* Print the module logic */
+  // TODO
+  /* Print the loop counter */  
+  for (int i = 0; i < print_data.inter_for_logic.size(); i++) {    
+    p = isl_printer_start_line(p);
+    p = isl_printer_print_str(p, print_data.inter_for_logic[i]);
+  }
+  p = isl_printer_indent(p, 4 * print_data.inter_for_level);
+  p = print_str_new_line(p, "inter_done = 1;");
+  p = print_str_new_line(p, "inter_trans_en = 0;");
+  for (int i = 0; i < print_data.inter_for_level; i++) {
+    p = isl_printer_indent(p, -4);
+    p = print_str_new_line(p, "}");
+  }
+  
+  p = isl_printer_indent(p, -4);
+  p = print_str_new_line(p, "}");
+
+  /* Print intra_trans */
+  p = print_str_new_line(p, "if (intra_trans_en) {");
+  p = isl_printer_indent(p, 4);
+  /* Print the module logic */
+  // TODO
+  /* Print the loop counter */
+  for (int i = 0; i < print_data.intra_for_logic.size(); i++) {
+    p = isl_printer_start_line(p);
+    p = isl_printer_print_str(p, print_data.intra_for_logic[i]);
+  }
+  p = isl_printer_indent(p, 4 * print_data.intra_for_level);
+  p = print_str_new_line(p, "intra_done = 1;");
+  p = print_str_new_line(p, "intra_trans_en = 0;");
+  for (int i = 0; i < print_data.intra_for_level; i++) {
+    p = isl_printer_indent(p, -4);
+    p = print_str_new_line(p, "}");
+  }
+
+  p = isl_printer_indent(p, -4);
+  p = print_str_new_line(p, "}");
+
+  /* Print state_handle */
+  p = print_str_new_line(p, "if (inter_done && intra_done) {");
+  p = isl_printer_indent(p, 4);
+  p = print_str_new_line(p, "intra_trans_en = 1;");
+  p = print_str_new_line(p, "inter_trans_en = 1;");
+  p = print_str_new_line(p, "intra_done = 1;");
+  p = print_str_new_line(p, "inter_done = 1;");
+  p = print_str_new_line(p, "arb = !arb;");
+  /* Print the loop counter */
+  for (int i = 0; i < print_data.outer_for_logic.size(); i++) {
+    p = isl_printer_start_line(p);
+    p = isl_printer_print_str(p, print_data.outer_for_logic[i]);
+  }
+  p = isl_printer_indent(p, 4 * print_data.outer_for_level);
+  p = print_str_new_line(p, module->in? "inter_trans_en = 0;" : "intra_trans_en = 0;");
+  for (int i = 0; i < print_data.outer_for_level; i++) {
+    p = isl_printer_indent(p, -4);
+    p = print_str_new_line(p, "}");
+  }
+
+  p = isl_printer_indent(p, -4);
+  p = print_str_new_line(p, "}");
+
+  p = isl_printer_indent(p, -4);
+  p = print_str_new_line(p, "}");
+
+  p = isl_printer_indent(p, -4);
+  p = print_str_new_line(p, "}");
+  p = isl_printer_start_line(p);
+  p = isl_printer_print_str(p, "/* Module Definition */");
+  p = isl_printer_end_line(p);
+
+  return p;
+}
+
 static __isl_give isl_printer *autosa_print_host_code(__isl_take isl_printer *p,
                                                       struct autosa_prog *prog, __isl_keep isl_ast_node *tree,
                                                       struct autosa_hw_module **modules, int n_modules,
@@ -2564,33 +3075,41 @@ static __isl_give isl_printer *autosa_print_host_code(__isl_take isl_printer *p,
   p_module = isl_printer_set_output_format(p_module, ISL_FORMAT_C);
 
   for (int i = 0; i < n_modules; i++)
-  {
-    if (modules[i]->is_filter && modules[i]->is_buffer)
-    {
-      /* Print out the definitions for inter_trans and intra_trans function calls. */
-      /* Intra transfer function */
-      p_module = autosa_print_intra_trans_module(p_module, modules[i], prog, hls, 0);
-
-      /* Inter transfer function */
-      p_module = autosa_print_inter_trans_module(p_module, modules[i], prog, hls, 0);
-      if (modules[i]->boundary)
-        p_module = autosa_print_inter_trans_module(p_module, modules[i], prog, hls, 1);
-    }
-
-    p_module = autosa_print_default_module(p_module, modules[i], prog, hls, 0);
-
-    if (modules[i]->boundary)
-    {
-      /* Print out the definitions for boundary trans function calls. */
-      p_module = autosa_print_default_module(p_module, modules[i], prog, hls, 1);
-    }
-    if (modules[i]->n_pe_dummy_modules > 0)
-    {
-      /* Print out the definitions for pe dummy function calls. */
-      for (int j = 0; j < modules[i]->n_pe_dummy_modules; j++)
+  {   
+    if (modules[i]->double_buffer) {
+      // TODO: Implement a different codegen for double buffer on Intel devices.
+      p_module = print_double_buffer_module_intel(p_module, modules[i], prog, hls, 0);
+      if (modules[i]->boundary) {
+        p_module = print_double_buffer_module_intel(p_module, modules[i], prog, hls, 1);
+      }
+    } else {
+      if (modules[i]->is_filter && modules[i]->is_buffer)
       {
-        p_module = autosa_print_default_pe_dummy_module(
-            p_module, modules[i]->pe_dummy_modules[j], prog, hls, 0);
+        /* Print out the definitions for inter_trans and intra_trans function calls. */
+        /* Intra transfer function */
+        p_module = autosa_print_intra_trans_module(p_module, modules[i], prog, hls, 0);
+  
+        /* Inter transfer function */
+        p_module = autosa_print_inter_trans_module(p_module, modules[i], prog, hls, 0);
+        if (modules[i]->boundary)
+          p_module = autosa_print_inter_trans_module(p_module, modules[i], prog, hls, 1);
+      }
+  
+      p_module = autosa_print_default_module(p_module, modules[i], prog, hls, 0);
+  
+      if (modules[i]->boundary)
+      {
+        /* Print out the definitions for boundary trans function calls. */
+        p_module = autosa_print_default_module(p_module, modules[i], prog, hls, 1);
+      }
+      if (modules[i]->n_pe_dummy_modules > 0)
+      {
+        /* Print out the definitions for pe dummy function calls. */
+        for (int j = 0; j < modules[i]->n_pe_dummy_modules; j++)
+        {
+          p_module = autosa_print_default_pe_dummy_module(
+              p_module, modules[i]->pe_dummy_modules[j], prog, hls, 0);
+        }
       }
     }
   }
