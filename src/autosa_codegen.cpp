@@ -5985,7 +5985,7 @@ struct autosa_at_domain_data
   /* Inside a "unroll" for loop */
   int in_unroll_for;
   /* Inside a for loop */
-  int in_for;
+  int in_for;  
 };
 
 /* Internal data structure for the index and AST expression transformation
@@ -6977,7 +6977,7 @@ static void autosa_at_domain_data_init(
   data->under_pipeline = 0;
   data->in_unroll_for = 0;
   data->in_pipeline_for = 0;
-  data->in_for = 0;
+  data->in_for = 0;  
   data->boundary = 0;
   data->pe_dummy = 0;
   data->pe_dummy_module = NULL;
@@ -8617,11 +8617,11 @@ static __isl_give isl_id *before_for_module(
   id = isl_id_alloc(isl_ast_build_get_ctx(build), "", node_info);
   id = isl_id_set_free_user(id, free_ast_node_userinfo);
 
-  if (!data->in_for)
-  {
-    data->in_for = 1;
-    node_info->is_outermost_for = 1;
-  }
+  //if (!data->in_for)
+  //{
+  //  data->in_for = 1;
+  //  node_info->is_outermost_for = 1;    
+  //}
 
   return id;
 }
@@ -8636,10 +8636,12 @@ static __isl_give isl_ast_node *after_for_module(
 
   id = isl_ast_node_get_annotation(node);
   node_info = (struct autosa_ast_node_userinfo *)isl_id_get_user(id);
-  if (node_info->is_outermost_for)
-  {
-    data->in_for = 0;
-  }
+  
+  //if (node_info->is_outermost_for)
+  //{
+    //node_info->is_outermost_for = 0;
+    //data->in_for = 0;    
+  //}
 
   isl_id_free(id);
 
@@ -8681,47 +8683,443 @@ static __isl_give isl_ast_node *autosa_generate_ast_from_schedule(
   return tree;
 }
 
-static __isl_give isl_schedule_node *insert_coalesce_mark(
-    __isl_take isl_schedule_node *node, void *user)
+//static __isl_give isl_schedule_node *insert_coalesce_mark(
+//    __isl_take isl_schedule_node *node, void *user)
+//{
+//  if (isl_schedule_node_get_type(node) == isl_schedule_node_band)
+//  {
+//    /* Examine if there is any other band node above this node. */
+//    isl_bool is_top = isl_bool_true;
+//    isl_schedule_node *visit_node = isl_schedule_node_copy(node);
+//    while (isl_schedule_node_has_parent(visit_node))
+//    {
+//      visit_node = isl_schedule_node_parent(visit_node);
+//      if (isl_schedule_node_get_type(visit_node) == isl_schedule_node_band)
+//      {
+//        is_top = isl_bool_false;
+//        break;
+//      }
+//    }
+//    isl_schedule_node_free(visit_node);
+//
+//    if (is_top)
+//    {
+//      /* Insert the mark. */
+//      isl_ctx *ctx;
+//      isl_id *id;
+//
+//      ctx = isl_schedule_node_get_ctx(node);
+//      id = isl_id_alloc(ctx, "hls_coalesce", NULL);
+//      node = isl_schedule_node_insert_mark(node, id);
+//    }
+//  }
+//  return node;
+//}
+
+///* Take in the schedule tree described by "schedule".
+// * Insert a "hls_coalesce" mark above the top-level band node. 
+// */
+//static __isl_give isl_schedule *insert_top_loop_coalesce(__isl_take isl_schedule *schedule)
+//{
+//  schedule = isl_schedule_map_schedule_node_bottom_up(schedule,
+//                                                      &insert_coalesce_mark, NULL);
+//  return schedule;
+//}
+
+struct loop_infinitize_check_data {
+  /* Indicates if we are checking the outermost loop bands. */
+  isl_bool outer_for;    
+  struct autosa_hw_module *module;
+  /* Indicates if we have found any infinitizable loop. */
+  isl_bool found;
+};
+
+struct iterator_used_data {  
+  isl_ast_expr *iterator;
+  isl_bool used;
+  struct autosa_hw_module *module;
+  isl_bool has_inter_intra;
+};
+
+/* Search if the isl_ast_expr_id "key" exists in the ast_expr "expr".
+ */
+static isl_bool search_expr_id(__isl_keep isl_ast_expr *expr, __isl_keep isl_ast_expr *key)
 {
-  if (isl_schedule_node_get_type(node) == isl_schedule_node_band)
-  {
-    /* Examine if there is any other band node above this node. */
-    isl_bool is_top = isl_bool_true;
-    isl_schedule_node *visit_node = isl_schedule_node_copy(node);
-    while (isl_schedule_node_has_parent(visit_node))
-    {
-      visit_node = isl_schedule_node_parent(visit_node);
-      if (isl_schedule_node_get_type(visit_node) == isl_schedule_node_band)
-      {
-        is_top = isl_bool_false;
-        break;
-      }
-    }
-    isl_schedule_node_free(visit_node);
+  enum isl_ast_expr_type type;
 
-    if (is_top)
-    {
-      /* Insert the mark. */
-      isl_ctx *ctx;
-      isl_id *id;
-
-      ctx = isl_schedule_node_get_ctx(node);
-      id = isl_id_alloc(ctx, "hls_coalesce", NULL);
-      node = isl_schedule_node_insert_mark(node, id);
+  type = isl_ast_expr_get_type(expr);
+  if (type == isl_ast_expr_id) {
+    return isl_ast_expr_is_equal(expr, key);
+  } else if (type == isl_ast_expr_int) {
+    return isl_bool_false;
+  } else if (type == isl_ast_expr_op) {
+    isl_size n_arg = isl_ast_expr_op_get_n_arg(expr);
+    for (int i = 0; i < n_arg; i++) {
+      isl_ast_expr *arg = isl_ast_expr_op_get_arg(expr, i);
+      isl_bool found = search_expr_id(arg, key);
+      isl_ast_expr_free(arg);
+      if (found == isl_bool_true)
+        return isl_bool_true;
     }
   }
-  return node;
+
+  return isl_bool_false;
 }
 
-/* Take in the schedule tree described by "schedule".
- * Insert a "hls_coalesce" mark above the top-level band node. 
- */
-static __isl_give isl_schedule *insert_top_loop_coalesce(__isl_take isl_schedule *schedule)
+struct search_id_to_expr_id_data {
+  bool found;
+  isl_ast_expr *iterator;
+};
+
+isl_stat search_id_to_expr_id(__isl_take isl_id *key, 
+  __isl_take isl_ast_expr *val, void *user)
 {
-  schedule = isl_schedule_map_schedule_node_bottom_up(schedule,
-                                                      &insert_coalesce_mark, NULL);
-  return schedule;
+  struct search_id_to_expr_id_data *data = (struct search_id_to_expr_id_data *)user;
+  data->found = (int)search_expr_id(val, data->iterator) || data->found;
+
+//#ifdef _DEBUG
+//  isl_printer *pd = isl_printer_to_file(isl_ast_expr_get_ctx(val), stdout);
+//  pd = isl_printer_set_output_format(pd, ISL_FORMAT_C);
+//  pd = isl_printer_print_ast_expr(pd, val);
+//  pd = isl_printer_end_line(pd);
+//  isl_printer_free(pd);
+//#endif
+
+  isl_id_free(key);
+  isl_ast_expr_free(val);
+  return isl_stat_ok;
+}
+
+static isl_bool iterator_used(__isl_keep isl_ast_node *node, void *user)
+{
+  struct iterator_used_data *data = (struct iterator_used_data *)user;
+  enum isl_ast_node_type type;
+
+//#ifdef _DEBUG
+//  isl_printer *pd = isl_printer_to_file(isl_ast_node_get_ctx(node), stdout);
+//  pd = isl_printer_set_output_format(pd, ISL_FORMAT_C);
+//  pd = isl_printer_print_ast_node(pd, node);
+//  pd = isl_printer_print_ast_expr(pd, data->iterator);
+//  pd = isl_printer_end_line(pd);
+//  isl_printer_free(pd);
+//#endif
+
+  type = isl_ast_node_get_type(node);
+  if (type == isl_ast_node_for) {
+    isl_ast_expr *expr;
+    isl_bool found = isl_bool_false;    
+
+    /* Init */
+    expr = isl_ast_node_for_get_init(node);
+    found = search_expr_id(expr, data->iterator);
+    isl_ast_expr_free(expr);
+    if (found) {
+      data->used = isl_bool_true;
+      return isl_bool_false;
+    }
+
+    /* Cond */
+    expr = isl_ast_node_for_get_cond(node);
+    found = search_expr_id(expr, data->iterator);
+    isl_ast_expr_free(expr);
+    if (found) {
+      data->used = isl_bool_true;
+      return isl_bool_false;
+    }    
+  } else if (type == isl_ast_node_if) {
+    isl_ast_expr *expr;
+    isl_bool found = isl_bool_false;
+
+    /* Cond */
+    expr = isl_ast_node_if_get_cond(node);
+    found = search_expr_id(expr, data->iterator);
+    isl_ast_expr_free(expr);
+    if (found) {
+      data->used = isl_bool_true;
+      return isl_bool_false;
+    }
+  } else if (type == isl_ast_node_block) {
+    /* We do nothing here. */
+    return isl_bool_true;
+  } else if (type == isl_ast_node_mark) {
+    /* We do nothing here. */
+    return isl_bool_true;
+  } else if (type == isl_ast_node_user) {
+    isl_ast_expr *expr;
+    isl_bool found = isl_bool_false;    
+    isl_id *id;
+    struct autosa_kernel_stmt *stmt;
+
+    id = isl_ast_node_get_annotation(node);
+    stmt = (struct autosa_kernel_stmt *)isl_id_get_user(id);
+    isl_id_free(id);
+
+    if (stmt->type == AUTOSA_KERNEL_STMT_DOMAIN) 
+    {
+      /* TODO: At present, we only test if the array index contains the iterator.
+       */
+      isl_id_to_ast_expr *ref2expr = stmt->u.d.ref2expr;
+      struct search_id_to_expr_id_data local_data;
+      local_data.found = isl_bool_false;
+      local_data.iterator = data->iterator;
+      isl_id_to_ast_expr_foreach(ref2expr, &search_id_to_expr_id, &local_data);      
+      if (local_data.found) {
+        data->used = isl_bool_true;
+        return isl_bool_false;
+      }
+    } 
+    else if (stmt->type == AUTOSA_KERNEL_STMT_IO_MODULE_CALL_INTER_TRANS ||
+             stmt->type == AUTOSA_KERNEL_STMT_IO_MODULE_CALL_INTRA_TRANS ||
+             stmt->type == AUTOSA_KERNEL_STMT_IO_MODULE_CALL_INTER_INTRA ||
+             stmt->type == AUTOSA_KERNEL_STMT_IO_MODULE_CALL_INTRA_INTER)
+    {
+      isl_ast_node *nested_node;
+      struct iterator_used_data nested_used_data;
+
+      data->has_inter_intra = isl_bool_true;
+
+      /* Search under the nested AST tree. */
+      nested_node = data->module->inter_tree;      
+      nested_used_data.iterator = data->iterator;
+      nested_used_data.used = data->used;
+      nested_used_data.module = data->module;
+      isl_ast_node_foreach_descendant_top_down(nested_node, &iterator_used, 
+        &nested_used_data);
+      found = nested_used_data.used;
+      if (found) {
+        data->used = isl_bool_true;
+        return isl_bool_false;
+      }
+
+      /* Search under the nested AST tree. */
+      nested_node = data->module->intra_tree;      
+      nested_used_data.iterator = data->iterator;
+      nested_used_data.used = data->used;
+      nested_used_data.module = data->module;
+      isl_ast_node_foreach_descendant_top_down(nested_node, &iterator_used, 
+        &nested_used_data);
+      found = nested_used_data.used;
+      if (found) {
+        data->used = isl_bool_true;
+        return isl_bool_false;
+      }      
+    }    
+  }
+
+  return isl_bool_true;
+}
+
+static isl_bool loop_infinitize_check(__isl_keep isl_ast_node *node, void *user)
+{
+  struct loop_infinitize_check_data *data = (struct loop_infinitize_check_data *)user;
+  enum isl_ast_node_type type;
+
+//#ifdef _DEBUG
+//  isl_printer *pd = isl_printer_to_file(isl_ast_node_get_ctx(node), stdout);
+//  pd = isl_printer_set_output_format(pd, ISL_FORMAT_C);
+//  pd = isl_printer_print_ast_node(pd, node);
+//  isl_printer_free(pd);
+//#endif
+
+  /* Only check the for loops in the outermost loop band. */
+  if (!data->outer_for)
+    return isl_bool_false;
+
+  type = isl_ast_node_get_type(node);
+  if (type == isl_ast_node_block || type == isl_ast_node_user) {
+    data->outer_for = isl_bool_false;
+    return isl_bool_false;
+  }
+  if (type == isl_ast_node_for && !isl_ast_node_for_is_degenerate(node)) {
+    isl_ast_expr *iterator;
+    isl_ast_node *body;
+    isl_bool used = isl_bool_false;
+    struct iterator_used_data used_data;
+    isl_id *id;
+    
+    iterator = isl_ast_node_for_get_iterator(node);
+    body = isl_ast_node_for_get_body(node);
+    /* Examine if the iterator exists in any AST expressions in the sub tree. */
+    used_data.iterator = iterator;
+    used_data.used = isl_bool_false;
+    used_data.module = data->module;
+    used_data.has_inter_intra = isl_bool_false;
+    isl_ast_node_foreach_descendant_top_down(body, &iterator_used, &used_data); // TODO
+
+    if (!used_data.used) {
+      /* This loop is legal to be infinitized. */      
+      struct autosa_ast_node_userinfo *node_info;
+
+      id = isl_ast_node_get_annotation(node);
+      if (id) {
+        node_info = (struct autosa_ast_node_userinfo *)isl_id_get_user(id);
+        if (node_info) {
+          node_info->is_infinitize_legal = 1;
+          if (!data->found) {
+            node_info->is_first_infinitizable_loop = 1;
+            data->found = isl_bool_true;
+          }
+
+          if (used_data.has_inter_intra) {
+            isl_space *space;
+            int n;
+            isl_printer *p_str;
+            const char *iterator_str;
+            /* Update the inter/intra_trans module space. 
+             * Remove the corresponding iterators from the sub module space. 
+             */                  
+            p_str = isl_printer_to_str(isl_id_get_ctx(id));
+            p_str = isl_printer_set_output_format(p_str, ISL_FORMAT_C);
+            p_str = isl_printer_print_ast_expr(p_str, iterator);
+            iterator_str = isl_printer_get_str(p_str);
+            isl_printer_free(p_str);
+
+            space = data->module->inter_space;
+            n = isl_space_find_dim_by_name(space, isl_dim_set, iterator_str);
+            if (n >= 0) 
+              space = isl_space_drop_dims(space, isl_dim_set, n, 1);
+            data->module->inter_space = space;
+
+            space = data->module->intra_space;
+            n = isl_space_find_dim_by_name(space, isl_dim_set, iterator_str);
+            if (n >= 0)
+              space = isl_space_drop_dims(space, isl_dim_set, n, 1);
+            data->module->intra_space = space;
+          }
+        }
+        isl_id_free(id);
+      }      
+    }
+
+    isl_ast_expr_free(iterator);
+    isl_ast_node_free(body);
+  }  
+
+  return isl_bool_true;
+}
+
+/* Try to apply the loop infinitization optimization.
+ * This optimization is useful for Intel devices since we can remove some 
+ * for loops with a simple while (1) loop to reduce the loop control overheads.
+ * We will examine the outermost for loop band from outside to inside.
+ * For each for loop, we exmaine if the loop iterator appears in any AST
+ * expression below. If not, this loop will be marked to be infinitized later.
+ * When printing out for loops later, such loops will be skipped. 
+ * Since we use the nested AST for module ASTs, we examine the 
+ * module->tree.
+ * If we encounter any AST node calling io_module.inter_trans/io_module.intra_trans,
+ * we will search from module->intra_tree and module->inter_tree
+ * else, we will search from module->device_tree.
+ */
+static void loop_infinitization_optimize(struct autosa_hw_module *module)
+{
+  if (module->double_buffer || module->to_mem)
+    return;
+  
+  if (module->device_tree) {
+    isl_ast_node *node = module->device_tree;
+    struct loop_infinitize_check_data data = {isl_bool_true, module, isl_bool_false};
+    isl_ast_node_foreach_descendant_top_down(node, &loop_infinitize_check, &data);
+  }
+  if (module->boundary_tree) {
+    isl_ast_node *node = module->boundary_tree;
+    struct loop_infinitize_check_data data = {isl_bool_true, module, isl_bool_false};
+    isl_ast_node_foreach_descendant_top_down(node, &loop_infinitize_check, &data);    
+  }
+}
+
+/* Mark all for loop as visited.  
+ */
+static isl_bool update_for_visit(__isl_keep isl_ast_node *node, void *user)
+{
+  enum isl_ast_node_type type;
+
+  type = isl_ast_node_get_type(node);
+  if (type == isl_ast_node_for) {
+    struct autosa_ast_node_userinfo *info;
+    isl_id *id;
+
+    id = isl_ast_node_get_annotation(node);
+    if (id) {
+      info = (struct autosa_ast_node_userinfo *)isl_id_get_user(id);
+      info->visited = 1;
+    }
+    isl_id_free(id);
+  }
+
+  return isl_bool_true;
+}
+
+/* If the ast node is a for loop node, we will first extract the annonated 
+ * userinfo from the node. If the loop is marked to be infinitized, we will 
+ * skip this loop.
+ * Otherwise, since we visit the AST in top-down manner, this is the outermost 
+ * loop to be added with the loop_coalesce pragma.
+ * We will mark all the chidren nodes of this node as visited.
+ * Next time when we first meet an unvisited for node, that will be the other
+ * outermost loop to be annodated. 
+ */
+static isl_bool loop_coalesce_update(__isl_keep isl_ast_node *node, void *user)
+{
+  //struct loop_coalesce_update_data *data = (struct loop_coalesce_update_data *)user;
+  enum isl_ast_node_type type;
+
+  type = isl_ast_node_get_type(node);
+  if (type == isl_ast_node_for) {
+    struct autosa_ast_node_userinfo *info;
+    isl_id *id;
+    
+    id = isl_ast_node_get_annotation(node);
+    if (id) {
+      info = (struct autosa_ast_node_userinfo *)isl_id_get_user(id);
+      if (info && !info->is_infinitize_legal && !info->visited) {        
+        /* This is the outermost loop to be coalesced. 
+         * We will then visit all the children nodes and add the visit flag.
+         */
+        info->visited = 1;
+        info->is_outermost_for = 1;
+        /* Update the children. */
+        isl_ast_node_foreach_descendant_top_down(node, &update_for_visit, NULL);        
+      }
+      isl_id_free(id);
+    }
+  } 
+
+  return isl_bool_true;
+}
+
+/* This function will mark the outermost for loop which is not infinitized 
+ * to be added with "loop_coalesce" pragma later in the generated OpenCL code.
+ * We will examine all the AST trees to be printed for this module.
+ */
+static void loop_coalesce_optimize(struct autosa_hw_module *module)
+{
+  isl_ast_node *node;
+
+  if (module->device_tree) {
+    node = module->device_tree;    
+    isl_ast_node_foreach_descendant_top_down(node, &loop_coalesce_update, NULL);
+  }
+  if (module->inter_tree)  {
+    node = module->inter_tree;
+    isl_ast_node_foreach_descendant_top_down(node, &loop_coalesce_update, NULL);
+  }
+  if (module->intra_tree) {
+    node = module->intra_tree;    
+    isl_ast_node_foreach_descendant_top_down(node, &loop_coalesce_update, NULL);
+  } 
+  if (module->boundary_outer_tree) {
+    node = module->boundary_outer_tree;    
+    isl_ast_node_foreach_descendant_top_down(node, &loop_coalesce_update, NULL);
+  }
+  if (module->boundary_inter_tree) {
+    node = module->boundary_inter_tree;    
+    isl_ast_node_foreach_descendant_top_down(node, &loop_coalesce_update, NULL);
+  }
+  if (module->boundary_tree) {
+    node = module->boundary_tree;    
+    isl_ast_node_foreach_descendant_top_down(node, &loop_coalesce_update, NULL);
+  }
 }
 
 /* There are three schedules to handle in this module:
@@ -8746,7 +9144,7 @@ isl_stat sa_filter_buffer_io_module_generate_code(struct autosa_gen *gen,
   //schedule = insert_top_loop_coalesce(schedule);
   autosa_at_domain_data_init(&data, gen);
   tree = autosa_generate_ast_from_schedule(schedule, data, gen);
-  isl_ast_node_free(tree);
+  isl_ast_node_free(tree);  
 
   if (module->boundary)
   {
@@ -8776,7 +9174,7 @@ isl_stat sa_filter_buffer_io_module_generate_code(struct autosa_gen *gen,
   schedule = module->outer_sched;
   //schedule = insert_top_loop_coalesce(schedule);
   autosa_at_domain_data_init(&data, gen);
-  tree = autosa_generate_ast_from_schedule(schedule, data, gen);
+  tree = autosa_generate_ast_from_schedule(schedule, data, gen);  
   module->tree = tree;
 
   if (module->boundary)
@@ -8788,6 +9186,19 @@ isl_stat sa_filter_buffer_io_module_generate_code(struct autosa_gen *gen,
     data.boundary = 1;
     tree = autosa_generate_ast_from_schedule(schedule, data, gen);
     isl_ast_node_free(tree);
+  }
+
+  /* Perform loop infinitization optimization. */
+  if (gen->options->target == AUTOSA_TARGET_INTEL_OPENCL && 
+      gen->options->autosa->loop_infinitize) {
+    loop_infinitization_optimize(module);
+  }
+  /* Perform loop coalesce optimization. 
+   * This step should be always after the loop infinitization opt.
+   */
+  if (gen->options->target == AUTOSA_TARGET_INTEL_OPENCL) 
+  {
+    loop_coalesce_optimize(module);    
   }
 
   return isl_stat_ok;
@@ -8842,6 +9253,19 @@ isl_stat sa_module_generate_code(struct autosa_gen *gen,
       tree = autosa_generate_ast_from_schedule(schedule, data, gen);
       isl_ast_node_free(tree);
     }
+  }
+
+  /* Perform loop infinitization optimization. */
+  if (gen->options->target == AUTOSA_TARGET_INTEL_OPENCL && 
+      gen->options->autosa->loop_infinitize) {
+    loop_infinitization_optimize(module);
+  }
+  /* Perform loop coalesce optimization. 
+   * This step should be always after the loop infinitization opt.
+   */
+  if (gen->options->target == AUTOSA_TARGET_INTEL_OPENCL) 
+  {
+    loop_coalesce_optimize(module);    
   }
 
   return isl_stat_ok;

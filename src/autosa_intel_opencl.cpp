@@ -496,14 +496,45 @@ static __isl_give isl_printer *print_for_with_coalesce(__isl_keep isl_ast_node *
   return p;
 }
 
+static __isl_give isl_printer *print_for_infinitize(__isl_keep isl_ast_node *node,
+                                                    __isl_take isl_printer *p,
+                                                    __isl_take isl_ast_print_options *print_options,
+                                                    int is_first)
+{
+  isl_ast_node *body;
+
+  if (is_first) {
+    p = isl_printer_start_line(p);
+    p = isl_printer_print_str(p, "while (1) {");    
+    p = isl_printer_end_line(p);    
+    p = isl_printer_indent(p, 2);
+  }
+
+  body = isl_ast_node_for_get_body(node);
+  p = isl_ast_node_print(body, p, print_options);
+  isl_ast_node_free(body);
+
+  if (is_first) {    
+    p = isl_printer_indent(p, -2);
+    p = isl_printer_start_line(p);
+    p = isl_printer_print_str(p, "}");
+    p = isl_printer_end_line(p);
+  }
+
+  return p;
+}                                                  
+
 static __isl_give isl_printer *print_module_for(__isl_take isl_printer *p,
                                                 __isl_take isl_ast_print_options *print_options,
                                                 __isl_keep isl_ast_node *node, void *user)
 {
   isl_id *id;
   int outermost_for;
+  int infinitize, is_first_infinitize;
 
   outermost_for = 0;
+  infinitize = 0;
+  is_first_infinitize = 0;
   id = isl_ast_node_get_annotation(node);
   if (id)
   {
@@ -511,9 +542,15 @@ static __isl_give isl_printer *print_module_for(__isl_take isl_printer *p,
     info = (struct autosa_ast_node_userinfo *)isl_id_get_user(id);
     if (info && info->is_outermost_for)
       outermost_for = 1;
+    if (info && info->is_infinitize_legal) {
+      infinitize = 1;
+      is_first_infinitize = info->is_first_infinitizable_loop;
+    }
   }
-
-  if (outermost_for)
+  
+  if (infinitize)
+    p = print_for_infinitize(node, p, print_options, is_first_infinitize);
+  else if (outermost_for)
     p = print_for_with_coalesce(node, p, print_options);
   else
     p = isl_ast_node_for_print(node, p, print_options);

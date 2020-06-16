@@ -1720,6 +1720,9 @@ struct autosa_ast_node_userinfo *alloc_ast_node_userinfo()
   info->is_pipeline = 0;
   info->is_unroll = 0;
   info->is_outermost_for = 0;
+  info->is_infinitize_legal = 0;
+  info->is_first_infinitizable_loop = 0;  
+  info->visited = 0;
 
   return info;
 }
@@ -1830,6 +1833,82 @@ error:
   return isl_stat_error;
 }
 
+/* Given a union map { kernel[] -> *[...] },
+ * return the range in the space called "type" for the kernel.
+ */
+static __isl_give isl_set *extract_config_sizes(__isl_keep isl_union_map *sizes,
+  const char *type)
+{
+  isl_space *space;
+  isl_set *dom;
+  isl_union_set *local_sizes;
+  struct autosa_extract_size_data data = {type, NULL};
+
+  if (!sizes)
+    return NULL;
+  
+  space = isl_union_map_get_space(sizes);
+  space = isl_space_set_from_params(space);
+  //space = isl_space_add_dims(space, isl_dim_set, 1);
+  space = isl_space_set_tuple_name(space, isl_dim_set, "kernel");
+  dom = isl_set_universe(space);
+//#ifdef _DEBUG
+//  isl_printer *pd = isl_printer_to_file(isl_set_get_ctx(dom), stdout);
+//  pd = isl_printer_print_set(pd, dom);
+//  pd = isl_printer_end_line(pd);
+//#endif
+
+  local_sizes = isl_union_set_apply(isl_union_set_from_set(dom),
+                                    isl_union_map_copy(sizes));
+
+//#ifdef _DEBUG
+//  pd = isl_printer_print_union_set(pd, local_sizes);
+//  pd = isl_printer_end_line(pd);
+//#endif
+  isl_union_set_foreach_set(local_sizes, &extract_size_of_type, &data);                                      
+  isl_union_set_free(local_sizes);
+  return data.res;
+}
+
+/* Given a singleton set, extract the *len elements of the single integer tuple
+ * into *sizes. 
+ *
+ * If the element value is "-1", the loop at the same position is not tiled.
+ *  
+ * If "set" is NULL, then the "sizes" array is not updated.
+ */
+static isl_stat read_config_sizes_from_set(__isl_take isl_set *set, 
+  int *sizes, int len)
+{
+  int i;
+  int dim;
+
+  if (!set)
+    return isl_stat_ok;
+
+  dim = isl_set_dim(set, isl_dim_set);
+  if (dim < len)
+    isl_die(isl_set_get_ctx(set), isl_error_invalid,
+            "fewer sizes than required", return isl_stat_error);
+
+  for (i = 0; i < len; ++i)
+  {
+    isl_val *v;
+
+    v = isl_set_plain_get_val_if_fixed(set, isl_dim_set, i);
+    if (!v)
+      goto error;
+    sizes[i] = isl_val_get_num_si(v);
+    isl_val_free(v);
+  }
+
+  isl_set_free(set);
+  return isl_stat_ok;
+error:
+  isl_set_free(set);
+  return isl_stat_error;
+}
+
 /* Add the map { kernel[id] -> type[sizes] } to gen->used-sizes 
  * if the option debug->dump_sa_sizes is set.
  */
@@ -1885,6 +1964,50 @@ int *read_default_hbm_tile_sizes(struct autosa_kernel *sa, int tile_len)
     tile_size[n] = sa->scop->options->autosa->n_hbm_port;
 
   return tile_size;
+}
+
+/* Extract user specified data pack sizes from the "data_pack_sizes" command line
+ * option, defaulting to 8, 32, 64, correponding to the upper bounds of data 
+ * pack factors at the innermost, in-between, and outermost I/O module levels.
+ * Return a pointer to the tile sizes (or NULL on error).
+ */
+int *read_data_pack_sizes(__isl_keep isl_union_map *sizes, int tile_len)
+{
+  int n;
+  int *tile_size;
+  isl_set *size;
+  isl_ctx *ctx;
+
+  ctx = isl_union_map_get_ctx(sizes);
+  tile_size = isl_alloc_array(ctx, int, tile_len);
+  if (!tile_size)
+    return NULL;
+
+  size = extract_config_sizes(sizes, "data_pack");
+//#ifdef _DEBUG
+//  isl_printer *pd = isl_printer_to_file(ctx, stdout);
+//  pd = isl_printer_print_union_map(pd, sizes);
+//  pd = isl_printer_end_line(pd);
+//  if (!size)
+//    printf("null\n");
+//  pd = isl_printer_print_set(pd, size);
+//  pd = isl_printer_end_line(pd);
+//  isl_printer_free(pd);
+//#endif
+  
+  if (isl_set_dim(size, isl_dim_set) < tile_len) 
+  {
+    free(tile_size);
+    isl_set_free(size);
+    return NULL;
+  }
+  if (read_config_sizes_from_set(size, tile_size, tile_len) < 0)
+    goto error;
+
+  return tile_size;
+error:
+  free(tile_size);
+  return NULL;
 }
 
 /* Extract user specified "sa_tile" sizes from the "sa_sizes" command line option,

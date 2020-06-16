@@ -948,6 +948,10 @@ struct autosa_ast_node_userinfo
   int is_pipeline;
   int is_unroll;
   int is_outermost_for;
+  int is_infinitize_legal;
+  int is_first_infinitizable_loop;  
+  /* Temporary variable used in AST traversal. */
+  bool visited;
 };
 
 /* The current index is such that if you add "shift",
@@ -1134,6 +1138,7 @@ int *read_default_simd_tile_sizes(struct autosa_kernel *kernel, int tile_len);
 int read_space_time_kernel_id(__isl_keep isl_union_map *sizes);
 int *read_array_part_L2_tile_sizes(struct autosa_kernel *kernel, int tile_len);
 int *read_default_array_part_L2_tile_sizes(struct autosa_kernel *kernel, int tile_len);
+int *read_data_pack_sizes(__isl_keep isl_union_map *sizes, int tile_len);
 
 /* AutoSA latency and resource estimation */
 isl_stat sa_extract_loop_info(struct autosa_gen *gen, struct autosa_hw_module *module);

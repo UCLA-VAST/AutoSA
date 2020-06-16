@@ -45,6 +45,8 @@ extern "C"
 		int max_local_memory;
 		/* Enable data pack for transferring data */
 		int data_pack;
+		/* Data pack factors at different I/O levels. */
+		char *data_pack_sizes;
 		/* Enable credit control between different array partitions */
 		int credit_control;
 		/* Enable two-level buffering in I/O modules */
@@ -63,6 +65,8 @@ extern "C"
 		int verbose;
 		/* Insert HLS dependence pragma */
 		int insert_hls_dependence;
+		/* Enable loop infinitization optimization. Only for Intel. */
+		int loop_infinitize;
 	};
 
 	struct ppcg_options

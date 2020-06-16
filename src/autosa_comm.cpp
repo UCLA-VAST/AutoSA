@@ -2664,9 +2664,13 @@ static isl_bool update_group_simd(__isl_keep isl_schedule_node *node, void *user
  * to be vectorized, the data pack factor should also be multiples of the SIMD factor.
  */
 static isl_stat compute_io_group_data_pack(struct autosa_kernel *kernel,
-                                           struct autosa_array_ref_group *group, struct autosa_gen *gen, int max_n_lane)
+                                           struct autosa_array_ref_group *group, 
+                                           struct autosa_gen *gen, 
+                                           int max_n_lane)
 {
   isl_schedule_node *node;
+  isl_union_map *sizes;
+  int *data_pack_ubs = NULL;
   struct update_group_simd_data data;
   int ele_size = group->array->size; // bytes
   /* Given the maximal DRAM port width as 64 Bytes, 
@@ -2717,18 +2721,28 @@ static isl_stat compute_io_group_data_pack(struct autosa_kernel *kernel,
    * Furthermore, for L1 buffers reside at the io_L1 level (beside PEs), we 
    * furtehr restrain the FIFO widths to be no more than 64 bits to mitigate 
    * the potential routing congestion.
-   * TODO: make these factors into autosa_config.
    */
+    /* Parse the data pack settings. */
+  sizes = extract_sizes_from_str(gen->ctx, gen->options->autosa->data_pack_sizes);
+  data_pack_ubs = read_data_pack_sizes(sizes, 3);
+  if (!data_pack_ubs) {
+    /* Use the default numbers. */
+    data_pack_ubs = isl_alloc_array(gen->ctx, int, 3);
+    data_pack_ubs[0] = 8;
+    data_pack_ubs[1] = 32;
+    data_pack_ubs[2] = 64;
+  }
+
   int cur_max_n_lane;
   for (int i = 0; i < group->io_level; i++)
   {
     struct autosa_io_buffer *buf = group->io_buffers[i];
     if (i == 0)
-      cur_max_n_lane = max(group->n_lane, 8 / ele_size); // 64 bits
+      cur_max_n_lane = max(group->n_lane, data_pack_ubs[0] / ele_size); 
     else if (i > 0 && i < group->io_level - 1)
-      cur_max_n_lane = max(group->n_lane, 32 / ele_size); // 256 bits
+      cur_max_n_lane = max(group->n_lane, data_pack_ubs[1] / ele_size);
     else
-      cur_max_n_lane = max(group->n_lane, 64 / ele_size); // 512 bits
+      cur_max_n_lane = max(group->n_lane, data_pack_ubs[2] / ele_size);
     if (buf->tile)
     {
       int n_lane = cur_n_lane;
@@ -2766,6 +2780,8 @@ static isl_stat compute_io_group_data_pack(struct autosa_kernel *kernel,
       buf->n_lane = cur_n_lane;
     }
   }
+  isl_union_map_free(sizes);
+  free(data_pack_ubs);
 
   return isl_stat_ok;
 }
