@@ -1,5 +1,7 @@
 #include <isl/aff.h>
 
+#include <barvinok/isl.h>
+
 #include "autosa_codegen.h"
 #include "autosa_utils.h"
 #include "autosa_print.h"
@@ -8180,7 +8182,7 @@ static __isl_give isl_ast_node *create_module_call_leaf(
         {
           isl_union_map *umap = isl_ast_build_get_schedule(build);
           isl_union_set *uset = isl_union_map_range(umap);
-          isl_set *set = isl_set_from_union_set(uset);
+          isl_set *set = isl_set_from_union_set(uset);          
           isl_map *map = isl_set_identity(set);
           map = isl_map_flatten_range(map);
           trans = isl_multi_aff_copy(group->io_trans);

@@ -7,22 +7,29 @@ if BUNDLED_PET
     MAYBE_PET = pet
     PET_LA = $(top_builddir)/pet/libpet.la
 endif
+if BUNDLED_BARVINOK
+    MAYBE_BARVINOK = barvinok
+    BARVINOK_LA = $(top_builddir)/barvinok/libbarvinok.la
+endif 
 
-SUBDIRS = $(MAYBE_ISL) $(MAYBE_PET) .
+SUBDIRS = $(MAYBE_ISL) $(MAYBE_PET) $(MAYBE_BARVINOK) .
 
 FORCE:
 isl/libisl.la: FORCE
 	cd isl; $(MAKE) $(AM_MAKEFLAGS) libisl.la
 pet/libpet.la: FORCE
 	cd pet; $(MAKE) $(AM_MAKEFLAGS) libpet.la
+barvinok/libbarvinok.la: FORCE
+	cd barvinok; $(MAKE) $(AM_MAKEFLAGS) libbarvinok.la
 
 ACLOCAL_AMFLAGS = -I m4
 
 LIB_ISL = $(ISL_LA) @ISL_LIBS@
 LIB_PET = $(PET_LA) @PET_LIBS@
+LIB_BARVINOK = $(BARVINOK_LA) @BARVINOK_LIBS@
 
-AM_CPPFLAGS = @ISL_CFLAGS@ @PET_CFLAGS@
-LDADD = $(LIB_PET) $(LIB_ISL)
+AM_CPPFLAGS = @ISL_CFLAGS@ @PET_CFLAGS@ @BARVINOK_CFLAGS@
+LDADD = $(LIB_PET) $(LIB_ISL) $(LIB_BARVINOK)
 
 bin_PROGRAMS = autosa
 autosa_SOURCES = \

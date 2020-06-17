@@ -3,6 +3,7 @@
 git submodule init
 git submodule update
 (cd src/isl; git submodule init imath; git submodule update imath)
+(cd src/barvinok; ./get_submodule.sh)
 
 # Install python packages
 pip3 install -r requirements.txt

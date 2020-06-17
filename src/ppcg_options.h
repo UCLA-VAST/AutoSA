@@ -67,6 +67,8 @@ extern "C"
 		int insert_hls_dependence;
 		/* Enable loop infinitization optimization. Only for Intel. */
 		int loop_infinitize;
+		/* Enable data serialization/deserialization on the host side. */
+		int host_serialize;
 	};
 
 	struct ppcg_options

@@ -54,6 +54,20 @@ system)
 	;;
 esac
 
+AX_SUBMODULE(barvinok,bundled|system,bundled)
+AM_CONDITIONAL(BUNDLED_BARVINOK, test $with_barvinok = bundled)
+
+AC_SUBST(BARVINOK_CFLAGS)
+AC_SUBST(BARVINOK_LIBS)
+case "$with_barvinok" in
+bundled)
+  BARVINOK_CFLAGS="$BARVINOK_CFLAGS -I\$(top_srcdir)/barvinok"
+  ;;
+system)
+  PKG_CHECK_MODULES([BARVINOK], [barvinok])
+  ;;
+esac
+
 AC_SUBST(POLYBENCH_DIR)
 AC_SUBST(extra_tests)
 AC_ARG_WITH([polybench],
@@ -75,6 +89,9 @@ if test $with_isl = bundled; then
 fi
 if test $with_pet = bundled; then
 	AC_CONFIG_SUBDIRS(pet)
+fi
+if test $with_barvinok = bundled; then
+  AC_CONFIG_SUBDIRS(barvinok)
 fi
 AC_CONFIG_COMMANDS_POST([
 	dnl pass on arguments to subdir configures, but don't

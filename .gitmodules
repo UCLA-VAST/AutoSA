@@ -7,3 +7,6 @@
 [submodule "src/cJSON"]
 	path = src/cJSON
 	url = https://github.com/DaveGamble/cJSON.git
+[submodule "src/barvinok"]
+	path = src/barvinok
+	url = https://repo.or.cz/barvinok.git

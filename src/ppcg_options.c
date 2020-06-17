@@ -104,6 +104,8 @@ ISL_ARG_INT(struct autosa_options, n_hbm_port, 0, "hbm-port-num", "num", 2,
   "default HBM port number")
 ISL_ARG_BOOL(struct autosa_options, hls, 0, "hls", 0,
   "generate Xilinx HLS host")	
+ISL_ARG_BOOL(struct autosa_options, host_serialize, 0, "host-serialize", 0,
+  "serialize/deserialize the host data")
 ISL_ARG_BOOL(struct autosa_options, insert_hls_dependence, 0, "insert-hls-dependence", 1,
   "insert Xilinx HLS dependence pragma")	
 ISL_ARG_BOOL(struct autosa_options, loop_infinitize, 0, "loop-infinitize", 0,
