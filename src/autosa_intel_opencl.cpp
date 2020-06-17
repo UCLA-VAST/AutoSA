@@ -732,13 +732,13 @@ static __isl_give isl_printer *find_device_intel(__isl_take isl_printer *p,
   p = print_str_new_line(p, "cl_command_queue cmdQueue[NUM_QUEUES_TO_CREATE];");
 
   p = isl_printer_end_line(p);
-  //p = print_str_new_line(p, "// Parse command line arguments");
-  //p = print_str_new_line(p, "Options options(argc, argv);");
-  //p = print_str_new_line(p, "if (options.has(\"emulator\")) {");
-  //p = isl_printer_indent(p, 4);
-  //p = print_str_new_line(p, "use_emulator = options.get<bool>(\"emulator\");");
-  //p = isl_printer_indent(p, -4);
-  //p = print_str_new_line(p, "}");
+//  p = print_str_new_line(p, "// Parse command line arguments");
+//  p = print_str_new_line(p, "Options options(argc, argv);");
+//  p = print_str_new_line(p, "if (options.has(\"emulator\")) {");
+//  p = isl_printer_indent(p, 4);
+//  p = print_str_new_line(p, "use_emulator = options.get<bool>(\"emulator\");");
+//  p = isl_printer_indent(p, -4);
+//  p = print_str_new_line(p, "}");
   p = print_str_new_line(p, "if (!setCwdToExeDir()) {");
   p = isl_printer_indent(p, 4);
   p = print_str_new_line(p, "return false;");
@@ -1314,9 +1314,14 @@ static __isl_give isl_printer *clear_device_intel(__isl_take isl_printer *p,
   p = isl_printer_indent(p, -4);
   p = print_str_new_line(p, "}");
   p = isl_printer_end_line(p);
+    
+  p = print_str_new_line(p, "#ifndef EMULATE");
+  p = isl_printer_indent(p, 4);
   p = print_str_new_line(p, "clReleaseProgram(program);");
   p = print_str_new_line(p, "clReleaseContext(context);");
   p = print_str_new_line(p, "acl_aligned_free(devices);");
+  p = isl_printer_indent(p, -4);
+  p = print_str_new_line(p, "#endif");
 
   return p;
 }
@@ -2543,18 +2548,21 @@ struct print_db_module_intel_data {
   std::vector<const char *> outer_for_logic;
   std::vector<const char *> outer_user_logic;
   std::vector<const char *> outer_iterator_name;
+  std::vector<const char *> outer_iterator_lb;
   std::vector<const char *> outer_iterator_ub;
   int outer_for_level;
   /* Inter */
   std::vector<const char *> inter_for_logic;
   std::vector<const char *> inter_user_logic;
   std::vector<const char *> inter_iterator_name;
+  std::vector<const char *> inter_iterator_lb;
   std::vector<const char *> inter_iterator_ub;
   int inter_for_level;
   /* Intra */
   std::vector<const char *> intra_for_logic;
   std::vector<const char *> intra_user_logic;
   std::vector<const char *> intra_iterator_name;
+  std::vector<const char *> intra_iterator_lb;
   std::vector<const char *> intra_iterator_ub;
   int intra_for_level;
 };
@@ -2604,6 +2612,8 @@ static __isl_give isl_printer *print_double_buffer_module_vars_intel(
     p = isl_printer_start_line(p);
     p = isl_printer_print_str(p, "int ");
     p = isl_printer_print_str(p, data->outer_iterator_name[i]);
+    p = isl_printer_print_str(p, " = ");
+    p = isl_printer_print_str(p, data->outer_iterator_lb[i]);
     p = isl_printer_print_str(p, "; ");
     p = isl_printer_print_str(p, "/* UB: ");
     p = isl_printer_print_str(p, data->outer_iterator_ub[i]);
@@ -2614,6 +2624,8 @@ static __isl_give isl_printer *print_double_buffer_module_vars_intel(
     p = isl_printer_start_line(p);
     p = isl_printer_print_str(p, "int ");
     p = isl_printer_print_str(p, data->inter_iterator_name[i]);
+    p = isl_printer_print_str(p, " = ");
+    p = isl_printer_print_str(p, data->inter_iterator_lb[i]);
     p = isl_printer_print_str(p, "; ");
     p = isl_printer_print_str(p, "/* UB: ");
     p = isl_printer_print_str(p, data->inter_iterator_ub[i]);
@@ -2624,6 +2636,8 @@ static __isl_give isl_printer *print_double_buffer_module_vars_intel(
     p = isl_printer_start_line(p);
     p = isl_printer_print_str(p, "int ");
     p = isl_printer_print_str(p, data->intra_iterator_name[i]);
+    p = isl_printer_print_str(p, " = ");
+    p = isl_printer_print_str(p, data->intra_iterator_lb[i]);
     p = isl_printer_print_str(p, "; ");
     p = isl_printer_print_str(p, "/* UB: ");
     p = isl_printer_print_str(p, data->intra_iterator_ub[i]);
@@ -2704,6 +2718,15 @@ static __isl_give isl_printer *extract_module_for(__isl_take isl_printer *p,
     data->intra_iterator_ub.push_back(isl_printer_get_str(p_str));
   else if (data->inter == 1)
     data->inter_iterator_ub.push_back(isl_printer_get_str(p_str));
+  isl_printer_flush(p_str);
+
+  p_str = isl_printer_print_ast_expr(p_str, init);
+  if (data->inter == -1)
+    data->outer_iterator_lb.push_back(isl_printer_get_str(p_str));
+  else if (data->inter == 0)
+    data->intra_iterator_lb.push_back(isl_printer_get_str(p_str));
+  else if (data->inter == 1)
+    data->inter_iterator_lb.push_back(isl_printer_get_str(p_str));
   isl_printer_free(p_str);
 
   p_local = isl_printer_indent(p_local, -4);
@@ -2744,9 +2767,9 @@ static __isl_give isl_printer *extract_module_for(__isl_take isl_printer *p,
   if (data->inter == -1)
     data->outer_for_logic.insert(data->outer_for_logic.begin(), text_lines.begin(), text_lines.end());
   else if (data->inter == 0)
-    data->inter_for_logic.insert(data->inter_for_logic.begin(), text_lines.begin(), text_lines.end());
-  else if (data->inter == 1)
     data->intra_for_logic.insert(data->intra_for_logic.begin(), text_lines.begin(), text_lines.end());
+  else if (data->inter == 1)
+    data->inter_for_logic.insert(data->inter_for_logic.begin(), text_lines.begin(), text_lines.end());
 
   isl_ast_expr_free(iterator);
   isl_ast_expr_free(init);
@@ -3061,8 +3084,8 @@ static __isl_give isl_printer *print_double_buffer_module_intel(
   p = isl_printer_indent(p, 4);
   p = print_str_new_line(p, "intra_trans_en = 1;");
   p = print_str_new_line(p, "inter_trans_en = 1;");
-  p = print_str_new_line(p, "intra_done = 1;");
-  p = print_str_new_line(p, "inter_done = 1;");
+  p = print_str_new_line(p, "intra_done = 0;");
+  p = print_str_new_line(p, "inter_done = 0;");
   p = print_str_new_line(p, "arb = !arb;");
   /* Print the loop counter */
   for (int i = 0; i < print_data.outer_for_logic.size(); i++) {

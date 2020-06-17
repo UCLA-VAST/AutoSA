@@ -454,7 +454,7 @@ def index_simplify(matchobj):
   str_expr = matchobj.group(0)
   if str_expr == '[arb]' or str_expr == '[!arb]':
     return str_expr
-  expr = sympy.sympify(str_expr[1 : len(str_expr) - 1])  
+  expr = sympy.sympify(str_expr[1 : len(str_expr) - 1])
   """
   This will sometimes cause bugs due to the different semantics in C
   E.g., x = 9, (x+3)/4 != x/4+3/4.
@@ -509,9 +509,9 @@ def simplify_expressions(lines):
 def shrink_bit_width(lines, target):
   """ Calculate the bitwidth of the iterator and shrink it to the proper size
 
-  We will examine the for loops. Examine the upper bound of the loop. If the 
+  We will examine the for loops. Examine the upper bound of the loop. If the
   upper bound is a number, we will compute the bitwidth of the iterator.
-  For Intel target, we will also look for iterator definitions marked with 
+  For Intel target, we will also look for iterator definitions marked with
   "/* UB: [...] */". The shallow bitwidth is calculated and replace the previous
   data type.
 
@@ -557,9 +557,10 @@ def shrink_bit_width(lines, target):
           # Replace it with shallow bit width
           bitwidth = int(np.ceil(np.log2(float(ub) + 1))) + 1
           new_iter_t = 'uint' + str(bitwidth) + '_t'
-          line = re.sub('int', new_iter_t, line)
+          #line = re.sub('int', new_iter_t, line)
+          line = re.sub(r'(int)' + r'\s' + r'([a-zA-Z])', re.escape(new_iter_t) + r' \g<2>', line)
           lines[pos] = line
-          
+
   return lines
 
 def lify_split_buffers(lines):

@@ -8907,7 +8907,35 @@ static isl_bool iterator_used(__isl_keep isl_ast_node *node, void *user)
         data->used = isl_bool_true;
         return isl_bool_false;
       }      
-    }    
+    } else if (stmt->type == AUTOSA_KERNEL_STMT_IO_TRANSFER) {
+      int filter_depth = stmt->u.i.filter_sched_depth;
+      if (stmt->u.i.boundary) 
+        filter_depth = -1;
+      if (filter_depth < 0)
+        return isl_bool_true;
+
+      /* Check if the iterator equals to c[filter_depth]. */
+      isl_printer *p_str;
+      const char *filter_iterator;
+      const char *cur_iterator;
+      p_str = isl_printer_to_str(isl_ast_node_get_ctx(node));
+      p_str = isl_printer_print_str(p_str, "c");
+      p_str = isl_printer_print_int(p_str, filter_depth);
+      filter_iterator = isl_printer_get_str(p_str);
+      p_str = isl_printer_flush(p_str);
+
+      p_str = isl_printer_set_output_format(p_str, ISL_FORMAT_C);
+      p_str = isl_printer_print_ast_expr(p_str, data->iterator);
+      cur_iterator = isl_printer_get_str(p_str);
+      isl_printer_free(p_str);
+
+      if (!strcmp(filter_iterator, cur_iterator)) 
+        found = isl_bool_true;
+      if (found) {
+        data->used = isl_bool_true;
+        return isl_bool_false;
+      }
+    }
   }
 
   return isl_bool_true;
@@ -8993,6 +9021,11 @@ static isl_bool loop_infinitize_check(__isl_keep isl_ast_node *node, void *user)
         }
         isl_id_free(id);
       }      
+    } else {
+      /* Stop from here. */
+      isl_ast_expr_free(iterator);
+      isl_ast_node_free(body);
+      return isl_bool_false;      
     }
 
     isl_ast_expr_free(iterator);
