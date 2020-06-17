@@ -85,7 +85,7 @@ __isl_give isl_printer *autosa_kernel_print_io(__isl_take isl_printer *p,
                                                struct autosa_kernel_stmt *stmt, struct hls_info *hls);
 __isl_give isl_printer *autosa_kernel_print_io_transfer(
     __isl_take isl_printer *p,
-    struct autosa_kernel_stmt *stmt, struct hls_info *hls);
+    struct autosa_kernel_stmt *stmt, struct hls_info *hls, const char *iterator_prefix);
 __isl_give isl_printer *autosa_kernel_print_io_dram(__isl_take isl_printer *p,
                                                     struct autosa_kernel_stmt *stmt, struct hls_info *hls);
 __isl_give isl_printer *autosa_kernel_print_inter_trans(

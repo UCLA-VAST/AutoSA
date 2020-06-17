@@ -21,7 +21,9 @@ struct print_hw_module_data
 {
   struct hls_info *hls;
   struct autosa_prog *prog;
-  struct autosa_hw_module *module;
+  struct autosa_hw_module *module;  
+  /* Used for Intel codegen. Modify the printed iterator prefix. */
+  const char *iterator_prefix;
 };
 
 static void print_intel_host_header(FILE *fp)
@@ -588,7 +590,7 @@ static __isl_give isl_printer *print_module_stmt(__isl_take isl_printer *p,
   case AUTOSA_KERNEL_STMT_IO:
     return autosa_kernel_print_io(p, stmt, hw_data->hls);
   case AUTOSA_KERNEL_STMT_IO_TRANSFER:
-    return autosa_kernel_print_io_transfer(p, stmt, hw_data->hls);
+    return autosa_kernel_print_io_transfer(p, stmt, hw_data->hls, hw_data->iterator_prefix);
   case AUTOSA_KERNEL_STMT_IO_DRAM:
     return autosa_kernel_print_io_dram(p, stmt, hw_data->hls);
   case AUTOSA_KERNEL_STMT_IO_MODULE_CALL_INTER_TRANS:
@@ -631,7 +633,7 @@ static isl_stat print_drain_merge_funcs(
   {
     struct autosa_array_ref_group *group = funcs[i]->group;
     isl_ast_print_options *print_options;
-    struct print_hw_module_data hw_data = {hls, NULL, NULL};
+    struct print_hw_module_data hw_data = {hls, NULL, NULL, NULL};
 
     p = print_str_new_line(p, "/* Helper Function */");
     p = isl_printer_start_line(p);
@@ -1859,7 +1861,7 @@ static __isl_give isl_printer *print_set_kernel_arguments_intel(
 {
   isl_ast_print_options *print_options;
   isl_ctx *ctx = prog->ctx;
-  struct print_hw_module_data hw_data = {NULL, prog, NULL};
+  struct print_hw_module_data hw_data = {NULL, prog, NULL, NULL};
 
   p = print_str_new_line(p, "// Set the arguments");
   /* Default settings */
@@ -1896,7 +1898,7 @@ static __isl_give isl_printer *print_launch_kernel_intel(
 {
   isl_ast_print_options *print_options;
   isl_ctx *ctx = prog->ctx;
-  struct print_hw_module_data hw_data = {NULL, prog, NULL};
+  struct print_hw_module_data hw_data = {NULL, prog, NULL, NULL};
 
   p = print_str_new_line(p, "// Launch the kernels");
 
@@ -2175,7 +2177,7 @@ static __isl_give isl_printer *autosa_print_intra_trans_module(
     struct autosa_hw_module *module, struct autosa_prog *prog,
     struct hls_info *hls, int boundary)
 {
-  struct print_hw_module_data hw_data = {hls, prog, module};
+  struct print_hw_module_data hw_data = {hls, prog, module, NULL};
   isl_ast_print_options *print_options;
   isl_ctx *ctx = isl_printer_get_ctx(p);
 
@@ -2227,7 +2229,7 @@ static __isl_give isl_printer *autosa_print_inter_trans_module(
     struct autosa_hw_module *module, struct autosa_prog *prog,
     struct hls_info *hls, int boundary)
 {
-  struct print_hw_module_data hw_data = {hls, prog, module};
+  struct print_hw_module_data hw_data = {hls, prog, module, NULL};
   isl_ast_print_options *print_options;
   isl_ctx *ctx = isl_printer_get_ctx(p);
 
@@ -2278,7 +2280,7 @@ static __isl_give isl_printer *autosa_print_default_module(
     struct autosa_hw_module *module, struct autosa_prog *prog,
     struct hls_info *hls, int boundary)
 {
-  struct print_hw_module_data hw_data = {hls, prog, module};
+  struct print_hw_module_data hw_data = {hls, prog, module, NULL};
   isl_ast_print_options *print_options;
   isl_ctx *ctx = isl_printer_get_ctx(p);
 
@@ -2466,7 +2468,7 @@ static __isl_give isl_printer *autosa_print_default_pe_dummy_module(
     struct autosa_prog *prog, struct hls_info *hls, int boundary)
 {
   struct autosa_hw_module *module = pe_dummy_module->module;
-  struct print_hw_module_data hw_data = {hls, prog, module};
+  struct print_hw_module_data hw_data = {hls, prog, module, NULL};
   isl_ast_print_options *print_options;
   isl_ctx *ctx = isl_printer_get_ctx(p);
 
@@ -2481,7 +2483,7 @@ static __isl_give isl_printer *autosa_print_default_pe_dummy_module(
   print_pe_dummy_module_headers_intel(prog, pe_dummy_module, hls, -1, boundary);
 
   fprintf(hls->kernel_c, "{\n");
-  p = isl_printer_indent(p, 4);
+  p = isl_printer_indent(p, 4);  
   p = print_str_new_line(p, "while (1) {");
   p = isl_printer_indent(p, 4);
   
@@ -2653,7 +2655,7 @@ static __isl_give isl_printer *count_module_for(__isl_take isl_printer *p,
   isl_ast_node_free(body);
 
   return p;
-}                                                
+}                                                                                                
 
 /* Extract the loop information. 
  */
@@ -2669,12 +2671,12 @@ static __isl_give isl_printer *extract_module_for(__isl_take isl_printer *p,
   std::vector<const char *> text_lines;
   isl_ast_node *body;
 
-  if (data->inter == -1)
-    iterator_suffix = "outer_";
-  else if (data->inter == 0)
-    iterator_suffix = "intra_";
-  else
-    iterator_suffix = "inter_";
+//  if (data->inter == -1)
+//    iterator_suffix = "outer_";
+//  else if (data->inter == 0)
+//    iterator_suffix = "intra_";
+//  else
+//    iterator_suffix = "inter_";
   p_local = data->p_for;  
 
   /* Extract the lower bound and upper bound. */
@@ -2685,7 +2687,7 @@ static __isl_give isl_printer *extract_module_for(__isl_take isl_printer *p,
 
   p_str = isl_printer_to_str(isl_ast_node_get_ctx(node));
   p_str = isl_printer_set_output_format(p_str, ISL_FORMAT_C);
-  p_str = isl_printer_print_str(p_str, iterator_suffix);
+  //p_str = isl_printer_print_str(p_str, iterator_suffix);
   p_str = isl_printer_print_ast_expr(p_str, iterator);
   if (data->inter == -1)
     data->outer_iterator_name.push_back(isl_printer_get_str(p_str));
@@ -2707,7 +2709,7 @@ static __isl_give isl_printer *extract_module_for(__isl_take isl_printer *p,
   p_local = isl_printer_indent(p_local, -4);
 
   p_local = isl_printer_start_line(p_local);  
-  p_local = isl_printer_print_str(p_local, iterator_suffix);  
+  //p_local = isl_printer_print_str(p_local, iterator_suffix);  
   p_local = isl_printer_print_ast_expr(p_local, iterator);
   p_local = isl_printer_print_str(p_local, "++;");
   p_local = isl_printer_end_line(p_local);
@@ -2717,25 +2719,19 @@ static __isl_give isl_printer *extract_module_for(__isl_take isl_printer *p,
 
   p_local = isl_printer_start_line(p_local);
   p_local = isl_printer_print_str(p_local, "if (");
-  p_local = isl_printer_print_str(p_local, iterator_suffix);  
+  //p_local = isl_printer_print_str(p_local, iterator_suffix);  
   p_local = isl_printer_print_ast_expr(p_local, iterator);
   p_local = isl_printer_print_str(p_local, " == "); 
   p_local = isl_printer_print_ast_expr(p_local, ub);
   p_local = isl_printer_print_str(p_local, " + 1) {"); 
   p_local = isl_printer_end_line(p_local);
-//  if (data->inter == -1)
-//    data->outer_for_level++;
-//  else if (data->inter == 0)
-//    data->intra_for_level++;
-//  else if (data->inter == 1)
-//    data->inter_for_level++;
   text = isl_printer_get_str(p_local);
   text_lines.push_back(text);
   p_local = isl_printer_flush(p_local);
 
   p_local = isl_printer_indent(p_local, 4);
   p_local = isl_printer_start_line(p_local);  
-  p_local = isl_printer_print_str(p_local, iterator_suffix);
+  //p_local = isl_printer_print_str(p_local, iterator_suffix);
   p_local = isl_printer_print_ast_expr(p_local, iterator);
   p_local = isl_printer_print_str(p_local, " = ");
   p_local = isl_printer_print_ast_expr(p_local, init);
@@ -2796,11 +2792,9 @@ static void extract_double_buffer_module_intel_data(
   else
     p = isl_ast_node_print(module->boundary_tree, p, print_options);  
 
-  /* Extract the for logic. */
+  /* Extract the for and user logic. */
   data->p_for = isl_printer_indent(data->p_for, 4 * data->outer_for_level);
   print_options = isl_ast_print_options_alloc(ctx);
-//  print_options = isl_ast_print_options_set_print_user(print_options,
-                                                       //&extract_module_stmt, data);
   print_options = isl_ast_print_options_set_print_for(print_options,
                                                       &extract_module_for, data);
   if (!boundary)
@@ -2824,7 +2818,7 @@ static void extract_double_buffer_module_intel_data(
   data->intra_for_level = 0;
 
   /* Count the for level first. */
-  print_options = isl_ast_print_options_alloc(ctx);
+  print_options = isl_ast_print_options_alloc(ctx);  
   print_options = isl_ast_print_options_set_print_for(print_options,
                                                       &count_module_for, data);
   p = isl_ast_node_print(module->intra_tree, p, print_options);  
@@ -2832,8 +2826,6 @@ static void extract_double_buffer_module_intel_data(
   /* Extract the for logic. */
   data->p_for = isl_printer_indent(data->p_for, 4 * data->intra_for_level);
   print_options = isl_ast_print_options_alloc(ctx);
-//  print_options = isl_ast_print_options_set_print_user(print_options,
-                                                       //&extract_module_stmt, data);
   print_options = isl_ast_print_options_set_print_for(print_options,
                                                       &extract_module_for, data);  
   p = isl_ast_node_print(module->intra_tree, p, print_options);  
@@ -2865,8 +2857,6 @@ static void extract_double_buffer_module_intel_data(
   /* Extract the for logic. */
   data->p_for = isl_printer_indent(data->p_for, 4 * data->inter_for_level);
   print_options = isl_ast_print_options_alloc(ctx);
-//  print_options = isl_ast_print_options_set_print_user(print_options,
-                                                       //&extract_module_stmt, data);
   print_options = isl_ast_print_options_set_print_for(print_options,
                                                       &extract_module_for, data);
   if (!boundary)
@@ -2876,6 +2866,65 @@ static void extract_double_buffer_module_intel_data(
   isl_printer_free(p);  
   isl_printer_free(data->p_for);
   isl_printer_free(data->p_user);
+}
+
+static __isl_give isl_printer *print_null_for(__isl_take isl_printer *p,
+                                              __isl_take isl_ast_print_options *print_options,
+                                              __isl_keep isl_ast_node *node, void *user)
+{
+  isl_ast_node *body;
+  
+  body = isl_ast_node_for_get_body(node);
+  p = isl_ast_node_print(body, p, print_options);
+  isl_ast_node_free(body);
+
+  return p;
+}                                              
+
+/* Print the inter_trans module in double buffer mode. 
+ */
+static __isl_give isl_printer *autosa_print_inter_trans_module_double_buffer(
+  __isl_take isl_printer *p,
+  struct autosa_hw_module *module, struct autosa_prog *prog,
+  struct hls_info *hls, int boundary)
+{
+  struct print_hw_module_data hw_data = {hls, prog, module, "inter_c"};
+  isl_ast_print_options *print_options;
+  isl_ctx *ctx = isl_printer_get_ctx(p);
+
+  print_options = isl_ast_print_options_alloc(ctx);
+  print_options = isl_ast_print_options_set_print_user(print_options,
+                                                       &print_module_stmt, &hw_data);
+  print_options = isl_ast_print_options_set_print_for(print_options,
+                                                      &print_null_for, &hw_data);
+
+  p = isl_ast_node_print((boundary == 0) ? module->inter_tree : module->boundary_inter_tree, p, print_options);
+  p = isl_printer_end_line(p);
+
+  return p;
+}
+
+/* Print the intra_trans module in double buffer mode. 
+ */
+static __isl_give isl_printer *autosa_print_intra_trans_module_double_buffer(
+  __isl_take isl_printer *p,
+  struct autosa_hw_module *module, struct autosa_prog *prog,
+  struct hls_info *hls, int boundary)
+{
+  struct print_hw_module_data hw_data = {hls, prog, module, "intra_c"};
+  isl_ast_print_options *print_options;
+  isl_ctx *ctx = isl_printer_get_ctx(p);
+
+  print_options = isl_ast_print_options_alloc(ctx);
+  print_options = isl_ast_print_options_set_print_user(print_options,
+                                                       &print_module_stmt, &hw_data);
+  print_options = isl_ast_print_options_set_print_for(print_options,
+                                                      &print_null_for, &hw_data);
+
+  p = isl_ast_node_print(module->intra_tree, p, print_options);
+  p = isl_printer_end_line(p);
+
+  return p;
 }
 
 /* Double buffer module on Intel devices needs to be handled specially.
@@ -2969,7 +3018,7 @@ static __isl_give isl_printer *print_double_buffer_module_intel(
   p = print_str_new_line(p, "if (inter_trans_en) {");
   p = isl_printer_indent(p, 4);
   /* Print the module logic */
-  // TODO
+  p = autosa_print_inter_trans_module_double_buffer(p, module, prog, hls, boundary);
   /* Print the loop counter */  
   for (int i = 0; i < print_data.inter_for_logic.size(); i++) {    
     p = isl_printer_start_line(p);
@@ -2990,7 +3039,7 @@ static __isl_give isl_printer *print_double_buffer_module_intel(
   p = print_str_new_line(p, "if (intra_trans_en) {");
   p = isl_printer_indent(p, 4);
   /* Print the module logic */
-  // TODO
+  p = autosa_print_intra_trans_module_double_buffer(p, module, prog, hls, boundary);
   /* Print the loop counter */
   for (int i = 0; i < print_data.intra_for_logic.size(); i++) {
     p = isl_printer_start_line(p);
@@ -3052,7 +3101,7 @@ static __isl_give isl_printer *autosa_print_host_code(__isl_take isl_printer *p,
   isl_ast_print_options *print_options;
   isl_ctx *ctx = isl_ast_node_get_ctx(tree);
   struct print_host_user_data data = {hls, prog, top};
-  struct print_hw_module_data hw_data = {hls, prog, NULL};
+  struct print_hw_module_data hw_data = {hls, prog, NULL, NULL};
   isl_printer *p_module;
 
   /* Print the data pack types in the program. */
@@ -3254,7 +3303,7 @@ static void print_top_gen_host_code(
   isl_ast_print_options *print_options;
   isl_ctx *ctx = isl_ast_node_get_ctx(node);
   isl_printer *p;
-  struct print_hw_module_data hw_data = {hls, prog, NULL};
+  struct print_hw_module_data hw_data = {hls, prog, NULL, NULL};
 
   /* Print the top module ASTs. */
   p = isl_printer_to_file(ctx, hls->top_gen_c);

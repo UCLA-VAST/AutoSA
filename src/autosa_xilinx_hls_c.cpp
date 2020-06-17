@@ -1876,7 +1876,7 @@ static __isl_give isl_printer *print_module_stmt(__isl_take isl_printer *p,
   case AUTOSA_KERNEL_STMT_IO:
     return autosa_kernel_print_io(p, stmt, hw_data->hls);
   case AUTOSA_KERNEL_STMT_IO_TRANSFER:
-    return autosa_kernel_print_io_transfer(p, stmt, hw_data->hls);
+    return autosa_kernel_print_io_transfer(p, stmt, hw_data->hls, NULL);
   case AUTOSA_KERNEL_STMT_IO_DRAM:
     return autosa_kernel_print_io_dram(p, stmt, hw_data->hls);
   case AUTOSA_KERNEL_STMT_IO_MODULE_CALL_INTER_TRANS:

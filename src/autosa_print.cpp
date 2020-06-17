@@ -2871,7 +2871,8 @@ __isl_give isl_printer *autosa_kernel_print_io(__isl_take isl_printer *p,
  */
 static __isl_give isl_printer *autosa_kernel_print_io_transfer_default(
     __isl_take isl_printer *p, struct autosa_kernel_stmt *stmt,
-    struct autosa_array_ref_group *group, int n_lane, struct hls_info *hls)
+    struct autosa_array_ref_group *group, int n_lane, struct hls_info *hls,
+    const char *iterator_prefix)
 {
   isl_ctx *ctx;
   char *fifo_name;
@@ -2931,7 +2932,13 @@ static __isl_give isl_printer *autosa_kernel_print_io_transfer_default(
     if (stmt->u.i.filter_sched_depth >= 0)
     {
       p = isl_printer_start_line(p);
-      p = isl_printer_print_str(p, "if (c");
+      p = isl_printer_print_str(p, "if (");
+      if (iterator_prefix != NULL) {
+        p = isl_printer_print_str(p, iterator_prefix);
+      } else {
+        p = isl_printer_print_str(p, "c");
+      }
+      //p = isl_printer_print_str(p, "if (c");
       p = isl_printer_print_int(p, stmt->u.i.filter_sched_depth);
       p = isl_printer_print_str(p, " == p");
       p = isl_printer_print_int(p, stmt->u.i.filter_param_id);
@@ -2944,7 +2951,23 @@ static __isl_give isl_printer *autosa_kernel_print_io_transfer_default(
     {
       /* local[][] = fifo_data; */
       p = isl_printer_start_line(p);
-      p = isl_printer_print_ast_expr(p, local_index_packed);
+      //p = isl_printer_print_ast_expr(p, local_index_packed);
+      if (hls->target == INTEL_HW && stmt->u.i.module->double_buffer) {
+        isl_ast_expr *op;
+        op = isl_ast_expr_op_get_arg(local_index_packed, 0);
+        p = isl_printer_print_ast_expr(p, op);
+        isl_ast_expr_free(op);
+        p = isl_printer_print_str(p, "[arb]");
+        for (int n = 1; n < isl_ast_expr_op_get_n_arg(local_index_packed); n++) {
+          op = isl_ast_expr_op_get_arg(local_index_packed, n);
+          p = isl_printer_print_str(p, "[");
+          p = isl_printer_print_ast_expr(p, op);
+          p = isl_printer_print_str(p, "]");
+          isl_ast_expr_free(op);
+        }
+      } else {
+        p = isl_printer_print_ast_expr(p, local_index_packed);
+      }
       p = isl_printer_print_str(p, " = fifo_data;");
       p = isl_printer_end_line(p);
     }
@@ -2993,7 +3016,13 @@ static __isl_give isl_printer *autosa_kernel_print_io_transfer_default(
     if (stmt->u.i.filter_sched_depth >= 0)
     {
       p = isl_printer_start_line(p);
-      p = isl_printer_print_str(p, "if (c");
+      p = isl_printer_print_str(p, "if (");
+      if (iterator_prefix != NULL) {
+        p = isl_printer_print_str(p, iterator_prefix);
+      } else {
+        p = isl_printer_print_str(p, "c");
+      }
+      //p = isl_printer_print_str(p, "if (c");
       p = isl_printer_print_int(p, stmt->u.i.filter_sched_depth);
       p = isl_printer_print_str(p, " == p");
       p = isl_printer_print_int(p, stmt->u.i.filter_param_id);
@@ -3007,7 +3036,22 @@ static __isl_give isl_printer *autosa_kernel_print_io_transfer_default(
       /* fifo_data = local[][]; */
       p = isl_printer_start_line(p);
       p = isl_printer_print_str(p, "fifo_data = ");
-      p = isl_printer_print_ast_expr(p, local_index_packed);
+      if (hls->target == INTEL_HW && stmt->u.i.module->double_buffer) {
+        isl_ast_expr *op;
+        op = isl_ast_expr_op_get_arg(local_index_packed, 0);
+        p = isl_printer_print_ast_expr(p, op);
+        isl_ast_expr_free(op);
+        p = isl_printer_print_str(p, "[!arb]");
+        for (int n = 1; n < isl_ast_expr_op_get_n_arg(local_index_packed); n++) {
+          op = isl_ast_expr_op_get_arg(local_index_packed, n);
+          p = isl_printer_print_str(p, "[");
+          p = isl_printer_print_ast_expr(p, op);
+          p = isl_printer_print_str(p, "]");
+          isl_ast_expr_free(op);
+        }
+      } else {
+        p = isl_printer_print_ast_expr(p, local_index_packed);
+      }
       p = isl_printer_print_str(p, ";");
       p = isl_printer_end_line(p);
     }
@@ -3103,7 +3147,7 @@ static __isl_give isl_printer *autosa_kernel_print_io_transfer_default(
 static __isl_give isl_printer *autosa_kernel_print_io_transfer_data_pack(
     __isl_take isl_printer *p, struct autosa_kernel_stmt *stmt,
     struct autosa_array_ref_group *group, int n_lane, int nxt_n_lane,
-    struct hls_info *hls)
+    struct hls_info *hls, const char *iterator_prefix)
 {
   isl_ctx *ctx;
   ctx = isl_printer_get_ctx(p);
@@ -3187,8 +3231,13 @@ static __isl_give isl_printer *autosa_kernel_print_io_transfer_data_pack(
   if (stmt->u.i.in && stmt->u.i.coalesce_depth >= 0)
   {
     p = isl_printer_start_line(p);
-    p = isl_printer_print_str(p, "if (c");
-    // TODO: print the iterator index.
+    p = isl_printer_print_str(p, "if (");
+    if (iterator_prefix != NULL) {
+      p = isl_printer_print_str(p, iterator_prefix);
+    } else {
+      p = isl_printer_print_str(p, "c");
+    }
+    //p = isl_printer_print_str(p, "if (c");    
     p = isl_printer_print_int(p, stmt->u.i.coalesce_depth);
     p = isl_printer_print_str(p, " % ");
     p = isl_printer_print_int(p, n_lane / nxt_n_lane);
@@ -3199,7 +3248,24 @@ static __isl_give isl_printer *autosa_kernel_print_io_transfer_data_pack(
   /* buf_data = local[]; */
   p = isl_printer_start_line(p);
   p = isl_printer_print_str(p, "buf_data = ");
-  p = isl_printer_print_ast_expr(p, local_index_packed);
+  //p = isl_printer_print_ast_expr(p, local_index_packed);
+  if (hls->target == INTEL_HW && stmt->u.i.module->double_buffer) {
+    isl_ast_expr *op;
+    op = isl_ast_expr_op_get_arg(local_index_packed, 0);
+    p = isl_printer_print_ast_expr(p, op);
+    isl_ast_expr_free(op);
+    p = isl_printer_print_str(p, stmt->u.i.in? "[arb]" : "[!arb]");
+    for (int n = 1; n < isl_ast_expr_op_get_n_arg(local_index_packed); n++) {
+      op = isl_ast_expr_op_get_arg(local_index_packed, n);
+      p = isl_printer_print_str(p, "[");
+      p = isl_printer_print_ast_expr(p, op);
+      p = isl_printer_print_str(p, "]");
+      isl_ast_expr_free(op);
+    }
+  } else {
+    p = isl_printer_print_ast_expr(p, local_index_packed);
+  }
+
   p = isl_printer_print_str(p, ";");
   p = isl_printer_end_line(p);
 
@@ -3334,7 +3400,13 @@ static __isl_give isl_printer *autosa_kernel_print_io_transfer_data_pack(
     if (stmt->u.i.coalesce_depth >= 0)
     {
       p = isl_printer_start_line(p);
-      p = isl_printer_print_str(p, "if (c");
+      p = isl_printer_print_str(p, "if (");
+      if (iterator_prefix != NULL) {
+        p = isl_printer_print_str(p, iterator_prefix);
+      } else {
+        p = isl_printer_print_str(p, "c");
+      }      
+      //p = isl_printer_print_str(p, "if (c");      
       p = isl_printer_print_int(p, stmt->u.i.coalesce_depth);
       p = isl_printer_print_str(p, " % ");
       p = isl_printer_print_int(p, n_lane / nxt_n_lane);
@@ -3404,7 +3476,23 @@ static __isl_give isl_printer *autosa_kernel_print_io_transfer_data_pack(
 
     /* local_buf[...] = buf_data; */
     p = isl_printer_start_line(p);
-    p = isl_printer_print_ast_expr(p, local_index_packed);
+    //p = isl_printer_print_ast_expr(p, local_index_packed);
+    if (hls->target == INTEL_HW && stmt->u.i.module->double_buffer) {
+      isl_ast_expr *op;
+      op = isl_ast_expr_op_get_arg(local_index_packed, 0);
+      p = isl_printer_print_ast_expr(p, op);
+      isl_ast_expr_free(op);
+      p = isl_printer_print_str(p, "[arb]");
+      for (int n = 1; n < isl_ast_expr_op_get_n_arg(local_index_packed); n++) {
+        op = isl_ast_expr_op_get_arg(local_index_packed, n);
+        p = isl_printer_print_str(p, "[");
+        p = isl_printer_print_ast_expr(p, op);
+        p = isl_printer_print_str(p, "]");
+        isl_ast_expr_free(op);
+      }
+    } else {
+      p = isl_printer_print_ast_expr(p, local_index_packed);
+    }
     p = isl_printer_print_str(p, " = buf_data;");
     p = isl_printer_end_line(p);
 
@@ -3478,7 +3566,7 @@ static __isl_give isl_printer *autosa_kernel_print_io_transfer_data_pack(
  */
 __isl_give isl_printer *autosa_kernel_print_io_transfer(
     __isl_take isl_printer *p,
-    struct autosa_kernel_stmt *stmt, struct hls_info *hls)
+    struct autosa_kernel_stmt *stmt, struct hls_info *hls, const char *iterator_prefix)
 {
   struct autosa_hw_module *module = stmt->u.i.module;
   struct autosa_array_ref_group *group = stmt->u.i.group;
@@ -3491,12 +3579,12 @@ __isl_give isl_printer *autosa_kernel_print_io_transfer(
   //  p = ppcg_start_block(p);
   if (n_lane == nxt_n_lane)
   {
-    p = autosa_kernel_print_io_transfer_default(p, stmt, group, n_lane, hls);
+    p = autosa_kernel_print_io_transfer_default(p, stmt, group, n_lane, hls, iterator_prefix);
   }
   else
   {
     p = autosa_kernel_print_io_transfer_data_pack(
-        p, stmt, group, n_lane, nxt_n_lane, hls);
+        p, stmt, group, n_lane, nxt_n_lane, hls, iterator_prefix);
   }
   //  p = ppcg_end_block(p);
 

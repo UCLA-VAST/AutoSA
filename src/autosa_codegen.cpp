@@ -8649,10 +8649,13 @@ static __isl_give isl_ast_node *after_for_module(
 }
 
 /* Generate AST from the schedule for AutoSA hardware modules. 
+ * If "iterator_prefix" is set, we will use it as the iterator prefix.
+ * Otherwise, we use the default value "c".
  */
 static __isl_give isl_ast_node *autosa_generate_ast_from_schedule(
     __isl_take isl_schedule *schedule,
-    struct autosa_at_domain_data data, struct autosa_gen *gen)
+    struct autosa_at_domain_data data, struct autosa_gen *gen,
+    const char *iterator_prefix)
 {
   isl_ast_build *build;
   isl_ast_node *tree;
@@ -8667,7 +8670,8 @@ static __isl_give isl_ast_node *autosa_generate_ast_from_schedule(
                                                   &depth) < 0)
     schedule = isl_schedule_free(schedule);
   build = isl_ast_build_alloc(gen->prog->ctx);
-  iterators = ppcg_scop_generate_names(gen->prog->scop, depth, "c");
+  iterators = ppcg_scop_generate_names(gen->prog->scop, depth, 
+    iterator_prefix == NULL? "c" : iterator_prefix);
   build = isl_ast_build_set_iterators(build, iterators);
   build = isl_ast_build_set_at_each_domain(build, &at_domain_module, &data);
   build = isl_ast_build_set_before_each_mark(build, &before_mark_module, &data);
@@ -9143,7 +9147,9 @@ isl_stat sa_filter_buffer_io_module_generate_code(struct autosa_gen *gen,
   schedule = module->inter_sched;
   //schedule = insert_top_loop_coalesce(schedule);
   autosa_at_domain_data_init(&data, gen);
-  tree = autosa_generate_ast_from_schedule(schedule, data, gen);
+  tree = autosa_generate_ast_from_schedule(schedule, data, gen, 
+    module->double_buffer && gen->options->target == AUTOSA_TARGET_INTEL_OPENCL?
+    "inter_c" : NULL);
   isl_ast_node_free(tree);  
 
   if (module->boundary)
@@ -9153,7 +9159,9 @@ isl_stat sa_filter_buffer_io_module_generate_code(struct autosa_gen *gen,
     //schedule = insert_top_loop_coalesce(schedule);
     autosa_at_domain_data_init(&data, gen);
     data.boundary = 1;
-    tree = autosa_generate_ast_from_schedule(schedule, data, gen);
+    tree = autosa_generate_ast_from_schedule(schedule, data, gen,
+      module->double_buffer && gen->options->target == AUTOSA_TARGET_INTEL_OPENCL?
+      "inter_c" : NULL);
     isl_ast_node_free(tree);
   }
 
@@ -9161,7 +9169,9 @@ isl_stat sa_filter_buffer_io_module_generate_code(struct autosa_gen *gen,
   schedule = module->intra_sched;
   //schedule = insert_top_loop_coalesce(schedule);
   autosa_at_domain_data_init(&data, gen);
-  tree = autosa_generate_ast_from_schedule(schedule, data, gen);
+  tree = autosa_generate_ast_from_schedule(schedule, data, gen,
+           module->double_buffer && gen->options->target == AUTOSA_TARGET_INTEL_OPENCL?
+           "intra_c" : NULL);
   isl_ast_node_free(tree);
 
   /* Generate AST for outer loop function call. */
@@ -9174,7 +9184,9 @@ isl_stat sa_filter_buffer_io_module_generate_code(struct autosa_gen *gen,
   schedule = module->outer_sched;
   //schedule = insert_top_loop_coalesce(schedule);
   autosa_at_domain_data_init(&data, gen);
-  tree = autosa_generate_ast_from_schedule(schedule, data, gen);  
+  tree = autosa_generate_ast_from_schedule(schedule, data, gen,
+           module->double_buffer && gen->options->target == AUTOSA_TARGET_INTEL_OPENCL?
+           "outer_c" : NULL);  
   module->tree = tree;
 
   if (module->boundary)
@@ -9184,7 +9196,9 @@ isl_stat sa_filter_buffer_io_module_generate_code(struct autosa_gen *gen,
     //schedule = insert_top_loop_coalesce(schedule);
     autosa_at_domain_data_init(&data, gen);
     data.boundary = 1;
-    tree = autosa_generate_ast_from_schedule(schedule, data, gen);
+    tree = autosa_generate_ast_from_schedule(schedule, data, gen,
+             module->double_buffer && gen->options->target == AUTOSA_TARGET_INTEL_OPENCL?
+             "outer_c" : NULL);
     isl_ast_node_free(tree);
   }
 
@@ -9227,7 +9241,7 @@ isl_stat sa_module_generate_code(struct autosa_gen *gen,
   //  pd = isl_printer_free(pd);
   //#endif
   autosa_at_domain_data_init(&data, gen);
-  tree = autosa_generate_ast_from_schedule(schedule, data, gen);
+  tree = autosa_generate_ast_from_schedule(schedule, data, gen, NULL);
   module->tree = tree;
 
   if (module->boundary)
@@ -9236,7 +9250,7 @@ isl_stat sa_module_generate_code(struct autosa_gen *gen,
     schedule = module->boundary_sched;
     autosa_at_domain_data_init(&data, gen);
     data.boundary = 1;
-    tree = autosa_generate_ast_from_schedule(schedule, data, gen);
+    tree = autosa_generate_ast_from_schedule(schedule, data, gen, NULL);
     isl_ast_node_free(tree);
   }
 
@@ -9250,7 +9264,7 @@ isl_stat sa_module_generate_code(struct autosa_gen *gen,
       autosa_at_domain_data_init(&data, gen);
       data.pe_dummy = 1;
       data.pe_dummy_module = dummy_module;
-      tree = autosa_generate_ast_from_schedule(schedule, data, gen);
+      tree = autosa_generate_ast_from_schedule(schedule, data, gen, NULL);
       isl_ast_node_free(tree);
     }
   }
@@ -9280,7 +9294,7 @@ isl_stat sa_drain_merge_generate_code(struct autosa_gen *gen,
 
   schedule = func->sched;
   autosa_at_domain_data_init(&data, gen);
-  tree = autosa_generate_ast_from_schedule(schedule, data, gen);
+  tree = autosa_generate_ast_from_schedule(schedule, data, gen, NULL);
   func->tree = tree;
 
   return isl_stat_ok;
