@@ -97,7 +97,7 @@ after the fragment.
 
 Run
 ```c
-./autosa ./autosa_tests/mm/kernel.c --AutoSA-config=./autosa_config/autosa_config.json --target=autosa_hls_c --AutoSA-autosa --AutoSA-two-level-buffer --AutoSA-uram --isl-schedule-whole-component --AutoSA-output-dir=./autosa.tmp/output --AutoSA-simd-info=./autosa_tests/mm/simd_info.json
+./autosa ./autosa_tests/mm/kernel.c --AutoSA-config=./autosa_config/autosa_config.json --target=autosa_hls_c --AutoSA-autosa --AutoSA-two-level-buffer --AutoSA-uram --isl-schedule-whole-component --AutoSA-output-dir=./autosa.tmp/output --sa-sizes="{kernel[0]->array_part[16,16,16];kernel[0]->array_part_L2[2,2,2];kernel[0]->latency[8,8];kernel[0]->simd[2]}" --AutoSA-simd-info=./autosa_tests/mm/simd_info.json
 ```
 where `kernel.c` is the file containing the fragment. The generated code can be found in `autosa.tmp/output/src/kernel_host.cpp` and `autosa.tmp/output/src/kernel_kernel.cpp`. For detailed explaination of each AutoSA compilation option, please run
 ```c
@@ -211,6 +211,7 @@ To guide AutoSA to select this design, we will provide AutoSA with the new argum
 --sa-sizes="{kernel[0]->space_time[3]}"
 ```
 which tells AutoSA to select the fourth array (index starting from 0) during the space-time transformation.
+Note that at present, we only support space-time transformation in auto mode.
 
 * __Array partitioning__: In this step, we will tile the space loops to partition the original array into smaller ones. The computation is then scheduled onto the sub-arrays in sequence. We first set this step in manual mode. Then run the command:
 ```c
@@ -275,7 +276,7 @@ And we can find the updated `tuning.json`:
   "legal": [1]
 }
 ```
-This tells us that the candidate loop has the upper bound of 16. We assign a score based on heuristics to each candidate loop. The higher the score is, the more hardware-friendly it is when selected as the SIMD loop. The last item `legal` indicates that this loop can be directly used for optimization. Otherwise, we will need to perform further layout transformation on the arrays used by the program to expose the SIMD opportunity. AutoSA will automatically print out how to perform the layout transformation for such loops.
+This tells us that the candidate loop has the upper bound of 16. We assign a score based on heuristics to each candidate loop. The higher the score is, the more hardware-friendly it is when being selected as the SIMD loop. The last item `legal` indicates that this loop can be directly used for optimization. Otherwise, we will need to perform further layout transformation on the arrays used by the program to expose the SIMD opportunity. AutoSA will automatically print out how to perform the layout transformation for such loops.
 
 We select the tiling factor `[2]` and proceed. Run the command:
 ```c
