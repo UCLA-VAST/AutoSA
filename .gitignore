@@ -35,3 +35,4 @@ src/tags
 autosa
 autosa.tmp
 .nfs*
+.vscode
