@@ -454,6 +454,8 @@ def index_simplify(matchobj):
   str_expr = matchobj.group(0)
   if str_expr == '[arb]' or str_expr == '[!arb]':
     return str_expr
+  if '++' in str_expr:
+    return str_expr
   expr = sympy.sympify(str_expr[1 : len(str_expr) - 1])
   """
   This will sometimes cause bugs due to the different semantics in C

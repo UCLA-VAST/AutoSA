@@ -878,6 +878,8 @@ static struct autosa_kernel *autosa_kernel_create_local_arrays(
     /* Initialize the fields. */
     kernel->array[i].n_io_group_refs = 0;
     kernel->array[i].n_mem_ports = 0;
+    kernel->array[i].host_serialize = 0;
+    kernel->array[i].serialize_bound = NULL;
   }
 
   return kernel;
@@ -3780,11 +3782,13 @@ __isl_give isl_schedule *sa_map_to_device(struct autosa_gen *gen,
   //  pd = isl_printer_print_schedule_node(pd, node);
   //  pd = isl_printer_free(pd);
   //#endif
+
   /* Add init/clear device statements. */
   node = sa_add_init_clear_device(node, kernel);
 
   /* Add drain merge nodes. */
   node = sa_add_drain_merge(node, gen);
+
   //#ifdef _DEBUG
   //  isl_printer *pd = isl_printer_to_file(gen->ctx, stdout);
   //  pd = isl_printer_set_yaml_style(pd, ISL_YAML_STYLE_BLOCK);
@@ -3908,6 +3912,14 @@ static __isl_give isl_printer *generate(__isl_take isl_printer *p,
     for (int i = 0; i < gen->n_drain_merge_funcs; i++)
     {
       sa_drain_merge_generate_code(gen, gen->drain_merge_funcs[i]);
+    }
+    if (gen->options->autosa->host_serialize) {
+      for (int i = 0; i < gen->n_hw_modules; i++) 
+      {
+        if (gen->hw_modules[i]->to_mem) {
+          sa_host_serialize_generate_code(gen, gen->hw_modules[i]);
+        }
+      }
     }
 
     /* Extract loop structure for latency estimation */

@@ -20,6 +20,8 @@ __isl_give isl_printer *autosa_array_info_print_data_size(
     __isl_take isl_printer *p, struct autosa_array_info *array);
 __isl_give isl_printer *autosa_array_info_print_size(
     __isl_take isl_printer *p, struct autosa_array_info *array);
+__isl_give isl_printer *autosa_array_info_print_serialize_size(
+    __isl_take isl_printer *p, struct autosa_array_info *array);    
 __isl_give isl_printer *autosa_print_array_type(__isl_take isl_printer *p,
                                                 struct autosa_array_info *array);
 __isl_give isl_printer *autosa_array_info_print_declaration_argument(
@@ -66,6 +68,16 @@ __isl_give isl_printer *autosa_kernel_print_module_call(
     enum platform target);
 void print_func_iterators(FILE *out,
                           struct autosa_drain_merge_func *func);
+__isl_give isl_printer *print_serialize_counter(
+    __isl_take isl_printer *p, 
+    struct autosa_hw_module *module);
+__isl_give isl_printer *print_host_serialize_arguments(
+    __isl_take isl_printer *p,
+    struct autosa_kernel *kernel,
+    struct autosa_array_ref_group *group,
+    struct autosa_hw_module *module,
+    int types,
+    int hls);    
 
 /* FIFOs */
 __isl_give isl_printer *autosa_fifo_print_declaration_arguments(
@@ -106,6 +118,10 @@ __isl_give isl_printer *autosa_kernel_print_state_handle(
 __isl_give isl_printer *autosa_kernel_print_drain_merge(
     __isl_take isl_printer *p,
     struct autosa_kernel_stmt *stmt, struct hls_info *hls);
+__isl_give isl_printer *autosa_kernel_print_host_serialize(
+    __isl_take isl_printer *p,
+    struct autosa_kernel_stmt *stmt,
+    struct hls_info *hls);    
 
 /* Xilinx-specific */
 __isl_give isl_printer *print_fifo_type_xilinx(__isl_take isl_printer *p,

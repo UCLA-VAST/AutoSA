@@ -20,6 +20,7 @@
 #include <isl/schedule.h>
 #include <isl/schedule_node.h>
 #include <isl/val.h>
+#include <isl/polynomial.h>
 
 #include <cJSON/cJSON.h>
 
@@ -76,7 +77,8 @@ enum autosa_kernel_stmt_type
   AUTOSA_KERNEL_STMT_IO_MODULE_CALL_INTRA_TRANS,
   AUTOSA_KERNEL_STMT_IO_MODULE_CALL_INTER_INTRA,
   AUTOSA_KERNEL_STMT_IO_MODULE_CALL_INTRA_INTER,
-  AUTOSA_KERNEL_STMT_IO_MODULE_CALL_STATE_HANDLE
+  AUTOSA_KERNEL_STMT_IO_MODULE_CALL_STATE_HANDLE,
+  AUTOSA_KERNEL_STMT_HOST_SERIALIZE
 };
 
 enum autosa_dep_type
@@ -594,6 +596,10 @@ struct autosa_local_array_info
   int n_group;
   struct autosa_array_ref_group **groups;
 
+  /* Is array serialized at the host side. */
+  int host_serialize;
+  isl_pw_qpolynomial *serialize_bound;
+
   enum autosa_array_type array_type;
   int n_lane;
 
@@ -735,6 +741,10 @@ struct autosa_hw_module
   int is_buffer;
   /* Filter module */
   int is_filter;
+
+  /* Serialization schedule */
+  isl_schedule *serialize_sched;
+  isl_ast_node *serialize_tree;
 
   /* Module function schedule for buffer_filter modules */
   isl_schedule *outer_sched; /* Outer loops */
@@ -884,6 +894,7 @@ struct autosa_kernel_stmt
       int filter;
       int boundary;
       int dummy;
+      int serialize;
       char *fifo_name;
       char *fifo_type;
       int filter_sched_depth;
@@ -921,6 +932,12 @@ struct autosa_kernel_stmt
       struct autosa_drain_merge_func *func;
       isl_ast_expr *index;
     } dm;
+    struct 
+    {
+      isl_ast_expr *index;
+      struct autosa_array_ref_group *group;
+      int in;
+    } s;
   } u;
 };
 

@@ -222,6 +222,21 @@ __isl_give isl_printer *autosa_array_info_print_size(
   return p;
 }
 
+/* Print an expression for the size of "array" in bytes.
+ */
+__isl_give isl_printer *autosa_array_info_print_serialize_size(
+    __isl_take isl_printer *p, struct autosa_array_info *array)
+{
+  p = isl_printer_print_str(p, "(");
+  p = isl_printer_print_pw_qpolynomial(p, array->local_array->serialize_bound);
+  p = isl_printer_print_str(p, ") * ");
+  p = isl_printer_print_str(p, "sizeof(");
+  p = isl_printer_print_str(p, array->type);
+  p = isl_printer_print_str(p, ")");
+
+  return p;
+}
+
 __isl_give isl_printer *autosa_print_array_type(__isl_take isl_printer *p,
                                                 struct autosa_array_info *array)
 {
@@ -561,6 +576,164 @@ void print_func_iterators(FILE *out,
   ctx = isl_ast_node_get_ctx(func->tree);
   type = isl_options_get_ast_iterator_type(ctx);
   print_iterators(out, type, func->inst_ids, dims);
+}
+
+__isl_give isl_printer *print_serialize_counter(
+  __isl_take isl_printer *p, struct autosa_hw_module *module)
+{
+  p = isl_printer_start_line(p);
+  p = isl_printer_print_str(p, "unsigned int ");
+  p = isl_printer_print_str(p, module->io_groups[0]->array->name);
+  p = isl_printer_print_str(p, "_cnt = 0;");
+  p = isl_printer_end_line(p);
+
+  return p;
+}
+
+/* Print the arguments to a host serialization functioin declaration or call.
+ * If "types" is set, then print a declaration (including the types of the arguments).
+ * 
+ * The arguments are printed in the following order:
+ * - the moduler identifiers
+ * - the paramters
+ * - the host loop iterators
+ * - the input array accessed by the module (before serialization/deserialization)
+ * - the output array accessed by the module (after serialization/deserialization)
+ */
+__isl_give isl_printer *print_host_serialize_arguments(
+  __isl_take isl_printer *p,
+  struct autosa_kernel *kernel,
+  struct autosa_array_ref_group *group,
+  struct autosa_hw_module *module,
+  int types,
+  int hls)
+{
+  int first = 1;
+  int nparam;
+  int n;
+  isl_space *space;
+  const char *type;
+  struct autosa_local_array_info *local_array;
+
+  type = isl_options_get_ast_iterator_type(kernel->ctx);
+  /* module identifiers */
+  const char *dims[] = {"idx", "idy", "idz"};
+  n = isl_id_list_n_id(module->inst_ids);
+  for (int i = 0; i < n; ++i)
+  {
+    if (!first)
+      p = isl_printer_print_str(p, ", ");
+    if (types)
+    {
+      p = isl_printer_print_str(p, type);
+      p = isl_printer_print_str(p, " ");
+    }
+    p = isl_printer_print_str(p, dims[i]);
+
+    first = 0;
+  }
+
+  /* params */
+  space = isl_union_set_get_space(kernel->arrays);
+  nparam = isl_space_dim(space, isl_dim_param);
+  for (int i = 0; i < nparam; ++i)
+  {
+    const char *name;
+
+    name = isl_space_get_dim_name(space, isl_dim_param, i);
+
+    if (!first)
+      p = isl_printer_print_str(p, ", ");
+    if (types)
+      p = isl_printer_print_str(p, "int ");
+    p = isl_printer_print_str(p, name);
+
+    first = 0;
+  }
+  isl_space_free(space);
+
+  /* Host iters */
+  n = isl_space_dim(kernel->space, isl_dim_set);
+  for (int i = 0; i < n; ++i)
+  {
+    const char *name;
+
+    if (!first)
+      p = isl_printer_print_str(p, ", ");
+    name = isl_space_get_dim_name(kernel->space, isl_dim_set, i);
+    if (types)
+    {
+      p = isl_printer_print_str(p, type);
+      p = isl_printer_print_str(p, " ");
+    }
+    p = isl_printer_print_str(p, name);
+
+    first = 0;
+  }
+
+  /* Arrays */
+  local_array = group->local_array;
+  if (!first)
+    p = isl_printer_print_str(p, ", ");
+  if (types)    
+  {
+    if (hls)
+    {
+      p = isl_printer_print_str(p, local_array->array->type);
+      p = isl_printer_print_str(p, " *");
+    }
+    else 
+    {
+      p = isl_printer_print_str(p, "std::vector<");
+      p = isl_printer_print_str(p, local_array->array->type);
+      p = isl_printer_print_str(p, ", aligned_allocator<");
+      p = isl_printer_print_str(p, local_array->array->type);
+      p = isl_printer_print_str(p, ">> &");
+    }
+    p = isl_printer_print_str(p, local_array->array->name);
+    p = isl_printer_print_str(p, "_to");
+  }
+  else 
+  {    
+    p = isl_printer_print_str(p, "dev_");
+    p = isl_printer_print_str(p, local_array->array->name);
+    if (!module->in) {
+      p = isl_printer_print_str(p, "_unserialized");
+    }    
+  }
+  first = 0;
+
+  if (!first)
+    p = isl_printer_print_str(p, ", ");
+  if (types)
+  {
+    if (hls)
+    {
+      p = isl_printer_print_str(p, local_array->array->type);
+      p = isl_printer_print_str(p, " *");
+    }
+    else
+    {
+      p = isl_printer_print_str(p, "std::vector<");
+      p = isl_printer_print_str(p, local_array->array->type);
+      p = isl_printer_print_str(p, ", aligned_allocator<");
+      p = isl_printer_print_str(p, local_array->array->type);
+      p = isl_printer_print_str(p, ">> &");
+    }
+    p = isl_printer_print_str(p, local_array->array->name);
+    p = isl_printer_print_str(p, "_from");
+  }
+  else
+  {    
+    p = isl_printer_print_str(p, "dev_");
+    p = isl_printer_print_str(p, local_array->array->name);
+    if (module->in) {
+      p = isl_printer_print_str(p, "_unserialized");
+    }    
+  }
+  first = 0;
+
+  return p;  
 }
 
 /* Print out
@@ -3594,9 +3767,11 @@ __isl_give isl_printer *autosa_kernel_print_io_transfer(
 /* Print an access to the element in the global memory copy
  * described by "stmt".  The index of the copy is recorded in
  * stmt->index as an access to the array.
+ * If "serialize" is set, we will simply print array[array_cnt++];
  */
 static __isl_give isl_printer *io_stmt_print_global_index(
-    __isl_take isl_printer *p, struct autosa_kernel_stmt *stmt)
+    __isl_take isl_printer *p, struct autosa_kernel_stmt *stmt, 
+    int serialize)
 {
   struct autosa_array_info *array = stmt->u.i.array;
   isl_ast_expr *index;
@@ -3610,14 +3785,69 @@ static __isl_give isl_printer *io_stmt_print_global_index(
   }
 
   index = isl_ast_expr_copy(stmt->u.i.index);
-
-  p = isl_printer_print_ast_expr(p, index);
+  if (!serialize) {    
+    p = isl_printer_print_ast_expr(p, index);
+  } else {    
+    isl_ast_expr *array_name;
+    array_name = isl_ast_expr_op_get_arg(index, 0);
+    p = isl_printer_print_ast_expr(p, array_name);
+    p = isl_printer_print_str(p, "[");
+    p = isl_printer_print_ast_expr(p, array_name);
+    p = isl_printer_print_str(p, "_cnt++]");
+    isl_ast_expr_free(array_name);
+  }
   isl_ast_expr_free(index);
 
   return p;
 }
 
-/* Print an drain merge statement.
+/* Print a serialization/deserialization statement.
+ * Serialization:
+ * X_to[X_cnt++] = X_from[...]
+ * Deserizalition:
+ * X_to[...] = X_from[X_cnt++]
+ */
+__isl_give isl_printer *autosa_kernel_print_host_serialize(
+  __isl_take isl_printer *p,
+  struct autosa_kernel_stmt *stmt,
+  struct hls_info *hls)
+{
+  isl_ast_expr *index, *arg;
+  isl_id *id;
+  const char *array_name;
+
+  index = stmt->u.s.index;
+  p = isl_printer_start_line(p);
+  arg = isl_ast_expr_get_op_arg(index, 0);
+  id = isl_ast_expr_id_get_id(arg);
+  array_name = isl_id_get_name(id);
+  isl_id_free(id);
+  isl_ast_expr_free(arg);
+
+  arg = isl_ast_expr_get_op_arg(index, 1);
+
+  if (stmt->u.s.in) {
+    p = isl_printer_print_str(p, array_name);
+    p = isl_printer_print_str(p, "_to[cnt++] = ");    
+    p = isl_printer_print_str(p, array_name);
+    p = isl_printer_print_str(p, "_from[");
+    p = isl_printer_print_ast_expr(p, arg);
+    p = isl_printer_print_str(p, "];");
+  } else {
+    p = isl_printer_print_str(p, array_name);
+    p = isl_printer_print_str(p, "_to[");
+    p = isl_printer_print_ast_expr(p, arg);
+    p = isl_printer_print_str(p, "] = ");
+    p = isl_printer_print_str(p, array_name);
+    p = isl_printer_print_str(p, "_from[cnt++];");    
+  }
+  p = isl_printer_end_line(p);
+  isl_ast_expr_free(arg);
+
+  return p;
+}
+
+/* Print a drain merge statement.
  *
  * [group_array_prefix]_to[...] = [group_array_prefix]_from[...]
  */
@@ -3756,8 +3986,8 @@ __isl_give isl_printer *autosa_kernel_print_io_dram(__isl_take isl_printer *p,
   if (stmt->u.i.in)
   {
     p = isl_printer_start_line(p);
-    p = isl_printer_print_str(p, "fifo_data = ");
-    p = io_stmt_print_global_index(p, stmt);
+    p = isl_printer_print_str(p, "fifo_data = ");        
+    p = io_stmt_print_global_index(p, stmt, stmt->u.i.serialize);    
     p = isl_printer_print_str(p, ";");
     p = isl_printer_end_line(p);
 
@@ -3805,8 +4035,8 @@ __isl_give isl_printer *autosa_kernel_print_io_dram(__isl_take isl_printer *p,
       p = isl_printer_end_line(p);
     }
 
-    p = isl_printer_start_line(p);
-    p = io_stmt_print_global_index(p, stmt);
+    p = isl_printer_start_line(p);    
+    p = io_stmt_print_global_index(p, stmt, stmt->u.i.serialize);
     p = isl_printer_print_str(p, " = fifo_data;");
     p = isl_printer_end_line(p);
   }

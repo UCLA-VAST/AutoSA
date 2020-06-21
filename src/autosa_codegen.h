@@ -26,6 +26,8 @@ isl_stat sa_module_generate_code(struct autosa_gen *gen,
 isl_stat sa_top_module_generate_code(struct autosa_gen *gen);
 isl_stat sa_drain_merge_generate_code(struct autosa_gen *gen,
                                       struct autosa_drain_merge_func *func);
+isl_stat sa_host_serialize_generate_code(struct autosa_gen *gen,
+                                         struct autosa_hw_module *module);                                      
 
 int autosa_array_requires_device_allocation(struct autosa_array_info *array);
 

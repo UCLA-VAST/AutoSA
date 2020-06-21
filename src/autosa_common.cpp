@@ -52,6 +52,9 @@ void *autosa_kernel_free(struct autosa_kernel *kernel)
 
     isl_multi_pw_aff_free(array->bound);
     isl_ast_expr_free(array->bound_expr);
+    
+    isl_pw_qpolynomial_free(array->serialize_bound);    
+    //array->group_ref_mem_port_map.clear();
   }
   if (kernel->array)
     free(kernel->array);
@@ -1350,6 +1353,9 @@ void autosa_kernel_stmt_free(void *user)
   case AUTOSA_KERNEL_STMT_DRAIN_MERGE:
     isl_ast_expr_free(stmt->u.dm.index);
     break;
+  case AUTOSA_KERNEL_STMT_HOST_SERIALIZE:
+    isl_ast_expr_free(stmt->u.s.index);
+    break;
   }
 
   free(stmt);
@@ -1516,6 +1522,8 @@ struct autosa_hw_module *autosa_hw_module_alloc(struct autosa_gen *gen)
   module->n_pe_dummy_modules = 0;
   module->pe_dummy_modules = NULL;
   module->n_array_ref = 0;
+  module->serialize_sched = NULL;
+  module->serialize_tree = NULL;
 
   return module;
 }
@@ -1534,6 +1542,7 @@ void *autosa_hw_module_free(struct autosa_hw_module *module)
   isl_ast_node_free(module->boundary_tree);
   isl_ast_node_free(module->boundary_outer_tree);
   isl_ast_node_free(module->boundary_inter_tree);
+  isl_ast_node_free(module->serialize_tree);
 
   isl_space_free(module->inter_space);
   isl_space_free(module->intra_space);
@@ -1552,6 +1561,7 @@ void *autosa_hw_module_free(struct autosa_hw_module *module)
     autosa_pe_dummy_module_free(module->pe_dummy_modules[i]);
   }
   free(module->pe_dummy_modules);
+
   free(module);
 
   return NULL;
