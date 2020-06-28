@@ -1981,8 +1981,10 @@ __isl_give isl_printer *print_module_call_upper(__isl_take isl_printer *p,
   {
     p = isl_printer_print_str(p, "_boundary");
   }
-  if (target == XILINX_HW)
-    p = isl_printer_print_str(p, "_wrapper");
+  if (target == XILINX_HW) {
+    if (!dummy && module->type == PE_MODULE)
+      p = isl_printer_print_str(p, "_wrapper");
+  }
   p = isl_printer_print_str(p, "(\");");
   p = isl_printer_end_line(p);
 
@@ -3125,7 +3127,9 @@ static __isl_give isl_printer *autosa_kernel_print_io_transfer_default(
       /* local[][] = fifo_data; */
       p = isl_printer_start_line(p);
       //p = isl_printer_print_ast_expr(p, local_index_packed);
-      if (hls->target == INTEL_HW && stmt->u.i.module->double_buffer) {
+      if (stmt->u.i.module->double_buffer && 
+          stmt->u.i.module->options->autosa->double_buffer_style == 0)
+      {
         isl_ast_expr *op;
         op = isl_ast_expr_op_get_arg(local_index_packed, 0);
         p = isl_printer_print_ast_expr(p, op);
@@ -3138,7 +3142,9 @@ static __isl_give isl_printer *autosa_kernel_print_io_transfer_default(
           p = isl_printer_print_str(p, "]");
           isl_ast_expr_free(op);
         }
-      } else {
+      } 
+      else 
+      {
         p = isl_printer_print_ast_expr(p, local_index_packed);
       }
       p = isl_printer_print_str(p, " = fifo_data;");
@@ -3209,7 +3215,8 @@ static __isl_give isl_printer *autosa_kernel_print_io_transfer_default(
       /* fifo_data = local[][]; */
       p = isl_printer_start_line(p);
       p = isl_printer_print_str(p, "fifo_data = ");
-      if (hls->target == INTEL_HW && stmt->u.i.module->double_buffer) {
+      if (stmt->u.i.module->double_buffer && 
+          stmt->u.i.module->options->autosa->double_buffer_style == 0) {      
         isl_ast_expr *op;
         op = isl_ast_expr_op_get_arg(local_index_packed, 0);
         p = isl_printer_print_ast_expr(p, op);
@@ -3422,7 +3429,9 @@ static __isl_give isl_printer *autosa_kernel_print_io_transfer_data_pack(
   p = isl_printer_start_line(p);
   p = isl_printer_print_str(p, "buf_data = ");
   //p = isl_printer_print_ast_expr(p, local_index_packed);
-  if (hls->target == INTEL_HW && stmt->u.i.module->double_buffer) {
+  // if (hls->target == INTEL_HW && stmt->u.i.module->double_buffer) {
+  if (stmt->u.i.module->double_buffer && 
+      stmt->u.i.module->options->autosa->double_buffer_style == 0) {
     isl_ast_expr *op;
     op = isl_ast_expr_op_get_arg(local_index_packed, 0);
     p = isl_printer_print_ast_expr(p, op);
@@ -3650,7 +3659,9 @@ static __isl_give isl_printer *autosa_kernel_print_io_transfer_data_pack(
     /* local_buf[...] = buf_data; */
     p = isl_printer_start_line(p);
     //p = isl_printer_print_ast_expr(p, local_index_packed);
-    if (hls->target == INTEL_HW && stmt->u.i.module->double_buffer) {
+    //if (hls->target == INTEL_HW && stmt->u.i.module->double_buffer) {
+    if (stmt->u.i.module->double_buffer && 
+        stmt->u.i.module->options->autosa->double_buffer_style == 0) {
       isl_ast_expr *op;
       op = isl_ast_expr_op_get_arg(local_index_packed, 0);
       p = isl_printer_print_ast_expr(p, op);

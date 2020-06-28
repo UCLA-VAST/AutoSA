@@ -590,7 +590,9 @@ static __isl_give isl_printer *print_module_stmt(__isl_take isl_printer *p,
   case AUTOSA_KERNEL_STMT_IO:
     return autosa_kernel_print_io(p, stmt, hw_data->hls);
   case AUTOSA_KERNEL_STMT_IO_TRANSFER:
-    return autosa_kernel_print_io_transfer(p, stmt, hw_data->hls, hw_data->iterator_prefix);
+    return autosa_kernel_print_io_transfer(p, stmt, hw_data->hls, 
+              module->options->autosa->double_buffer_style == 0?
+                hw_data->iterator_prefix : NULL);
   case AUTOSA_KERNEL_STMT_IO_DRAM:
     return autosa_kernel_print_io_dram(p, stmt, hw_data->hls);
   case AUTOSA_KERNEL_STMT_IO_MODULE_CALL_INTER_TRANS:
@@ -1138,8 +1140,7 @@ static __isl_give isl_printer *declare_and_allocate_device_arrays_intel(
         p = isl_printer_print_str(p, local_array->array->type);
         p = isl_printer_print_str(p, ">>> ");
         p = isl_printer_print_str(p, "dev_");
-        p = isl_printer_print_str(p, local_array->array->name);
-      
+        p = isl_printer_print_str(p, local_array->array->name);      
         p = isl_printer_print_str(p, ";");
         p = isl_printer_end_line(p);
 
@@ -1416,7 +1417,9 @@ static __isl_give isl_printer *declare_and_allocate_device_arrays_intel(
  * declaring and allocating the required copies of arrays on the device.
  */
 static __isl_give isl_printer *init_device_intel(__isl_take isl_printer *p,
-                                                 struct autosa_prog *prog, struct autosa_kernel *kernel, int hls,
+                                                 struct autosa_prog *prog, 
+                                                 struct autosa_kernel *kernel, 
+                                                 int hls,
                                                  struct autosa_hw_top_module *top)
 {
   p = autosa_print_local_declarations(p, prog);
@@ -1701,7 +1704,9 @@ static __isl_give isl_printer *copy_array_from_device_intel(
  * init_device, clear_device, copy_array_to_device or copy_array_from_device.
  */
 static __isl_give isl_printer *print_device_node_intel(__isl_take isl_printer *p,
-                                                       __isl_keep isl_ast_node *node, struct autosa_prog *prog, int hls,
+                                                       __isl_keep isl_ast_node *node, 
+                                                       struct autosa_prog *prog, 
+                                                       int hls,
                                                        struct autosa_hw_top_module *top)
 {
   isl_ast_expr *expr, *arg;
@@ -3232,7 +3237,7 @@ static __isl_give isl_printer *autosa_print_intra_trans_module_double_buffer(
  * Note that this only works if each for loop structure is a perfectly 
  * nested loop so that we could convert to a while loop.
  */
-static __isl_give isl_printer *print_double_buffer_module_intel(
+static __isl_give isl_printer *print_double_buffer_module_while(
   __isl_take isl_printer *p, struct autosa_hw_module *module,
   struct autosa_prog *prog, struct hls_info *hls, int boundary)
 {
@@ -3377,11 +3382,11 @@ static __isl_give isl_printer *autosa_print_host_code(__isl_take isl_printer *p,
 
   for (int i = 0; i < n_modules; i++)
   {   
-    if (modules[i]->double_buffer) {
-      // TODO: Implement a different codegen for double buffer on Intel devices.
-      p_module = print_double_buffer_module_intel(p_module, modules[i], prog, hls, 0);
+    if (modules[i]->double_buffer && modules[i]->options->autosa->double_buffer_style == 0) {
+      /* We implement a different codegen for double buffer on Intel devices. */
+      p_module = print_double_buffer_module_while(p_module, modules[i], prog, hls, 0);
       if (modules[i]->boundary) {
-        p_module = print_double_buffer_module_intel(p_module, modules[i], prog, hls, 1);
+        p_module = print_double_buffer_module_while(p_module, modules[i], prog, hls, 1);
       }
     } else {
       if (modules[i]->is_filter && modules[i]->is_buffer)

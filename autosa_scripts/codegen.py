@@ -362,7 +362,7 @@ def insert_xlnx_pragmas(lines):
     if line.find("// hls_pipeline") != -1 or line.find("// hls_dependence") != -1:
       is_pipeline = 0
       is_dep = 0
-      if line.find('// hls_pipeline') != -1:
+      if line.find('// hls_pipeline') != -1:        
         is_pipeline = 1
       else:
         is_dep = 1
@@ -397,6 +397,8 @@ def insert_xlnx_pragmas(lines):
       n_l_bracket = 0
       n_r_bracket = 0
       while prev_pos >= 0:
+        if lines[prev_pos].find('while') != -1:
+          break
         if lines[prev_pos].find('{') != -1:
           n_l_bracket += 1
         if lines[prev_pos].find('}') != -1:
@@ -422,7 +424,7 @@ def insert_xlnx_pragmas(lines):
           line_cp = line
           var_name = line_cp.strip().split('.')[-1]
           new_line = ' ' * indent + "#pragma HLS DEPENDENCE variable=" + var_name + " inter false\n"
-        lines.insert(prev_pos + 1, new_line)
+        lines.insert(prev_pos + 1, new_line)        
         del lines[pos + 1]
     elif line.find("// hls_unroll") != -1:
       # Find the for loop above before hitting any "simd"
@@ -549,19 +551,21 @@ def shrink_bit_width(lines, target):
           line = re.sub('int', new_iter_t, line)
           lines[pos] = line
 
-  if target == 'intel':
-    for pos in range(code_len):
-      line = lines[pos]
-      m = re.search(r'/\* UB: (.+?) \*/', line)
-      if m:
-        ub = m.group(1).strip()
-        if ub.isnumeric():
-          # Replace it with shallow bit width
-          bitwidth = int(np.ceil(np.log2(float(ub) + 1))) + 1
+  for pos in range(code_len):
+    line = lines[pos]
+    m = re.search(r'/\* UB: (.+?) \*/', line)
+    if m:
+      ub = m.group(1).strip()
+      if ub.isnumeric():
+        # Replace it with shallow bit width
+        bitwidth = int(np.ceil(np.log2(float(ub) + 1))) + 1
+        if target == 'xilinx':
+          new_iter_t = 'ap_uint<' + str(bitwidth) + '>'
+        elif target == 'intel':
           new_iter_t = 'uint' + str(bitwidth) + '_t'
-          #line = re.sub('int', new_iter_t, line)
-          line = re.sub(r'(int)' + r'\s' + r'([a-zA-Z])', re.escape(new_iter_t) + r' \g<2>', line)
-          lines[pos] = line
+        #line = re.sub('int', new_iter_t, line)
+        line = re.sub(r'(int)' + r'\s' + r'([a-zA-Z])', new_iter_t + r' \g<2>', line)
+        lines[pos] = line
 
   return lines
 

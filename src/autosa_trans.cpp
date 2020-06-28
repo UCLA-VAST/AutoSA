@@ -58,7 +58,7 @@ static cJSON *load_tuning_config(char *config_file)
     if (buffer)
     {
       buffer[length] = '\0';
-      fread(buffer, 1, length, f);
+      int r = fread(buffer, 1, length, f);
     }
     fclose(f);
   }
@@ -2574,7 +2574,7 @@ static __isl_give char *load_simd_info(struct autosa_kernel *sa)
       if (buffer)
       {
         buffer[length] = '\0';
-        fread(buffer, 1, length, f);
+        int r = fread(buffer, 1, length, f);
       }
       fclose(f);
     }

@@ -98,6 +98,8 @@ ISL_ARG_STR(struct autosa_options, data_pack_sizes, 0, "data-pack-sizes", "sizes
   NULL, "data pack sizes upper bound at innermost, in-between, outermost I/O level. [default: 8 32 64]")
 ISL_ARG_BOOL(struct autosa_options, double_buffer, 0, "double-buffer", 1,
   "enable double-buffering for data transfer")	
+ISL_ARG_INT(struct autosa_options, double_buffer_style, 0, "double-buffer-style", "id", 0,
+  "change double-buffering logic coding style. 0: while loop 1: for loop")
 ISL_ARG_BOOL(struct autosa_options, hbm, 0, "hbm", 0,
   "use multi-port DRAM/HBM")	
 ISL_ARG_INT(struct autosa_options, n_hbm_port, 0, "hbm-port-num", "num", 2, 
@@ -109,7 +111,9 @@ ISL_ARG_BOOL(struct autosa_options, host_serialize, 0, "host-serialize", 0,
 ISL_ARG_BOOL(struct autosa_options, insert_hls_dependence, 0, "insert-hls-dependence", 1,
   "insert Xilinx HLS dependence pragma")	
 ISL_ARG_BOOL(struct autosa_options, loop_infinitize, 0, "loop-infinitize", 0,
-  "apply loop infinitization optimization (Intel OpenCL only)")
+  "apply loop infinitization optimization (Intel OpenCL only)")  
+ISL_ARG_BOOL(struct autosa_options, non_block_fifo, 0, "non-blocking-fifo", 0,
+  "use non-blocking fifo interface")
 ISL_ARG_BOOL(struct autosa_options, use_local_memory, 0, "local-memory", 1, 
   "use local memory in kernel code")
 ISL_ARG_INT(struct autosa_options, max_local_memory, 0,

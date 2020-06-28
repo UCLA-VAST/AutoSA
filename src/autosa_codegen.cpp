@@ -9616,7 +9616,7 @@ isl_stat sa_filter_buffer_io_module_generate_code(struct autosa_gen *gen,
   //schedule = insert_top_loop_coalesce(schedule);
   autosa_at_domain_data_init(&data, gen);
   tree = autosa_generate_ast_from_schedule(schedule, data, gen, 
-    module->double_buffer && gen->options->target == AUTOSA_TARGET_INTEL_OPENCL?
+    module->double_buffer && gen->options->autosa->double_buffer_style == 0?
     "inter_c" : NULL);
   isl_ast_node_free(tree);  
 
@@ -9628,7 +9628,7 @@ isl_stat sa_filter_buffer_io_module_generate_code(struct autosa_gen *gen,
     autosa_at_domain_data_init(&data, gen);
     data.boundary = 1;
     tree = autosa_generate_ast_from_schedule(schedule, data, gen,
-      module->double_buffer && gen->options->target == AUTOSA_TARGET_INTEL_OPENCL?
+      module->double_buffer && gen->options->autosa->double_buffer_style == 0?
       "inter_c" : NULL);
     isl_ast_node_free(tree);
   }
@@ -9638,7 +9638,7 @@ isl_stat sa_filter_buffer_io_module_generate_code(struct autosa_gen *gen,
   //schedule = insert_top_loop_coalesce(schedule);
   autosa_at_domain_data_init(&data, gen);
   tree = autosa_generate_ast_from_schedule(schedule, data, gen,
-           module->double_buffer && gen->options->target == AUTOSA_TARGET_INTEL_OPENCL?
+           module->double_buffer && gen->options->autosa->double_buffer_style == 0?
            "intra_c" : NULL);
   isl_ast_node_free(tree);
 
@@ -9653,7 +9653,7 @@ isl_stat sa_filter_buffer_io_module_generate_code(struct autosa_gen *gen,
   //schedule = insert_top_loop_coalesce(schedule);
   autosa_at_domain_data_init(&data, gen);
   tree = autosa_generate_ast_from_schedule(schedule, data, gen,
-           module->double_buffer && gen->options->target == AUTOSA_TARGET_INTEL_OPENCL?
+           module->double_buffer && gen->options->autosa->double_buffer_style == 0?
            "outer_c" : NULL);  
   module->tree = tree;
 
@@ -9665,7 +9665,7 @@ isl_stat sa_filter_buffer_io_module_generate_code(struct autosa_gen *gen,
     autosa_at_domain_data_init(&data, gen);
     data.boundary = 1;
     tree = autosa_generate_ast_from_schedule(schedule, data, gen,
-             module->double_buffer && gen->options->target == AUTOSA_TARGET_INTEL_OPENCL?
+             module->double_buffer && gen->options->autosa->double_buffer_style == 0?
              "outer_c" : NULL);
     isl_ast_node_free(tree);
   }

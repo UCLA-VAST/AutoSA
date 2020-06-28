@@ -43,32 +43,36 @@ extern "C"
 		int use_local_memory;
 		/* Maximal amount of local memory. */
 		int max_local_memory;
-		/* Enable data pack for transferring data */
+		/* Enable data pack for transferring data. */
 		int data_pack;
 		/* Data pack factors at different I/O levels. */
 		char *data_pack_sizes;
-		/* Enable credit control between different array partitions */
+		/* Enable credit control between different array partitions. */
 		int credit_control;
-		/* Enable two-level buffering in I/O modules */
+		/* Enable two-level buffering in I/O modules. */
 		int two_level_buffer;
-		/* Configuration file */
+		/* Configuration file. */
 		char *config;
-		/* Output directory */
+		/* Output directory. */
 		char *output_dir;
-		/* SIMD information file */
+		/* SIMD information file. */
 		char *simd_info;
-		/* Generate HLS host instead of OpenCL host */
+		/* Generate HLS host instead of OpenCL host. */
 		int hls;
-		/* Use URAM */
+		/* Use URAM. */
 		int uram;
-		/* Print verbose information */
+		/* Print verbose information. */
 		int verbose;
-		/* Insert HLS dependence pragma */
+		/* Insert HLS dependence pragma. */
 		int insert_hls_dependence;
 		/* Enable loop infinitization optimization. Only for Intel. */
 		int loop_infinitize;
 		/* Enable data serialization/deserialization on the host side. */
 		int host_serialize;
+		/* Use non-blocking FIFO access. Note: Not supported. */
+		int non_block_fifo;
+		/* Double buffer coding style. 0: for loop (default) 1: while loop */
+		int double_buffer_style;
 	};
 
 	struct ppcg_options
