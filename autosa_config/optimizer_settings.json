@@ -1,0 +1,29 @@
+{
+    "training": {
+        "sample": {
+            "space_time": {
+                "mode": "exhaustive",
+                "n": -1
+            },
+            "array_part": {
+
+            }
+        },
+        "multiprocess": {
+            "n_job": 24
+        },
+        "pruning": {
+            "array_part": {
+                "enable": 1
+            },
+            "array_part_L2": {
+                "enable": 1
+            }
+        }
+    },
+    "search": {
+        "multiprocess": {
+            "n_job": 24
+        }
+    }
+}

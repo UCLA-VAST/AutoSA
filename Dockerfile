@@ -14,12 +14,12 @@ RUN ln -s /usr/bin/llvm-config-9 /usr/bin/llvm-config
 RUN mkdir /ntl
 WORKDIR /ntl
 RUN wget https://www.shoup.net/ntl/ntl-11.4.3.tar.gz
-RUN gunzip *.tar.gz
-RUN tar xf *.tar
-WORKDIR /ntl/ntl-*
+RUN gunzip ntl-11.4.3.tar.gz
+RUN tar xf ntl-11.4.3.tar
+WORKDIR /ntl/ntl-11.4.3/src
 RUN ./configure NTL_GMP_LIP=on
 RUN make -j4
-RUN sudo make install
+RUN make install
 
 # Copy the current folder to the Docker image
 COPY . /usr/src/docker_autosa

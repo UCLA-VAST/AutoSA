@@ -8,22 +8,12 @@ git submodule update
 # Install python packages
 pip3 install -r requirements.txt
 
-echo "Patch ISL"
 # Patch ISL
-cd ./autosa_scripts/ppcg_changes/isl
-./isl_patch.sh
-cd -
+echo "Patch ISL"
+(cd ./autosa_scripts/ppcg_changes/isl; ./isl_patch.sh)
 
 # Compilation
-cd src
-echo "autogen"
-./autogen.sh
-echo "configure"
-./configure
-echo "make"
-make -j4
-#make check
+(cd src; echo "autogen"; ./autogen.sh; echo "configure"; ./configure; echo "make"; make -j4)
 
-# Cleanup
-cd - 
+# Cleanup 
 cp ./autosa_scripts/autosa.py ./autosa
