@@ -28,4 +28,4 @@ COPY . /usr/src/docker_autosa
 WORKDIR /usr/src/docker_autosa
 
 # Install AutoSA
-RUN ./install.sh
+RUN pwd && ./install.sh

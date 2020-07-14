@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 import sys
 import argparse
 import re
@@ -19,621 +21,1379 @@ from statistics import mean
 import copy
 import logging
 import functools
+import shutil
+import datetime
+from pathlib import Path
 
 import optimizer_prune as opt_prune
+import resource_model as res_model
+
 
 def timer(func):
-  """ Print the runtime of the decorated function.
+    """ Print the runtime of the decorated function.
 
-  """
-  @functools.wraps(func)
-  def wrapper_timer(*args, **kwargs):
-    start_time = time.perf_counter()
-    value = func(*args, **kwargs)
-    end_time = time.perf_counter()
-    run_time = end_time - start_time
-    print(f'Finished {func.__name__} in {run_time:.4f} secs')
-    return value
-  retrun wrapper_timer
+    """
+    @functools.wraps(func)
+    def wrapper_timer(*args, **kwargs):
+        start_time = time.perf_counter()
+        value = func(*args, **kwargs)
+        end_time = time.perf_counter()
+        run_time = end_time - start_time
+        print(
+            f'[AutoSA-Optimizer {datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] INFO: Finished function: {func.__name__} in {run_time:.4f} secs')
+        return value
+    return wrapper_timer
+
+
+def generate_loop_candidates(loops, config, stage):
+    """ Generate candidate loops
+
+    This function samples each loop dimension given the sample numbers set in
+    the config, then builds a Cartesian product of all sampled loops to generate
+    all possible loop combinations to search.
+
+    Due to the current implementation limitation, we have the following limitation
+    on the loop candidates:
+    - Array partitionining: the loop candidates should be left-exclusive and right-inclusive.
+      This prevents generating single PEs along certain dimension which causes
+      codegen breakdown.
+    - Latency hiding: the loop candidates should be left-inclusive and right-exclusive.
+      Similarly, making it right-exclusive to avoid possible single PE case.
+    - SIMD, L2 array partitioning: both left- and right-inclusive
+    Note: for both latency hiding and SIMD, if we choose tiling factor as 1, the
+    corresponding stage will be skipeed in AutoSA.
+
+    If the sample mode is set in exhausive, we will search all divisible factors of
+    the loop bound.
+    If the sample mode is set in log, we will generate samples of exponentials of 2.
+    If the sample mode is set in linear, we will generate 'n' linear samples.
+    If the sample mode is set in random, we will generate 'n' random samples.
+
+    Parameters
+    ----------
+    loops: list
+        A list of loop upperbounds
+    config: dict
+        Global configuration
+    stage: str
+        Optimization stage name
+    """
+    if stage not in [
+        'space_time',
+        'array_part',
+        'array_part_L2',
+        'latency_hiding',
+            'SIMD_vectorization']:
+        raise NameError(f'Stage {stage} is not defined.')
+
+    sample_mode = config['setting'][config['mode']]['sample'][stage]['mode']
+    sample_n = config['setting'][config['mode']]['sample'][stage]['n']
+    sample_loop_limit = config['setting'][config['mode']
+                                          ]['sample'][stage]['loop_limit']
+
+    l_inclusive = 1
+    r_inclusive = 1
+    if stage == 'array_part':
+        l_inclusive = 0
+    elif stage == 'latency_hiding':
+        r_inclusive = 0
+
+    # Sample each loop dim
+    sample_list = []
+    for loop in loops:
+        if sample_mode == 'log':
+            ub = int(
+                np.floor(
+                    np.log2(
+                        loop if sample_loop_limit == -
+                        1 else min(
+                            loop,
+                            sample_loop_limit))))
+            lb = 0
+        else:
+            ub = loop if sample_loop_limit == - \
+                1 else min(loop, sample_loop_limit)
+            lb = 1
+        if not r_inclusive:
+            ub = ub - 1
+        if not l_inclusive:
+            lb = lb + 1
+        if sample_mode == 'exhausive':
+            samples = [s for s in range(lb, ub + 1) if loop % s == 0]
+        elif sample_mode == 'log':
+            samples = [
+                np.power(
+                    2,
+                    int(s)) for s in range(
+                    lb,
+                    ub +
+                    1) if loop %
+                np.power(
+                    2,
+                    int(s)) == 0]
+        elif sample_mode == 'linear':
+            samples = [s for s in range(lb, ub + 1) if loop % s == 0]
+            # Uniformly sample 'n' factors
+            stride = 1 if len(samples) <= sample_n else int(
+                len(samples) / sample_n)
+            samples = [samples[i] for i in range(0, len(samples), stride)]
+        elif sample_mode == 'random':
+            samples = [s for s in range(lb, ub + 1) if loop % s == 0]
+            # Randomly sample 'n' factors
+            if sample_n < len(samples):
+                samples = random.sample(samples, sample_n)
+        else:
+            raise NameError(f'Sample mode {sample_mode} is not defined.')
+        sample_list.append(samples)
+
+    # Generate Cartesian product
+    sample_loops = list(itertools.product(*sample_list))
+    sample_loops = [list(tup) for tup in sample_loops]
+
+    return sample_loops
+
 
 def multi_process(loops, func, config):
-  """ Perform multi-processing for function "func".
+    """ Perform multi-processing for function "func".
 
-  Parameters
-  ----------
-  loops: 
-    A list of loop candidates.
-  func:
-    The function to be executed by each process.
-  config: dict
-    Global configuration.
-  """  
-  num_proc = min(multiprocessing.cpu.count(), config['setting'][config['mode']]['multiprocess']['n_job'])
-  # Split the loops into chunks
-  chunk_size = int(np.ceil(float(len(loops)) / num_proc))
-  loop_chunks = [loops[i : i + min(chunk_size, len(loops) - i)] \
-    for i in range(0, len(loops), chunk_size)]
-  pool = multiprocessing.Pool(processes = num_proc)
-  # Allocate new work spaces for each forked process
-  for i in range(num_proc):
-    if i == 0:
-      continue
-    prj_dir = config['work_dir'][:-1] + str(i)    
-    ret = execute_sys_cmd(f'mkdir -p {prj_dir}')
-    ret = execute_sys_cmd(f'mkdir -p {prj_dir}/output')
-    ret = execute_sys_cmd(f'mkdir -p {prj_dir}/output/latency_est')
-    ret = execute_sys_cmd(f'mkdir -p {prj_dir}/output/resource_est')
-    ret = execute_sys_cmd(f'mkdir -p {prj_dir}/output/src')
-    ret = execute_sys_cmd(f'cp {config["work_dir"]}/autosa_config.json {prj_dir}/')
+    Parameters
+    ----------
+    loops:
+        A list of loop candidates.
+    func:
+        The function to be executed by each process.
+    config: dict
+        Global configuration.
+    """
+    num_proc = min(multiprocessing.cpu_count(),
+                   config['setting'][config['mode']]['multiprocess']['n_job'])
+    # Split the loops into chunks
+    chunk_size = int(np.ceil(float(len(loops)) / num_proc))
+    loop_chunks = [loops[i: i + min(chunk_size, len(loops) - i)]
+                   for i in range(0, len(loops), chunk_size)]
+    pool = multiprocessing.Pool(processes=num_proc)
+    # Allocate new work spaces for each forked process
+    for i in range(num_proc):
+        if i == 0:
+            continue
+        prj_dir = config['work_dir'][:-1] + str(i)
+        os.mkdir(f'{prj_dir}')
+        os.mkdir(f'{prj_dir}/output')
+        os.mkdir(f'{prj_dir}/output/latency_est')
+        os.mkdir(f'{prj_dir}/output/resource_est')
+        os.mkdir(f'{prj_dir}/output/src')
+        ret = execute_sys_cmd(
+            f'cp {config["work_dir"]}/autosa_config.json {prj_dir}/', config)
 
-  config['logger'].info(f'Forking {num_proc} processes')       
-  verbose = config['verbose']   
-  stdout = config['stdout']
-  config['verbose'] = 0
-  config['stdout'] = subprocess.DEVNULL
-  
-  # Execute the function
-  results = pool.starmap(func, \
-    [(loop_chunks[i], copy.deepcopy(config), config['work_dir'][:-1] + str(i))]) \
-      for i in range(len(loop_chunks))])
-  # Aggregate the results
-  for result in results:
-    if config['opt_latency'] == -1 or \
-       (result['opt_latency'] != -1 and result['opt_latency'] < config['opt_latency']):
-      config['opt_latency'] = result['opt_latency']
-      config['opt_resource'] = result['opt_resource']     
+    config['logger'].info(f'Forking {num_proc} processes')
+    verbose = config['verbose']
+    stdout = config['stdout']
+    logger = config['logger']
+    config['verbose'] = 0
+    config['stdout'] = subprocess.DEVNULL
+    config['logger'] = None
 
-  config['verbose'] = verbose
-  config['stdout'] = stdout
+    # Execute the function
+    results = pool.starmap(func, [(loop_chunks[i], copy.deepcopy(
+        config), config['work_dir'][:-1] + str(i)) for i in range(len(loop_chunks))])
+    # Aggregate the monitor information
+    for result in results:
+        config['monitor']['n_designs'] += result['monitor']['n_designs']
 
-  return
+    if config['mode'] == 'search':
+        # Aggregate the results
+        for result in results:
+            if config['opt_latency'] == -1 or (
+                    result['opt_latency'] != -1 and result['opt_latency'] < config['opt_latency']):
+                config['opt_latency'] = result['opt_latency']
+                config['opt_resource'] = result['opt_resource']
+
+    config['verbose'] = verbose
+    config['stdout'] = stdout
+    config['logger'] = logger
+
+    return
+
 
 def generate_sa_sizes_cmd(sa_sizes):
-  """ Generate the command line argument to specify the sa_sizes.
-  
-  Concatenate each size in the sa_sizes to generate the final argument.
+    """ Generate the command line argument to specify the sa_sizes.
 
-  Parameters
-  ----------
+    Concatenate each size in the sa_sizes to generate the final argument.
+
+    Parameters
+    ----------
     sa_sizes: list
-      A list containing the sizes for each optimization stage.
-  """
-  length = len(sa_sizes)
-  first = 1
-  cmd = '--sa-sizes={'
-  for size in sa_sizes:
-    if not first:
-      cmd += ';'
-    cmd += size
-    first = 0
+        A list containing the sizes for each optimization stage.
+    """
+    length = len(sa_sizes)
+    first = 1
+    cmd = '--sa-sizes="{'
+    for size in sa_sizes:
+        if not first:
+            cmd += ';'
+        cmd += size
+        first = 0
 
-  cmd += '}'
-  return cmd
+    cmd += '}"'
+    return cmd
+
 
 @timer
 def train_resource_models_xilinx(config):
-  return
+    """ Train the resource model for Xilinx program.
+
+    This function first collects all HLS synthesized designs from the previous stage.
+    These designs are grouped by kernels.
+    Then, it trains a resource model for each kernel using linear regression.
+    The trained models are placed in /training/resource_models/
+
+    """
+    autosa_prj_path = os.environ['AUTOSA_PATH']
+    config['work_dir'] = f'{autosa_prj_path}/autosa.tmp/optimizer/synth'
+    jobs = os.listdir(config['work_dir'])
+    training_samples = {}
+    for job in jobs:
+        job_dir = f'{config["work_dir"]}/{job}'
+        kernels = os.listdir(job_dir)
+        for kernel in kernels:
+            kernel_dir = f'{job_dir}/{kernel}'
+            designs = os.listdir(kernel_dir)
+            if kernel not in training_samples:
+                training_samples[kernel] = []
+            for design in designs:
+                design_dir = f'{kernel_dir}/{design}/output'
+                training_samples[kernel].append(design_dir)
+    # Train the resource model for each kernel
+    work_dir = f'{autosa_prj_path}/autosa.tmp/optimizer/training/resource_models'
+    if os.path.exists(work_dir):
+        shutil.rmtree(work_dir)
+    os.mkdir(work_dir)
+    for kernel in training_samples:
+        # Create the directory
+        cur_work_dir = f'{work_dir}/{kernel}'
+        os.mkdir(cur_work_dir)
+        # Collect the design infos
+        designs = training_samples[kernel]
+        design_infos = []
+        for design_dir in designs:
+            design_info = res_model.extract_design_info(design_dir, 1)
+            design_infos.append(design_info)
+        # Convert the design infos to a dataframe
+        modules, fifos, df = res_model.convert_design_infos_to_df(
+            design_infos)
+        # Train the models
+        config['logger'].info(f'Train the resource models for {kernel}...')
+        res_model.train(df, modules, fifos, design_infos, cur_work_dir, config['logger'])  # TODO
 
 @timer
 def train_latency_models_xilinx(config):
-  return
+    return
 
-@timer
-def synth_train_samples(config)
-  return
 
 def execute_autosa_cmd(config):
-  """ Compose the AutoSA command and run.
+    """ Compose the AutoSA command and run.
 
-  Parameters
-  ----------
-  config: dict
-    Global configuration.
+    Parameters
+    ----------
+    config: dict
+        Global configuration.
 
-  Returns
-  -------
-  ret: int
-    The command return code.
-  """
-  cmd = ' '.join(config['cmds'])
-  config['logger'].info(f'Execute CMD: {cmd}')
-  ret = subprocess.Popen(cmd, shell=True, stdout=config['stdout'])
-  return ret.returncode
+    Returns
+    -------
+    ret: int
+        The command return code.
+    """
+    cmd = ' '.join(config['cmds'])
+    config['logger'].info(f'Execute CMD: {cmd}')
+    p = subprocess.Popen(cmd, shell=True, stdout=config['stdout'])
+    ret = p.wait()
+    return ret
 
-def execute_sys_cmd(cmd):
-  """ Execute the system command.
 
-  Parameters
-  ----------
-  cmd: str
-    Command to execute.
-  """
-  config['logger'].info(f'Execute CMD: {cmd}')
-  ret = subprocess.Popen(cmd, shell=True, stdout=config['stdout'])
-  return ret.returncode
+def execute_sys_cmd(cmd, config):
+    """ Execute the system command.
+
+    Parameters
+    ----------
+    cmd: str
+        Command to execute.
+    config: dict
+        Global configuration
+    """
+    config['logger'].info(f'Execute CMD: {cmd}')
+    p = subprocess.Popen(cmd, shell=True, stdout=config['stdout'])
+    ret = p.wait()
+    return ret
+
+
+def save_design_files(config):
+    """ Save the current design.
+
+    """
+    sa_sizes = config['sa_sizes']
+    # Search if kernel is specified
+    kernel_id = 0
+    for size in sa_sizes:
+        if 'space_time' in size:
+            # Extract the kernel id
+            m = re.search('kernel[0]->space_time[(.+?)]', size)
+            if m:
+                kernel_id = int(m.group(1))
+            else:
+                raise RuntimeError(
+                    'Kernel id in space-time transformation is not specified.')
+    if not os.path.exists(f'{config["work_dir"]}/kernel{kernel_id}'):
+        os.mkdir(f'{config["work_dir"]}/kernel{kernel_id}')
+    prj_path = f'{config["work_dir"]}/kernel{kernel_id}'
+    designs = os.listdir(prj_path)
+    design_id = len(designs)
+    design_path = f'{config["work_dir"]}/kernel{kernel_id}/design{design_id}'
+    os.mkdir(design_path)
+
+    # Save the cmd
+    cmd = ' '.join(config['cmds'])
+    with open(design_path + '/design.info', 'w') as f:
+        f.write(cmd)
+
+    # if config['mode'] == 'search':
+        # Store the estimated latency and resource info
+        # TODO
+
+    # Copy the files
+    ret = execute_sys_cmd(
+        f'cp -r {config["work_dir"]}/output {design_path}/',
+        config)
+
+
+def explore_design(config):
+    """ Explore the final design.
+
+    In the training mode, we will save the current design.
+    Later, we will sample some designs to be synthesized for
+    training the resource/latency models.
+    In the search mode, we will evaluate the resource and latency of the current
+    design and update the config accordingly.
+
+    """
+    # TODO
+    # Update the monitor
+    config['monitor']['n_designs'] += 1
+
+    if config['mode'] == 'training':
+        save_design_files(config)
+    # elif config['mode'] == 'search':
+        # Predict the latency and resource of the current design
+        # TODO
+
+    return
+
+
+def simd_loop_filter(loops, tuning):
+    """ Filter out the SIMD candidate loops based on the tuning information.
+
+    We select the legal simd loop with the highest score.
+    If there is no such loop, we will set "loops" to all "1"s.
+    AutoSA will not tile loops with the tiling factor as one for latency hiding or
+    SIMD vectorization.
+    If one such loop is found, we will set all loop bounds to 1 except the target loop.
+
+    Parameters
+    ----------
+    loops: list
+        upper bounds of all candidate SIMD loops
+    tuning: dict
+        tuning information for the SIMD stage
+    """
+    scores = tuning['simd']['scores']
+    legal = tuning['simd']['legal']
+    # Find the candidate loop with the highest score
+    simd_loop_idx = -1
+    max_score = -1
+    for i in range(len(legal)):
+        if legal[i] == 0:
+            continue
+        if scores[i] > max_score:
+            max_score = scores[i]
+            simd_loop_idx = i
+
+    if simd_loop_idx < 0:
+        filter_loops = [1 for i in range(len(loops))]
+    else:
+        filter_loops = [1 for i in range(len(loops))]
+        filter_loops[simd_loop_idx] = loops[simd_loop_idx]
+
+    return filter_loops
+
+
+def explore_simd_vectorization(config):
+    """ Explore the stage of SIMD vectorization.
+
+    When AutoSA reaches this stage, we will have the systolic array dimension
+    in the tuning information. If the pruning is enabled at this stage,
+    we will first filter out the designs not satisfying the pruning requirements
+    for the PE structures. (SIMD_vectorization_PE_pruning)
+    Next, we will limit the candidate loop upperbounds by examining the scores and
+    legality information in the tuning info. Only the upperbound for the legal loop
+    with the maximal score is kept, and all the rest is set to 1. (simd_loop_filter)
+    After the above steps, we will go through the standard precedurs as to generate
+    the candidate loops, compile the program, and move forward to the next stage.
+
+    """
+    if config['autosa_config']['simd']['mode'] == 'manual':
+        with open(f'{config["work_dir"]}/output/tuning.json') as f:
+            tuning = json.load(f)
+        if config['setting'][config['mode']
+                             ]['pruning']['SIMD_vectorization']['enable']:
+            # Perform early pruning based on the PE numbers
+            config['tuning'] = tuning
+            if opt_prune.SIMD_vectorization_PE_pruning(config):
+                return
+        loops = tuning['simd']['tilable_loops']
+        # Filter the SIMD loops
+        loops = simd_loop_filter(loops, tuning)
+        loops_pool = generate_loop_candidates(
+            loops, config, "SIMD_vectorization")
+
+        if len(loops_pool) == 0:
+            simd_en = config['autosa_config']['simd']['enable']
+            config['autosa_config']['simd']['enable'] = 0
+            with open(f'{config["work_dir"]}/autosa_config.json', 'w') as f:
+                json.dump(config['autosa_config'], f, indent=4)
+
+            ret = execute_autosa_cmd(config)
+            if ret != 0:
+                config['logger'].error(f'CMD failed with error code {ret}')
+                config['autosa_config']['simd']['enable'] = simd_en
+                return
+            explore_design(config)  # TODO
+            config['autosa_config']['simd']['enable'] = simd_en
+            with open(f'{config["work_dir"]}/autosa_config.json', 'w') as f:
+                json.dump(config['autosa_config'], f, indent=4)
+        else:
+            for loop in loops_pool:
+                sa_sizes = config['sa_sizes'].copy()
+                config['sa_sizes'].append(
+                    f'kernel[0]->simd{str(loop).replace(" ", "")}')
+                config['cmds'][3] = generate_sa_sizes_cmd(config['sa_sizes'])
+                ret = execute_autosa_cmd(config)
+                if ret != 0:
+                    config['logger'].error(f'CMD failed with error code {ret}')
+                    config['sa_sizes'] = sa_sizes
+                    continue
+                explore_design(config)
+                config['sa_sizes'] = sa_sizes
+    else:
+        explore_design(config)
+
+    return
+
 
 def explore_latency_hiding(config):
-  return
+    """ Explore the stage of latency hiding.
+
+
+    """
+    if config['autosa_config']['latency']['mode'] == 'manual':
+        # Fetch the tuning info
+        with open(f'{config["work_dir"]}/output/tuning.json') as f:
+            tuning = json.load(f)
+        loops = tuning['latency']['tilable_loops']
+        loops_pool = generate_loop_candidates(loops, config, "latency_hiding")
+        if config['setting'][config['mode']
+                             ]['pruning']['latency_hiding']['enable']:
+            config['tuning'] = tuning
+            loops_pool = opt_prune.latency_hiding_loops_pruning(
+                loops_pool, config)
+
+        if len(loops_pool) == 0:
+            latency_hiding_en = config['autosa_config']['latency']['enable']
+            config['autosa_config']['latency']['enable'] = 0
+            with open(f'{config["work_dir"]}/autosa_config.json', 'w') as f:
+                json.dump(config['autosa_config'], f, indent=4)
+
+            ret = execute_autosa_cmd(config)
+            if ret != 0:
+                config['logger'].error(f'CMD failed with error code {ret}')
+                config['autosa_config']['latency']['enable'] = latency_hiding_en
+                return
+            explore_simd_vectorization(config)
+            config['autosa_config']['latency']['enable'] = latency_hiding_en
+            with open(f'{config["work_dir"]}/autosa_config.json', 'w') as f:
+                json.dump(config['autosa_config'], f, indent=4)
+        else:
+            for loop in loops_pool:
+                sa_sizes = config['sa_sizes'].copy()
+                config['sa_sizes'].append(
+                    f'kernel[0]->latency{str(loop).replace(" ", "")}')
+                config['cmds'][3] = generate_sa_sizes_cmd(config['sa_sizes'])
+                ret = execute_autosa_cmd(config)
+                if ret != 0:
+                    config['logger'].error(f'CMD failed with error code {ret}')
+                    config['sa_sizes'] = sa_sizes
+                    continue
+                explore_simd_vectorization(config)
+                config['sa_sizes'] = sa_sizes
+    else:
+        explore_simd_vectorization(config)
+
+    return
+
 
 def explore_array_part_L2(config):
-  """ Explore the stage of second-level array partitioning.
+    """ Explore the stage of second-level array partitioning.
 
-  """
-  if config['autosa_config']['array_part_L2']['mode'] == 'manual':
-    # Fetch the tuning info
-    with open(f'config["work_dir"]/output/tuning.json') as f:
-      tuning = json.load(f)
-    loops = tuning['array_part_L2']['tilable_loops']
-    coincident = tuning['array_part_L2']['coincident']
-    # Generate the tiling factors to proceed
-    loops_pool = generate_loop_candidates(loops, config)    
-    if config['setting'][config['mode']]['pruning']['array_part_L2']['enable']:
-      loops_pool = opt_prune.array_part_L2_loops_pruning(loops_pool, config) # TODO
-    
-  else:
-    explore_latency_hiding(config)  
+    """
+    if config['autosa_config']['array_part_L2']['mode'] == 'manual':
+        # Fetch the tuning info
+        with open(f'{config["work_dir"]}/output/tuning.json') as f:
+            tuning = json.load(f)
+        loops = tuning['array_part_L2']['tilable_loops']
+        coincident = tuning['array_part_L2']['coincident']
+        # Generate the tiling factors to proceed
+        loops_pool = generate_loop_candidates(loops, config, 'array_part_L2')
+        if config['setting'][config['mode']
+                             ]['pruning']['array_part_L2']['enable']:
+            config['tuning'] = tuning
+            loops_pool = opt_prune.array_part_L2_loops_pruning(
+                loops_pool, config)
+
+        if len(loops_pool) == 0:
+            # No available tiling options, we will disable this step and skip
+            # it.
+            array_part_L2_en = config['autosa_config']['array_part_L2']['enable']
+            config['autosa_config']['array_part_L2']['enable'] = 0
+            with open(f'{config["work_dir"]}/autosa_config.json', 'w') as f:
+                json.dump(config['autosa_config'], f, indent=4)
+
+            ret = execute_autosa_cmd(config)
+            if ret != 0:
+                config['logger'].error(f'CMD failed with error code {ret}')
+                config['autosa_config']['array_part_L2']['enable'] = array_part_L2_en
+                return
+            explore_latency_hiding(config)
+            # Revert the changes
+            config['autosa_config']['array_part_L2']['enable'] = array_part_L2_en
+            with open(f'{config["work_dir"]}/autosa_config.json', 'w') as f:
+                json.dump(config['autosa_config'], f, indent=4)
+        else:
+            for loop in loops_pool:
+                sa_sizes = config['sa_sizes'].copy()
+                config['sa_sizes'].append(
+                    f'kernel[0]->array_part_L2{str(loop).replace(" ", "")}')
+                config['cmds'][3] = generate_sa_sizes_cmd(config['sa_sizes'])
+                ret = execute_autosa_cmd(config)
+                if ret != 0:
+                    config['logger'].error(f'CMD failed with error code {ret}')
+                    config['sa_sizes'] = sa_sizes
+                    continue
+                explore_latency_hiding(config)
+                config['sa_sizes'] = sa_sizes
+    else:
+        explore_latency_hiding(config)
+
 
 def explore_array_part_single_job(loops, config, work_dir):
-  """ Explore the stage of array partitioning with single process.
+    """ Explore the stage of array partitioning with single process.
 
-  Parameters
-  ----------
-    loops: 
-      Candidate loops.
-    config: 
-      Global configuration.
+    Parameters
+    ----------
+    loops:
+        Candidate loops.
+    config:
+        Global configuration.
     work_dir: str
-      The current work directory.
-  """
-  # Modify the commands
-  config['cmds'][1] = f'--config={work_dir}/autosa_config.json'
-  config['cmds'][2] = f'--output-dir={work_dir}/output'
-  conifg['work_dir'] = work_dir
-  
-  # Progress meter
-  total_tasks = len(loops)
-  finished_tasks = 0
-  for loop in loops:
-    sa_sizes = config['sa_sizes'].copy()
-    config['sa_sizes'].append(f'kernel[0]->array_part[{str(loop).replace(' ', '')}]')
-    config['cmds'][3] = generate_sa_sizes_cmd(config['sa_sizes'])
-    ret = execute_autosa_cmd(config)
-    if ret != 0:
-      config['logger'].error(f'CMD: {cmd} failed with error code {ret}')
-      config['sa_sizes'] = sa_sizes
-      continue
-    if config['two_level_buffer']:
-      explore_array_part_L2(config)
-    else:
-      explore_latency_hiding(config)
-    config['sa_sizes'] = sa_sizes
-    finished_tasks += 1
-    config['logger'].info(f'Progress: [{finished_tasks}/{total_tasks}]')  
+        The current work directory.
+    """
+    # Modify the commands
+    config['cmds'][1] = f'--config={work_dir}/autosa_config.json'
+    config['cmds'][2] = f'--output-dir={work_dir}/output'
+    config['work_dir'] = work_dir
+    config['logger'] = logging.getLogger('AutoSA-Optimizer')
+
+    # Progress meter
+    total_tasks = len(loops)
+    finished_tasks = 0
+    for loop in loops:
+        sa_sizes = config['sa_sizes'].copy()
+        config['sa_sizes'].append(
+            f'kernel[0]->array_part{str(loop).replace(" ", "")}')
+        config['cmds'][3] = generate_sa_sizes_cmd(config['sa_sizes'])
+        ret = execute_autosa_cmd(config)
+        if ret != 0:
+            config['logger'].error(f'CMD failed with error code {ret}')
+            config['sa_sizes'] = sa_sizes
+            continue
+        if config['two_level_buffer']:
+            explore_array_part_L2(config)
+        else:
+            explore_latency_hiding(config)
+        config['sa_sizes'] = sa_sizes
+        finished_tasks += 1
+        config['logger'].info(f'Progress: [{finished_tasks}/{total_tasks}]')
+
+    return config
+
 
 def explore_array_part(config):
-  """ Explore the stage of array partitioning.
+    """ Explore the stage of array partitioning.
 
-  If this stage is set in Manual mode, this function will load the tuning
-  info which contains all the tilable loops.
-  This function will then generate all possible loop tiling combination.
-  If stage pruning is enabled, these loop candidates will be pruned 
-  based on certain heuristics.
-  Next, this function will iterate through these combinations and proceed to 
-  the next stage.
-  If multi-processing is enabled, the optimizer folder directory will 
-  be updated to allocate a workspace for each forked process.
-  We will distribute these loops equally to all the processes to proceed.
+    If this stage is set in Manual mode, this function will load the tuning
+    info which contains all the tilable loops.
+    This function will then generate all possible loop tiling combination.
+    If stage pruning is enabled, these loop candidates will be pruned
+    based on certain heuristics.
+    Next, this function will iterate through these combinations and proceed to
+    the next stage.
+    If multi-processing is enabled, the optimizer folder directory will
+    be updated to allocate a workspace for each forked process.
+    We will distribute these loops equally to all the processes to proceed.
 
-  Otherwise, we will skip this stage and jump to the next stage.
-  As for the next stage, we will go to:
-  - array_part_L2 if config['two_level_buffer'] is enabled
-  - latency_hiding if config['two_level_buffer'] is disabled
+    Otherwise, we will skip this stage and jump to the next stage.
+    As for the next stage, we will go to:
+    - array_part_L2 if config['two_level_buffer'] is enabled
+    - latency_hiding if config['two_level_buffer'] is disabled
 
-  We apply the following heuristic to prune the candidate loops.
-  - The product of tiling factors should be no less than the #PE lower bound.
+    We apply the following heuristic to prune the candidate loops.
+    - The product of tiling factors should be no less than the #PE lower bound.
 
-  Parameters
-  ----------
+    Parameters
+    ----------
     config: dict
-      Global configuration.
-  """
-  if config['autosa_config']['array_part']['mode'] == 'manual':
-    # The program will terminate after array partitioning
-    # Fetch the tuning info
-    with open(f'config["work_dir"]/output/tuning.json') as f:
-      tuning = json.load(f)
-    loops = tuning['array_part']['tilable_loops']
-    # Generate the tiling factors to proceed
-    loops_pool = generate_loop_candidates(loops, config) # TODO
-    if config['setting'][config['mode']]['pruning']['array_part']['enable']:
-      # Apply pruning on the candidate loops
-      loops_pool = opt_prune.array_part_loops_pruning(loops_pool, config) # TODO
+        Global configuration.
+    """
+    if config['autosa_config']['array_part']['mode'] == 'manual':
+        # The program will terminate after array partitioning
+        # Fetch the tuning info
+        with open(f'{config["work_dir"]}/output/tuning.json') as f:
+            tuning = json.load(f)
+        loops = tuning['array_part']['tilable_loops']
+        # Generate the tiling factors to proceed
+        loops_pool = generate_loop_candidates(loops, config, 'array_part')
+        if config['setting'][config['mode']
+                             ]['pruning']['array_part']['enable']:
+            # Apply pruning on the candidate loops
+            loops_pool = opt_prune.array_part_loops_pruning(loops_pool, config)
 
-    if len(loops_pool) == 0:
-      # No available tiling options, we will disable this step and skip it.
-      # At the same time, two-level-buffer is also disabled
-      array_part_en = config['autosa_config']['array_part']['enable']
-      array_part_L2_en = config['autosa_config']['array_part_L2']['enable']
-      config['autosa_config']['array_part']['enable'] = 0
-      config['autosa_config']['array_part_L2']['enable'] = 0
-      with open(f'config["work_dir"]/autosa_config.json', 'w') as f:
-        json.dump(config['autosa_config'], f, indent=4)
+        if len(loops_pool) == 0:
+            # No available tiling options, we will disable this step and skip it.
+            # At the same time, two-level-buffer is also disabled
+            array_part_en = config['autosa_config']['array_part']['enable']
+            array_part_L2_en = config['autosa_config']['array_part_L2']['enable']
+            config['autosa_config']['array_part']['enable'] = 0
+            config['autosa_config']['array_part_L2']['enable'] = 0
+            with open(f'config["work_dir"]/autosa_config.json', 'w') as f:
+                json.dump(config['autosa_config'], f, indent=4)
 
-      ret = execute_autosa_cmd(config)
-      if ret != 0:
-        config['logger'].error(f'CMD: {cmd} failed with error code {ret}')
-        config['autosa_config']['array_part']['enable'] = array_part_en
-        config['autosa_config']['array_part_L2']['enable'] = array_part_L2_en
-        return
-      explore_latency_hiding(config) # TODO
-      # Revert the changes
-      config['autosa_config']['array_part']['enable'] = array_part_en
-      config['autosa_config']['array_part_L2']['enable'] = array_part_L2_en
-      with open(f'config["work_dir"]/autosa_config.json', 'w') as f:
-        json.dump(config['autosa_config'], f, indent=4)
+            ret = execute_autosa_cmd(config)
+            if ret != 0:
+                config['logger'].error(f'CMD failed with error code {ret}')
+                config['autosa_config']['array_part']['enable'] = array_part_en
+                config['autosa_config']['array_part_L2']['enable'] = array_part_L2_en
+                return
+            explore_latency_hiding(config)
+            # Revert the changes
+            config['autosa_config']['array_part']['enable'] = array_part_en
+            config['autosa_config']['array_part_L2']['enable'] = array_part_L2_en
+            with open(f'config["work_dir"]/autosa_config.json', 'w') as f:
+                json.dump(config['autosa_config'], f, indent=4)
+        else:
+            if config['setting'][config['mode']]['multiprocess']['n_job'] > 1:
+                multi_process(
+                    loops_pool,
+                    explore_array_part_single_job,
+                    config)
+            else:
+                explore_array_part_single_job(
+                    loops_pool, config, config['work_dir'])  # TODO
     else:
-      if config['setting'][config['mode']]['multiprocess']['n_job'] > 1:
-        multi_process(loops_pool, explore_array_part_single_job, config)
-      else:        
-        explore_array_part_single_job(loops_pool, config, config['work_dir']) # TODO
-  else:
-    if config['autosa_config']['array_part_L2']['enable']:
-      explore_array_part_L2(config) # TODO    
-    else:
-      explore_latency_hiding(config) # TODO
-  
+        if config['autosa_config']['array_part_L2']['enable']:
+            explore_array_part_L2(config)
+        else:
+            explore_latency_hiding(config)
+
+
 def explore_space_time(config):
-  """ Explore the stage of space-time transformation.
+    """ Explore the stage of space-time transformation.
 
-  If this stage is set in Manual mode, we will load the tuning info 
-  and iterate through all possible kernels to proceed.
-  Otherwise, AutoSA automatically selects one kernel to proceed. 
-  We will directly jump to the next stage: array partitioning.
+    If this stage is set in Manual mode, we will load the tuning info
+    and iterate through all possible kernels to proceed.
+    Otherwise, AutoSA automatically selects one kernel to proceed.
+    We will directly jump to the next stage: array partitioning.
 
-  Parameters
-  ----------    
-  config: dict
-    Global configuration.
-  """
-  if config['autosa_config']['space_time']['mode'] == 'manual':
-    # The program will terminate after the space-time transformation
-    # Fetch the tuning info
-    with open(f'config["work_dir"]/output/tuning.json') as f:
-      tuning = json.load(f)
-    n_kernel = tuning['space_time']['n_kernel']
+    Parameters
+    ----------
+    config: dict
+        Global configuration.
+    """
+    if config['autosa_config']['space_time']['mode'] == 'manual':
+        # The program will terminate after the space-time transformation
+        # Fetch the tuning info
+        with open(f'config["work_dir"]/output/tuning.json') as f:
+            tuning = json.load(f)
+        n_kernel = tuning['space_time']['n_kernel']
 
-    # Iterate through different kernels
-    for kernel_id in range(n_kernel):
-      config['logger'].info(f'Search kernel {kernel_id}...')
-      sa_sizes = config['sa_sizes'].copy()
-      config['sa_sizes'].append(f'kernel[0]->space_time[{kernel_id}]')
-      config['cmds'][3] = generate_sa_sizes_cmd(config['sa_sizes'])
-      ret = execute_autosa_cmd(config)
-      if ret != 0:
-        config['logger'].error(f'CMD: {cmd} failed with error code {ret}')
-        config['sa_sizes'] = sa_sizes
-        continue            
-      explore_array_part(config)
-      config['sa_sizes'] = sa_sizes
-  else:
-    explore_array_part(config)
+        # Iterate through different kernels
+        for kernel_id in range(n_kernel):
+            config['logger'].info(f'Search kernel {kernel_id}...')
+            sa_sizes = config['sa_sizes'].copy()
+            config['sa_sizes'].append(f'kernel[0]->space_time[{kernel_id}]')
+            config['cmds'][3] = generate_sa_sizes_cmd(config['sa_sizes'])
+            ret = execute_autosa_cmd(config)
+            if ret != 0:
+                config['logger'].error(f'CMD failed with error code {ret}')
+                config['sa_sizes'] = sa_sizes
+                continue
+            explore_array_part(config)
+            config['sa_sizes'] = sa_sizes
+    else:
+        explore_array_part(config)
+
 
 @timer
 def explore_design_space(config):
-  """ Explore the design space through multiple stages
+    """ Explore the design space through multiple stages
 
-  We will expand the design space through multiple stages:
-  space-time transformation ->
-  array partitioning ->
-  latency hiding ->
-  SIMD vectorization
+    We will expand the design space through multiple stages:
+    space-time transformation ->
+    array partitioning ->
+    latency hiding ->
+    SIMD vectorization
 
-  At each stage, we will generate a new cmd and execute it to obtain the tuning
-  information for the next stage.
-  The cmd list:
-  - config['cmds'][0]: the original user command
-  - config['cmds'][1]: the AutoSA config file
-  - config['cmds'][2]: the AutoSA output directory
-  - config['cmds'][3]: the AutoSA sizes
+    At each stage, we will generate a new cmd and execute it to obtain the tuning
+    information for the next stage.
+    The cmd list:
+    - config['cmds'][0]: the original user command
+    - config['cmds'][1]: the AutoSA config file
+    - config['cmds'][2]: the AutoSA output directory
+    - config['cmds'][3]: the AutoSA sizes
 
-  Parameters
-  ----------
+    Parameters
+    ----------
     config: dict
-      Global configuration.
-  """
-  # Execute the cmd  
-  ret = execute_autosa_cmd(config)      
-  if ret != 0:
-    config['logger'].error(f'CMD: {cmd} failed with error code {ret}')
-    return
-  # Enter the first stage: space-time transformation
-  explore_space_time(config)
+        Global configuration.
+    """
+    # Execute the cmd
+    ret = execute_autosa_cmd(config)
+    if ret != 0:
+        config['logger'].error(f'CMD failed with error code {ret}')
+        return
+    # Enter the first stage: space-time transformation
+    explore_space_time(config)
+
+
+def synth_train_samples_single_job(config, job_id):
+    """ Launch HLS synthesis for each single process
+
+    """
+    config['logger'] = logging.getLogger('AutoSA-Optimizer')
+    autosa_prj_path = os.environ['AUTOSA_PATH']
+    work_dir = f'{config["work_dir"]}/job{job_id}'
+    kernels = os.listdir(work_dir)
+    for kernel in kernels:
+        path = f'{work_dir}/{kernel}'
+        designs = os.listdir(path)
+        for design in designs:
+            prj_path = f'{path}/{design}/output'
+            # Copy the HLS TCL script to the project
+            ret = execute_sys_cmd(
+                f'cp {autosa_prj_path}/autosa_scripts/hls_scripts/hls_script.tcl {prj_path}/',
+                config)
+            # Execute the TCL
+            cwd = os.getcwd()
+            os.chdir(prj_path)
+            ret = execute_sys_cmd('vivado_hls -f hls_script.tcl', config)
+            os.chdir(cwd)
+
+
+@timer
+def synth_train_samples(config):
+    """ Synthesize the trainig samples.
+
+    We will sample a few designs generated from the previous training exploration.
+    Next, we call Vivado HLS to synthesize each design.
+
+    """
+    autosa_prj_path = os.environ['AUTOSA_PATH']
+    config['work_dir'] = f'{autosa_prj_path}/autosa.tmp/optimizer/training'
+    # Collect all designs into a list
+    design_paths = {}
+    for n in range(config['setting']['training']['multiprocess']['n_job']):
+        f_path = f'{config["work_dir"]}/job{n}'
+        f_list = os.listdir(f_path)
+        for f in f_list:
+            if 'kernel' in f:
+                if f not in design_paths:
+                    design_paths[f] = []
+                d_path = f'{f_path}/{f}'
+                d_list = os.listdir(d_path)
+                for d in d_list:
+                    prj_path = f'{d_path}/{d}'
+                    design_paths[f].append(prj_path)
+    # Random sample a few designs for each kernel and build the synthesis
+    # folder
+    config['work_dir'] = f'{autosa_prj_path}/autosa.tmp/optimizer/synth'
+    if os.path.exists(config['work_dir']):
+        shutil.rmtree(config['work_dir'])
+    os.mkdir(config['work_dir'])
+    num_proc = min(multiprocessing.cpu_count(),
+                   config['setting']['synth']['multiprocess']['n_job'])
+    for i in range(num_proc):
+        prj_dir = config['work_dir'] + f'/job{i}'
+        os.mkdir(prj_dir)
+    tasks = []
+    for kernel in design_paths:
+        designs = design_paths[kernel]
+        n_sample = config['setting']['synth']['sample']['n']
+        if n_sample < len(designs):
+            designs = random.sample(designs, n_sample)
+        # Push to the list
+        for design in designs:
+            tasks.append((kernel, design))
+    # Uniformly distribute the tasks to each processor
+    chunk_size = int(np.ceil(float(len(tasks)) / num_proc))
+    task_chunks = [tasks[i: i + min(chunk_size, len(tasks) - i)]
+                   for i in range(0, len(tasks), chunk_size)]
+    for job_id in range(len(task_chunks)):
+        task_chunk = task_chunks[job_id]
+        for task in task_chunk:
+            kernel = task[0]
+            design_path = task[1]
+            design = design_path.rsplit('/', 1)[-1]
+            if not os.path.exists(
+                    f'{config["work_dir"]}/job{job_id}/{kernel}'):
+                os.mkdir(f'{config["work_dir"]}/job{job_id}/{kernel}')
+            new_design_path = f'{config["work_dir"]}/job{job_id}/{kernel}/{design}'
+            # copy the design files
+            ret = execute_sys_cmd(
+                f'cp -r {design_path} {new_design_path}', config)
+
+    # Execute the HLS synthesis
+    pool = multiprocessing.Pool(processes=num_proc)
+    config['logger'].info(f'Launch HLS synthesis with {num_proc} processes...')
+    logger = config['logger']
+    config['logger'] = None
+    ret = pool.starmap(
+        synth_train_samples_single_job, [
+            (config, i) for i in range(num_proc)])
+    config['logger'] = logger
+
 
 def train_xilinx(config):
-  """ Train the resource and latency models on Xilinx platforms.
+    """ Train the resource and latency models on Xilinx platforms.
 
-  This function first creates training samples by randomly sampling all 
-  the design points.
-  Then it calls Vivado HLS to synthesize all designs.
-  Next it collects the results and trains the resource and latency models 
-  using linear regression.
+    This function first creates training samples by randomly sampling all
+    the design points.
+    Then it calls Vivado HLS to synthesize all designs.
+    Next it collects the results and trains the resource and latency models
+    using linear regression.
 
-  Parameters
-  ----------
+    Parameters
+    ----------
     config: dict
-      Global configuration.
-  """  
-  config['mode'] = 'training'
+        Global configuration.
+    """
+    config['mode'] = 'training'
 
-  # Generate sample designs  
-  config['Logger'].info('Generate training samples...')
-  explore_design_space(config) # TODO    
+    # Generate sample designs
+    config['logger'].info('Generate training samples...')
+    explore_design_space(config)
+    config['logger'].info(f'{config["monitor"]["n_designs"]} designs are generated.')
+  
+    # Synthesize designs
+    config['logger'].info('Synthesize training samples...')
+    synth_train_samples(config)
 
-  # Synthesize designs  
-  config['Logger'].info('Synthesize training samples...')
-  synth_train_samples(config) # TODO    
-  
-  # Train the resource models
-  config['logger'].info('Train resource models...')
-  train_resource_models_xilinx(config) # TODO
-  
-  # Train the latency models
-  config['logger'].info('Train latency models...')
-  train_latency_models_xilinx(config) # TODO  
+    # Train the resource models
+    config['logger'].info('Train resource models...')
+    train_resource_models_xilinx(config)  # TODO
+
+    ## Train the latency models
+    # config['logger'].info('Train latency models...')
+    # train_latency_models_xilinx(config) # TODO
+
+def get_sample_policy(mode):
+    """ Return the search sampling policy.
+
+    Parameters
+    ----------
+    mode: str
+        Sampling mode.
+    """
+    if mode == 'random': 
+        ret = {
+            "array_part": {
+                "mode": "random",
+                "n": 3,
+                "loop_limit": -1
+            },
+            "array_part_L2": {
+                "mode": "random",
+                "n": 3,
+                "loop_limit": -1
+            },
+            "latency_hiding": {
+                "mode": "random",
+                "n": 3,
+                "loop_limit": 64
+            },
+            "SIMD_vectorization": {
+                "mode": "random",
+                "n": 3,
+                "loop_limit": 8
+            }
+        }
+    elif mode == 'exhaustive':
+        ret = {
+            "array_part": {
+                "mode": "exhaustive",
+                "n": -1,
+                "loop_limit": -1
+            },
+            "array_part_L2": {
+                "mode": "exhaustive",
+                "n": -1,
+                "loop_limit": -1
+            },
+            "latency_hiding": {
+                "mode": "exhaustive",
+                "n": -1,
+                "loop_limit": 64
+            },
+            "SIMD_vectorization": {
+                "mode": "exhaustive",
+                "n": -1,
+                "loop_limit": 8
+            }
+        }
+    else:
+        raise RuntimeError(f'Unknown sampling mode: {mode}')
+
+    return ret
+
+def print_best_design(opt_design):
+    """ Pretty print the best design.
+
+    Parameters
+    ----------
+    opt_design: dict
+        Optimal design.
+    
+    Returns
+    -------
+    ret: str
+        Printed design in a string.
+    """
+    ret = (
+        f"\n======== Best design ========\n"
+        f"Latency(Cycle): {opt_design['latency']}\n"
+        f"Power(W): {opt_design['power']}\n"
+        f"Resource:\n"
+        f"\tFF: {opt_design['resource']['FF']}\n"
+        f"\tLUT: {opt_design['resource']['LUT']}\n"
+        f"\tBRAM18K: {opt_design['resource']['BRAM18K']}\n"
+        f"\tURAM: {opt_design['resource']['URAM']}\n"
+        f"\tDSP: {opt_design['resource']['DSP']}\n"
+        f"============================="
+    )
+    return ret
+
+def save_search_log(records, log):
+    """ Save the DSE design records to log file.
+
+    Parameters
+    ----------
+    records: list
+        A list of best designs found in the tuning process.
+    log: str
+        Path to the log file.
+    """
+    with open(log, 'w') as f:
+        json.dump(records, f)    
 
 def search_xilinx(config):
-  """ Perform search phase on Xilinx platform.
+    """ Perform search phase on Xilinx platform.
 
-  """
-  # TODO
+    """
+    config['mode'] = 'search'
+    config['search_results'] = init_search_results()
+
+    if config['setting'][config['mode']]['pruning']['random_start']['enable']:
+        # Random search the design space
+        config['search_results'] = init_search_results()        
+        # Update the sampling strategy
+        user_policy = copy.deepcopy(config['setting'][config['mode']]['sample'])
+        config['setting'][config['mode']]['sample'] = get_sample_policy('random')
+        n_trial = 0
+        while n_trial < config['setting'][config['mode']]['pruning']['random_start']['n_trial']:
+            config['logger'].info('Run random search to warm up...')
+            #explore_design_space(config)
+            config['logger'].info(print_best_design(config['search_results']['opt']))
+            n_trial += 1
+        config['setting'][config['mode']]['sample'] = user_policy
+
+    config['logger'].info('Start searching...')
+    if config['setting'][config['mode']]['mode'] == 'exhausive':
+        config['logger'].info('Search mode: Exhaustive')
+        config['setting'][config['mode']]['sample'] = \
+            get_sample_policy(config['setting'][config['mode']]['mode'])
+        #explore_design_space(config)
+    elif config['setting'][config['mode']]['mode'] == 'random':
+        config['logger'].info('Search mode: Random')
+        config['setting'][config['mode']]['sample'] = \
+            get_random_sample_policy(config['setting'][config['mode']]['mode']) 
+        #explore_design_space(config)
+    elif config['setting'][config['mode']]['mode'] == 'customized':
+        config['logger'].info('Search mode: Customized')        
+        #explore_design_space(config)
+
+    # Print out the best design
+    config['logger'].info(print_best_design(config['search_results']['opt']))
+    # Store the tuning log
+    if config['setting'][config['mode']]['log']['n_record'] != -1:
+        save_search_log(config['search_results']['records'], f'{config["work_dir"]}/DSE.log')
+
+    return
+
 
 def init_logger(training, search, verbose):
-  """ Init AutoSA logger.
+    """ Init AutoSA logger.
 
-  Initialize the AutoSA logger.
+    Initialize the AutoSA logger.
 
-  Parameters
-  ----------
-  training: boolean
-    Enable training phase.
-  search: boolean
-    Enable search phase.
-  verbose: int
-    Logger verbose level.
-      0: Print minimal information from Optimizer.
-      1: Print all information from Optimizer.
-      2: Print information from Optimizer and AutoSA.
+    Parameters
+    ----------
+    training: boolean
+        Enable training phase.
+    search: boolean
+        Enable search phase.
+    verbose: int
+        Logger verbose level.
+        0: Print minimal information from Optimizer.
+        1: Print all information from Optimizer.
+        2: Print information from Optimizer and AutoSA.
 
-  Returns
-  -------
-  logger: 
-    AutoSA logger.
-  """
-  logger = logging.getLogger('AutoSA-Optimizer')
-  s_handler = logging.StreamHandler()
-  if training:
-    f_handler = logging.FileHandler('autosa.tmp/optimizer/training.log')
-  elif search:
-    f_handler = logging.FileHandler('autosa.tmp/optimizer/search.log')
-  if verbose >= 1:
-    s_handler.setLevel(logging.INFO)
-    f_handler.setLevel(logging.INFO)
-  else:
-    s_handler.setLevel(logging.WARNING)
-    f_handler.setLevel(logging.WARNING)      
-  s_format = logging.Formatter('[%(name)s %(asctime)s] %(levelname)s: %(message)s')
-  f_format = logging.Formatter('[%(name)s %(asctime)s] %(levelname)s: %(message)s')
-  s_handler.setFormatter(s_format)
-  f_handler.setFormatter(f_format)
-  logger.addHandler(c_handler)
-  logger.addHandler(f_handler)
+    Returns
+    -------
+    logger:
+        AutoSA logger.
+    """
+    logger = logging.getLogger('AutoSA-Optimizer')
+    formatter = logging.Formatter(
+        '[%(name)s %(asctime)s] %(levelname)s: %(message)s',
+        '%Y-%m-%d %H:%M:%S')
+    logger.setLevel(logging.INFO)
 
-  return logger
+    s_handler = logging.StreamHandler()
+    if training:
+        f_handler = logging.FileHandler(
+            'autosa.tmp/optimizer/training.log', 'w')
+    elif search:
+        f_handler = logging.FileHandler('autosa.tmp/optimizer/search.log', 'w')
+    if verbose > 1:
+        s_handler.setLevel(level=logging.DEBUG)
+        f_handler.setLevel(level=logging.DEBUG)
+    elif verbose == 1:
+        s_handler.setLevel(level=logging.INFO)
+        f_handler.setLevel(level=logging.INFO)
+    else:
+        s_handler.setLevel(level=logging.WARNING)
+        f_handler.setLevel(level=logging.WARNING)
+
+    s_handler.setFormatter(formatter)
+    f_handler.setFormatter(formatter)
+    logger.addHandler(s_handler)
+    logger.addHandler(f_handler)
+
+    return logger
+
+
+def init_monitor():
+    """ Init monitor for DSE.
+
+    Returns
+    -------
+    monitor: dict
+        "n_designs": number of designs that are examined
+    """
+    monitor = {"n_designs": 0}
+
+    return monitor
+
+def init_search_results():
+    """ Init search results for DSE.
+
+    """
+    ret = {
+        'opt': {
+            'found': False,
+            'latency': -1,
+            'resource': {'FF': -1, 'LUT': -1, 'BRAM18K': -1, 'URAM': -1, 'DSP': -1},
+            'power': -1,
+            'cmd': None
+        },
+        'records': []
+    }
+
+    return ret
 
 def init_config(setting, verbose, hw_info, cmd, training, search):
-  """ Init AutoSA Optimizer global configuration.
+    """ Init AutoSA Optimizer global configuration.
 
-  Init the global configuration used in Optimizer.
+    Init the global configuration used in Optimizer.
 
-  Paramters
-  ---------
-  setting: dict
-    AutoSA Optimizer setting.
-  verbose: int
-    Print verbose level.
-
-  Note
-  ----
-  Configuration is a dictionary containing the following info:
+    Paramters
+    ---------
     setting: dict
-      AutoSA Optimizer setting.
+        AutoSA Optimizer setting.
     verbose: int
-      Print verbose level.
-    stdout: 
-      Stdout pipe.
-    work_dir: str
-      The default working directory.
-    hw_info: dict
-      The hardware configuration.
-    logger: 
-      The default logger.
-    cmds: list
-      A list of AutoSA commands.
-        [0]: The user input command.
-        [1]: AutoSA configuration file.
-        [2]: AutoSA output directory.
-        [3]: AutoSA sizes.
-    sa_sizes: list
-      A list of AutoSA tiling factors.
-    two_level_buffer: boolean
-      Is two_level_buffer enabled.
-    hbm: boolean
-      Is HBM enabled.
-    kernel_file_path: str
-      Input kernel file path.
-    simd_info: dict
-      Kernel SIMD information.
+        Print verbose level.
 
-  Returns
-  -------
-  config: dict
-    Initialized global configuration.
-  """
-  config = {}
-  config['setting'] = setting
-  config['verbose'] = verbose
-  if verbose == 2:
-    # Print AutoSA info
-    config['stdout'] = None
-  else:
-    config['stdout'] = subprocess.DEVNULL
-  autosa_prj_path = os.environ['AUTOSA_PATH']
-  if training:
-    config['work_dir'] = f'{autosa_prj_path}/autosa.tmp/training/job0'
-  else:
-    config['work_dir'] = f'{autosa_prj_path}/autosa.tmp/search/job0'
-  with open(hw_info) as f:
-    config['hw_info'] = json.load(f)
-  config['logger'] = logging.getLogger('AutoSA-Optimizer')
-  config['cmds'] = [cmd]
-  config['cmds'].append(f'--AutoSA-config={config["work_dir"]}/autosa_config.json')
-  config['cmds'].append(f'--AuotSA-output-dir={config["work_dir"]}/output')
-  config['cmds'].append('')
-  config['sa_sizes'] = []
-  if cmd.find('two-level-buffer') != -1:
-    config['two_level_buffer'] = 1
-  else:
-    config['two_level_buffer'] = 0
-  if cmd.find('hbm') != -1:
-    config['hbm'] = 1
-  else:
-    config['hbm'] = 0
-  # Load SIMD info file
-  kernel_file_path = cmd.split()[1]
-  kernel_file_path = kernel_file_path.rsplit('/', 1)[0]
-  config['kernel_file_path'] = kernel_file_path
-  config['simd_info'] = None
-  with open(kernel_file_path + '/simd_info.json', 'r') as f:
-    config['simd_info'] = json.load(f)
+    Note
+    ----
+    Configuration is a dictionary containing the following info:
+      setting: dict
+        AutoSA Optimizer setting.
+      verbose: int
+        Print verbose level.
+      stdout:
+        Stdout pipe.
+      work_dir: str
+        The default working directory.
+      hw_info: dict
+        The hardware configuration.
+      logger:
+        The default logger.
+      cmds: list
+        A list of AutoSA commands.
+          [0]: The user input command.
+          [1]: AutoSA configuration file.
+          [2]: AutoSA output directory.
+          [3]: AutoSA sizes.
+      sa_sizes: list
+        A list of AutoSA tiling factors.
+      two_level_buffer: boolean
+        Is two_level_buffer enabled.
+      hbm: boolean
+        Is HBM enabled.
+      kernel_file_path: str
+        Input kernel file path.
+      simd_info: dict
+        Kernel SIMD information.
+      tuning: dict
+        Temporary tuning information from AutoSA.
+      monitor: dict
+        A dictionary storing the monitoring information of the DSE
+          "n_designs": number of designs that are examined
 
-  return config
+    Returns
+    -------
+    config: dict
+        Initialized global configuration.
+    """
+    config = {}
+    config['setting'] = setting
+    config['verbose'] = verbose
+    if verbose == 2:
+        # Print AutoSA info
+        config['stdout'] = None
+    else:
+        config['stdout'] = subprocess.DEVNULL
+    autosa_prj_path = os.environ['AUTOSA_PATH']
+    if training:
+        config['work_dir'] = f'{autosa_prj_path}/autosa.tmp/optimizer/training/job0'
+    else:
+        config['work_dir'] = f'{autosa_prj_path}/autosa.tmp/optimizer/search/job0'
+    with open(hw_info) as f:
+        config['hw_info'] = json.load(f)
+    config['cmds'] = [cmd]
+    config['cmds'].append(
+        f'--AutoSA-config={config["work_dir"]}/autosa_config.json')
+    config['cmds'].append(f'--AutoSA-output-dir={config["work_dir"]}/output')
+    config['cmds'].append('')
+    config['sa_sizes'] = []
+    if cmd.find('two-level-buffer') != -1:
+        config['two_level_buffer'] = 1
+    else:
+        config['two_level_buffer'] = 0
+    if cmd.find('hbm') != -1:
+        config['hbm'] = 1
+    else:
+        config['hbm'] = 0
+    # Load SIMD info file
+    kernel_file_path = cmd.split()[1]
+    kernel_file_path = kernel_file_path.rsplit('/', 1)[0]
+    config['kernel_file_path'] = kernel_file_path
+    config['simd_info'] = None
+    with open(kernel_file_path + '/simd_info.json', 'r') as f:
+        config['simd_info'] = json.load(f)
 
-def xilinx_run(cmd, info, setting, training, search, verbose):
-  """ Design space exploration on Xilinx platform.
-  
-  The following four stages are explored in the DSE:
-  - space-time transformation
-  - array partitioning
-  - latnecy hiding
-  - simd vectorization
+    return config
 
-  The DSE includes two phaese: training phase and search phase
-  In the tranining phase, for each systolic array candidate, we generate
-  a set of tuning parameters for the later three stages. This step 
-  creates a suite of designs. We will use training samples to train the 
-  regression models for the latency and resource usage of the design.
 
-  After the training stage is done, we enter the search phase. 
-  In this phase, for each systolic array, we will explore all different
-  tiling factors in the later three stages. After the tuning parameters 
-  of each stage is determined, we estimate the latency and resource usage
-  of the design using the pre-trained regression model.
-  Finally, the design with the least latency and under the resource contraints
-  is selected.
+def xilinx_run(cmd, hw_info, setting, training, search, verbose):
+    """ Design space exploration on Xilinx platform.
 
-  Folder structure:
-  autosa.tmp
-  - optimizer
-    - [training.log | search.log]    
-    - training
-      - job0
-        - autosa_config.json        
-        - output
-          - src
-          - latency_est
-          - resource_est
-        - design0
-        - design1
-    - search
-      - job0
-      - job1
+    The following four stages are explored in the DSE:
+    - space-time transformation
+    - array partitioning
+    - latnecy hiding
+    - simd vectorization
 
-  Paramters
-  ---------
+    The DSE includes two phaese: training phase and search phase
+    In the tranining phase, for each systolic array candidate, we generate
+    a set of tuning parameters for the later three stages. This step
+    creates a suite of designs. We will use training samples to train the
+    regression models for the latency and resource usage of the design.
+
+    After the training stage is done, we enter the search phase.
+    In this phase, for each systolic array, we will explore all different
+    tiling factors in the later three stages. After the tuning parameters
+    of each stage is determined, we estimate the latency and resource usage
+    of the design using the pre-trained regression model.
+    Finally, the design with the least latency and under the resource contraints
+    is selected.
+
+    Folder structure:
+    autosa.tmp
+    - optimizer
+      - [training.log | search.log]
+      - training
+        - job0
+          - autosa_config.json
+          - output
+            - src
+            - latency_est
+            - resource_est
+          - design0
+          - design1
+      - search
+        - job0
+        - job1
+
+    Paramters
+    ---------
     cmd: str
-      Command line to run AutoSA.
+        Command line to run AutoSA.
     info: str
-      Path to FPGA platform hardware resource information file.
+        Path to FPGA platform hardware resource information file.
     setting: dict
-      Optimizer settings.
+        Optimizer settings.
     training: boolean
-      Enable traning phase.
+        Enable traning phase.
     search: boolean
-      Enable search phase.
+        Enable search phase.
     verbose: int
-      Print verbose information.
-  """
-  logger = init_logger(training, search, verbose)  
-  config = init_config(setting, verbose, hw_info, cmd, training, search)
-  if AUTOSA_PATH not in os.environ:
-    raise NameError('Environment variable AUTOSA_PATH is not set.')
-  autosa_prj_path = os.environ['AUTOSA_PATH']
-  ret = execute_sys_cmd(f'mkdir -p {autosa_prj_path}/autosa.tmp/optimizer')
-  if training:
-    if os.path.exists(f'{autosa_prj_path}/autosa.tmp/optimizer/training'):
-      ret = execute_sys_cmd(f'rm -rf {autosa_prj_path}/autosa.tmp/optimizer/training')
-    ret = execute_sys_cmd(f'mkdir -p {autosa_prj_path}/autosa.tmp/optimizer/training')
-    ret = execute_sys_cmd(f'mkdir -p {autosa_prj_path}/autosa.tmp/optimizer/training/job0')
-  else:
-    if os.path.exists(f'{autosa_prj_path}/autosa.tmp/optimizer/search'):
-      ret = execute_sys_cmd(f'rm -rf {autosa_prj_path}/autosa.tmp/optimizer/search')
-    ret = execute_sys_cmd(f'mkdir -p {autosa_prj_path}/autosa.tmp/optimizer/search')
-    ret = execute_sys_cmd(f'mkdir -p {autosa_prj_path}/autosa.tmp/optimizer/search/job0')
-  ret = execute_sys_cmd(f'mkdir -p {config["work_dir"]}/output')
-  ret = execute_sys_cmd(f'mkdir -p {config["work_dir"]}/output/src')
-  ret = execute_sys_cmd(f'mkdir -p {config["work_dir"]}/output/latency_est')
-  ret = execute_sys_cmd(f'mkdir -p {config["work_dir"]}/output/resource_est')
+        Print verbose information.
+    """
+    if 'AUTOSA_PATH' not in os.environ:
+        raise NameError('Environment variable AUTOSA_PATH is not set.')
+    autosa_prj_path = os.environ['AUTOSA_PATH']
+    if not os.path.exists(f'{autosa_prj_path}/autosa.tmp/optimizer'):
+        os.mkdir(f'{autosa_prj_path}/autosa.tmp/optimizer')
+    if training:
+      if os.path.exists(f'{autosa_prj_path}/autosa.tmp/optimizer/training'):
+        shutil.rmtree(f'{autosa_prj_path}/autosa.tmp/optimizer/training')
+      os.mkdir(f'{autosa_prj_path}/autosa.tmp/optimizer/training')
+      os.mkdir(f'{autosa_prj_path}/autosa.tmp/optimizer/training/job0')
+    else:
+      if os.path.exists(f'{autosa_prj_path}/autosa.tmp/optimizer/search'):
+        shutil.rmtree(f'{autosa_prj_path}/autosa.tmp/optimizer/search')
+        #os.rmdir(f'{autosa_prj_path}/autosa.tmp/optimizer/search')
+      os.mkdir(f'{autosa_prj_path}/autosa.tmp/optimizer/search')
+      os.mkdir(f'{autosa_prj_path}/autosa.tmp/optimizer/search/job0')
 
-  # Init the AutoSA configuration
-  autosa_config = {"space_time": {"mode": "auto"}, \
-                   "array_part": {"enable": 1, "mode": "manual"}, \
-                   "array_part_L2": {
-                      "enable": config['two_level_buffer']}, 
-                      "mode": "manual"}, \
-                   "latency": {"enable": 1, "mode": "manual"}, \
-                   "simd": {"enable": 1, "mode": "manual"}, \
-                   "hbm": {"enable": config['hbm'], "mode": "manual"}}
-  with open(f'{config['work_dir']}/autosa_config.json', 'w') as f:
-    json.dump(autosa_config, f, indent=4)
-  config['autosa_config'] = autosa_config                     
+    # Init logger and optimizer config
+    logger = init_logger(training, search, verbose)
+    config = init_config(setting, verbose, hw_info, cmd, training, search)
+    config['logger'] = logger
+    # Init monitor
+    config['monitor'] = init_monitor()
 
-  # Training phase
-  if training:
-    config['logger'].info(f'Run training phase...')
-    train_xilinx(config)
+    # Initialize file directory
+    Path(f'{config["work_dir"]}/output').mkdir(exist_ok=True)
+    Path(f'{config["work_dir"]}/output/src').mkdir(exist_ok=True)
+    Path(f'{config["work_dir"]}/output/latency_est').mkdir(exist_ok=True)
+    Path(f'{config["work_dir"]}/output/resource_est').mkdir(exist_ok=True)
+
+    # Init the AutoSA configuration
+    autosa_config = {"space_time": {"mode": "auto"},
+                     "array_part": {"enable": 1, "mode": "manual"},
+                     "array_part_L2": {
+        "enable": config['two_level_buffer'],
+        "mode": "manual"},
+        "latency": {"enable": 1, "mode": "manual"},
+        "simd": {"enable": 1, "mode": "manual"},
+        "hbm": {"enable": config['hbm'], "mode": "manual"}}
+    with open(f'{config["work_dir"]}/autosa_config.json', 'w') as f:
+        json.dump(autosa_config, f, indent=4)
+    config['autosa_config'] = autosa_config
+
+    # Training phase
+    if training:
+        config['logger'].info(f'Run training phase...')
+        train_xilinx(config)
   
-  # Search phase
-  if search:
-    config['logger'].info(f'Run search phase...')
-    search_xilinx(config)    
+    # Search phase
+    if search:
+        config['logger'].info(f'Run search phase...')
+        search_xilinx(config)
+
 
 if __name__ == "__main__":
-  parser = argparse.ArgumentParser(description='==== AutoSA Optimizer ====')
-parser.add_argument('-c', '--cmd', metavar='CMD', required=True, help='AutoSA command line')
-  parser.add_argument('-i', '--info', metavar='INFO', required=True, help='hardware resource information')
-  parser.add_argument('-s', '--setting', metavar='SETTING', required=False, default='autosa_config/optimizer_settings.json', help='optimizer settings')
-  parser.add_argument('-p', '--platform', metavar='PLATFORM', required=True, help='hardware platform: intel/xilinx')
-  parser.add_argument('--training', action='store_true', help='run training phase')
-  parser.add_argument('--search', action='store_true', help='run search phase')
-  parser.add_argument('--verbose', type=int, required=False, default=1, help='provide verbose information [0-2]')
+    parser = argparse.ArgumentParser(description='==== AutoSA Optimizer ====')
+    parser.add_argument(
+        '-c',
+        '--cmd',
+        metavar='CMD',
+        required=True,
+        help='AutoSA command line')
+    parser.add_argument(
+        '-i',
+        '--info',
+        metavar='INFO',
+        required=True,
+        help='hardware resource information')
+    parser.add_argument(
+        '-s',
+        '--setting',
+        metavar='SETTING',
+        required=False,
+        default='autosa_config/optimizer_settings.json',
+        help='optimizer settings')
+    parser.add_argument(
+        '-p',
+        '--platform',
+        metavar='PLATFORM',
+        required=True,
+        help='hardware platform: intel/xilinx')
+    parser.add_argument(
+        '--training',
+        action='store_true',
+        help='run training phase')
+    parser.add_argument(
+        '--search',
+        action='store_true',
+        help='run search phase')
+    parser.add_argument(
+        '--verbose',
+        type=int,
+        required=False,
+        default=1,
+        help='provide verbose information [0-2]')
 
-  args = parser.parse_args()
+    args = parser.parse_args()
 
-  # Parse the settings into a dict
-  with open(args.setting) as f:
-    setting = json.load(f)
+    # Parse the settings into a dict
+    with open(args.setting) as f:
+        setting = json.load(f)
 
-  if args.platform == 'intel':
-    print("Intel platform is not supported yet!") # TODO
-  elif args.platform == 'xilinx':
-    xilinx_run(args.cmd, args.info, setting, args.training, args.search, args.verbose)
+    if args.platform == 'intel':
+        print("Intel platform is not supported yet!")  # TODO
+    elif args.platform == 'xilinx':
+        xilinx_run(
+            args.cmd,
+            args.info,
+            setting,
+            args.training,
+            args.search,
+            args.verbose)

@@ -8,3 +8,6 @@ typedef float data_t;
 #define J 1024
 //#define J 1152
 #define K 1024
+//#define I 256
+//#define J 256
+//#define K 256

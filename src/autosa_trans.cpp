@@ -1627,7 +1627,7 @@ __isl_give isl_schedule_node *autosa_latency_node_band_sink_time(
 
 /* Given each node band, tile the candidate loop and permute it innermost in the time
  * loop band. 
- * If the tile size is -1, the candidate loop is skipped.
+ * If the tile size is no greater than 1, the candidate loop is skipped.
  * For each point loop, a "latency" mark is added.
  */
 static __isl_give isl_schedule_node *autosa_latency_tile_band_loop(
@@ -2257,7 +2257,7 @@ static isl_schedule_node *detect_simd_vectorization_loop(
           /* At present, we can't analyze reduction loop by AutoSA.
            * We will print each node and follow the user guidance.
            * Besides, reduction loops are only examined in the manual mode.
-           * In thee auto mmode, only parallel loops are examined.
+           * In the auto mode, only parallel loops are examined.
            */
           size_t bufsize = 100;
           size_t characters;
