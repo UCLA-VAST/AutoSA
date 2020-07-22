@@ -45,6 +45,7 @@
     },    
     "search": {
         "metric": "latency",
+        "cycle_period": 5,
         "mode": "exhaustive",
         "log": {
             "n_record": 10
@@ -75,7 +76,16 @@
                 "enable": 1,
                 "n_trial": 10
             },
-            "resource": ["BRAM18K", "DSP"],
+            "resource": {
+                "target": ["BRAM18K", "DSP"],
+                "range": {
+                    "FF": [0, 0.6],
+                    "LUT": [0, 0.6],
+                    "DSP": [0, 0.6],
+                    "BRAM18K": [0, 0.6],
+                    "URAM": [0, 0.6]
+                }
+            },
             "array_part": {
                 "enable": 1,
                 "PE_num": [4, 64]
@@ -94,7 +104,7 @@
             }
         },
         "multiprocess": {
-            "n_job": 24
+            "n_job": 1
         }        
     },
     "synth": {

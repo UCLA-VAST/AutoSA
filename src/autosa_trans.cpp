@@ -1,4 +1,6 @@
 #include <string>
+//#include <chrono>
+//using namespace std::chrono;
 
 #include "autosa_trans.h"
 #include "autosa_utils.h"
@@ -581,6 +583,11 @@ struct autosa_kernel **sa_space_time_transform(__isl_take isl_schedule *schedule
   isl_schedule_free(schedule);
   isl_schedule_node_free(band);
   *num_sa = n_sa;
+  /* Assign the kernel id */
+  for (int i = 0; i < n_sa; i++) {
+    sa_list[i]->id = i;
+  }
+
   return sa_list;
 }
 
@@ -826,9 +833,9 @@ struct autosa_kernel *sa_candidates_smart_pick(
     //    DBGVAR(std::cout, data.score);
     //#endif
   }
-
-  //DBGVAR(std::cout, opt_id);
+  
   sa_opt = autosa_kernel_copy(sa_list[opt_id]);
+
   for (int i = 0; i < num_sa; i++)
     autosa_kernel_free(sa_list[i]);
   free(sa_list);
@@ -2795,9 +2802,7 @@ isl_stat sa_pe_optimize(struct autosa_kernel *sa, bool pass_en[], char *pass_mod
 #endif */
 
   /* Extract the tile sizes. */
-  sa->sizes = extract_sizes_from_str(sa->ctx, sa->scop->options->autosa->sa_sizes);
-  /* Set the kernel id. */
-  sa->id = 0;
+  sa->sizes = extract_sizes_from_str(sa->ctx, sa->scop->options->autosa->sa_sizes);  
   /* Set the core */
   isl_union_set *domain = isl_schedule_get_domain(sa->schedule);
   sa->core = isl_union_set_universe(domain);
@@ -2990,11 +2995,11 @@ static __isl_give isl_schedule_node *group_statements(
  * - data packing
  */
 isl_stat sa_comm_management(struct autosa_kernel *sa, struct autosa_gen *gen)
-{
+{  
   printf("[AutoSA] Apply communication management.\n");
 
   sa_io_construct_optimize(sa, gen);
-
+ 
   return isl_stat_ok;
 }
 
@@ -3202,7 +3207,7 @@ static __isl_give isl_schedule_node *compute_and_comm_optimize(
 #endif */
 
   kernel->prog = gen->prog;
-  kernel->options = gen->options;
+  kernel->options = gen->options;  
 
   /* Create local arrays. */
   kernel = autosa_kernel_create_local_arrays(kernel, gen->prog);
@@ -3233,10 +3238,8 @@ static __isl_give isl_schedule_node *compute_and_comm_optimize(
   pe_opt_mode[0] = array_part_mode_json->valuestring;
   pe_opt_mode[1] = array_part_L2_mode_json->valuestring;
   pe_opt_mode[2] = latency_mode_json->valuestring;
-  pe_opt_mode[3] = simd_mode_json->valuestring;
-
-  sa_pe_optimize(kernel, pe_opt_en, pe_opt_mode);
-
+  pe_opt_mode[3] = simd_mode_json->valuestring;  
+  sa_pe_optimize(kernel, pe_opt_en, pe_opt_mode);  
   /* Create the autosa_kernel object and attach to the schedule. */
   if (!kernel)
   {
@@ -3264,7 +3267,7 @@ static __isl_give isl_schedule_node *compute_and_comm_optimize(
   expanded = isl_union_set_preimage_union_pw_multi_aff(expanded, contraction);
   kernel->expanded_domain = isl_union_set_copy(expanded);
   kernel->arrays = accessed_by_domain(expanded, gen->prog);
-  kernel->id = gen->kernel_id++;
+  //kernel->id = gen->kernel_id++;
   /* For FPGA, we set grid_size and block_size as 1, i.e. only one thread block 
    * and one thread inside the thread block. */
   kernel->n_grid = 1;
@@ -3275,7 +3278,7 @@ static __isl_give isl_schedule_node *compute_and_comm_optimize(
   host_schedule = isl_schedule_node_get_prefix_schedule_union_map(node);
   host_domain = isl_set_from_union_set(isl_union_map_range(host_schedule));
   kernel->host_domain = host_domain;
-  kernel->domain = domain;
+  kernel->domain = domain;  
 
   /* Make all the host loops atomic so that kernel is only called once. */
   node = atomic_ancestors(node);
@@ -3750,8 +3753,8 @@ __isl_give isl_schedule *sa_map_to_device(struct autosa_gen *gen,
                                                             contraction);
 
   /* Perform compute and comm optimization.
-   */
-  node = compute_and_comm_optimize(gen, node);
+   */  
+  node = compute_and_comm_optimize(gen, node);  
 
   id = isl_schedule_node_mark_get_id(node);
   kernel = (struct autosa_kernel *)isl_id_get_user(id);
@@ -3892,7 +3895,11 @@ static __isl_give isl_printer *generate(__isl_take isl_printer *p,
     /* Perform opt. stages:
      * Computation Management -> Communication Management     
      */
-    gen->schedule = sa_map_to_device(gen, schedule);
+    //auto start = high_resolution_clock::now(); 
+    gen->schedule = sa_map_to_device(gen, schedule);    
+    //auto stop = high_resolution_clock::now(); 
+    //std::chrono::duration<double> duration = stop - start;
+    //std::cout << duration.count() << std::endl;
 
     /* Generate the AST tree. */
     gen->tree = sa_generate_code(gen, gen->schedule);

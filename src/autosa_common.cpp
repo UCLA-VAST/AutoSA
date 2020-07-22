@@ -1776,12 +1776,12 @@ static isl_stat extract_size_of_type(__isl_take isl_set *size, void *user)
   return isl_stat_ok;
 }
 
-/* Given a union map { kernel[i] -> *[...] },
+/* Given a union map { kernel[] -> *[...] },
  * return the range in the space called "type" for the kernel with 
  * sequence number "id".
  */
 __isl_give isl_set *extract_sa_sizes(__isl_keep isl_union_map *sizes,
-                                     const char *type, int id)
+                                     const char *type)
 {
   isl_space *space;
   isl_set *dom;
@@ -1793,10 +1793,10 @@ __isl_give isl_set *extract_sa_sizes(__isl_keep isl_union_map *sizes,
 
   space = isl_union_map_get_space(sizes);
   space = isl_space_set_from_params(space);
-  space = isl_space_add_dims(space, isl_dim_set, 1);
+  //space = isl_space_add_dims(space, isl_dim_set, 1);
   space = isl_space_set_tuple_name(space, isl_dim_set, "kernel");
   dom = isl_set_universe(space);
-  dom = isl_set_fix_si(dom, isl_dim_set, 0, id);
+  //dom = isl_set_fix_si(dom, isl_dim_set, 0, id);
 
   local_sizes = isl_union_set_apply(isl_union_set_from_set(dom),
                                     isl_union_map_copy(sizes));
@@ -1945,7 +1945,7 @@ int *read_hbm_tile_sizes(struct autosa_kernel *sa, int tile_len, char *name)
   if (!tile_size)
     return NULL;
 
-  size = extract_sa_sizes(sa->sizes, name, sa->id);
+  size = extract_sa_sizes(sa->sizes, name);
   if (isl_set_dim(size, isl_dim_set) < tile_len)
   {
     free(tile_size);
@@ -2037,7 +2037,7 @@ int *read_array_part_tile_sizes(struct autosa_kernel *sa, int tile_len)
   if (!tile_size)
     return NULL;
 
-  size = extract_sa_sizes(sa->sizes, "array_part", sa->id);
+  size = extract_sa_sizes(sa->sizes, "array_part");
   if (isl_set_dim(size, isl_dim_set) < tile_len)
   {
     free(tile_size);
@@ -2085,7 +2085,7 @@ int *read_latency_tile_sizes(struct autosa_kernel *sa, int tile_len)
   if (!tile_size)
     return NULL;
 
-  size = extract_sa_sizes(sa->sizes, "latency", sa->id);
+  size = extract_sa_sizes(sa->sizes, "latency");
   if (isl_set_dim(size, isl_dim_set) < tile_len)
   {
     free(tile_size);
@@ -2126,7 +2126,7 @@ int *read_simd_tile_sizes(struct autosa_kernel *sa, int tile_len)
   if (!tile_size)
     return NULL;
 
-  size = extract_sa_sizes(sa->sizes, "simd", sa->id);
+  size = extract_sa_sizes(sa->sizes, "simd");
   if (isl_set_dim(size, isl_dim_set) < tile_len)
   {
     free(tile_size);
@@ -2162,7 +2162,7 @@ int read_space_time_kernel_id(__isl_keep isl_union_map *sizes)
   isl_set *size;
   int kernel_id;
   int dim;
-  size = extract_sa_sizes(sizes, "space_time", 0);
+  size = extract_sa_sizes(sizes, "space_time");
   if (!size)
     return -1;
   dim = isl_set_dim(size, isl_dim_set);
@@ -2185,7 +2185,7 @@ int *read_array_part_L2_tile_sizes(struct autosa_kernel *sa, int tile_len)
   if (!tile_size)
     return NULL;
 
-  size = extract_sa_sizes(sa->sizes, "array_part_L2", sa->id);
+  size = extract_sa_sizes(sa->sizes, "array_part_L2");
   if (isl_set_dim(size, isl_dim_set) < tile_len)
   {
     free(tile_size);
@@ -2859,6 +2859,11 @@ isl_stat sa_extract_design_info(struct autosa_gen *gen)
   isl_ctx *ctx = gen->ctx;
   isl_printer *p_str;
   char *file_path;
+
+  /* kernel id */
+  //DBGVAR(std::cout, gen->kernel->id);
+  cJSON *kernel_id = cJSON_CreateNumber(gen->kernel->id);
+  cJSON_AddItemToObject(design_info, "kernel_id", kernel_id);
 
   /* module */
   cJSON *modules = cJSON_CreateObject();

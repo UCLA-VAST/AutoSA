@@ -580,7 +580,7 @@ def train(df, modules, fifos, design_infos, work_dir, logger):
     for index, row in df_test.iterrows():
         design_info = design_infos[index]
         df_design = df_test.loc[[index], :]
-        res = predict_design_resource_usage(df_design, modules, fifos, design_info, work_dir, logger) #TODO            
+        res = predict_design_resource_usage(df_design, modules, fifos, design_info, work_dir) 
     
         FF_mape = mean_absolute_percentage_error(design_info['FF'], res['FF'].item())        
         LUT_mape = mean_absolute_percentage_error(design_info['LUT'], res['LUT'].item())
@@ -601,7 +601,8 @@ def train(df, modules, fifos, design_infos, work_dir, logger):
     logger.info('BRAM18K Mean Absoulate Percentage Error (Arith. Mean): %.2f%%' %(mean(BRAM18K_design_mape)))
     logger.info('URAM Mean Absoulate Percentage Error (Arith. Mean): %.2f%%' %(mean(URAM_design_mape)))    
 
-def predict_design_resource_usage(df, modules, fifos, design_info, prj_dir, logger):
+def predict_design_resource_usage(df, modules, fifos, design_info, prj_dir, \
+    target=['FF', 'LUT', 'DSP', 'BRAM18K', 'DSP']):
     """ Predict the resource usage for a single design on Xilinx platforms
 
     Parameters
@@ -615,10 +616,11 @@ def predict_design_resource_usage(df, modules, fifos, design_info, prj_dir, logg
     design_info: dict
         A dictionary containing the design information.
     prj_dir: str
-        Directory to the resource models.
-    logger
+        Directory to the resource models.    
+    target: list
+        Resource types to predict.
     """
-    resource = {'FF': 0, 'LUT': 0, 'BRAM18K': 0, 'URAM': 0, 'DSP': 0}
+    resource = {'FF': 0, 'LUT': 0, 'DSP': 0, 'BRAM18K': 0, 'URAM': 0}    
     resource_all = {}
 
     # Predict FIFOs
@@ -643,44 +645,52 @@ def predict_design_resource_usage(df, modules, fifos, design_info, prj_dir, logg
             df = df_feature_extract(df, module)
             module_feature_set = get_feature_set(module)
 
-            # FF
-            X = df.loc[:, module_feature_set]
-            model_name = module + '_FF_model'
-            joblib_file = prj_dir + '/' + model_name + '.pkl'
-            model = joblib.load(joblib_file)
-            FF = model.predict(X.to_numpy())
+            FF = 0
+            if 'FF' in target:
+                # FF
+                X = df.loc[:, module_feature_set]
+                model_name = module + '_FF_model'
+                joblib_file = prj_dir + '/' + model_name + '.pkl'
+                model = joblib.load(joblib_file)
+                FF = np.asscalar(model.predict(X.to_numpy()))
 
-            # LUT
-            X = df.loc[:, module_feature_set]
-            model_name = module + '_LUT_model'
-            joblib_file = prj_dir + '/' + model_name + '.pkl'
-            model = joblib.load(joblib_file)
-            LUT = model.predict(X.to_numpy())
+            LUT = 0
+            if 'LUT' in target:
+                # LUT
+                X = df.loc[:, module_feature_set]
+                model_name = module + '_LUT_model'
+                joblib_file = prj_dir + '/' + model_name + '.pkl'
+                model = joblib.load(joblib_file)
+                LUT = np.asscalar(model.predict(X.to_numpy()))
 
-            # DSP
-            X = df.loc[:, module_feature_set]
-            model_name = module + '_DSP_model'
-            joblib_file = prj_dir + '/' + model_name + '.pkl'
-            model = joblib.load(joblib_file)
-            DSP = model.predict(X.to_numpy())
+            DSP = 0
+            if 'DSP' in target:
+                # DSP
+                X = df.loc[:, module_feature_set]
+                model_name = module + '_DSP_model'
+                joblib_file = prj_dir + '/' + model_name + '.pkl'
+                model = joblib.load(joblib_file)
+                DSP = np.asscalar(model.predict(X.to_numpy()))
 
-            # BRAM
             BRAM = 0
-            if 'local_buffers' in design_info['modules'][module]:
-                local_buffers = design_info['modules'][module]['local_buffers']
-                for local_buffer in local_buffers:
-                    if local_buffer['mem_type'] == 'BRAM':
-                        BRAM += BRAM_array_predict_HLS(local_buffer['port_width'], \
-                            local_buffer['buffer_depth'], local_buffer['partition_number'])
+            if 'BRAM18K' in target:
+                # BRAM                
+                if 'local_buffers' in design_info['modules'][module]:
+                    local_buffers = design_info['modules'][module]['local_buffers']
+                    for local_buffer in local_buffers:
+                        if local_buffer['mem_type'] == 'BRAM':
+                            BRAM += BRAM_array_predict_HLS(local_buffer['port_width'], \
+                                local_buffer['buffer_depth'], local_buffer['partition_number'])
 
-            # URAM
             URAM = 0
-            if 'local_buffers' in design_info['modules'][module]:
-                local_buffers = design_info['modules'][module]['local_buffers']
-                for local_buffer in local_buffers:
-                    if local_buffer['mem_type'] == 'URAM':
-                        URAM += URAM_array_predict_HLS(local_buffer['port_width'], \
-                            local_buffer['buffer_depth'], local_buffer['partition_number'])
+            if 'URAM' in target:
+                # URAM                
+                if 'local_buffers' in design_info['modules'][module]:
+                    local_buffers = design_info['modules'][module]['local_buffers']
+                    for local_buffer in local_buffers:
+                        if local_buffer['mem_type'] == 'URAM':
+                            URAM += URAM_array_predict_HLS(local_buffer['port_width'], \
+                                local_buffer['buffer_depth'], local_buffer['partition_number'])
 
             resource_all[module] = {
                 'FF': FF, 'LUT': LUT, 'BRAM18K': BRAM, 'URAM': URAM, 'DSP': DSP, \
@@ -703,7 +713,10 @@ def predict_design_resource_usage(df, modules, fifos, design_info, prj_dir, logg
         resource['BRAM18K'] += resource_all[inst]['BRAM18K'] * resource_all[inst]['n']
         resource['URAM'] += resource_all[inst]['URAM'] * resource_all[inst]['n']
 
-    return resource
+    ret = {}
+    for r in target:
+        ret[r] = resource[r]
+    return ret
 
 def mean_absolute_percentage_error(y_true, y_pred):    
     if isinstance(y_true, np.ndarray) and isinstance(y_pred, np.ndarray):
@@ -715,3 +728,49 @@ def mean_absolute_percentage_error(y_true, y_pred):
             return abs(y_pred) * 100
         else:
             return abs((y_true - y_pred) // y_true) * 100
+
+def resource_valid(res, hw_info, range):
+    """ Test if the resource usage is valid.
+
+    Parameters
+    ----------
+    res: dict
+        A dict containing the resource usage of the current design.
+    hw_info: dict
+        A dict containing the hardware platform information.
+    thres: dict
+        A dict containing the resource threshold.
+
+    Returns
+    -------
+    ret: boolean
+    """
+    for r in res:
+        usage = res[r]
+        if usage > hw_info[r] * range[r][1]:
+            return False
+        if usage < hw_info[r] * range[r][0]:
+            return False
+    return True
+
+def compute_res_util_score(res, hw_info):
+    """ Compute a score for the current design utilization.
+
+    We put different weights for different types of resource.
+    URAM, DSP, BRAM18K: 0.3
+    LUT: 0.2
+    FF: 0.1
+    """
+    score = 0
+    if 'FF' in res:
+        score += 0.1 * float(res['FF']) / hw_info['FF']
+    if 'LUT' in res:
+        score += 0.2 * float(res['LUT']) / hw_info['LUT']
+    if 'BRAM18K' in res:
+        score += 0.3 * float(res['BRAM18K']) / hw_info['BRAM18K']
+    if 'DSP' in res:
+        score += 0.3 * float(res['DSP']) / hw_info['DSP']
+    if 'URAM' in res:
+        score += 0.3 * float(res['URAM']) / hw_info['URAM']
+
+    return score
