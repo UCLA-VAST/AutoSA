@@ -1,6 +1,6 @@
 {
     "space_time": {
-        "mode": "auto"
+        "mode": "manual"
     },
     "array_part": {
         "enable": 1,

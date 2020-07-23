@@ -82,7 +82,7 @@ def generate_loop_candidates(loops, config, stage):
         'array_part',
         'array_part_L2',
         'latency_hiding',
-            'SIMD_vectorization']:
+        'SIMD_vectorization']:
         raise NameError(f'Stage {stage} is not defined.')
 
     sample_mode = config['setting'][config['mode']]['sample'][stage]['mode']
@@ -399,26 +399,15 @@ def explore_design(config):
 
     if config['mode'] == 'training':
         save_design_files(config)
-    elif config['mode'] == 'search':            
-        # Predict the resource usage
-        #start_time = time.perf_counter()
+    elif config['mode'] == 'search':
+        cur_design = {
+            'latency': -1,
+            'resource': {},
+            'power': -1,
+            'cmd': ' '.join(config['cmds'])
+        }
+        config['monitor']['last_design'] = cur_design
         design_dir = f'{config["work_dir"]}/output'
-        design_info = res_model.extract_design_info(design_dir, 0)
-        modules, fifos, df = res_model.convert_design_infos_to_df([design_info])
-        kernel_id = design_info['kernel_id']        
-        # Resource model path
-        res_model_path = f'{autosa_prj_path}/autosa.tmp/optimizer/training/resource_models/kernel{kernel_id}'        
-        res = res_model.predict_design_resource_usage(
-            df, modules, fifos, design_info, 
-            res_model_path,
-            config['setting']['search']['pruning']['resource']['target'])
-                
-        if not res_model.resource_valid(res, config['hw_info'], config['setting']['search']['pruning']['resource']['range']):
-            # TODO: do we need to clear files here?
-            return        
-        #runtime = time.perf_counter() - start_time
-        #print(f'resource runtime: {runtime}')
-
         if config['setting']['search']['metric'] == 'latency':
             #start_time = time.perf_counter()
             # Predict the latency
@@ -428,23 +417,40 @@ def explore_design(config):
                 config['search_results']['opt']['latency'])
             #runtime = time.perf_counter() - start_time
             #print(f'resource runtime: {runtime}')
-            # Compare and update the search results            
-            cur_design = {
-                'latency': latency,
-                'resource': res,
-                'power': -1,
-                'cmd': ' '.join(config['cmds'])
-            }
-            config['search_results'] = update_search_results(
-                config['search_results'], cur_design, 
-                config['setting']['search']['log']['n_record'],
-                'latency', config['hw_info'])
+            if config['search_results']['opt']['found']:
+                if latency > config['search_results']['opt']['latency']:
+                    return
+            cur_design['latency'] = latency
         elif config['setting']['search']['metric'] == 'power':            
             # Predict the power
             raise NotImplementedError(f'DSE for power is not supported.')            
+
+        # Predict the resource usage
+        #start_time = time.perf_counter()        
+        design_info = res_model.extract_design_info(design_dir, 0)
+        modules, fifos, df = res_model.convert_design_infos_to_df([design_info])
+        kernel_id = design_info['kernel_id']        
+        # Resource model path
+        res_model_path = f'{autosa_prj_path}/autosa.tmp/optimizer/training/resource_models/kernel{kernel_id}'        
+        res = res_model.predict_design_resource_usage(
+            df, modules, fifos, design_info, 
+            res_model_path,
+            config['setting']['search']['pruning']['resource']['target'])
+        cur_design['resource'] = res
+                
+        if not res_model.resource_valid(res, config['hw_info'], config['setting']['search']['pruning']['resource']['range']):
+            # TODO: do we need to clear files here?
+            return        
+        #runtime = time.perf_counter() - start_time
+        #print(f'resource runtime: {runtime}')
+        
+        # Compare and update the search results                    
+        config['search_results'] = update_search_results(
+            config['search_results'], cur_design, 
+            config['setting']['search']['log']['n_record'],
+            'latency', config['hw_info'])        
         
     return
-
 
 def simd_loop_filter(loops, tuning):
     """ Filter out the SIMD candidate loops based on the tuning information.
@@ -497,11 +503,11 @@ def explore_simd_vectorization(config):
     the candidate loops, compile the program, and move forward to the next stage.
 
     """
+    pruning_en = config['setting'][config['mode']]['pruning']['SIMD_vectorization']['enable']
     if config['autosa_config']['simd']['mode'] == 'manual':
         with open(f'{config["work_dir"]}/output/tuning.json') as f:
             tuning = json.load(f)
-        if config['setting'][config['mode']
-                             ]['pruning']['SIMD_vectorization']['enable']:
+        if pruning_en:
             # Perform early pruning based on the PE numbers
             config['tuning'] = tuning
             if opt_prune.SIMD_vectorization_PE_pruning(config):
@@ -527,7 +533,10 @@ def explore_simd_vectorization(config):
             config['autosa_config']['simd']['enable'] = simd_en
             with open(f'{config["work_dir"]}/autosa_config.json', 'w') as f:
                 json.dump(config['autosa_config'], f, indent=4)
-        else:
+        else:          
+            if config['mode'] == 'search' and config['setting']['search']['metric'] == 'latency' \
+                and pruning_en:                
+                loops_pool = opt_prune.reorder_simd_loops(loops_pool)
             for loop in loops_pool:
                 sa_sizes = config['sa_sizes'].copy()
                 config['sa_sizes'].append(
@@ -546,6 +555,11 @@ def explore_simd_vectorization(config):
 
                 explore_design(config)
                 config['sa_sizes'] = sa_sizes
+                
+                if config['mode'] == 'search' and config['setting']['search']['metric'] == 'latency' \
+                    and pruning_en:    
+                    if opt_prune.SIMD_vectorization_latency_pruning(config):
+                        return
     else:
         explore_design(config)
 
@@ -974,6 +988,13 @@ def train_xilinx(config):
     # config['logger'].info('Train latency models...')
     # train_latency_models_xilinx(config) # TODO
 
+def get_default_pruning_policy(mode):
+    """ Return the default search pruning policy.
+
+    """
+    #TODO
+    return
+
 def get_sample_policy(mode):
     """ Return the search sampling policy.
 
@@ -1102,20 +1123,20 @@ def search_xilinx(config):
             n_trial += 1
         config['setting'][config['mode']]['sample'] = user_policy
 
-#    config['logger'].info('Start searching...')
-#    if config['setting'][config['mode']]['mode'] == 'exhausive':
-#        config['logger'].info('Search mode: Exhaustive')
-#        config['setting'][config['mode']]['sample'] = \
-#            get_sample_policy(config['setting'][config['mode']]['mode'])
-#        #explore_design_space(config)
-#    elif config['setting'][config['mode']]['mode'] == 'random':
-#        config['logger'].info('Search mode: Random')
-#        config['setting'][config['mode']]['sample'] = \
-#            get_random_sample_policy(config['setting'][config['mode']]['mode']) 
-#        #explore_design_space(config)
-#    elif config['setting'][config['mode']]['mode'] == 'customized':
-#        config['logger'].info('Search mode: Customized')        
-#        #explore_design_space(config)
+    config['logger'].info('Start searching...')
+    if config['setting'][config['mode']]['mode'] == 'exhausive':
+        config['logger'].info('Search mode: Exhaustive')
+        config['setting'][config['mode']]['sample'] = \
+            get_sample_policy(config['setting'][config['mode']]['mode'])
+        explore_design_space(config)
+    elif config['setting'][config['mode']]['mode'] == 'random':
+        config['logger'].info('Search mode: Random')
+        config['setting'][config['mode']]['sample'] = \
+            get_sample_policy(config['setting'][config['mode']]['mode']) 
+        explore_design_space(config)
+    elif config['setting'][config['mode']]['mode'] == 'customized':
+        config['logger'].info('Search mode: Customized')        
+        explore_design_space(config)
 
     # Print out the best design
     config['logger'].info(print_best_design(config['search_results']['opt']))

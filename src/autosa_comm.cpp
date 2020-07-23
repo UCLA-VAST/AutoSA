@@ -1077,6 +1077,12 @@ static __isl_give isl_schedule_node *io_cluster(
                                     isl_vec_get_element_val(dir, i));
   }
   null_mat = isl_mat_right_kernel(d_mat);
+  //#ifdef _DEBUG
+  //  DBGVAR(std::cout, isl_mat_rows(null_mat));
+  //  DBGVAR(std::cout, isl_mat_cols(null_mat));
+  //  print_mat(stdout, null_mat);
+  //#endif
+
   for (int i = 0; i < isl_mat_cols(null_mat); i++)
     for (int j = 0; j < isl_mat_rows(null_mat); j++)
     {
@@ -2664,8 +2670,8 @@ static isl_bool update_group_simd(__isl_keep isl_schedule_node *node, void *user
  * to be vectorized, the data pack factor should also be multiples of the SIMD factor.
  */
 static isl_stat compute_io_group_data_pack(struct autosa_kernel *kernel,
-                                           struct autosa_array_ref_group *group, 
-                                           struct autosa_gen *gen, 
+                                           struct autosa_array_ref_group *group,
+                                           struct autosa_gen *gen,
                                            int max_n_lane)
 {
   isl_schedule_node *node;
@@ -2722,10 +2728,11 @@ static isl_stat compute_io_group_data_pack(struct autosa_kernel *kernel,
    * furtehr restrain the FIFO widths to be no more than 64 bits to mitigate 
    * the potential routing congestion.
    */
-    /* Parse the data pack settings. */
+  /* Parse the data pack settings. */
   sizes = extract_sizes_from_str(gen->ctx, gen->options->autosa->data_pack_sizes);
   data_pack_ubs = read_data_pack_sizes(sizes, 3);
-  if (!data_pack_ubs) {
+  if (!data_pack_ubs)
+  {
     /* Use the default numbers. */
     data_pack_ubs = isl_alloc_array(gen->ctx, int, 3);
     data_pack_ubs[0] = 8;
@@ -2738,7 +2745,7 @@ static isl_stat compute_io_group_data_pack(struct autosa_kernel *kernel,
   {
     struct autosa_io_buffer *buf = group->io_buffers[i];
     if (i == 0)
-      cur_max_n_lane = max(group->n_lane, data_pack_ubs[0] / ele_size); 
+      cur_max_n_lane = max(group->n_lane, data_pack_ubs[0] / ele_size);
     else if (i > 0 && i < group->io_level - 1)
       cur_max_n_lane = max(group->n_lane, data_pack_ubs[1] / ele_size);
     else
@@ -2939,11 +2946,11 @@ static isl_stat hoist_L2_io_buffer(struct autosa_kernel *kernel,
 static isl_stat autosa_io_optimize(
     struct autosa_kernel *kernel, struct autosa_array_ref_group *group,
     struct autosa_gen *gen, struct autosa_group_data *data)
-{  
+{
   /* Update the I/O schedules by I/O module clustering. */
   compute_io_group_schedule(kernel, group, gen);
   /* Allocate I/O buffers inside I/O modules. */
-  compute_io_group_buffer(kernel, group, gen);  
+  compute_io_group_buffer(kernel, group, gen);
   if (gen->options->autosa->two_level_buffer)
   {
     /* Seek the opportunity to hoist up the L2 I/O buffers. */
@@ -3013,7 +3020,7 @@ static __isl_give isl_map *local_access_io(struct autosa_array_ref_group *group,
  * For exteriro I/O group, the tiling is computed at the io_L2 level.
  */
 static isl_stat compute_group_bounds_core_io(struct autosa_kernel *kernel,
-                                             struct autosa_array_ref_group *group, 
+                                             struct autosa_array_ref_group *group,
                                              struct autosa_group_data *data)
 {
   isl_ctx *ctx = isl_space_get_ctx(group->array->space);
@@ -3068,7 +3075,7 @@ static isl_stat compute_group_bounds_core_io(struct autosa_kernel *kernel,
  * Return 0 on success and -1 on error.
  */
 static int compute_group_bounds_io(struct autosa_kernel *kernel,
-                                   struct autosa_array_ref_group *group, 
+                                   struct autosa_array_ref_group *group,
                                    struct autosa_group_data *data)
 {
   if (!group)
@@ -3142,25 +3149,25 @@ static int group_array_references_io(struct autosa_kernel *kernel,
     autosa_interior_io_eliminate(kernel, groups[i], data->gen, data);
   }
 
-//  /* Perform I/O optimization */
-//  for (i = 0; i < n; ++i)
-//  {
-//    autosa_io_optimize(kernel, groups[i], data->gen, data);
-//  }
+  //  /* Perform I/O optimization */
+  //  for (i = 0; i < n; ++i)
+  //  {
+  //    autosa_io_optimize(kernel, groups[i], data->gen, data);
+  //  }
 
-//  for (i = 0; i < n; ++i)
-//  {
-//    /* TODO: is compute "local_tile" still necessary? */
-//    if (compute_group_bounds_io(kernel, groups[i], data) < 0)
-//    {
-//      for (j = 0; j < n; ++j)
-//      {
-//        autosa_array_ref_group_free(groups[j]);
-//      }
-//      free(groups);
-//      return -1;
-//    }
-//  }
+  //  for (i = 0; i < n; ++i)
+  //  {
+  //    /* TODO: is compute "local_tile" still necessary? */
+  //    if (compute_group_bounds_io(kernel, groups[i], data) < 0)
+  //    {
+  //      for (j = 0; j < n; ++j)
+  //      {
+  //        autosa_array_ref_group_free(groups[j]);
+  //      }
+  //      free(groups);
+  //      return -1;
+  //    }
+  //  }
 
   set_array_groups_io(local, n, groups);
 
@@ -3386,27 +3393,27 @@ static int group_array_references_drain(struct autosa_kernel *kernel,
   if (n > 1)
     n = 1;
 
-//  /* Construct the I/O and compute the I/O buffers. */
-//  for (i = 0; i < n; ++i)
-//  {
-//    autosa_io_optimize(kernel, groups[i], data->gen, data);
-//  }
+  //  /* Construct the I/O and compute the I/O buffers. */
+  //  for (i = 0; i < n; ++i)
+  //  {
+  //    autosa_io_optimize(kernel, groups[i], data->gen, data);
+  //  }
 
-//  /* Calculate the group tiling. */
-//  for (i = 0; i < n; ++i)
-//  {
-//    /* TODO: is this necessary? */
-//    if (compute_group_bounds_drain(kernel, groups[i], data) < 0)
-//    {
-//      for (j = 0; j < n; j++)
-//      {
-//        autosa_array_ref_group_free(groups[j]);
-//      }
-//      free(groups);
-//      n = 0;
-//      return -1;
-//    }
-//  }
+  //  /* Calculate the group tiling. */
+  //  for (i = 0; i < n; ++i)
+  //  {
+  //    /* TODO: is this necessary? */
+  //    if (compute_group_bounds_drain(kernel, groups[i], data) < 0)
+  //    {
+  //      for (j = 0; j < n; j++)
+  //      {
+  //        autosa_array_ref_group_free(groups[j]);
+  //      }
+  //      free(groups);
+  //      n = 0;
+  //      return -1;
+  //    }
+  //  }
 
   /* Set the group. */
   if (n > 0)
@@ -3483,14 +3490,17 @@ static void compute_group_tilings_drain(struct autosa_kernel *kernel)
 
 /* Update the I/O schedules by I/O module clustering. */
 static isl_stat autosa_io_clustering(struct autosa_kernel *kernel,
-  struct autosa_gen *gen, struct autosa_group_data *data)
+                                     struct autosa_gen *gen, struct autosa_group_data *data)
 {
-  for (int i = 0; i < kernel->n_array; i++) {
+  for (int i = 0; i < kernel->n_array; i++)
+  {
     struct autosa_local_array_info *local = &kernel->array[i];
-    for (int j = 0; j < local->n_io_group; j++) {
+    for (int j = 0; j < local->n_io_group; j++)
+    {
       compute_io_group_schedule(kernel, local->io_groups[j], gen);
     }
-    if (local->drain_group) {
+    if (local->drain_group)
+    {
       compute_io_group_schedule(kernel, local->drain_group, gen);
     }
   }
@@ -3499,37 +3509,45 @@ static isl_stat autosa_io_clustering(struct autosa_kernel *kernel,
 
 /* Allocate I/O buffers inside I/O modules. */
 static isl_stat autosa_io_buffer_allocate(struct autosa_kernel *kernel,
-  struct autosa_gen *gen, struct autosa_group_data *data)
+                                          struct autosa_gen *gen, struct autosa_group_data *data)
 {
-  for (int i = 0; i < kernel->n_array; i++) {
+  for (int i = 0; i < kernel->n_array; i++)
+  {
     struct autosa_local_array_info *local = &kernel->array[i];
-    for (int j = 0; j < local->n_io_group; j++) {
+    for (int j = 0; j < local->n_io_group; j++)
+    {
       compute_io_group_buffer(kernel, local->io_groups[j], gen);
-      if (gen->options->autosa->two_level_buffer) {
+      if (gen->options->autosa->two_level_buffer)
+      {
         /* Seek the opportunity to hoist up the L2 I/O buffers. */
         hoist_L2_io_buffer(kernel, local->io_groups[j], gen, data);
       }
     }
-    if (local->drain_group) {      
+    if (local->drain_group)
+    {
       compute_io_group_buffer(kernel, local->drain_group, gen);
-      if (gen->options->autosa->two_level_buffer) {
+      if (gen->options->autosa->two_level_buffer)
+      {
         hoist_L2_io_buffer(kernel, local->drain_group, gen, data);
       }
     }
   }
-  return isl_stat_ok;  
+  return isl_stat_ok;
 }
 
 /* Compute data packing factors. */
 static isl_stat autosa_io_data_pack(struct autosa_kernel *kernel,
-  struct autosa_gen *gen, struct autosa_group_data *data)
+                                    struct autosa_gen *gen, struct autosa_group_data *data)
 {
-  for (int i = 0; i < kernel->n_array; i++) {
+  for (int i = 0; i < kernel->n_array; i++)
+  {
     struct autosa_local_array_info *local = &kernel->array[i];
-    for (int j = 0; j < local->n_io_group; j++) {
+    for (int j = 0; j < local->n_io_group; j++)
+    {
       compute_io_group_data_pack(kernel, local->io_groups[j], gen, -1);
     }
-    if (local->drain_group) {
+    if (local->drain_group)
+    {
       compute_io_group_data_pack(kernel, local->drain_group, gen, -1);
     }
   }
@@ -3609,34 +3627,40 @@ isl_stat sa_io_construct_optimize(struct autosa_kernel *kernel, struct autosa_ge
   /* Perform I/O Optimization */
   /* I/O module clustering */
   autosa_io_clustering(kernel, gen, &data);
-    
-  if (gen->options->autosa->host_serialize) {
+
+  if (gen->options->autosa->host_serialize)
+  {
     /* Check if there is only one I/O/drain group for each array.
      * Otherwise, we will disable the host serialize.
      */
-    for (int i = 0; i < kernel->n_array; i++) {
+    for (int i = 0; i < kernel->n_array; i++)
+    {
       int module_cnt = 0;
       struct autosa_local_array_info *local = &kernel->array[i];
-      for (int j = 0; j < local->n_io_group; j++) {
+      for (int j = 0; j < local->n_io_group; j++)
+      {
         if (local->io_groups[j]->copy_in)
           module_cnt++;
         if (local->io_groups[j]->copy_out)
           module_cnt++;
       }
-      if (local->drain_group) {
+      if (local->drain_group)
+      {
         if (local->drain_group->copy_out)
           module_cnt++;
       }
       if (module_cnt > 1)
-        gen->options->autosa->host_serialize = 0;              
-    }    
+        gen->options->autosa->host_serialize = 0;
+    }
   }
-  if (gen->options->autosa->host_serialize) {
+  if (gen->options->autosa->host_serialize)
+  {
     /* Disable the two-level buffering when host data serialization is enabled. */
     gen->options->autosa->two_level_buffer = 0;
     printf("[AutoSA] Warning: Two-level buffering is disabled because host data serialization is enabled.\n");
   }
-  if (gen->options->autosa->host_serialize && gen->options->autosa->hbm) {
+  if (gen->options->autosa->host_serialize && gen->options->autosa->hbm)
+  {
     printf("[AutoSA] Error: Host serialization and HBM can't be enabled at the same time!\n");
     exit(1);
   }
@@ -3644,7 +3668,7 @@ isl_stat sa_io_construct_optimize(struct autosa_kernel *kernel, struct autosa_ge
   /* I/O buffer allocation */
   autosa_io_buffer_allocate(kernel, gen, &data);
   /* I/O module data pack */
-  autosa_io_data_pack(kernel, gen, &data); 
+  autosa_io_data_pack(kernel, gen, &data);
 
   /* Since different I/O groups of the same array will access the DRAM with the 
    * same global array pointer. We will need to make sure the outermost 
@@ -4506,7 +4530,7 @@ int get_io_group_n_lane(struct autosa_hw_module *module,
 {
   int n_lane;
 
-  if (module && module->type == PE_MODULE || dummy_module) 
+  if (module && module->type == PE_MODULE || dummy_module)
   {
     n_lane = (group->local_array->array_type == AUTOSA_EXT_ARRAY) ? group->n_lane : ((group->group_type == AUTOSA_DRAIN_GROUP) ? group->n_lane : ((group->io_type == AUTOSA_EXT_IO) ? group->n_lane : group->io_buffers[0]->n_lane));
   }
