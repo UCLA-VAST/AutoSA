@@ -967,7 +967,8 @@ __isl_give isl_printer *print_module_arguments(
     /* I/O module that accesses the external memory. */
     struct autosa_io_buffer *io_buffer =
         module->io_groups[0]->io_buffers[module->io_groups[0]->io_level - 1];
-    int n_lane = io_buffer->n_lane;
+    //int n_lane = io_buffer->n_lane;
+    int n_lane = module->data_pack_inter;
     if (!first)
     {
       p = isl_printer_print_str(p, ", ");
@@ -3778,7 +3779,7 @@ __isl_give isl_printer *autosa_kernel_print_io_transfer(
 /* Print an access to the element in the global memory copy
  * described by "stmt".  The index of the copy is recorded in
  * stmt->index as an access to the array.
- * If "serialize" is set, we will simply print array[array_cnt++];
+ * If "serialize" is set, we will simply print array[i++];
  */
 static __isl_give isl_printer *io_stmt_print_global_index(
     __isl_take isl_printer *p, struct autosa_kernel_stmt *stmt, 
@@ -3802,9 +3803,9 @@ static __isl_give isl_printer *io_stmt_print_global_index(
     isl_ast_expr *array_name;
     array_name = isl_ast_expr_op_get_arg(index, 0);
     p = isl_printer_print_ast_expr(p, array_name);
-    p = isl_printer_print_str(p, "[");
-    p = isl_printer_print_ast_expr(p, array_name);
-    p = isl_printer_print_str(p, "_cnt++]");
+    p = isl_printer_print_str(p, "[i]");
+    //p = isl_printer_print_ast_expr(p, array_name);
+    //p = isl_printer_print_str(p, "_cnt++]");
     isl_ast_expr_free(array_name);
   }
   isl_ast_expr_free(index);

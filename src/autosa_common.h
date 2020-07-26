@@ -7,6 +7,7 @@
 #include <iostream>
 #include <vector>
 #include <utility>
+#include <stdexcept>
 
 #include <isl/aff.h>
 #include <isl/aff_type.h>
@@ -34,11 +35,28 @@ extern "C"
 {
 #endif
 
-#define _DEBUG
+//#define _DEBUG
 
 #define DBGVAR(os, var)                                  \
   (os) << "DBG: " << __FILE__ << "(" << __LINE__ << ") " \
        << #var << " = [" << (var) << "]" << std::endl
+
+#define DBGSCHDNODE(os, node, ctx)                                    {\
+  printf("%s(%d) Print schedule node.\n", __FILE__, __LINE__);         \
+  isl_printer *p_debug = isl_printer_to_file(ctx, os);                 \
+  p_debug = isl_printer_set_yaml_style(p_debug, ISL_YAML_STYLE_BLOCK); \
+  p_debug = isl_printer_print_schedule_node(p_debug, node);            \
+  p_debug = isl_printer_free(p_debug);                                 \
+}
+
+#define DBGSCHD(os, node, ctx)                                        {\
+  printf("%s(%d) Print schedule.\n", __FILE__, __LINE__);              \
+  isl_printer *p_debug = isl_printer_to_file(ctx, os);                 \
+  p_debug = isl_printer_set_yaml_style(p_debug, ISL_YAML_STYLE_BLOCK); \
+  p_debug = isl_printer_print_schedule(p_debug, node);                 \
+  p_debug = isl_printer_free(p_debug);                                 \
+}
+
 #ifdef __cplusplus
 }
 #endif
@@ -782,8 +800,14 @@ struct autosa_hw_module
   int data_pack_inter;
   int data_pack_intra;
 
-  /* For I/O module, local array ref index */
+  /* For I/O module, local array ref index */  
   int n_array_ref;
+
+  /* Coalesce bound
+   * Used for I/O module that connects to the DRAM. 
+   * Indicates the loop extent of the memory coalesce loop.
+   */
+  int coalesce_bound;
 
   struct autosa_kernel *kernel;
 };
@@ -932,7 +956,7 @@ struct autosa_kernel_stmt
       struct autosa_drain_merge_func *func;
       isl_ast_expr *index;
     } dm;
-    struct 
+    struct
     {
       isl_ast_expr *index;
       struct autosa_array_ref_group *group;
@@ -966,7 +990,7 @@ struct autosa_ast_node_userinfo
   int is_unroll;
   int is_outermost_for;
   int is_infinitize_legal;
-  int is_first_infinitizable_loop;  
+  int is_first_infinitizable_loop;
   /* Temporary variable used in AST traversal. */
   bool visited;
 };

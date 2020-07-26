@@ -4,6 +4,7 @@
 #include <isl/ast.h>
 #include <isl/id.h>
 #include <isl/id_to_ast_expr.h>
+#include <isl/polynomial.h>
 
 #include <pet.h>
 
@@ -35,5 +36,7 @@ int suffixcmp(const char *s, const char *suffix);
 __isl_give isl_set *add_bounded_parameters_dynamic(
     __isl_take isl_set *set, __isl_keep isl_multi_pw_aff *size,
     __isl_keep isl_id_list *ids);
+
+int convert_pwqpoly_to_int(__isl_keep isl_pw_qpolynomial *to_convert);
 
 #endif

@@ -1,4 +1,5 @@
 #include <string>
+#include <exception>
 //#include <chrono>
 //using namespace std::chrono;
 
@@ -1890,9 +1891,9 @@ isl_stat sa_latency_hiding_optimize(struct autosa_kernel *sa, bool en, char *mod
     if (!en)
     {
         /* This stage is disabled.
-     * We will peel off the last time loop and add an hls_pipeline mark as 
-     * the innermost time loops are supposed to be pipelined on hardware. 
-     */
+         * We will peel off the last time loop and add an hls_pipeline mark as 
+         * the innermost time loops are supposed to be pipelined on hardware. 
+         */
         node = isl_schedule_node_map_descendant_bottom_up(node,
                                                           &add_hls_pipeline, sa);
 
@@ -1909,15 +1910,18 @@ isl_stat sa_latency_hiding_optimize(struct autosa_kernel *sa, bool en, char *mod
     node = autosa_tree_move_down_to_array(node, sa->core);
 
     /* Check if the innermost time loop is parallel loop.
-   * If so, there is no need to perform latency hiding, safely reutrn.
-   */
+     * If so, there is no need to perform latency hiding, safely reutrn.
+     */
     struct latency_opt_check_data data;
     data.kernel = sa;
     data.is_required = 1;
+    //DBGSCHDNODE(stdout, node, sa->ctx);
     node = isl_schedule_node_map_descendant_bottom_up(node,
                                                       &latency_opt_check, &data);
+    //DBGSCHDNODE(stdout, node, sa->ctx);                                                        
     if (!data.is_required)
     {
+        printf("[AutoSA] The innermost time loop is parallel. Latency hiding is skipped.\n");
         isl_schedule_free(schedule);
         schedule = isl_schedule_node_get_schedule(node);
         isl_schedule_node_free(node);
@@ -2125,7 +2129,7 @@ static float is_stride_coalesced(__isl_keep isl_schedule_node *node,
     coalesced = isl_schedule_node_every_descendant(node,
                                                    &is_stride_coalesced_at_node, &data);
 
-    /* We punish the loop with more layout transformation required. */
+    /* We penalize the loop with more layout transformation required. */
     if (data.num_layout_trans == 0)
     {
         data.score += (data.num_accs + 1);
@@ -2136,8 +2140,8 @@ static float is_stride_coalesced(__isl_keep isl_schedule_node *node,
     }
 
     /* Examine and make sure all the array references of the same array 
-   * have the same dimenison for layout transformation.
-   */
+     * have the same dimenison for layout transformation.
+     */
     if (coalesced)
     {
         struct autosa_kernel *kernel = data.kernel;
@@ -2183,7 +2187,7 @@ static float is_stride_coalesced(__isl_keep isl_schedule_node *node,
 
                 if (acc->layout_trans != -1)
                 {
-                    if (kernel->scop->options->autosa->verbose)
+                    if (acc->layout_trans == 1)
                     {
                         printf("[AutoSA] Array reference ");
                         if (acc->read)
@@ -2191,11 +2195,8 @@ static float is_stride_coalesced(__isl_keep isl_schedule_node *node,
                         else
                             printf("(W): ");
                         p = isl_printer_print_map(p, acc->access);
-                        printf("\n");
-                    }
-                    if (acc->layout_trans == 1)
-                    {
-                        printf("[AutoSA] Layout transform at dim: %d\n", acc->simd_dim);
+                        printf("\n");                    
+                        printf("[AutoSA] Layout transform: Permute dim (%d) to the innermost\n", acc->simd_dim);
                         *layout_transform = 1;
                     }
                     acc->layout_trans = -1;
@@ -2248,13 +2249,13 @@ static isl_schedule_node *detect_simd_vectorization_loop(
             if ((isl_schedule_node_band_member_get_space_time(node, i) == autosa_loop_time))
             {
                 /* Two types of loops that we are interested in:
-         * - Parallel loop.
-         * - Reduction loop in the innermost loop band.
-         *   This limit is currently relaxed, we will look at all loop bands 
-         *   for reduction loops as the current isl dep analysis can't 
-         *   differentiate reduction dependences and might seperate one 
-         *   permutable loop band into two loop bands.
-         */
+                 * - Parallel loop.
+                 * - Reduction loop in the innermost loop band.
+                 *   This limit is currently relaxed, we will look at all loop bands 
+                 *   for reduction loops as the current isl dep analysis can't 
+                 *   differentiate reduction dependences and might seperate one 
+                 *   permutable loop band into two loop bands.
+                 */
                 int is_parallel = 0;
                 int is_reduction = 0;
                 int layout_transform = 0;
@@ -2263,10 +2264,10 @@ static isl_schedule_node *detect_simd_vectorization_loop(
                 if (!isl_schedule_node_band_member_get_coincident(node, i) && !strcmp(data->mode, "manual"))
                 {
                     /* At present, we can't analyze reduction loop by AutoSA.
-           * We will print each node and follow the user guidance.
-           * Besides, reduction loops are only examined in the manual mode.
-           * In the auto mode, only parallel loops are examined.
-           */
+                     * We will print each node and follow the user guidance.
+                     * Besides, reduction loops are only examined in the manual mode.
+                     * In the auto mode, only parallel loops are examined.
+                     */
                     size_t bufsize = 100;
                     size_t characters;
                     printf("[AutoSA] Detecting the reduction loop.\n");
@@ -2309,7 +2310,8 @@ static isl_schedule_node *detect_simd_vectorization_loop(
                 }
 
                 /* Test if all the array references under the current loop 
-         * has only stride-0/1 access. */
+                 * has only stride-0/1 access. 
+                 */
                 if (is_parallel || is_reduction)
                 {
                     cur_node = node;
@@ -2328,6 +2330,9 @@ static isl_schedule_node *detect_simd_vectorization_loop(
                     /* Sink the band innermost. */
                     node = isl_schedule_node_band_sink(node);
                     score = 2 * is_parallel + 4 * is_reduction;
+                    printf("[AutoSA] -----------------------------------------------\n");
+                    printf("[AutoSA] Current band member position: %d\n", i);
+                    printf("[AutoSA] -----------------------------------------------\n");
                     score_i = is_stride_coalesced(node, sa, &layout_transform);
                     isl_schedule_node_free(node);
                     node = cur_node;
@@ -2340,7 +2345,7 @@ static isl_schedule_node *detect_simd_vectorization_loop(
                     else
                     {
                         score += score_i;
-                        printf("[AutoSA] Band member position: %d\n", i);
+                        printf("[AutoSA] -----------------------------------------------\n");
                         printf("[AutoSA] The loop is legal to be vectorized with score: %f\n",
                                score);
                         if (layout_transform)
@@ -2646,7 +2651,7 @@ isl_stat sa_simd_vectorization_optimize(struct autosa_kernel *sa, char *mode)
     data.best_score = 0;
     data.mode = mode;
     data.ubs = NULL;
-    int *tile_size;
+    int *tile_size = NULL;
 
     printf("[AutoSA] Apply SIMD vectorization.\n");
     isl_schedule *schedule = sa->schedule;
@@ -2688,24 +2693,24 @@ isl_stat sa_simd_vectorization_optimize(struct autosa_kernel *sa, char *mode)
     }
     isl_schedule_free(schedule);
 
-    if (!strcmp(mode, "auto") && data.layout_trans)
+    if (data.layout_trans)
     {
-        printf("[AutoSA] Layout transformation is required to proceed.\n");
-        printf("[AutoSA] SIMD vectorization is skipped.\n");
+        printf("[AutoSA] Warning: Layout transformation is required to proceed. SIMD vectorization is skipped.\n");        
     }
     else
     {
         /* Select the candidate loop with the highest score.
-     * Tile the candidate loop and permute the point loop innermost. 
-     * A SIMD vectorization marker is added. */
+         * Tile the candidate loop and permute the point loop innermost. 
+         * A SIMD vectorization marker is added. 
+         */
         if (!strcmp(mode, "manual"))
         {
             tile_size = read_simd_tile_sizes(sa, data.n_loops);
             if (!tile_size)
             {
                 /* Dump out the number, score and upper bounds of simd loops 
-         * and exit the program. 
-         */
+                 * and exit the program. 
+                 */
                 int *ubs = data.ubs;
                 FILE *fp;
                 char *content;
@@ -2757,6 +2762,10 @@ isl_stat sa_simd_vectorization_optimize(struct autosa_kernel *sa, char *mode)
                 exit(0);
             }
         }
+        else
+        {
+            throw std::runtime_error("[AutoSA] Error: Auto SIMD vectorization is not supported.\n");
+        }
 
         /* Perform the simd vectorization. */
         data.loop_cnt = 0;
@@ -2794,13 +2803,8 @@ isl_stat sa_pe_optimize(struct autosa_kernel *sa, bool pass_en[], char *pass_mod
     sa_space_time_loop_setup(sa);
     /* Extract the communication pairs. */
     sa_io_update(sa);
-
-    /* #ifdef _DEBUG
-  isl_printer *pd = isl_printer_to_file(sa->ctx, stdout);
-  pd = isl_printer_set_yaml_style(pd, ISL_YAML_STYLE_BLOCK);
-  pd = isl_printer_print_schedule(pd, sa->schedule);
-  isl_printer_free(pd);
-#endif */
+    
+    //DBGSCHD(stdout, sa->schedule, sa->ctx)
 
     /* Extract the tile sizes. */
     sa->sizes = extract_sizes_from_str(sa->ctx, sa->scop->options->autosa->sa_sizes);
@@ -2810,8 +2814,10 @@ isl_stat sa_pe_optimize(struct autosa_kernel *sa, bool pass_en[], char *pass_mod
 
     /* Array partitioning. */
     sa_array_partitioning_optimize(sa, pass_en[0], pass_mode[0], pass_en[1], pass_mode[1]);
+    //DBGSCHD(stdout, sa->schedule, sa->ctx)
     /* Latency hiding. */
     sa_latency_hiding_optimize(sa, pass_en[2], pass_mode[2]);
+    //DBGSCHD(stdout, sa->schedule, sa->ctx)
     /* SIMD vectorization. */
     if (pass_en[3])
         sa_simd_vectorization_optimize(sa, pass_mode[3]);
@@ -3152,7 +3158,7 @@ static __isl_give isl_schedule_node *compute_and_comm_optimize(
     space_time_mode_json = cJSON_GetObjectItemCaseSensitive(space_time_json, "mode");
     space_time_mode = space_time_mode_json->valuestring;
 #ifdef _DEBUG
-    struct autosa_kernel *sa_tmp = sa_candidates[0];
+    struct autosa_kernel *sa_tmp = sa_candidates[2];
     isl_printer *p_d = isl_printer_to_file(gen->ctx, stdout);
     p_d = isl_printer_set_yaml_style(p_d, ISL_YAML_STYLE_BLOCK);
     p_d = isl_printer_print_schedule(p_d, sa_tmp->schedule);

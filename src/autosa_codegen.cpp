@@ -1156,6 +1156,8 @@ static __isl_give isl_schedule *generate_io_module_inter_trans(
     coalesce_depth = isl_schedule_node_get_schedule_depth(node) + buf->tile->n - 1;
     coalesce_bound_val = buf->tile->bound[buf->tile->n - 1].size;
     coalesce_bound = isl_val_get_num_si(coalesce_bound_val) / buf->n_lane;
+    module->coalesce_bound = coalesce_bound;
+
     if (coalesce_bound <= 1)
     {
       coalesce_depth = -1;
@@ -1430,6 +1432,8 @@ static __isl_give isl_schedule *generate_io_module_intra_trans(
     coalesce_depth = isl_schedule_node_get_schedule_depth(node) + buf->tile->n - 1;
     coalesce_bound_val = buf->tile->bound[buf->tile->n - 1].size;
     coalesce_bound = isl_val_get_num_si(coalesce_bound_val) / buf->n_lane;
+    module->coalesce_bound = coalesce_bound;
+
     if (coalesce_bound <= 1)
     {
       coalesce_depth = -1;
@@ -2638,6 +2642,8 @@ static isl_stat generate_default_io_module_schedule(
     coalesce_depth = isl_schedule_node_get_schedule_depth(node) + buf->tile->n - 1;
     coalesce_bound_val = buf->tile->bound[buf->tile->n - 1].size;
     coalesce_bound = isl_val_get_num_si(coalesce_bound_val) / buf->n_lane;
+    module->coalesce_bound = coalesce_bound;
+
     if (coalesce_bound <= 1)
     {
       coalesce_depth = -1;
@@ -2724,6 +2730,8 @@ static isl_stat generate_default_io_module_schedule(
       coalesce_depth = isl_schedule_node_get_schedule_depth(node) + buf->tile->n - 1;
       coalesce_bound_val = buf->tile->bound[buf->tile->n - 1].size;
       coalesce_bound = isl_val_get_num_si(coalesce_bound_val) / buf->n_lane;
+      module->coalesce_bound = coalesce_bound;
+
       if (coalesce_bound <= 1)
       {
         coalesce_depth = -1;
@@ -2872,6 +2880,37 @@ static __isl_give struct autosa_hw_module *generate_io_module_by_type(
   }
 
   return module;
+}
+
+/* This function updates the data pack factors for I/O modules that access
+ * the external DRAM. The module data should also be serialized.
+ */
+static int update_serialize_data_pack(struct autosa_gen *gen, struct autosa_hw_module *module)
+{
+  isl_union_map *sizes;
+  int *data_pack_ubs = NULL;
+  int dram_limit = 64; // bytes
+  int ele_size = module->io_groups[0]->array->size;
+  int n_lane = module->data_pack_intra;
+  int host_pack = -1;
+
+  sizes = extract_sizes_from_str(gen->ctx, module->options->autosa->data_pack_sizes);
+  data_pack_ubs = read_data_pack_sizes(sizes, 3);
+  if (data_pack_ubs) 
+    dram_limit = data_pack_ubs[2];
+  free(data_pack_ubs);
+  isl_union_map_free(sizes);
+
+  for (int limit = dram_limit; limit >= ele_size * n_lane; limit -= ele_size * n_lane) 
+  {
+    if (limit % (ele_size * n_lane) == 0 && module->coalesce_bound % (limit / (ele_size * n_lane)) == 0)
+    {
+      host_pack = limit / ele_size;
+      break;
+    }
+  }
+
+  return host_pack != -1? host_pack : module->data_pack_intra;
 }
 
 /* This function builds a set of I/O modules for each I/O group.
@@ -3087,6 +3126,14 @@ static __isl_give struct autosa_hw_module **sa_io_module_gen(
           /* Generate the schedule for serializing/deserializing the host data. */
           module->serialize_sched = generate_serialize_schedule(
               kernel, group, module, gen, 1);
+          if (module->serialize_sched) {
+            /* Update the data packing factor. */
+            module->data_pack_inter = update_serialize_data_pack(gen, module);
+            //DBGVAR(std::cout, module->data_pack_inter);
+            //DBGVAR(std::cout, module->io_groups[0]->array->name);
+            module->io_groups[0]->local_array->n_lane = module->data_pack_inter;
+            module->io_groups[0]->local_array->array->n_lane = module->data_pack_inter;
+          }
         }
 
         module_cnt++;
@@ -3184,6 +3231,12 @@ static __isl_give struct autosa_hw_module **sa_io_module_gen(
           /* Generate the schedule for serializing/deserializing the host data. */
           module->serialize_sched = generate_serialize_schedule(
               kernel, group, module, gen, 0);
+          if (module->serialize_sched) {
+            /* Update the data packing factor. */
+            module->data_pack_inter = update_serialize_data_pack(gen, module);            
+            module->io_groups[0]->local_array->n_lane = module->data_pack_inter;
+            module->io_groups[0]->local_array->array->n_lane = module->data_pack_inter;
+          }            
         }
 
         module_cnt++;

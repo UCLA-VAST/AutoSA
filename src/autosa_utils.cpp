@@ -1,5 +1,7 @@
 #include <assert.h>
 #include <string.h>
+#include <ctype.h>
+#include <stdexcept>
 
 #include <isl/space.h>
 
@@ -340,4 +342,31 @@ __isl_give isl_set *add_bounded_parameters_dynamic(
   isl_local_space_free(ls);
 
   return set;
+}
+
+int convert_pwqpoly_to_int(__isl_keep isl_pw_qpolynomial *to_convert)
+{
+  isl_ctx *ctx = isl_pw_qpolynomial_get_ctx(to_convert);
+  int ret = -1;
+  isl_printer *p;
+  char *str;
+
+  p = isl_printer_to_str(ctx);
+  p = isl_printer_set_output_format(p, ISL_FORMAT_C);
+  p = isl_printer_print_pw_qpolynomial(p, to_convert);
+  str = isl_printer_get_str(p);
+  isl_printer_free(p);
+
+  /* Check if the string only contains the digits */
+  for (int i = 0; i < strlen(str); i++) 
+  {
+    if (!isdigit(str[i])) {
+      throw std::runtime_error("[AutoSA] Error: The pw_qpolynomial contains non-digits.\n");
+    }
+  }
+
+  ret = atoi(str);
+  free(str);
+
+  return ret;
 }

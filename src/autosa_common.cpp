@@ -1524,6 +1524,7 @@ struct autosa_hw_module *autosa_hw_module_alloc(struct autosa_gen *gen)
   module->n_array_ref = 0;
   module->serialize_sched = NULL;
   module->serialize_tree = NULL;
+  module->coalesce_bound = -1;
 
   return module;
 }

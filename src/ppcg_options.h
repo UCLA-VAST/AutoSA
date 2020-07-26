@@ -65,6 +65,8 @@ extern "C"
 		int verbose;
 		/* Insert HLS dependence pragma. */
 		int insert_hls_dependence;
+		/* Embed I/O modules inside PEs. */
+		int io_module_embedding;
 		/* Enable loop infinitization optimization. Only for Intel. */
 		int loop_infinitize;
 		/* Enable data serialization/deserialization on the host side. */
@@ -154,7 +156,7 @@ extern "C"
 	};
 
 	ISL_ARG_DECL(ppcg_debug_options, struct ppcg_debug_options,
-							 ppcg_debug_options_args)
+				 ppcg_debug_options_args)
 	ISL_ARG_DECL(ppcg_options, struct ppcg_options, ppcg_options_args)
 
 #define PPCG_TARGET_C 0
