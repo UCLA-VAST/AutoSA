@@ -1367,7 +1367,7 @@ static __isl_give isl_schedule_node *hbm_optimize(
  *  [[D -> R] -> [D' -> R']]
  * 
  * of pairs of domain iterations accessing the reference group and 
- * the domain iteraetions D' is lexicographically greater than D by one 
+ * the domain iterations D' is lexicographically greater than D by one 
  * at the last array_part loop with PE loops equal.
  * 
  * This relation is intersected with all flow dependences to derive the 
@@ -1412,11 +1412,10 @@ static isl_bool internal_group_in_out_overlap(
   prefix = isl_union_map_preimage_domain_union_pw_multi_aff(prefix,
                                                             isl_union_pw_multi_aff_copy(kernel->contraction));
   isl_schedule_node_free(node);
-  access = autosa_io_group_access_relation(group, read, !read);
-  tagged = group_tagged_access_relation(group);
-
+  access = autosa_io_group_access_relation(group, read, !read);  
   /* Remove the local dependency first. */
   access = remove_local_accesses_group_flow(kernel, group, access, prefix, read);
+  tagged = group_tagged_access_relation(group);
 
   /* Tagger maps the tagged iteration domain to untagged iteration domain.
    * Iteration domain is tagged to the access function.
@@ -1488,6 +1487,11 @@ static isl_bool internal_group_in_out_overlap(
   else if (empty)
     external = isl_union_map_universe(external);
 
+//#ifdef _DEBUG
+//  DBGUMAP(stdout, external, isl_union_map_get_ctx(external))
+//  DBGUMAP(stdout, access, isl_union_map_get_ctx(access))
+//#endif
+
   access = isl_union_map_intersect(access, external);
   empty = isl_union_map_is_empty(access);
   isl_union_map_free(access);
@@ -1498,11 +1502,103 @@ static isl_bool internal_group_in_out_overlap(
     return isl_bool_false;
 }
 
+/* This function examines if the dependence in the io group are carried by the 
+ * loops above the "array" node. 
+ */
+static isl_bool io_group_carried_by_array_loops(
+    __isl_keep isl_schedule_node *node,
+    struct autosa_kernel *kernel,
+    struct autosa_array_ref_group *group, int read)
+{
+  isl_union_map *prefix, *identity_sched;
+  isl_union_map *access, *tagged;
+  isl_union_pw_multi_aff *tagger;
+  isl_union_set *domain, *access_domain;
+  struct autosa_prog *prog = kernel->prog;
+  isl_set *prefix_range;
+  int n_sched_dim;
+  isl_map *sched_identity;
+  isl_union_map *external, *universe;
+  isl_union_set *tag_set;
+  int empty;
+
+  node = isl_schedule_node_copy(node);
+  node = autosa_tree_move_down_to_array(node, kernel->core);
+  prefix = isl_schedule_node_get_prefix_schedule_relation(node);
+  prefix = isl_union_map_preimage_domain_union_pw_multi_aff(prefix,
+                                                            isl_union_pw_multi_aff_copy(kernel->contraction));
+  isl_schedule_node_free(node);
+  access = autosa_io_group_access_relation(group, read, !read);  
+  /* Remove the local dependence first. */
+  access = remove_local_accesses_group_flow(kernel, group, access, prefix, read);
+
+  tagged = group_tagged_access_relation(group);
+  tagger = isl_union_pw_multi_aff_copy(prog->scop->tagger);
+  domain = isl_union_map_domain(isl_union_map_copy(tagged));
+  tagger = isl_union_pw_multi_aff_intersect_domain(tagger,
+                                                   isl_union_set_copy(domain));
+
+  prefix = isl_union_map_preimage_domain_union_pw_multi_aff(prefix, tagger);  
+//#ifdef _DEBUG
+//  DBGUMAP(stdout, prefix, isl_union_map_get_ctx(prefix))
+//#endif  
+  identity_sched = isl_union_map_apply_range(prefix, 
+                                             isl_union_map_reverse(isl_union_map_copy(prefix)));
+//#ifdef _DEBUG
+//  DBGUMAP(stdout, identity_sched, isl_union_map_get_ctx(identity_sched))
+//#endif
+  identity_sched = isl_union_map_intersect(identity_sched,
+                                           isl_union_map_copy(prog->scop->tagged_dep_flow));
+
+  external = isl_union_map_copy(prog->scop->tagged_dep_flow);
+  universe = isl_union_map_universe(isl_union_map_copy(access));
+  access_domain = isl_union_map_domain(universe);
+  domain = isl_union_set_universe(domain);
+  universe = isl_union_set_unwrap(domain);
+  universe = isl_union_map_intersect_domain(universe, access_domain);
+  domain = isl_union_map_wrap(universe);
+  if (read)
+    external = isl_union_map_intersect_range(external, domain);
+  else
+    external = isl_union_map_intersect_domain(external, domain);
+  external = isl_union_map_intersect_params(external,
+                                            isl_set_copy(prog->scop->context));
+  external = isl_union_map_subtract(external, identity_sched);
+
+  if (read)
+  {
+    tag_set = isl_union_map_range(external);
+    external = wrapped_reference_to_access(tag_set, tagged);
+  }
+  else
+  {
+    tag_set = isl_union_map_domain(external);
+    external = wrapped_reference_to_access(tag_set, tagged);
+  }
+
+  if (empty < 0)
+    external = isl_union_map_free(external);
+  else if (empty)
+    external = isl_union_map_universe(external);
+
+  access = isl_union_map_intersect(access, external);
+  empty = isl_union_map_is_empty(access);
+  isl_union_map_free(access);
+
+  if (empty)
+    return isl_bool_false;
+  else
+    return isl_bool_true;   
+}
+
 /* Return if the current module is valid to be generated. 
  * There are several cases to consider:
  * - For I/O group with all RAR depenendence, no copy-out modules to be generated.
- * - For I/O group with either RAW/RAR dependence, if the next read equals 
- *   the previous write, no copy-in/copy-out to be generated.
+ * - For I/O group with RAW dependence.
+ *   - If the dep is carried by array loops
+ *     - if the group is interior I/O and the next read equals the previous write, no copy-in/copy-out to be generated.
+ *   - Else if the dep is not carried by array loops
+ *     - no copy-in/copy-out to be generated.
  */
 isl_bool is_io_module_valid(
     __isl_keep isl_schedule_node *node,
@@ -1541,8 +1637,15 @@ isl_bool is_io_module_valid(
   }
 
   /* Internal group */
-  if (internal_group_in_out_overlap(node, kernel, group, read))
+  if (io_group_carried_by_array_loops(node, kernel, group, read)) {
+    if (group->io_type == AUTOSA_INT_IO &&
+        internal_group_in_out_overlap(node, kernel, group, read))
+      return isl_bool_false;
+  } else {
     return isl_bool_false;
+  }
+//  if (internal_group_in_out_overlap(node, kernel, group, read))
+//    return isl_bool_false;
 
   return isl_bool_true;
 }

@@ -2815,12 +2815,15 @@ isl_stat sa_pe_optimize(struct autosa_kernel *sa, bool pass_en[], char *pass_mod
     /* Array partitioning. */
     sa_array_partitioning_optimize(sa, pass_en[0], pass_mode[0], pass_en[1], pass_mode[1]);
     //DBGSCHD(stdout, sa->schedule, sa->ctx)
+    
     /* Latency hiding. */
     sa_latency_hiding_optimize(sa, pass_en[2], pass_mode[2]);
     //DBGSCHD(stdout, sa->schedule, sa->ctx)
+    
     /* SIMD vectorization. */
     if (pass_en[3])
         sa_simd_vectorization_optimize(sa, pass_mode[3]);
+    //DBGSCHD(stdout, sa->schedule, sa->ctx)
 
     return isl_stat_ok;
 }
@@ -3157,15 +3160,15 @@ static __isl_give isl_schedule_node *compute_and_comm_optimize(
     space_time_json = cJSON_GetObjectItemCaseSensitive(gen->tuning_config, "space_time");
     space_time_mode_json = cJSON_GetObjectItemCaseSensitive(space_time_json, "mode");
     space_time_mode = space_time_mode_json->valuestring;
-#ifdef _DEBUG
-    struct autosa_kernel *sa_tmp = sa_candidates[2];
-    isl_printer *p_d = isl_printer_to_file(gen->ctx, stdout);
-    p_d = isl_printer_set_yaml_style(p_d, ISL_YAML_STYLE_BLOCK);
-    p_d = isl_printer_print_schedule(p_d, sa_tmp->schedule);
-    p_d = isl_printer_free(p_d);
-    DBGVAR(std::cout, sa_tmp->space_w);
-    //exit(0);
-#endif
+//#ifdef _DEBUG
+//    struct autosa_kernel *sa_tmp = sa_candidates[2];
+//    isl_printer *p_d = isl_printer_to_file(gen->ctx, stdout);
+//    p_d = isl_printer_set_yaml_style(p_d, ISL_YAML_STYLE_BLOCK);
+//    p_d = isl_printer_print_schedule(p_d, sa_tmp->schedule);
+//    p_d = isl_printer_free(p_d);
+//    DBGVAR(std::cout, sa_tmp->space_w);
+//    //exit(0);
+//#endif
 
     if (!strcmp(space_time_mode, "auto"))
     {
@@ -3319,7 +3322,8 @@ static __isl_give isl_schedule_node *compute_and_comm_optimize(
             n_space_dim++;
         }
     }
-    node = isl_schedule_node_band_split(node, n_space_dim);
+    if (isl_schedule_node_band_n_member(node) > n_space_dim)
+        node = isl_schedule_node_band_split(node, n_space_dim);
     node = isl_schedule_node_child(node, 0);
     id = isl_id_alloc(gen->ctx, "pe", NULL);
     node = isl_schedule_node_insert_mark(node, id);
@@ -3344,6 +3348,8 @@ static __isl_give isl_schedule_node *compute_and_comm_optimize(
 
     kernel->schedule = isl_schedule_free(kernel->schedule);
     kernel->schedule = isl_schedule_node_get_schedule(node);
+
+    //DBGSCHD(stdout, kernel->schedule, gen->ctx)    
 
     /* Communication Management */
     sa_comm_management(kernel, gen);

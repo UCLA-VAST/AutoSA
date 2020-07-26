@@ -2805,8 +2805,8 @@ static __isl_give isl_printer *print_module_serialize_body(
 
       p = isl_printer_start_line(p);
       p = isl_printer_print_str(p, "mem_data = (");
-      for (int i = module->data_pack_inter / module->data_pack_intra; i >= 0; i--) {
-        if (i < module->data_pack_inter / module->data_pack_intra)
+      for (int i = module->data_pack_inter / module->data_pack_intra - 1; i >= 0; i--) {
+        if (i < module->data_pack_inter / module->data_pack_intra - 1)
           p = isl_printer_print_str(p, ", ");
         p = isl_printer_print_str(p, "mem_data_split[");
         p = isl_printer_print_int(p, i);

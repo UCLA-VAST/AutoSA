@@ -35,7 +35,7 @@ extern "C"
 {
 #endif
 
-//#define _DEBUG
+#define _DEBUG
 
 #define DBGVAR(os, var)                                  \
   (os) << "DBG: " << __FILE__ << "(" << __LINE__ << ") " \
@@ -54,6 +54,14 @@ extern "C"
   isl_printer *p_debug = isl_printer_to_file(ctx, os);                 \
   p_debug = isl_printer_set_yaml_style(p_debug, ISL_YAML_STYLE_BLOCK); \
   p_debug = isl_printer_print_schedule(p_debug, node);                 \
+  p_debug = isl_printer_free(p_debug);                                 \
+} 
+
+#define DBGUMAP(os, umap, ctx)                                        {\
+  printf("%s(%d) Print union map.\n", __FILE__, __LINE__);             \
+  isl_printer *p_debug = isl_printer_to_file(ctx, os);                 \
+  p_debug = isl_printer_print_union_map(p_debug, umap);                \
+  p_debug = isl_printer_print_str(p_debug, "\n");                      \
   p_debug = isl_printer_free(p_debug);                                 \
 }
 
