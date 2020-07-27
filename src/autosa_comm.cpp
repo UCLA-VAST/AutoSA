@@ -878,6 +878,10 @@ static int populate_array_references_io(struct autosa_local_array_info *local,
   {
     for (j = 0; j < local->array->refs[i]->n_io_info; ++j)
     {
+      if (!((local->array->refs[i]->io_info[j]->dep->type == AUTOSA_DEP_RAR) ||
+         (local->array->refs[i]->io_info[j]->dep->type == AUTOSA_DEP_RAW)))
+         continue;
+
       isl_union_map *umap;
       isl_map *map;
       struct autosa_array_ref_group *group;
@@ -1591,6 +1595,67 @@ static isl_bool io_group_carried_by_array_loops(
     return isl_bool_true;   
 }
 
+/* Return is the inter PE communication is required for this group.
+ * There are several cases to consider:
+ * - For I/O group with RAR dependences
+ *   - if the group is with exterior I/O, then both in/out PE comm is required.
+ *   - if the group is with interior I/O, only in PE comm is required.
+ * - For I/O group with RAW deps
+ *   - If the group is with exterior I/O, then both in/out PE comm is required.
+ *   - If the group is with interior I/O, then it equals the array-level I/O direction. 
+ */
+static isl_bool is_inter_pe_comm_valid(
+    __isl_keep isl_schedule_node *node,
+    struct autosa_kernel *kernel,
+    struct autosa_array_ref_group *group, int read)
+{
+  int external_group = 1;
+
+  if (group->group_type == AUTOSA_PE_GROUP)
+    return isl_bool_true;
+  
+  /* External group */
+  for (int i = 0; i < group->n_ref; i++)
+  {
+    struct autosa_stmt_access *ref = group->refs[i];
+    for (int j = 0; j < ref->n_io_info; j++)
+    {
+      struct autosa_io_info *io_info = ref->io_info[j];
+      if (io_info->io_type == group->io_type && !isl_vec_cmp(io_info->dir, group->dir))
+      {
+        if (io_info->dep->type != AUTOSA_DEP_RAR)
+        {
+          external_group = 0;
+          break;
+        }
+      }
+    }
+  }
+
+  if (external_group)
+  {
+    if (group->io_type == AUTOSA_EXT_IO)      
+      return isl_bool_true;
+    else {
+      if (read)
+        return isl_bool_true;
+      else
+        return isl_bool_false;
+    }   
+  } else {
+    if (group->io_type == AUTOSA_EXT_IO)
+      return isl_bool_true;
+    else {
+      if (read) 
+        return (group->array_io_dir == IO_IN || group->array_io_dir == IO_INOUT)? isl_bool_true : isl_bool_false;
+      else 
+        return (group->array_io_dir == IO_OUT || group->array_io_dir == IO_INOUT)? isl_bool_true : isl_bool_false;
+    }
+  }
+
+  return isl_bool_true;
+}
+
 /* Return if the current module is valid to be generated. 
  * There are several cases to consider:
  * - For I/O group with all RAR depenendence, no copy-out modules to be generated.
@@ -1893,16 +1958,34 @@ static isl_stat compute_io_group_schedule(
   if (is_io_module_valid(node, kernel, group, 1))
   {
     group->copy_in = 1;
+    group->array_io_dir = (group->array_io_dir == IO_OUT)? IO_INOUT : IO_IN;
   }
   if (is_io_module_valid(node, kernel, group, 0))
   {
     group->copy_out = 1;
+    group->array_io_dir = (group->array_io_dir == IO_IN)? IO_INOUT : IO_OUT;
+  }
+  /* For drain group, copy-out module is always required. */
+  if (group->group_type == AUTOSA_DRAIN_GROUP) {
+    group->copy_out = 1;
+    group->array_io_dir = (group->array_io_dir == IO_IN)? IO_INOUT : IO_OUT;
   }
 
   if (group->copy_in || group->copy_out)
   {
     group->mem_port_id = group->local_array->n_mem_ports;
     group->local_array->n_mem_ports += group->n_mem_ports;
+  }
+
+  /* Determine if the inter-PE communication is required. */
+  if (is_inter_pe_comm_valid(node, kernel, group, 1)) {
+    group->pe_io_dir = (group->pe_io_dir == IO_OUT)? IO_INOUT : IO_IN;
+  }
+  if (is_inter_pe_comm_valid(node, kernel, group, 0)) {
+    group->pe_io_dir = (group->pe_io_dir == IO_IN)? IO_INOUT : IO_OUT;
+  }
+  if (group->group_type == AUTOSA_DRAIN_GROUP) {
+    group->pe_io_dir = (group->pe_io_dir == IO_IN)? IO_INOUT : IO_OUT;
   }
 
   /* Store the I/O schedule. */
@@ -3227,12 +3310,18 @@ static int group_array_references_io(struct autosa_kernel *kernel,
   /* Count the total number of groups. 
    * We first populate the groups with the number of total communication pairs 
    * (io_info).
+   * We only consider io_info with RAR/RAW for IO groups.
    */
   n = 0;
   for (i = 0; i < local->array->n_ref; i++)
-  {
+  {    
     struct autosa_stmt_access *ref = local->array->refs[i];
-    n += ref->n_io_info;
+    for (j = 0; j < ref->n_io_info; j++) {
+      struct autosa_io_info *io_info = ref->io_info[j];
+      if (io_info->dep->type == AUTOSA_DEP_RAW || io_info->dep->type == AUTOSA_DEP_RAR)
+        n++;
+    }
+    //n += ref->n_io_info;
   }
 
   groups = (struct autosa_array_ref_group **)calloc(n,

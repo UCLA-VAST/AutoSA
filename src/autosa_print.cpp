@@ -70,12 +70,13 @@ __isl_give isl_printer *autosa_array_ref_group_print_fifo_name(
 
   p = isl_printer_print_str(p, "fifo_");
   p = isl_printer_print_str(p, group->array->name);
-  if (group->local_array->n_io_group > 1)
-  {
-    p = isl_printer_print_str(p, "_");
-    p = isl_printer_print_int(p, group->nr);
-  }
-  if (group->group_type == AUTOSA_DRAIN_GROUP)
+  if (group->group_type == AUTOSA_IO_GROUP) {
+    if (group->local_array->n_io_group > 1)
+    {
+      p = isl_printer_print_str(p, "_");
+      p = isl_printer_print_int(p, group->nr);
+    }
+  } else if (group->group_type == AUTOSA_DRAIN_GROUP)
   {
     p = isl_printer_print_str(p, "_drain");
   }
@@ -1854,7 +1855,7 @@ static __isl_give isl_printer *print_fifo_decl(__isl_take isl_printer *p,
   struct autosa_array_ref_group *group = stmt->u.m.group;
   int pe_inout;
 
-  if (isl_vec_is_zero(group->old_dir) && module->type == PE_MODULE && group->pe_io_dir == IO_INOUT)
+  if (group->io_type == AUTOSA_INT_IO && module->type == PE_MODULE && group->pe_io_dir == IO_INOUT)
   {
     pe_inout = 1;
   }
@@ -2151,12 +2152,14 @@ __isl_give isl_printer *print_module_call_upper(__isl_take isl_printer *p,
       for (int i = 0; i < module->n_io_group; i++)
       {
         struct autosa_array_ref_group *group = module->io_groups[i];
+        if (group->pe_io_dir == IO_NULL)
+          continue;
         if (group->pe_io_dir == IO_INOUT)
         {
           p = print_delimiter(p, &first);
           p = print_fifo_annotation(p, module, group, 1, 0);
-          p = print_fifo_prefix(p, module, group);
-          if (isl_vec_is_zero(group->old_dir))
+          p = print_fifo_prefix(p, module, group);          
+          if (group->io_type == AUTOSA_INT_IO)
           {
             p = isl_printer_start_line(p);
             p = isl_printer_print_str(p, "p = isl_printer_print_str(p, \"_in\");");
@@ -2166,14 +2169,14 @@ __isl_give isl_printer *print_module_call_upper(__isl_take isl_printer *p,
 
           p = print_delimiter(p, &first);
           p = print_fifo_annotation(p, module, group, 0, 0);
-          p = print_fifo_prefix(p, module, group);
-          if (isl_vec_is_zero(group->old_dir))
+          p = print_fifo_prefix(p, module, group);          
+          if (group->io_type == AUTOSA_INT_IO)
           {
             p = isl_printer_start_line(p);
             p = isl_printer_print_str(p, "p = isl_printer_print_str(p, \"_out\");");
             p = isl_printer_end_line(p);
-          }
-          if (isl_vec_is_zero(group->old_dir))
+          }          
+          if (group->io_type == AUTOSA_INT_IO)
           {
             p = print_inst_ids_suffix(p, n, NULL);
           }
@@ -2332,7 +2335,7 @@ static __isl_give isl_printer *print_module_call_lower(__isl_take isl_printer *p
     else
       lower_is_PE = 0;
 
-    if (isl_vec_is_zero(group->old_dir) && lower_is_PE && group->pe_io_dir == IO_INOUT)
+    if (group->io_type == AUTOSA_INT_IO && lower_is_PE && group->pe_io_dir == IO_INOUT)
     {
       /* Add in/out suffix. */
       p = isl_printer_start_line(p);

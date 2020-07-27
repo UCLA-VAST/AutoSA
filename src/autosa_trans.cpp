@@ -952,6 +952,12 @@ isl_stat data_transfer_update(__isl_keep isl_basic_map *dep, struct data_transfe
         access->io_info[access->n_io_info - 1]->dep->type = data->dep_type;
         access->io_info[access->n_io_info - 1]->dir = internal_data.dirvec;
         access->io_info[access->n_io_info - 1]->old_dir = isl_vec_dup(internal_data.dirvec);
+//#ifdef _DEBUG
+//        DBGMAP(stdout, access->access, kernel->ctx)
+//        DBGBMAP(stdout, access->io_info[access->n_io_info - 1]->dep->isl_dep, kernel->ctx)
+//        DBGVEC(stdout, access->io_info[access->n_io_info - 1]->dir, kernel->ctx)
+//        DBGVAR(std::cout, data->dep_type)
+//#endif
     }
     else
     {
@@ -966,6 +972,10 @@ isl_stat data_transfer_update(__isl_keep isl_basic_map *dep, struct data_transfe
         access->io_info[access->n_io_info - 1]->dep->type = data->dep_type;
         access->io_info[access->n_io_info - 1]->dir = internal_data.dirvec;
         access->io_info[access->n_io_info - 1]->old_dir = isl_vec_dup(internal_data.dirvec);
+//#ifdef _DEBUG
+//        DBGMAP(stdout, access->access, kernel->ctx)
+//        DBGBMAP(stdout, access->io_info[access->n_io_info - 1]->dep->isl_dep, kernel->ctx)
+//#endif        
     }
 
     isl_schedule_node_free(node);

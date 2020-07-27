@@ -550,6 +550,8 @@ static __isl_give isl_schedule_node *add_io_copies_stmt_acc_single(
 
   /* S -> [D -> A] */
   access = io_comm_access_ref(data->kernel, node, group, ref, read);
+  //DBGUMAP(stdout, access, isl_union_map_get_ctx(access))
+
   empty = isl_union_map_is_empty(access);
   if (empty < 0 || empty)
   {
@@ -768,6 +770,8 @@ static __isl_give isl_schedule_node *add_io_copies_stmt_acc_single(
   node = isl_schedule_node_parent(node);
   node = isl_schedule_node_parent(node);
 
+  //DBGSCHDNODE(stdout, node, isl_schedule_node_get_ctx(node));
+
   autosa_array_tile_free(tile);
 
   return node;
@@ -800,8 +804,11 @@ __isl_give isl_schedule_node *add_io_copies_stmt_acc(
   {
     struct autosa_stmt_access *ref = group->refs[i];
     data.ref = ref;
-    node = isl_schedule_node_map_descendant_bottom_up(
-        node, &add_io_copies_stmt_acc_single, &data);
+    //DBGMAP(stdout, ref->access, kernel->ctx)
+    if ((read && ref->read) || (!read && ref->write)) {
+      node = isl_schedule_node_map_descendant_bottom_up(
+          node, &add_io_copies_stmt_acc_single, &data);
+    }
   }
 
   return node;
@@ -1327,21 +1334,37 @@ static __isl_give isl_schedule *generate_io_module_intra_trans(
   if (module->to_pe)
   {
     /* Add filter to only send data to boundary PEs. */
-    while (!isl_schedule_node_is_io_mark(node, 1))
-    {
-      if (isl_schedule_node_get_type(node) == isl_schedule_node_band)
-      {
-        isl_union_set *uset;
-
-        if (read)
-          uset = schedule_eq_lb(node);
-        else
-          uset = schedule_eq_ub(node);
-        node = isl_schedule_node_insert_filter(node, uset);
-        node = isl_schedule_node_child(node, 0);
-      }
+    while (!isl_schedule_node_is_io_mark(node, 2)) {
       node = isl_schedule_node_child(node, 0);
     }
+    node = isl_schedule_node_child(node, 0);
+    if (isl_schedule_node_get_type(node) == isl_schedule_node_band) {
+      isl_union_set *uset;
+
+      if (read)
+        uset = schedule_eq_lb(node);
+      else
+        uset = schedule_eq_ub(node);
+      node = isl_schedule_node_insert_filter(node, uset);
+      node = isl_schedule_node_child(node, 0);
+    }
+
+    //while (!isl_schedule_node_is_io_mark(node, 1))
+    //{
+    //  if (isl_schedule_node_get_type(node) == isl_schedule_node_band)
+    //  {
+    //    isl_union_set *uset;
+//
+    //    if (read)
+    //      uset = schedule_eq_lb(node);
+    //    else
+    //      uset = schedule_eq_ub(node);
+    //    node = isl_schedule_node_insert_filter(node, uset);
+    //    node = isl_schedule_node_child(node, 0);
+    //    DBGSCHDNODE(stdout, node, isl_schedule_node_get_ctx(node));
+    //  }
+    //  node = isl_schedule_node_child(node, 0);
+    //}
   }
   node = autosa_tree_move_up_to_kernel(node);
 
@@ -1356,8 +1379,7 @@ static __isl_give isl_schedule *generate_io_module_intra_trans(
   isl_id_list_free(ids);
   node = isl_schedule_node_parent(node);
   node = isl_schedule_node_insert_filter(node, eq_filter);
-  node = isl_schedule_node_child(node, 0);
-
+  node = isl_schedule_node_child(node, 0);  
   /* Add the data transfer statements. */
   init_suffix(module, group, &fifo_suffix, &buf_suffix);
 
@@ -1813,6 +1835,13 @@ static __isl_give struct autosa_hw_module *generate_filter_buffer_io_module(
   isl_schedule *sched;
   isl_schedule *sched1, *sched2, *sched3;
   isl_schedule *boundary_sched2, *boundary_sched1;
+
+//#ifdef _DEBUG
+//  if (!strcmp(group->array->name, "C"))
+//    printf("locate here.\n");
+//#endif
+
+  //DBGSCHDNODE(stdout, node, gen->ctx)
 
   sched = isl_schedule_node_get_schedule(node);
 
@@ -3024,7 +3053,7 @@ static __isl_give struct autosa_hw_module **sa_io_module_gen(
   //if (in && is_io_module_valid(node, kernel, group, 1))
   if (in && group->copy_in)
   {
-    group->array_io_dir = (group->array_io_dir == IO_OUT) ? IO_INOUT : IO_IN;
+    //group->array_io_dir = (group->array_io_dir == IO_OUT) ? IO_INOUT : IO_IN;
     for (int i = io_level; i >= 1; i--)
     {
       struct autosa_hw_module *module;
@@ -3148,7 +3177,7 @@ static __isl_give struct autosa_hw_module **sa_io_module_gen(
   //if (out && is_io_module_valid(node, kernel, group, 0))
   if (out && group->copy_out)
   {
-    group->array_io_dir = (group->array_io_dir == IO_IN) ? IO_INOUT : IO_OUT;
+    //group->array_io_dir = (group->array_io_dir == IO_IN) ? IO_INOUT : IO_OUT;
     for (int i = 1; i <= io_level; i++)
     {
       struct autosa_hw_module *module;
@@ -3535,19 +3564,6 @@ __isl_give isl_schedule_node *add_pe_ext_io_copies_stmt(
     data->filter = isl_schedule_node_get_domain(node);
   }
 
-  /* Update the group io_dir. */
-  if (!data->dummy)
-  {
-    if (read)
-    {
-      io_group->pe_io_dir = (io_group->pe_io_dir == IO_OUT) ? IO_INOUT : IO_IN;
-    }
-    else
-    {
-      io_group->pe_io_dir = (io_group->pe_io_dir == IO_IN) ? IO_INOUT : IO_OUT;
-    }
-  }
-
   pe_group->array->global = 1;
   pe_group->local_array->global = 1;
 
@@ -3678,12 +3694,21 @@ static __isl_give isl_schedule_node *add_pe_ext_io_copies(
   for (int i = 0; i < io_group->n_ref; i++)
   {
     struct autosa_stmt_access *ref = io_group->refs[i];
-    struct autosa_array_ref_group *pe_group =
-        autosa_find_pe_group(local_array, io_group, ref);
-    struct autosa_add_pe_ext_io_copies_data data =
-        {kernel, pe_group, io_group, ref, read, 0, NULL};
-    node = isl_schedule_node_map_descendant_bottom_up(node,
-                                                      &add_pe_ext_io_copies_stmt, &data);
+//#ifdef _DEBUG
+//    DBGMAP(stdout, ref->access, kernel->ctx);    
+//#endif
+
+    if ((io_group->local_array->array_type == AUTOSA_EXT_ARRAY) ||
+       ((io_group->local_array->array_type == AUTOSA_INT_ARRAY) && 
+       (read && ref->read) || (!read && ref->write)))
+    {
+      struct autosa_array_ref_group *pe_group =
+          autosa_find_pe_group(local_array, io_group, ref);
+      struct autosa_add_pe_ext_io_copies_data data =
+          {kernel, pe_group, io_group, ref, read, 0, NULL};
+      node = isl_schedule_node_map_descendant_bottom_up(node,
+                                                        &add_pe_ext_io_copies_stmt, &data);
+    }
   }
 
   return node;
@@ -3733,16 +3758,6 @@ __isl_give isl_schedule_node *add_pe_int_io_copies(
     if (empty < 0)
       return isl_schedule_node_free(node);
     return autosa_tree_move_up_to_pe(node);
-  }
-
-  /* Update the group io_dir. */
-  if (read)
-  {
-    io_group->pe_io_dir = (io_group->pe_io_dir == IO_OUT) ? IO_INOUT : IO_IN;
-  }
-  else
-  {
-    io_group->pe_io_dir = (io_group->pe_io_dir == IO_IN) ? IO_INOUT : IO_OUT;
   }
 
   pe_group->array->global = 1;
@@ -4233,25 +4248,30 @@ static __isl_give struct autosa_hw_module *sa_pe_module_gen(struct autosa_gen *g
     for (int j = 0; j < array->n_io_group; j++)
     {
       struct autosa_array_ref_group *group = array->io_groups[j];
-      if (group->array_io_dir == IO_NULL)
-        continue;
+      //if (group->array_io_dir == IO_NULL)
+      //  continue;
       if (group->local_array->array_type == AUTOSA_EXT_ARRAY)
       {
-        if (group->io_type == AUTOSA_EXT_IO)
-          node = add_pe_ext_io_copies(kernel, array, group, node, 0);
-        node = add_pe_ext_io_copies(kernel, array, group, node, 1);
+        if (group->pe_io_dir == IO_IN || group->pe_io_dir == IO_INOUT)
+          node = add_pe_ext_io_copies(kernel, array, group, node, 1);
+        if (group->pe_io_dir == IO_OUT || group->pe_io_dir == IO_INOUT)
+          node = add_pe_ext_io_copies(kernel, array, group, node, 0);        
       }
       else if (group->local_array->array_type == AUTOSA_INT_ARRAY)
       {
         if (group->io_type == AUTOSA_INT_IO)
         {
-          node = add_pe_int_io_copies(kernel, array, group, node, 0);
-          node = add_pe_int_io_copies(kernel, array, group, node, 1);
+          if (group->pe_io_dir == IO_IN || group->pe_io_dir == IO_INOUT)
+            node = add_pe_int_io_copies(kernel, array, group, node, 1);
+          if (group->pe_io_dir == IO_OUT || group->pe_io_dir == IO_INOUT)
+            node = add_pe_int_io_copies(kernel, array, group, node, 0);          
         }
         else
         {
-          node = add_pe_ext_io_copies(kernel, array, group, node, 0);
-          node = add_pe_ext_io_copies(kernel, array, group, node, 1);
+          if (group->pe_io_dir == IO_IN || group->pe_io_dir == IO_INOUT)
+            node = add_pe_ext_io_copies(kernel, array, group, node, 1);
+          if (group->pe_io_dir == IO_OUT || group->pe_io_dir == IO_INOUT)
+            node = add_pe_ext_io_copies(kernel, array, group, node, 0);          
         }
       }
 
@@ -4659,6 +4679,8 @@ static isl_stat top_module_pe_gen_fifo_decl(struct autosa_gen *gen,
     isl_id *id;
     isl_union_set *L1_filter = NULL;
     bool insert_L1 = isl_bool_false;
+    if (group->pe_io_dir == IO_NULL)
+      continue;
 
     schedule = isl_schedule_dup(group->io_L1_schedule);
     node = isl_schedule_get_root(schedule);

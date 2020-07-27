@@ -39,7 +39,7 @@ extern "C"
 
 #define DBGVAR(os, var)                                  \
   (os) << "DBG: " << __FILE__ << "(" << __LINE__ << ") " \
-       << #var << " = [" << (var) << "]" << std::endl
+       << #var << " = [" << (var) << "]" << std::endl;
 
 #define DBGSCHDNODE(os, node, ctx)                                    {\
   printf("%s(%d) Print schedule node.\n", __FILE__, __LINE__);         \
@@ -61,6 +61,30 @@ extern "C"
   printf("%s(%d) Print union map.\n", __FILE__, __LINE__);             \
   isl_printer *p_debug = isl_printer_to_file(ctx, os);                 \
   p_debug = isl_printer_print_union_map(p_debug, umap);                \
+  p_debug = isl_printer_print_str(p_debug, "\n");                      \
+  p_debug = isl_printer_free(p_debug);                                 \
+}
+
+#define DBGMAP(os, map, ctx)                                          {\
+  printf("%s(%d) Print map.\n", __FILE__, __LINE__);                   \
+  isl_printer *p_debug = isl_printer_to_file(ctx, os);                 \
+  p_debug = isl_printer_print_map(p_debug, map);                       \
+  p_debug = isl_printer_print_str(p_debug, "\n");                      \
+  p_debug = isl_printer_free(p_debug);                                 \
+}
+
+#define DBGBMAP(os, bmap, ctx)                                        {\
+  printf("%s(%d) Print basic map.\n", __FILE__, __LINE__);             \
+  isl_printer *p_debug = isl_printer_to_file(ctx, os);                 \
+  p_debug = isl_printer_print_basic_map(p_debug, bmap);                \
+  p_debug = isl_printer_print_str(p_debug, "\n");                      \
+  p_debug = isl_printer_free(p_debug);                                 \
+}
+
+#define DBGVEC(os, vec, ctx)                                          {\
+  printf("%s(%d) Print vec.\n", __FILE__, __LINE__);                   \
+  isl_printer *p_debug = isl_printer_to_file(ctx, os);                 \
+  p_debug = isl_printer_print_vec(p_debug, vec);                       \
   p_debug = isl_printer_print_str(p_debug, "\n");                      \
   p_debug = isl_printer_free(p_debug);                                 \
 }
