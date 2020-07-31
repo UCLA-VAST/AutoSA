@@ -1241,17 +1241,23 @@ static __isl_give isl_schedule_node *insert_filter_trans_stmts(
 //  DBGSCHDNODE(stdout, node, ctx)
 //#endif
 
-  /* Pass on the data not filtered */  
-  node = autosa_tree_move_down_to_io_mark(node, kernel->core, buf->level);
-  node = isl_schedule_node_child(node, 0);
-  p = isl_printer_to_str(ctx);
-  p = print_io_trans_stmt_prefix(
-        p, read, module->to_mem, gen->options->autosa->host_serialize, boundary, 
-        0, 0, 0, fifo_suffix, buf->n_lane);    
-  if (!buf->tile) {
-    node = insert_io_stmts_acc(node, buf->n_lane, p, kernel, group, buf, read, is_buffer);   
+  /* Pass the data not filtered */  
+  if (boundary) {
+    isl_union_set *empty_filter = isl_union_set_from_set(isl_set_empty(isl_set_get_space(kernel->context)));
+    node = isl_schedule_node_cut(node);
+    node = isl_schedule_node_insert_filter(node, empty_filter);
   } else {
-    node = insert_io_stmts_tile(node, buf->n_lane, p, kernel, group, buf, buf, read, is_buffer, module, 1);    
+    node = autosa_tree_move_down_to_io_mark(node, kernel->core, buf->level);
+    node = isl_schedule_node_child(node, 0);
+    p = isl_printer_to_str(ctx);
+    p = print_io_trans_stmt_prefix(
+          p, read, module->to_mem, gen->options->autosa->host_serialize, boundary, 
+          0, 0, 0, fifo_suffix, buf->n_lane);    
+    if (!buf->tile) {
+      node = insert_io_stmts_acc(node, buf->n_lane, p, kernel, group, buf, read, is_buffer);   
+    } else {
+      node = insert_io_stmts_tile(node, buf->n_lane, p, kernel, group, buf, buf, read, is_buffer, module, 1);    
+    }
   }
 
   /* Keep the data filtered */
