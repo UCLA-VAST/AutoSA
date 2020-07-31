@@ -528,7 +528,7 @@ static void print_iterators(FILE *out, const char *type,
   n = isl_id_list_n_id(ids);
   if (n <= 0)
     return;
-  print_indent(out, 4);
+  print_indent(out, 2);
   fprintf(out, "%s ", type);
   for (i = 0; i < n; ++i)
   {
@@ -1995,7 +1995,7 @@ __isl_give isl_printer *print_module_call_upper(__isl_take isl_printer *p,
   p = isl_printer_end_line(p);
 
   p = isl_printer_start_line(p);
-  p = isl_printer_print_str(p, "p = isl_printer_indent(p, 4);");
+  p = isl_printer_print_str(p, "p = isl_printer_indent(p, 2);");
   p = isl_printer_end_line(p);
 
   /* module identifiers */
@@ -2361,7 +2361,7 @@ static __isl_give isl_printer *print_module_call_lower(__isl_take isl_printer *p
   p = isl_printer_end_line(p);
 
   p = isl_printer_start_line(p);
-  p = isl_printer_print_str(p, "p = isl_printer_indent(p, -4);");
+  p = isl_printer_print_str(p, "p = isl_printer_indent(p, -2);");
   p = isl_printer_end_line(p);
 
   p = isl_printer_start_line(p);
@@ -2592,7 +2592,7 @@ __isl_give isl_printer *autosa_kernel_print_io(__isl_take isl_printer *p,
   char *fifo_name;
   isl_ctx *ctx = isl_printer_get_ctx(p);
   int is_dummy = stmt->u.i.dummy;
-  fifo_name = concat(ctx, stmt->u.i.fifo_name, stmt->u.i.in == 1 ? "in" : "out");
+  fifo_name = concat(ctx, stmt->u.i.in_fifo_name, stmt->u.i.in == 1 ? "in" : "out");
   int data_pack = stmt->u.i.data_pack;
 
   if (is_dummy)
@@ -2708,7 +2708,7 @@ __isl_give isl_printer *autosa_kernel_print_io(__isl_take isl_printer *p,
         p = isl_printer_print_str(p, "#pragma HLS UNROLL");
         p = isl_printer_end_line(p);
 
-        p = isl_printer_indent(p, 4);
+        p = isl_printer_indent(p, 2);
 
         isl_ast_expr *op;
         isl_ast_expr *expr = stmt->u.i.local_index;
@@ -2776,7 +2776,7 @@ __isl_give isl_printer *autosa_kernel_print_io(__isl_take isl_printer *p,
         p = isl_printer_print_str(p, ";");
         p = isl_printer_end_line(p);
 
-        p = isl_printer_indent(p, -4);
+        p = isl_printer_indent(p, -2);
         p = isl_printer_start_line(p);
         p = isl_printer_print_str(p, "}");
         p = isl_printer_end_line(p);
@@ -3093,8 +3093,8 @@ static __isl_give isl_printer *autosa_kernel_print_io_transfer_default(
   p = isl_printer_end_line(p);
 
   if (stmt->u.i.in)
-  {
-    fifo_name = concat(ctx, stmt->u.i.fifo_name, "in");
+  {            
+    fifo_name = concat(ctx, stmt->u.i.in_fifo_name, "in");
     /* fifo_data = fifo.read(); */
     p = isl_printer_start_line(p);
     p = isl_printer_print_str(p, "fifo_data");
@@ -3106,25 +3106,6 @@ static __isl_give isl_printer *autosa_kernel_print_io_transfer_default(
     p = isl_printer_print_str(p, ";");
     p = isl_printer_end_line(p);
     free(fifo_name);
-
-    /* if (filter_condition) { */
-    if (stmt->u.i.filter_sched_depth >= 0)
-    {
-      p = isl_printer_start_line(p);
-      p = isl_printer_print_str(p, "if (");
-      if (iterator_prefix != NULL) {
-        p = isl_printer_print_str(p, iterator_prefix);
-      } else {
-        p = isl_printer_print_str(p, "c");
-      }
-      //p = isl_printer_print_str(p, "if (c");
-      p = isl_printer_print_int(p, stmt->u.i.filter_sched_depth);
-      p = isl_printer_print_str(p, " == p");
-      p = isl_printer_print_int(p, stmt->u.i.filter_param_id);
-      p = isl_printer_print_str(p, ") {");
-      p = isl_printer_end_line(p);
-      p = isl_printer_indent(p, 2);
-    }
 
     if (stmt->u.i.buf)
     {
@@ -3156,8 +3137,8 @@ static __isl_give isl_printer *autosa_kernel_print_io_transfer_default(
     }
     else
     {
-      /* fifo_local.write(fifo_data); */
-      fifo_name = concat(ctx, stmt->u.i.fifo_name, "local_out");
+      /* fifo.write(fifo_data); */          
+      fifo_name = concat(ctx, stmt->u.i.out_fifo_name, "out");      
       p = isl_printer_start_line(p);
       if (hls->target == XILINX_HW)
         p = print_fifo_rw_xilinx(p, fifo_name, 0);
@@ -3166,54 +3147,10 @@ static __isl_give isl_printer *autosa_kernel_print_io_transfer_default(
       p = isl_printer_print_str(p, "fifo_data);");
       p = isl_printer_end_line(p);
       free(fifo_name);
-    }
-
-    if (stmt->u.i.filter_sched_depth >= 0)
-    {
-      p = isl_printer_indent(p, -2);
-      p = isl_printer_start_line(p);
-      p = isl_printer_print_str(p, "} else {");
-      p = isl_printer_end_line(p);
-      p = isl_printer_indent(p, 2);
-
-      /* fifo.write(fifo_data); */
-      fifo_name = concat(ctx, stmt->u.i.fifo_name, "out");
-      p = isl_printer_start_line(p);
-      if (hls->target == XILINX_HW)
-        p = print_fifo_rw_xilinx(p, fifo_name, 0);
-      else if (hls->target == INTEL_HW)
-        p = print_fifo_rw_intel(p, fifo_name, 0);
-      p = isl_printer_print_str(p, "fifo_data);");
-      p = isl_printer_end_line(p);
-      free(fifo_name);
-
-      p = isl_printer_indent(p, -2);
-      p = isl_printer_start_line(p);
-      p = isl_printer_print_str(p, "}");
-      p = isl_printer_end_line(p);
     }
   }
   else
-  {
-    /* if (filter_condition) { */
-    if (stmt->u.i.filter_sched_depth >= 0)
-    {
-      p = isl_printer_start_line(p);
-      p = isl_printer_print_str(p, "if (");
-      if (iterator_prefix != NULL) {
-        p = isl_printer_print_str(p, iterator_prefix);
-      } else {
-        p = isl_printer_print_str(p, "c");
-      }
-      //p = isl_printer_print_str(p, "if (c");
-      p = isl_printer_print_int(p, stmt->u.i.filter_sched_depth);
-      p = isl_printer_print_str(p, " == p");
-      p = isl_printer_print_int(p, stmt->u.i.filter_param_id);
-      p = isl_printer_print_str(p, ") {");
-      p = isl_printer_end_line(p);
-      p = isl_printer_indent(p, 2);
-    }
-
+  {    
     if (stmt->u.i.buf)
     {
       /* fifo_data = local[][]; */
@@ -3241,8 +3178,8 @@ static __isl_give isl_printer *autosa_kernel_print_io_transfer_default(
     }
     else
     {
-      /* fifo_data = fifo_local.read(); */
-      fifo_name = concat(ctx, stmt->u.i.fifo_name, "local_in");
+      /* fifo_data = fifo.read(); */            
+      fifo_name = concat(ctx, stmt->u.i.in_fifo_name, "in");      
       p = isl_printer_start_line(p);
       p = isl_printer_print_str(p, "fifo_data = ");
       if (hls->target == XILINX_HW)
@@ -3252,36 +3189,10 @@ static __isl_give isl_printer *autosa_kernel_print_io_transfer_default(
       p = isl_printer_print_str(p, ";");
       p = isl_printer_end_line(p);
       free(fifo_name);
-    }
-
-    if (stmt->u.i.filter_sched_depth >= 0)
-    {
-      p = isl_printer_indent(p, -2);
-      p = isl_printer_start_line(p);
-      p = isl_printer_print_str(p, "} else {");
-      p = isl_printer_end_line(p);
-      p = isl_printer_indent(p, 2);
-
-      /* fifo_data = fifo.read(); */
-      fifo_name = concat(ctx, stmt->u.i.fifo_name, "in");
-      p = isl_printer_start_line(p);
-      p = isl_printer_print_str(p, "fifo_data = ");
-      if (hls->target == XILINX_HW)
-        p = print_fifo_rw_xilinx(p, fifo_name, 1);
-      else if (hls->target == INTEL_HW)
-        p = print_fifo_rw_intel(p, fifo_name, 1);
-      p = isl_printer_print_str(p, ";");
-      p = isl_printer_end_line(p);
-      free(fifo_name);
-
-      p = isl_printer_indent(p, -2);
-      p = isl_printer_start_line(p);
-      p = isl_printer_print_str(p, "}");
-      p = isl_printer_end_line(p);
     }
 
     /* fifo.write(fifo_data); */
-    fifo_name = concat(ctx, stmt->u.i.fifo_name, "out");
+    fifo_name = concat(ctx, stmt->u.i.out_fifo_name, "out");
     p = isl_printer_start_line(p);
     if (hls->target == XILINX_HW)
       p = print_fifo_rw_xilinx(p, fifo_name, 0);
@@ -3427,7 +3338,7 @@ static __isl_give isl_printer *autosa_kernel_print_io_transfer_data_pack(
     p = isl_printer_print_int(p, n_lane / nxt_n_lane);
     p = isl_printer_print_str(p, " == 0) {");
     p = isl_printer_end_line(p);
-    p = isl_printer_indent(p, 4);
+    p = isl_printer_indent(p, 2);
   }
   /* buf_data = local[]; */
   p = isl_printer_start_line(p);
@@ -3463,13 +3374,13 @@ static __isl_give isl_printer *autosa_kernel_print_io_transfer_data_pack(
     p = isl_printer_print_str(p, "; n++) {");
     p = isl_printer_end_line(p);
 
-    p = isl_printer_indent(p, 4);
+    p = isl_printer_indent(p, 2);
 
-    p = isl_printer_indent(p, -4);
+    p = isl_printer_indent(p, -2);
     p = isl_printer_start_line(p);
     p = isl_printer_print_str(p, "#pragma HLS UNROLL");
     p = isl_printer_end_line(p);
-    p = isl_printer_indent(p, 4);
+    p = isl_printer_indent(p, 2);
 
     p = isl_printer_start_line(p);
     p = isl_printer_print_str(p, "buf_data_split[n] = buf_data(");
@@ -3483,7 +3394,7 @@ static __isl_give isl_printer *autosa_kernel_print_io_transfer_data_pack(
     p = isl_printer_print_str(p, ";");
     p = isl_printer_end_line(p);
 
-    p = isl_printer_indent(p, -4);
+    p = isl_printer_indent(p, -2);
     p = isl_printer_start_line(p);
     p = isl_printer_print_str(p, "}");
     p = isl_printer_end_line(p);
@@ -3510,7 +3421,7 @@ static __isl_give isl_printer *autosa_kernel_print_io_transfer_data_pack(
 
   if (stmt->u.i.in && stmt->u.i.coalesce_depth >= 0)
   {
-    p = isl_printer_indent(p, -4);
+    p = isl_printer_indent(p, -2);
     p = print_str_new_line(p, "}");
   }
 
@@ -3533,7 +3444,7 @@ static __isl_give isl_printer *autosa_kernel_print_io_transfer_data_pack(
 
   if (stmt->u.i.in)
   {
-    fifo_name = concat(ctx, stmt->u.i.fifo_name, "in");
+    fifo_name = concat(ctx, stmt->u.i.in_fifo_name, "in");
 
     /* fifo_data = fifo.read(); */
     p = isl_printer_start_line(p);
@@ -3604,7 +3515,7 @@ static __isl_give isl_printer *autosa_kernel_print_io_transfer_data_pack(
       p = isl_printer_print_int(p, stmt->u.i.coalesce_bound - 1);
       p = isl_printer_print_str(p, ") {");
       p = isl_printer_end_line(p);
-      p = isl_printer_indent(p, 4);
+      p = isl_printer_indent(p, 2);
     }
 
     /* buf_data = (buf_data_split[1], ...); */
@@ -3686,7 +3597,7 @@ static __isl_give isl_printer *autosa_kernel_print_io_transfer_data_pack(
 
     if (stmt->u.i.coalesce_depth >= 0)
     {
-      p = isl_printer_indent(p, -4);
+      p = isl_printer_indent(p, -2);
       p = print_str_new_line(p, "}");
     }
 
@@ -3694,7 +3605,7 @@ static __isl_give isl_printer *autosa_kernel_print_io_transfer_data_pack(
   }
   else
   {
-    fifo_name = concat(ctx, stmt->u.i.fifo_name, "out");
+    fifo_name = concat(ctx, stmt->u.i.out_fifo_name, "out");
 
     if (hls->target == XILINX_HW)
     {
@@ -3760,7 +3671,7 @@ __isl_give isl_printer *autosa_kernel_print_io_transfer(
   struct autosa_array_ref_group *group = stmt->u.i.group;
   int n_lane = stmt->u.i.data_pack;
   int nxt_n_lane = stmt->u.i.nxt_data_pack;
-  int is_filter = stmt->u.i.filter;
+  //int is_filter = stmt->u.i.filter;
   int is_buf = stmt->u.i.buf;
   isl_ctx *ctx = isl_printer_get_ctx(p);
 
@@ -3954,8 +3865,9 @@ __isl_give isl_printer *autosa_kernel_print_drain_merge(__isl_take isl_printer *
  *  global = fifo_data;
  *
  */
-__isl_give isl_printer *autosa_kernel_print_io_dram(__isl_take isl_printer *p,
-                                                    struct autosa_kernel_stmt *stmt, struct hls_info *hls)
+__isl_give isl_printer *autosa_kernel_print_io_dram(
+  __isl_take isl_printer *p,
+  struct autosa_kernel_stmt *stmt, struct hls_info *hls)
 {
   struct autosa_array_ref_group *group = stmt->u.i.group;
   struct autosa_hw_module *module = stmt->u.i.module;
@@ -3965,7 +3877,7 @@ __isl_give isl_printer *autosa_kernel_print_io_dram(__isl_take isl_printer *p,
   int buf = stmt->u.i.buf;
   isl_ast_expr *local_index_packed;
   local_index_packed = isl_ast_expr_copy(stmt->u.i.local_index);
-  int n_arg;
+  int n_arg;  
   /* Modify the local index; */
   if (n_lane > 1)
   {
@@ -4007,8 +3919,8 @@ __isl_give isl_printer *autosa_kernel_print_io_dram(__isl_take isl_printer *p,
     p = isl_printer_end_line(p);
 
     if (!buf)
-    {
-      fifo_name = concat(ctx, stmt->u.i.fifo_name, "out");
+    {      
+      fifo_name = concat(ctx, stmt->u.i.out_fifo_name, "out");      
       p = isl_printer_start_line(p);
       if (hls->target == XILINX_HW)
         p = print_fifo_rw_xilinx(p, fifo_name, 0);
@@ -4031,8 +3943,8 @@ __isl_give isl_printer *autosa_kernel_print_io_dram(__isl_take isl_printer *p,
     if (!buf)
     {
       p = isl_printer_start_line(p);
-      p = isl_printer_print_str(p, "fifo_data = ");
-      fifo_name = concat(ctx, stmt->u.i.fifo_name, "in");
+      p = isl_printer_print_str(p, "fifo_data = ");      
+      fifo_name = concat(ctx, stmt->u.i.in_fifo_name, "in");      
       if (hls->target == XILINX_HW)
         p = print_fifo_rw_xilinx(p, fifo_name, 1);
       else if (hls->target == INTEL_HW)
@@ -4079,12 +3991,12 @@ static __isl_give isl_printer *print_inter_trans_module_call(
     p = isl_printer_print_str(p, "_boundary");
   p = isl_printer_print_str(p, "(");
   p = isl_printer_end_line(p);
-  p = isl_printer_indent(p, 4);
+  p = isl_printer_indent(p, 2);
   p = isl_printer_start_line(p);
   p = print_module_arguments(p, prog, kernel, module, 0,
                              hls->target, 1, arb, boundary);
   p = isl_printer_end_line(p);
-  p = isl_printer_indent(p, -4);
+  p = isl_printer_indent(p, -2);
   p = isl_printer_start_line(p);
   p = isl_printer_print_str(p, ");");
   p = isl_printer_end_line(p);
@@ -4107,22 +4019,22 @@ __isl_give isl_printer *autosa_kernel_print_inter_trans(
     p = isl_printer_start_line(p);
     p = isl_printer_print_str(p, "if (arb == 0) {");
     p = isl_printer_end_line(p);
-    p = isl_printer_indent(p, 4);
+    p = isl_printer_indent(p, 2);
   }
 
   p = print_inter_trans_module_call(p, module, prog, kernel, hls, 0, boundary);
 
   if (module->double_buffer)
   {
-    p = isl_printer_indent(p, -4);
+    p = isl_printer_indent(p, -2);
     p = isl_printer_start_line(p);
     p = isl_printer_print_str(p, "} else {");
     p = isl_printer_end_line(p);
-    p = isl_printer_indent(p, 4);
+    p = isl_printer_indent(p, 2);
 
     p = print_inter_trans_module_call(p, module, prog, kernel, hls, 1, boundary);
 
-    p = isl_printer_indent(p, -4);
+    p = isl_printer_indent(p, -2);
     p = isl_printer_start_line(p);
     p = isl_printer_print_str(p, "}");
     p = isl_printer_end_line(p);
@@ -4141,11 +4053,11 @@ static __isl_give isl_printer *print_intra_trans_module_call(
   p = isl_printer_print_str(p, module->name);
   p = isl_printer_print_str(p, "_intra_trans(");
   p = isl_printer_end_line(p);
-  p = isl_printer_indent(p, 4);
+  p = isl_printer_indent(p, 2);
   p = isl_printer_start_line(p);
   p = print_module_arguments(p, prog, kernel, module, 0, hls->target, 0, arb, 0);
   p = isl_printer_end_line(p);
-  p = isl_printer_indent(p, -4);
+  p = isl_printer_indent(p, -2);
   p = isl_printer_start_line(p);
   p = isl_printer_print_str(p, ");");
   p = isl_printer_end_line(p);
@@ -4167,22 +4079,22 @@ __isl_give isl_printer *autosa_kernel_print_intra_trans(
     p = isl_printer_start_line(p);
     p = isl_printer_print_str(p, "if (arb == 0) {");
     p = isl_printer_end_line(p);
-    p = isl_printer_indent(p, 4);
+    p = isl_printer_indent(p, 2);
   }
 
   p = print_intra_trans_module_call(p, module, prog, kernel, hls, 0);
 
   if (module->double_buffer)
   {
-    p = isl_printer_indent(p, -4);
+    p = isl_printer_indent(p, -2);
     p = isl_printer_start_line(p);
     p = isl_printer_print_str(p, "} else {");
     p = isl_printer_end_line(p);
-    p = isl_printer_indent(p, 4);
+    p = isl_printer_indent(p, 2);
 
     p = print_intra_trans_module_call(p, module, prog, kernel, hls, 1);
 
-    p = isl_printer_indent(p, -4);
+    p = isl_printer_indent(p, -2);
     p = isl_printer_start_line(p);
     p = isl_printer_print_str(p, "}");
     p = isl_printer_end_line(p);
@@ -4206,7 +4118,7 @@ __isl_give isl_printer *autosa_kernel_print_inter_intra(
     p = isl_printer_start_line(p);
     p = isl_printer_print_str(p, "if (arb == 0) {");
     p = isl_printer_end_line(p);
-    p = isl_printer_indent(p, 4);
+    p = isl_printer_indent(p, 2);
   }
 
   /* inter_trans */
@@ -4216,19 +4128,19 @@ __isl_give isl_printer *autosa_kernel_print_inter_intra(
 
   if (module->double_buffer)
   {
-    p = isl_printer_indent(p, -4);
+    p = isl_printer_indent(p, -2);
     p = isl_printer_start_line(p);
     p = isl_printer_print_str(p, "} else {");
     p = isl_printer_end_line(p);
 
-    p = isl_printer_indent(p, 4);
+    p = isl_printer_indent(p, 2);
 
     /* inter_trans */
     p = print_inter_trans_module_call(p, module, prog, kernel, hls, 1, boundary);
     /* intra_trans */
     p = print_intra_trans_module_call(p, module, prog, kernel, hls, 1);
 
-    p = isl_printer_indent(p, -4);
+    p = isl_printer_indent(p, -2);
     p = isl_printer_start_line(p);
     p = isl_printer_print_str(p, "}");
     p = isl_printer_end_line(p);
@@ -4252,7 +4164,7 @@ __isl_give isl_printer *autosa_kernel_print_intra_inter(
     p = isl_printer_start_line(p);
     p = isl_printer_print_str(p, "if (arb == 0) {");
     p = isl_printer_end_line(p);
-    p = isl_printer_indent(p, 4);
+    p = isl_printer_indent(p, 2);
   }
 
   /* intra_trans */
@@ -4262,19 +4174,19 @@ __isl_give isl_printer *autosa_kernel_print_intra_inter(
 
   if (module->double_buffer)
   {
-    p = isl_printer_indent(p, -4);
+    p = isl_printer_indent(p, -2);
     p = isl_printer_start_line(p);
     p = isl_printer_print_str(p, "} else {");
     p = isl_printer_end_line(p);
 
-    p = isl_printer_indent(p, 4);
+    p = isl_printer_indent(p, 2);
 
     /* intra_trans */
     p = print_intra_trans_module_call(p, module, prog, kernel, hls, 1);
     /* inter_trans */
     p = print_inter_trans_module_call(p, module, prog, kernel, hls, 1, boundary);
 
-    p = isl_printer_indent(p, -4);
+    p = isl_printer_indent(p, -2);
     p = isl_printer_start_line(p);
     p = isl_printer_print_str(p, "}");
     p = isl_printer_end_line(p);

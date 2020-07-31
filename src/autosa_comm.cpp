@@ -1154,9 +1154,9 @@ static isl_stat extract_set_max_dim(__isl_take isl_basic_set *bset, void *user)
  * Return the node at the same position.
  */
 static __isl_give isl_schedule_node *insert_io_module_context(
-    __isl_take isl_schedule_node *node,
-    struct autosa_array_ref_group *group,
-    struct autosa_gen *gen, struct autosa_kernel *kernel)
+  __isl_take isl_schedule_node *node,
+  struct autosa_array_ref_group *group,
+  struct autosa_gen *gen, struct autosa_kernel *kernel)
 {
   int n_io_ids;
   isl_id_list *io_ids;
@@ -1941,15 +1941,11 @@ static isl_stat compute_io_group_schedule(
   group->io_level = io_level;
   group->io_trans = io_trans_ma;
 
-  /* Insert the context node for the IO ids. */
+  /* Insert the context node for the IO ids. 
+   * NOTE: We will update this again in the later IO module generation.
+   */
   node = autosa_tree_move_up_to_kernel(node);
   node = insert_io_module_context(node, group, gen, kernel);
-  //#ifdef _DEBUG
-  //  isl_printer *pd = isl_printer_to_file(ctx, stdout);
-  //  pd = isl_printer_set_yaml_style(pd, ISL_YAML_STYLE_BLOCK);
-  //  pd = isl_printer_print_schedule_node(pd, node);
-  //  pd = isl_printer_free(pd);
-  //#endif
 
   /* Determine if the I/O module for this group could be eliminated.
    */

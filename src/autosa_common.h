@@ -35,7 +35,7 @@ extern "C"
 {
 #endif
 
-#define _DEBUG
+//#define _DEBUG
 
 #define DBGVAR(os, var)                                  \
   (os) << "DBG: " << __FILE__ << "(" << __LINE__ << ") " \
@@ -56,6 +56,14 @@ extern "C"
   p_debug = isl_printer_print_schedule(p_debug, node);                 \
   p_debug = isl_printer_free(p_debug);                                 \
 } 
+
+#define DBGSET(os, set, ctx)                                          {\
+  printf("%s(%d) Print set.\n", __FILE__, __LINE__);                   \
+  isl_printer *p_debug = isl_printer_to_file(ctx, os);                 \
+  p_debug = isl_printer_print_set(p_debug, set);                       \
+  p_debug = isl_printer_print_str(p_debug, "\n");                      \
+  p_debug = isl_printer_free(p_debug);                                 \
+}
 
 #define DBGUMAP(os, umap, ctx)                                        {\
   printf("%s(%d) Print union map.\n", __FILE__, __LINE__);             \
@@ -947,13 +955,15 @@ struct autosa_kernel_stmt
     {
       int in;
       int buf;
-      int filter;
+      //int filter;
+      //int lower;
       int boundary;
       int dummy;
       int serialize;
-      char *fifo_name;
+      char *in_fifo_name;
+      char *out_fifo_name;
       char *fifo_type;
-      int filter_sched_depth;
+      int filter_sched_depth;      
       int filter_param_id;
       int data_pack;
       int reg;
@@ -1136,6 +1146,8 @@ int *extract_band_upper_bounds(struct autosa_kernel *kernel,
                                __isl_keep isl_schedule_node *node);
 __isl_give isl_union_set *set_schedule_eq(
     __isl_keep isl_schedule_node *node, __isl_keep isl_id_list *names);
+__isl_give isl_union_set *set_schedule_neq(
+    __isl_keep isl_schedule_node *node, __isl_keep isl_id_list *names);    
 isl_bool is_flow_dep_carried_by_array_part_loops(__isl_keep isl_schedule *schedule,
                                                  struct autosa_array_ref_group *group, struct autosa_kernel *kernel);
 

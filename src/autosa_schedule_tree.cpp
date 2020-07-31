@@ -1398,6 +1398,23 @@ __isl_give isl_union_set *set_schedule_eq(
   return isl_multi_union_pw_aff_zero_union_set(mupa);
 }
 
+__isl_give isl_union_set *set_schedule_neq(
+    __isl_keep isl_schedule_node *node, __isl_keep isl_id_list *names)
+{
+  isl_union_set *uset, *domain;
+  isl_union_map *umap;
+
+  if (!node)
+    return NULL;
+  
+  uset = set_schedule_eq(node, names);
+  umap = isl_schedule_node_band_get_partial_schedule_union_map(node);
+  domain = isl_union_map_domain(umap);
+  uset = isl_union_set_subtract(domain, uset);
+
+  return uset;
+}
+
 /* Construct schedule constraints from the dependences in prog->scop and
  * the array order dependences in prog->array_order.
  *

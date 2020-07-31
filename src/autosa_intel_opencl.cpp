@@ -314,14 +314,14 @@ static isl_stat print_data_types_intel(
         p = isl_printer_print_str(p, "_t {");
         p = isl_printer_end_line(p);
 
-        p = isl_printer_indent(p, 4);
+        p = isl_printer_indent(p, 2);
         p = isl_printer_start_line(p);
         p = isl_printer_print_str(p, local->array->type);
         p = isl_printer_print_int(p, data_pack_factors[n]);
         p = isl_printer_print_str(p, " data;");
         p = isl_printer_end_line(p);
 
-        p = isl_printer_indent(p, -4);
+        p = isl_printer_indent(p, -2);
         p = print_str_new_line(p, "};");
 
         p = isl_printer_start_line(p);
@@ -651,7 +651,7 @@ static isl_stat print_host_serialize_funcs(
       p = print_host_serialize_arguments(p, kernel, module->io_groups[0], module, 1, hls->hls);
       p = isl_printer_print_str(p, "){");
       p = isl_printer_end_line(p);
-      p = isl_printer_indent(p, 4);
+      p = isl_printer_indent(p, 2);
 
       p = print_str_new_line(p, "/* Variable Declaration */");
       p = print_str_new_line(p, "unsigned int cnt = 0;");      
@@ -663,7 +663,7 @@ static isl_stat print_host_serialize_funcs(
                                                            &print_module_stmt, &hw_data);
       p = isl_ast_node_print(module->serialize_tree, p, print_options);
 
-      p = isl_printer_indent(p, -4);
+      p = isl_printer_indent(p, -2);
       p = print_str_new_line(p, "}");
       p = print_str_new_line(p, "/* Helper Function */");
       p = isl_printer_end_line(p);
@@ -709,7 +709,7 @@ static isl_stat print_drain_merge_funcs(
     p = print_drain_merge_arguments_intel(p, kernel, group, funcs[i], 1, hls->hls);
     p = isl_printer_print_str(p, "){");
     p = isl_printer_end_line(p);
-    p = isl_printer_indent(p, 4);
+    p = isl_printer_indent(p, 2);
 
     p = print_str_new_line(p, "/* Variable Declaration */");
     if (!hls->hls)
@@ -724,7 +724,7 @@ static isl_stat print_drain_merge_funcs(
                                                          &print_module_stmt, &hw_data);
     p = isl_ast_node_print(funcs[i]->device_tree, p, print_options);
 
-    p = isl_printer_indent(p, -4);
+    p = isl_printer_indent(p, -2);
     p = print_str_new_line(p, "}");
     p = print_str_new_line(p, "/* Helper Function */");
     p = isl_printer_end_line(p);
@@ -747,10 +747,10 @@ static __isl_give isl_printer *find_device_intel(__isl_take isl_printer *p,
   p = print_str_new_line(p, "// OpenCL host code starts from here");
   //p = print_str_new_line(p, "bool use_emulator = false; // control whether the emulator should be used.");
   p = print_str_new_line(p, "if (argc != 2) {");
-  p = isl_printer_indent(p, 4);
+  p = isl_printer_indent(p, 2);
   p = print_str_new_line(p, "std::cout << \"Usage: \" << argv[0] << \"<path/to/bitstream.aocx>\" << std::endl;");
   p = print_str_new_line(p, "return -1;");
-  p = isl_printer_indent(p, -4);
+  p = isl_printer_indent(p, -2);
   p = print_str_new_line(p, "}");
 
   p = print_str_new_line(p, "cl_int status;");
@@ -799,33 +799,33 @@ static __isl_give isl_printer *find_device_intel(__isl_take isl_printer *p,
 //  p = print_str_new_line(p, "// Parse command line arguments");
 //  p = print_str_new_line(p, "Options options(argc, argv);");
 //  p = print_str_new_line(p, "if (options.has(\"emulator\")) {");
-//  p = isl_printer_indent(p, 4);
+//  p = isl_printer_indent(p, 2);
 //  p = print_str_new_line(p, "use_emulator = options.get<bool>(\"emulator\");");
-//  p = isl_printer_indent(p, -4);
+//  p = isl_printer_indent(p, -2);
 //  p = print_str_new_line(p, "}");
   p = print_str_new_line(p, "if (!setCwdToExeDir()) {");
-  p = isl_printer_indent(p, 4);
+  p = isl_printer_indent(p, 2);
   p = print_str_new_line(p, "return false;");
-  p = isl_printer_indent(p, -4);
+  p = isl_printer_indent(p, -2);
   p = print_str_new_line(p, "}");
   p = isl_printer_end_line(p);
 
   p = print_str_new_line(p, "// Get the OpenCL platform");
   //p = print_str_new_line(p, "if (use_emulator) {");
-  //p = isl_printer_indent(p, 4);
+  //p = isl_printer_indent(p, 2);
   //p = print_str_new_line(p, "platform = findPlatform(\"Intel(R) FPGA Emulation Platform for OpenCL(TM)\");");
-  //p = isl_printer_indent(p, -4);
+  //p = isl_printer_indent(p, -2);
   //p = print_str_new_line(p, "} else {");
-  //p = isl_printer_indent(p, 4);
+  //p = isl_printer_indent(p, 2);
   //p = print_str_new_line(p, "platform = findPlatform(\"Intel(R) FPGA SDK for OpenCL(TM)\");");
-  //p = isl_printer_indent(p, -4);
+  //p = isl_printer_indent(p, -2);
   //p = print_str_new_line(p, "}");
   p = print_str_new_line(p, "platform = findPlatform(\"Intel\");");
   p = print_str_new_line(p, "if (platform == NULL) {");
-  p = isl_printer_indent(p, 4);
+  p = isl_printer_indent(p, 2);
   p = print_str_new_line(p, "printf(\"ERROR: Unable to find Intel(R) FPGA OpenCL platform\\n\");");
   p = print_str_new_line(p, "return -1;");
-  p = isl_printer_indent(p, -4);
+  p = isl_printer_indent(p, -2);
   p = print_str_new_line(p, "}");
   p = isl_printer_end_line(p);
 
@@ -843,7 +843,7 @@ static __isl_give isl_printer *find_device_intel(__isl_take isl_printer *p,
   indent = strlen("status = clGetDeviceIDs(");
   p = isl_printer_indent(p, -indent);
   p = print_str_new_line(p, "if (status == CL_SUCCESS) {");
-  p = isl_printer_indent(p, 4);
+  p = isl_printer_indent(p, 2);
   p = print_str_new_line(p, "clGetPlatformInfo(platform,");
   p = isl_printer_indent(p, strlen("clGetPlatformInfo("));
   p = print_str_new_line(p, "CL_PLATFORM_VENDOR,");
@@ -853,12 +853,12 @@ static __isl_give isl_printer *find_device_intel(__isl_take isl_printer *p,
   indent = strlen("clGetPlatformInfo(");
   p = isl_printer_indent(p, -indent);
   p = print_str_new_line(p, "if (strstr(buffer, \"Intel(R)\") != NULL) {");
-  p = isl_printer_indent(p, 4);
+  p = isl_printer_indent(p, 2);
   p = print_str_new_line(p, "device_found = 1;");
-  p = isl_printer_indent(p, -4);
+  p = isl_printer_indent(p, -2);
   p = print_str_new_line(p, "}");
   p = print_str_new_line(p, "if (device_found) {");
-  p = isl_printer_indent(p, 4);
+  p = isl_printer_indent(p, 2);
   p = print_str_new_line(p, "devices = (cl_device_id*) acl_aligned_malloc(numDevices * sizeof(cl_device_id));");
   p = print_str_new_line(p, "status = clGetDeviceIDs(platform,");
   p = isl_printer_indent(p, strlen("status = clGetDeviceIDs("));
@@ -868,19 +868,19 @@ static __isl_give isl_printer *find_device_intel(__isl_take isl_printer *p,
   p = print_str_new_line(p, "NULL);");
   indent = strlen("status = clGetDeviceIDs(");
   p = isl_printer_indent(p, -indent);
-  p = isl_printer_indent(p, -4);
+  p = isl_printer_indent(p, -2);
   p = print_str_new_line(p, "}");
-  p = isl_printer_indent(p, -4);
+  p = isl_printer_indent(p, -2);
   p = print_str_new_line(p, "}");
   p = print_str_new_line(p, "if (!device_found) {");
-  p = isl_printer_indent(p, 4);
+  p = isl_printer_indent(p, 2);
   p = print_str_new_line(p, "printf(\"failed to find a OpenCL device\\n\");");
   p = print_str_new_line(p, "exit(1);");
-  p = isl_printer_indent(p, -4);
+  p = isl_printer_indent(p, -2);
   p = print_str_new_line(p, "}");
 
   p = print_str_new_line(p, "for (int i = 0; i < numDevices; i++) {");
-  p = isl_printer_indent(p, 4);
+  p = isl_printer_indent(p, 2);
   p = print_str_new_line(p, "clGetDeviceInfo(devices[i],");
   indent = strlen("clGetDeviceInfo(");
   p = isl_printer_indent(p, indent);
@@ -936,7 +936,7 @@ static __isl_give isl_printer *find_device_intel(__isl_take isl_printer *p,
   p = print_str_new_line(p, "fprintf(stdout, \"Global Memory Allocation Size: %lu\\n\\n\", *((unsigned long*)buffer));");
   p = isl_printer_end_line(p);
 
-  p = isl_printer_indent(p, -4);
+  p = isl_printer_indent(p, -2);
   p = print_str_new_line(p, "}");
   p = isl_printer_end_line(p);
 
@@ -956,7 +956,7 @@ static __isl_give isl_printer *find_device_intel(__isl_take isl_printer *p,
   /* Command Queue */
   p = print_str_new_line(p, "// Create command queues");
   p = print_str_new_line(p, "for (int i = 0; i < NUM_QUEUES_TO_CREATE; i++) {");
-  p = isl_printer_indent(p, 4);
+  p = isl_printer_indent(p, 2);
   p = print_str_new_line(p, "cmdQueue[i] = clCreateCommandQueue(context,");
   indent = strlen("cmdQueue[i] = clCreateCommandQueue(");
   p = isl_printer_indent(p, indent);
@@ -964,7 +964,7 @@ static __isl_give isl_printer *find_device_intel(__isl_take isl_printer *p,
   p = print_str_new_line(p, "CL_QUEUE_PROFILING_ENABLE,");
   p = print_str_new_line(p, "&status); CHECK(status);");
   p = isl_printer_indent(p, -indent);
-  p = isl_printer_indent(p, -4);
+  p = isl_printer_indent(p, -2);
   p = print_str_new_line(p, "}");
   p = isl_printer_end_line(p);
 
@@ -975,34 +975,34 @@ static __isl_give isl_printer *find_device_intel(__isl_take isl_printer *p,
   p = print_str_new_line(p, "printf(\"\\nAOCX file: %s\\n\\n\", binary_file.c_str());");
   p = print_str_new_line(p, "FILE *fp = fopen(binary_file.c_str(), \"rb\");");
   p = print_str_new_line(p, "if (fp == NULL) {");
-  p = isl_printer_indent(p, 4);
+  p = isl_printer_indent(p, 2);
   p = print_str_new_line(p, "printf(\"Failed to open the AOCX file (fopen).\\n\");");
   p = print_str_new_line(p, "return -1;");
-  p = isl_printer_indent(p, -4);
+  p = isl_printer_indent(p, -2);
   p = print_str_new_line(p, "}");
   p = print_str_new_line(p, "fseek(fp, 0, SEEK_END);");
   p = print_str_new_line(p, "long ftell_sz = ftell(fp);");
   p = print_str_new_line(p, "if (ftell_sz < 0) {");
-  p = isl_printer_indent(p, 4);
+  p = isl_printer_indent(p, 2);
   p = print_str_new_line(p, "printf(\"ftell returns a negative value.\\n\");");
   p = print_str_new_line(p, "fclose(fp);");
   p = print_str_new_line(p, "return -1;");
-  p = isl_printer_indent(p, -4);
+  p = isl_printer_indent(p, -2);
   p = print_str_new_line(p, "} else {");
-  p = isl_printer_indent(p, 4);
+  p = isl_printer_indent(p, 2);
   p = print_str_new_line(p, "binary_length = ftell_sz;");
-  p = isl_printer_indent(p, -4);
+  p = isl_printer_indent(p, -2);
   p = print_str_new_line(p, "}");
   p = print_str_new_line(p, "binary = (unsigned char *)malloc(sizeof(unsigned char) * binary_length);");
   p = print_str_new_line(p, "rewind(fp);");
   p = print_str_new_line(p, "size_t fread_sz = fread((void *)binary, binary_length, 1, fp);");
   p = print_str_new_line(p, "if (fread_sz == 0) {");
-  p = isl_printer_indent(p, 4);
+  p = isl_printer_indent(p, 2);
   p = print_str_new_line(p, "printf(\"Failed to read from the AOCX file (fread).\\n\");");
   p = print_str_new_line(p, "fclose(fp);");
   p = print_str_new_line(p, "free(const_cast<unsigned char *>(binary));");
   p = print_str_new_line(p, "return -1;");
-  p = isl_printer_indent(p, -4);
+  p = isl_printer_indent(p, -2);
   p = print_str_new_line(p, "}");
   p = print_str_new_line(p, "fclose(fp);");
   p = isl_printer_end_line(p);
@@ -1021,12 +1021,12 @@ static __isl_give isl_printer *find_device_intel(__isl_take isl_printer *p,
 
   p = print_str_new_line(p, "status = clBuildProgram(program, 0, NULL, NULL, NULL, NULL);");
   p = print_str_new_line(p, "if (status != CL_SUCCESS) {");
-  p = isl_printer_indent(p, 4);
+  p = isl_printer_indent(p, 2);
   p = print_str_new_line(p, "char log[10000] = {0};");
   p = print_str_new_line(p, "clGetProgramBuildInfo(program, devices[0], CL_PROGRAM_BUILD_LOG, 10000, log, NULL);");
   p = print_str_new_line(p, "printf(\"%s\\n\", log);");
   p = print_str_new_line(p, "CHECK(status);");
-  p = isl_printer_indent(p, -4);
+  p = isl_printer_indent(p, -2);
   p = print_str_new_line(p, "}");
   p = isl_printer_end_line(p);
 
@@ -1103,7 +1103,7 @@ static __isl_give isl_printer *declare_and_allocate_device_arrays_intel(
       p = isl_printer_print_int(p, local_array->n_mem_ports);
       p = isl_printer_print_str(p, "; i++) {");
       p = isl_printer_end_line(p);
-      p = isl_printer_indent(p, 4);
+      p = isl_printer_indent(p, 2);
 
       p = isl_printer_start_line(p);
       p = isl_printer_print_str(p, "std::vector<");
@@ -1127,7 +1127,7 @@ static __isl_give isl_printer *declare_and_allocate_device_arrays_intel(
       p = isl_printer_print_str(p, "_tmp);");
       p = isl_printer_end_line(p);
 
-      p = isl_printer_indent(p, -4);
+      p = isl_printer_indent(p, -2);
       p = print_str_new_line(p, "}");
 
       if (local_array->host_serialize) {
@@ -1149,7 +1149,7 @@ static __isl_give isl_printer *declare_and_allocate_device_arrays_intel(
         p = isl_printer_print_int(p, local_array->n_mem_ports);
         p = isl_printer_print_str(p, "; i++) {");
         p = isl_printer_end_line(p);
-        p = isl_printer_indent(p, 4);
+        p = isl_printer_indent(p, 2);
 
         p = isl_printer_start_line(p);
         p = isl_printer_print_str(p, "std::vector<");
@@ -1175,7 +1175,7 @@ static __isl_give isl_printer *declare_and_allocate_device_arrays_intel(
         p = isl_printer_print_str(p, "_tmp);");
         p = isl_printer_end_line(p);
 
-        p = isl_printer_indent(p, -4);
+        p = isl_printer_indent(p, -2);
         p = print_str_new_line(p, "}");
       }
     }
@@ -1233,7 +1233,7 @@ static __isl_give isl_printer *declare_and_allocate_device_arrays_intel(
       p = isl_printer_print_int(p, local_array->n_mem_ports);
       p = isl_printer_print_str(p, "; i++) {");
       p = isl_printer_end_line(p);
-      p = isl_printer_indent(p, 4);
+      p = isl_printer_indent(p, 2);
 
       p = isl_printer_start_line(p);
       p = isl_printer_print_str(p, "std::copy(reinterpret_cast<");
@@ -1254,7 +1254,7 @@ static __isl_give isl_printer *declare_and_allocate_device_arrays_intel(
       p = isl_printer_print_str(p, ".begin());");
       p = isl_printer_end_line(p);
 
-      p = isl_printer_indent(p, -4);
+      p = isl_printer_indent(p, -2);
       p = print_str_new_line(p, "}");
     }
     else
@@ -1292,7 +1292,7 @@ static __isl_give isl_printer *declare_and_allocate_device_arrays_intel(
         p = isl_printer_print_int(p, local_array->n_mem_ports);
         p = isl_printer_print_str(p, "; i++) {");
         p = isl_printer_end_line(p);
-        p = isl_printer_indent(p, 4);
+        p = isl_printer_indent(p, 2);
   
         p = isl_printer_start_line(p);        
         p = isl_printer_print_str(p, module->in? "host_serialize_" : "host_deserialize_");
@@ -1302,7 +1302,7 @@ static __isl_give isl_printer *declare_and_allocate_device_arrays_intel(
         p = isl_printer_print_str(p, ");");
         p = isl_printer_end_line(p);
   
-        p = isl_printer_indent(p, -4);
+        p = isl_printer_indent(p, -2);
         p = print_str_new_line(p, "}");
       } else 
       {
@@ -1345,7 +1345,7 @@ static __isl_give isl_printer *declare_and_allocate_device_arrays_intel(
     p = isl_printer_print_int(p, local_array->n_mem_ports);
     p = isl_printer_print_str(p, "; i++) {");
     p = isl_printer_end_line(p);
-    p = isl_printer_indent(p, 4);
+    p = isl_printer_indent(p, 2);
 
     p = isl_printer_start_line(p);
     p = isl_printer_print_str(p, "cl_mem buffer_");
@@ -1398,7 +1398,7 @@ static __isl_give isl_printer *declare_and_allocate_device_arrays_intel(
     p = isl_printer_print_str(p, "_tmp));");
     p = isl_printer_end_line(p);
 
-    p = isl_printer_indent(p, -4);
+    p = isl_printer_indent(p, -2);
     p = print_str_new_line(p, "}");
   }
   p = isl_printer_end_line(p);
@@ -1440,9 +1440,9 @@ static __isl_give isl_printer *clear_device_intel(__isl_take isl_printer *p,
 {
   /* Profiling results */
   p = print_str_new_line(p, "for (int i = 0; i < NUM_QUEUES_TO_CREATE; i++) {");
-  p = isl_printer_indent(p, 4);
+  p = isl_printer_indent(p, 2);
   p = print_str_new_line(p, "status = clFinish(cmdQueue[i]); CHECK(status);");
-  p = isl_printer_indent(p, -4);
+  p = isl_printer_indent(p, -2);
   p = print_str_new_line(p, "}");
 
   p = print_str_new_line(p, "auto host_end = std::chrono::high_resolution_clock::now();");
@@ -1512,24 +1512,24 @@ static __isl_give isl_printer *clear_device_intel(__isl_take isl_printer *p,
   /* Clean up OpenCL resources */
   p = print_str_new_line(p, "// Clean up OpenCL resources");
   p = print_str_new_line(p, "for (int i = 0; i < NUM_KERNELS_TO_CREATE; i++) {");
-  p = isl_printer_indent(p, 4);
+  p = isl_printer_indent(p, 2);
   p = print_str_new_line(p, "clReleaseKernel(kernel[i]);");
-  p = isl_printer_indent(p, -4);
+  p = isl_printer_indent(p, -2);
   p = print_str_new_line(p, "}");
   p = isl_printer_end_line(p);
   p = print_str_new_line(p, "for (int i = 0; i < NUM_QUEUES_TO_CREATE; i++) {");
-  p = isl_printer_indent(p, 4);
+  p = isl_printer_indent(p, 2);
   p = print_str_new_line(p, "clReleaseCommandQueue(cmdQueue[i]);");
-  p = isl_printer_indent(p, -4);
+  p = isl_printer_indent(p, -2);
   p = print_str_new_line(p, "}");
   p = isl_printer_end_line(p);
     
   p = print_str_new_line(p, "#ifndef EMULATE");
-  p = isl_printer_indent(p, 4);
+  p = isl_printer_indent(p, 2);
   p = print_str_new_line(p, "clReleaseProgram(program);");
   p = print_str_new_line(p, "clReleaseContext(context);");
   p = print_str_new_line(p, "acl_aligned_free(devices);");
-  p = isl_printer_indent(p, -4);
+  p = isl_printer_indent(p, -2);
   p = print_str_new_line(p, "#endif");
 
   return p;
@@ -1550,7 +1550,7 @@ static __isl_give isl_printer *drain_merge_intel(
   p = isl_printer_print_str(p, "; idx++) {");
   p = isl_printer_end_line(p);
 
-  p = isl_printer_indent(p, 4);
+  p = isl_printer_indent(p, 2);
   p = isl_printer_start_line(p);
   p = autosa_array_ref_group_print_prefix(group, p);
   p = isl_printer_print_str(p, "_drain_merge(");
@@ -1558,7 +1558,7 @@ static __isl_give isl_printer *drain_merge_intel(
   p = isl_printer_print_str(p, ");");
   p = isl_printer_end_line(p);
 
-  p = isl_printer_indent(p, -4);
+  p = isl_printer_indent(p, -2);
   p = print_str_new_line(p, "}");
   p = isl_printer_end_line(p);
 
@@ -1582,7 +1582,7 @@ static __isl_give isl_printer *copy_array_to_device_intel(__isl_take isl_printer
   p = isl_printer_print_int(p, local_array->n_mem_ports);
   p = isl_printer_print_str(p, "; i++) {");
   p = isl_printer_end_line(p);
-  p = isl_printer_indent(p, 4);
+  p = isl_printer_indent(p, 2);
 
   p = print_str_new_line(p, "status = clEnqueueWriteBuffer(");
   indent = strlen("status = clEnqueueWriteBuffer(");
@@ -1619,7 +1619,7 @@ static __isl_give isl_printer *copy_array_to_device_intel(__isl_take isl_printer
   p = print_str_new_line(p, "NULL); CHECK(status);");
   p = isl_printer_indent(p, -indent);
 
-  p = isl_printer_indent(p, -4);
+  p = isl_printer_indent(p, -2);
   p = print_str_new_line(p, "}");
   p = isl_printer_end_line(p);
 
@@ -1644,7 +1644,7 @@ static __isl_give isl_printer *copy_array_from_device_intel(
   p = isl_printer_print_int(p, local_array->n_io_group_refs);
   p = isl_printer_print_str(p, "; i++) {");
   p = isl_printer_end_line(p);
-  p = isl_printer_indent(p, 4);
+  p = isl_printer_indent(p, 2);
 
   p = print_str_new_line(p, "clEnqueueReadBuffer(");
   indent = strlen("clEnqueueReadBuffer(");
@@ -1685,7 +1685,7 @@ static __isl_give isl_printer *copy_array_from_device_intel(
   p = print_str_new_line(p, "NULL); CHECK(status);");
 
   p = isl_printer_indent(p, -indent);
-  p = isl_printer_indent(p, -4);
+  p = isl_printer_indent(p, -2);
   p = print_str_new_line(p, "}");
 
   return p;
@@ -1792,7 +1792,7 @@ static __isl_give isl_printer *autosa_kernel_print_set_ext_module_args(
     for (int i = 0; i < isl_id_list_n_id(module->inst_ids); i++)
     {
       p = print_str_new_line(p, "status = clSetKernelArg(");
-      p = isl_printer_indent(p, 4);
+      p = isl_printer_indent(p, 2);
 
       p = isl_printer_start_line(p);
       p = isl_printer_print_str(p, "kernel[ID_");
@@ -1821,7 +1821,7 @@ static __isl_give isl_printer *autosa_kernel_print_set_ext_module_args(
       p = isl_printer_print_str(p, ");");
       p = isl_printer_end_line(p);
 
-      p = isl_printer_indent(p, -4);
+      p = isl_printer_indent(p, -2);
       p = print_str_new_line(p, "CHECK(status);");
     }
   }
@@ -1838,7 +1838,7 @@ static __isl_give isl_printer *autosa_kernel_print_set_ext_module_args(
   {
     const char *name = isl_space_get_dim_name(space, isl_dim_set, i);
     p = print_str_new_line(p, "status = clSetKernelArg(");
-    p = isl_printer_indent(p, 4);
+    p = isl_printer_indent(p, 2);
 
     p = isl_printer_start_line(p);
     p = isl_printer_print_str(p, "kernel[ID_");
@@ -1867,7 +1867,7 @@ static __isl_give isl_printer *autosa_kernel_print_set_ext_module_args(
     p = isl_printer_print_str(p, ");");
     p = isl_printer_end_line(p);
 
-    p = isl_printer_indent(p, -4);
+    p = isl_printer_indent(p, -2);
     p = print_str_new_line(p, "CHECK(status);");
   }
 
@@ -1877,7 +1877,7 @@ static __isl_give isl_printer *autosa_kernel_print_set_ext_module_args(
   {
     const char *name = isl_space_get_dim_name(module->kernel->space, isl_dim_set, i);
     p = print_str_new_line(p, "status = clSetKernelArg(");
-    p = isl_printer_indent(p, 4);
+    p = isl_printer_indent(p, 2);
 
     p = isl_printer_start_line(p);
     p = isl_printer_print_str(p, "kernel[ID_");
@@ -1906,7 +1906,7 @@ static __isl_give isl_printer *autosa_kernel_print_set_ext_module_args(
     p = isl_printer_print_str(p, ");");
     p = isl_printer_end_line(p);
 
-    p = isl_printer_indent(p, -4);
+    p = isl_printer_indent(p, -2);
     p = print_str_new_line(p, "CHECK(status);");
   }
 
@@ -1916,7 +1916,7 @@ static __isl_give isl_printer *autosa_kernel_print_set_ext_module_args(
     struct autosa_local_array_info *local_array = module->io_groups[0]->local_array;
     /* IO modules will not contain any scalar inputs. */
     p = print_str_new_line(p, "status = clSetKernelArg(");
-    p = isl_printer_indent(p, 4);
+    p = isl_printer_indent(p, 2);
 
     p = isl_printer_start_line(p);
     p = isl_printer_print_str(p, "kernel[ID_");
@@ -1955,7 +1955,7 @@ static __isl_give isl_printer *autosa_kernel_print_set_ext_module_args(
     p = isl_printer_print_str(p, "]);");
     p = isl_printer_end_line(p);
 
-    p = isl_printer_indent(p, -4);
+    p = isl_printer_indent(p, -2);
     p = print_str_new_line(p, "CHECK(status);");
   }
 
@@ -2009,7 +2009,7 @@ static __isl_give isl_printer *autosa_kernel_print_launch_ext_module_kernels(
     return p;
 
   p = print_str_new_line(p, "status = clEnqueueNDRangeKernel(");
-  p = isl_printer_indent(p, 4);
+  p = isl_printer_indent(p, 2);
   p = isl_printer_start_line(p);
   p = isl_printer_print_str(p, "cmdQueue[ID_");
   p = isl_printer_print_str(p, module_name);
@@ -2040,7 +2040,7 @@ static __isl_give isl_printer *autosa_kernel_print_launch_ext_module_kernels(
   p = print_str_new_line(p, "NULL,");
   p = print_str_new_line(p, "NULL);");
 
-  p = isl_printer_indent(p, -4);
+  p = isl_printer_indent(p, -2);
   p = print_str_new_line(p, "CHECK(status);");
 
   return p;
@@ -2192,18 +2192,18 @@ static __isl_give isl_printer *print_host_user_intel(__isl_take isl_printer *p,
   p = print_set_kernel_arguments_intel(p, data->prog, kernel, top);
 
   p = print_str_new_line(p, "for (int i = 0; i < NUM_QUEUES_TO_CREATE; i++) {");
-  p = isl_printer_indent(p, 4);
+  p = isl_printer_indent(p, 2);
   p = print_str_new_line(p, "status = clFinish(cmdQueue[i]); CHECK(status);");
-  p = isl_printer_indent(p, -4);
+  p = isl_printer_indent(p, -2);
   p = print_str_new_line(p, "}");
   p = print_str_new_line(p, "fpga_begin = std::chrono::high_resolution_clock::now();");
 
   p = print_launch_kernel_intel(p, data->prog, kernel, top);
 
   p = print_str_new_line(p, "for (int i = 0; i < NUM_QUEUES_TO_CREATE; i++) {");
-  p = isl_printer_indent(p, 4);
+  p = isl_printer_indent(p, 2);
   p = print_str_new_line(p, "status = clFinish(cmdQueue[i]); CHECK(status);");
-  p = isl_printer_indent(p, -4);
+  p = isl_printer_indent(p, -2);
   p = print_str_new_line(p, "}");
   p = print_str_new_line(p, "fpga_end = std::chrono::high_resolution_clock::now();");
 
@@ -2411,7 +2411,7 @@ static __isl_give isl_printer *autosa_print_intra_trans_module(
 
   print_module_headers_intel(prog, module, hls, 0, boundary);
   fprintf(hls->kernel_c, "{\n");
-  p = isl_printer_indent(p, 4);
+  p = isl_printer_indent(p, 2);
   p = print_str_new_line(p, "/* Variable Declaration */");
   print_module_iterators(hls->kernel_c, module);
   p = print_module_vars_intel(p, module, 0);
@@ -2434,7 +2434,7 @@ static __isl_give isl_printer *autosa_print_intra_trans_module(
 
   //p = print_str_new_line(p, "#pragma loop_coalesce");
   p = isl_ast_node_print(module->intra_tree, p, print_options);
-  p = isl_printer_indent(p, -4);
+  p = isl_printer_indent(p, -2);
 
   fprintf(hls->kernel_c, "}\n");
   p = isl_printer_start_line(p);
@@ -2463,7 +2463,7 @@ static __isl_give isl_printer *autosa_print_inter_trans_module(
 
   print_module_headers_intel(prog, module, hls, 1, boundary);
   fprintf(hls->kernel_c, "{\n");
-  p = isl_printer_indent(p, 4);
+  p = isl_printer_indent(p, 2);
   p = print_str_new_line(p, "/* Variable Declaration */");
   print_module_iterators(hls->kernel_c, module);
   p = print_module_vars_intel(p, module, 1);
@@ -2486,7 +2486,7 @@ static __isl_give isl_printer *autosa_print_inter_trans_module(
 
   //p = print_str_new_line(p, "#pragma loop_coalesce");
   p = isl_ast_node_print((boundary == 0) ? module->inter_tree : module->boundary_inter_tree, p, print_options);
-  p = isl_printer_indent(p, -4);
+  p = isl_printer_indent(p, -2);
 
   fprintf(hls->kernel_c, "}\n");
   p = isl_printer_start_line(p);
@@ -2516,7 +2516,7 @@ static __isl_give isl_printer *autosa_print_default_module(
   //p = print_module_core_headers_intel(p, prog, module, hls, -1, boundary, 1);
   print_module_headers_intel(prog, module, hls, -1, boundary);
   fprintf(hls->kernel_c, "{\n");
-  p = isl_printer_indent(p, 4);
+  p = isl_printer_indent(p, 2);
   p = print_str_new_line(p, "/* Variable Declaration */");
   print_module_iterators(hls->kernel_c, module);
   p = print_module_vars_intel(p, module, -1);
@@ -2546,7 +2546,7 @@ static __isl_give isl_printer *autosa_print_default_module(
   {
   }
 
-  p = isl_printer_indent(p, -4);
+  p = isl_printer_indent(p, -2);
 
   fprintf(hls->kernel_c, "}\n");
   p = isl_printer_start_line(p);
@@ -2564,12 +2564,12 @@ static __isl_give isl_printer *autosa_print_default_module(
   //    print_module_wrapper_headers_xilinx(prog, module, hls, -1, boundary);
   //
   //    fprintf(hls->kernel_c, "{\n");
-  //    p = isl_printer_indent(p, 4);
+  //    p = isl_printer_indent(p, 2);
   //
   //    p = print_module_core_headers_xilinx(p, prog, module, hls, -1, boundary, 0);
   //    p = isl_printer_print_str(p, ";");
   //    p = isl_printer_end_line(p);
-  //    p = isl_printer_indent(p, -4);
+  //    p = isl_printer_indent(p, -2);
   //
   //    fprintf(hls->kernel_c, "}\n");
   //    p = isl_printer_start_line(p);
@@ -2710,9 +2710,9 @@ static __isl_give isl_printer *autosa_print_default_pe_dummy_module(
   print_pe_dummy_module_headers_intel(prog, pe_dummy_module, hls, -1, boundary);
 
   fprintf(hls->kernel_c, "{\n");
-  p = isl_printer_indent(p, 4);  
+  p = isl_printer_indent(p, 2);  
   p = print_str_new_line(p, "while (1) {");
-  p = isl_printer_indent(p, 4);
+  p = isl_printer_indent(p, 2);
   
   /* [type] fifo_data; */
   struct autosa_array_ref_group *group = pe_dummy_module->io_group;
@@ -2735,12 +2735,12 @@ static __isl_give isl_printer *autosa_print_default_pe_dummy_module(
   p = isl_printer_print_str(p, "_in);");
   p = isl_printer_end_line(p);
 
-  p = isl_printer_indent(p, -4);
+  p = isl_printer_indent(p, -2);
   p = print_str_new_line(p, "}");
 
   //print_module_iterators(hls->kernel_c, module);
 //
-  //p = isl_printer_indent(p, 4);
+  //p = isl_printer_indent(p, 2);
   //p = isl_printer_end_line(p);
 //
   //print_options = isl_ast_print_options_alloc(ctx);
@@ -2751,7 +2751,7 @@ static __isl_give isl_printer *autosa_print_default_pe_dummy_module(
 //
   //p = isl_ast_node_print(pe_dummy_module->device_tree, p, print_options);
 
-  p = isl_printer_indent(p, -4);
+  p = isl_printer_indent(p, -2);
   fprintf(hls->kernel_c, "}\n");
   p = isl_printer_start_line(p);
   p = isl_printer_print_str(p, "/* Module Definition */");
@@ -3253,7 +3253,7 @@ static __isl_give isl_printer *print_double_buffer_module_while(
 
   print_module_headers_intel(prog, module, hls, -1, boundary);
   p = print_str_new_line(p, "{");
-  p = isl_printer_indent(p, 4);
+  p = isl_printer_indent(p, 2);
 
   /* Print variables */
   p = print_str_new_line(p, "/* Variable Declaration */");
@@ -3263,11 +3263,11 @@ static __isl_give isl_printer *print_double_buffer_module_while(
 
   /* Print content */
   p = print_str_new_line(p, "while (1) {");
-  p = isl_printer_indent(p, 4);
+  p = isl_printer_indent(p, 2);
   
   /* Print inter_trans */
   p = print_str_new_line(p, "if (inter_trans_en) {");
-  p = isl_printer_indent(p, 4);
+  p = isl_printer_indent(p, 2);
   /* Print the module logic */
   p = autosa_print_inter_trans_module_double_buffer(p, module, prog, hls, boundary);
   /* Print the loop counter */  
@@ -3280,16 +3280,16 @@ static __isl_give isl_printer *print_double_buffer_module_while(
   p = print_str_new_line(p, "inter_done = 1;");
   p = print_str_new_line(p, "inter_trans_en = 0;");
   for (int i = 0; i < print_data.inter_for_level; i++) {
-    p = isl_printer_indent(p, -4);
+    p = isl_printer_indent(p, -2);
     p = print_str_new_line(p, "}");
   }
   
-  p = isl_printer_indent(p, -4);
+  p = isl_printer_indent(p, -2);
   p = print_str_new_line(p, "}");
 
   /* Print intra_trans */
   p = print_str_new_line(p, "if (intra_trans_en) {");
-  p = isl_printer_indent(p, 4);
+  p = isl_printer_indent(p, 2);
   /* Print the module logic */
   p = autosa_print_intra_trans_module_double_buffer(p, module, prog, hls, boundary);
   /* Print the loop counter */
@@ -3302,16 +3302,16 @@ static __isl_give isl_printer *print_double_buffer_module_while(
   p = print_str_new_line(p, "intra_done = 1;");
   p = print_str_new_line(p, "intra_trans_en = 0;");
   for (int i = 0; i < print_data.intra_for_level; i++) {
-    p = isl_printer_indent(p, -4);
+    p = isl_printer_indent(p, -2);
     p = print_str_new_line(p, "}");
   }
 
-  p = isl_printer_indent(p, -4);
+  p = isl_printer_indent(p, -2);
   p = print_str_new_line(p, "}");
 
   /* Print state_handle */
   p = print_str_new_line(p, "if (inter_done && intra_done) {");
-  p = isl_printer_indent(p, 4);
+  p = isl_printer_indent(p, 2);
   p = print_str_new_line(p, "intra_trans_en = 1;");
   p = print_str_new_line(p, "inter_trans_en = 1;");
   p = print_str_new_line(p, "intra_done = 0;");
@@ -3326,17 +3326,17 @@ static __isl_give isl_printer *print_double_buffer_module_while(
   p = isl_printer_indent(p, 4 * print_data.outer_for_level);
   p = print_str_new_line(p, module->in? "inter_trans_en = 0;" : "intra_trans_en = 0;");
   for (int i = 0; i < print_data.outer_for_level; i++) {
-    p = isl_printer_indent(p, -4);
+    p = isl_printer_indent(p, -2);
     p = print_str_new_line(p, "}");
   }
 
-  p = isl_printer_indent(p, -4);
+  p = isl_printer_indent(p, -2);
   p = print_str_new_line(p, "}");
 
-  p = isl_printer_indent(p, -4);
+  p = isl_printer_indent(p, -2);
   p = print_str_new_line(p, "}");
 
-  p = isl_printer_indent(p, -4);
+  p = isl_printer_indent(p, -2);
   p = print_str_new_line(p, "}");
   p = isl_printer_start_line(p);
   p = isl_printer_print_str(p, "/* Module Definition */");
@@ -3568,7 +3568,7 @@ static void print_top_gen_host_code(
 
   print_top_gen_headers(prog, top, hls);
   fprintf(hls->top_gen_c, "{\n");
-  p = isl_printer_indent(p, 4);
+  p = isl_printer_indent(p, 2);
 
   p = isl_printer_start_line(p);
   p = isl_printer_print_str(p, "FILE *fd = fopen(\"");
@@ -3589,7 +3589,7 @@ static void print_top_gen_host_code(
 
   p = print_top_module_headers_intel(p, prog, top, hls); // TODO
   p = isl_printer_start_line(p);
-  p = isl_printer_print_str(p, "p = isl_printer_indent(p, 4);");
+  p = isl_printer_print_str(p, "p = isl_printer_indent(p, 2);");
   p = isl_printer_end_line(p);
 
   /* Print FIFO declarations */
@@ -3761,7 +3761,7 @@ static void print_top_gen_host_code(
   free(module_names);
 
   p = isl_printer_start_line(p);
-  p = isl_printer_print_str(p, "p = isl_printer_indent(p, -4);");
+  p = isl_printer_print_str(p, "p = isl_printer_indent(p, -2);");
   p = isl_printer_end_line(p);
 
   p = print_str_new_line(p, "p = isl_printer_start_line(p);");
@@ -3788,7 +3788,7 @@ static void print_top_gen_host_code(
   p = isl_printer_start_line(p);
   p = isl_printer_print_str(p, "isl_ctx_free(ctx);");
   p = isl_printer_end_line(p);
-  p = isl_printer_indent(p, -4);
+  p = isl_printer_indent(p, -2);
   p = isl_printer_start_line(p);
   p = isl_printer_print_str(p, "}");
   p = isl_printer_end_line(p);

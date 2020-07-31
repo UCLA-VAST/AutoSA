@@ -1339,8 +1339,9 @@ void autosa_kernel_stmt_free(void *user)
   case AUTOSA_KERNEL_STMT_IO:
   case AUTOSA_KERNEL_STMT_IO_TRANSFER:
   case AUTOSA_KERNEL_STMT_IO_TRANSFER_BUF:
-  case AUTOSA_KERNEL_STMT_IO_DRAM:
-    free(stmt->u.i.fifo_name);
+  case AUTOSA_KERNEL_STMT_IO_DRAM:    
+    free(stmt->u.i.in_fifo_name);
+    free(stmt->u.i.out_fifo_name);
     isl_ast_expr_free(stmt->u.i.local_index);
     isl_ast_expr_free(stmt->u.i.index);
     break;

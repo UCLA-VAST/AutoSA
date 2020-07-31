@@ -916,7 +916,7 @@ static __isl_give isl_printer *opencl_print_kernel(struct gpu_prog *prog,
 	p = opencl_print_kernel_header(p, prog, kernel);
 	p = isl_printer_print_str(p, "{");
 	p = isl_printer_end_line(p);
-	p = isl_printer_indent(p, 4);
+	p = isl_printer_indent(p, 2);
 	p = opencl_print_kernel_iterators(p, kernel);
 	p = opencl_print_kernel_vars(p, kernel);
 	p = isl_printer_end_line(p);
@@ -924,7 +924,7 @@ static __isl_give isl_printer *opencl_print_kernel(struct gpu_prog *prog,
 	p = set_opencl_macros(p);
 	p = gpu_print_macros(p, kernel->tree);
 	p = isl_ast_node_print(kernel->tree, p, print_options);
-	p = isl_printer_indent(p, -4);
+	p = isl_printer_indent(p, -2);
 	p = isl_printer_start_line(p);
 	p = isl_printer_print_str(p, "}");
 	p = isl_printer_end_line(p);

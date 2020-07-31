@@ -332,10 +332,10 @@ static isl_stat print_data_types_xilinx(
 static __isl_give isl_printer *find_device_xilinx(__isl_take isl_printer *p)
 {
   p = print_str_new_line(p, "if (argc != 2) {");
-  p = isl_printer_indent(p, 4);
+  p = isl_printer_indent(p, 2);
   p = print_str_new_line(p, "std::cout << \"Usage: \" << argv[0] << \" <XCLBIN File>\" << std::endl;");
   p = print_str_new_line(p, "return EXIT_FAILURE;");
-  p = isl_printer_indent(p, -4);
+  p = isl_printer_indent(p, -2);
   p = print_str_new_line(p, "}");
   p = isl_printer_end_line(p);
 
@@ -369,35 +369,35 @@ static __isl_give isl_printer *find_device_xilinx(__isl_take isl_printer *p)
   //  p = print_str_new_line(p, "cl::Program::Binaries bins{{fileBuf.data(), fileBuf.size()}};");
   //  p = print_str_new_line(p, "int valid_device = 0;");
   //  p = print_str_new_line(p, "for (unsigned int i = 0; i < devices.size(); i++) {");
-  //  p = isl_printer_indent(p, 4);
+  //  p = isl_printer_indent(p, 2);
   //  p = print_str_new_line(p, "auto device = devices[i];");
   //  p = print_str_new_line(p, "// Creating Context and Command Queue for selected Device");
   //  p = print_str_new_line(p, "OCL_CHECK(err, context = cl::Context({device}, NULL, NULL, NULL, &err));");
   //  p = print_str_new_line(p, "OCL_CHECK(err, q = cl::CommandQueue(context, {device}, CL_QUEUE_PROFILING_ENABLE, &err));");
   //  p = print_str_new_line(p, "std::cout << \"Trying to program device[\" << i");
-  //  p = isl_printer_indent(p, 4);
+  //  p = isl_printer_indent(p, 2);
   //  p = print_str_new_line(p, "<< \"]: \" << device.getInfo<CL_DEVICE_NAME>() << std::endl;");
-  //  p = isl_printer_indent(p, -4);
+  //  p = isl_printer_indent(p, -2);
   //  p = print_str_new_line(p, "OCL_CHECK(err, cl::Program program(context, {device}, bins, NULL, \%err));");
   //  p = print_str_new_line(p, "if (err != CL_SUCCESS) {");
-  //  p = isl_printer_indent(p, 4);
+  //  p = isl_printer_indent(p, 2);
   //  p = print_str_new_line(p, "std::cout << \"Failed to program device[\" << i << \"] with xclbin file!\\n\";");
-  //  p = isl_printer_indent(p, -4);
+  //  p = isl_printer_indent(p, -2);
   //  p = print_str_new_line(p, "} else {");
-  //  p = isl_printer_indent(p, 4);
+  //  p = isl_printer_indent(p, 2);
   //  p = print_str_new_line(p, "std::cout << \"Device[\" << i << \"]: program successful!\\n\";");
   //  p = print_str_new_line(p, "OCL_CHECK(err, krnl = cl::Kernel(program, \"kernel0\", &err));");
   //  p = print_str_new_line(p, "valid_device++");
   //  p = print_str_new_line(p, "break; // we break because we found a valid device");
-  //  p = isl_printer_indent(p, -4);
+  //  p = isl_printer_indent(p, -2);
   //  p = print_str_new_line(p, "}");
-  //  p = isl_printer_indent(p, -4);
+  //  p = isl_printer_indent(p, -2);
   //  p = print_str_new_line(p, "}");
   //  p = print_str_new_line(p, "if (valid_device == 0) {");
-  //  p = isl_printer_indent(p, 4);
+  //  p = isl_printer_indent(p, 2);
   //  p = print_str_new_line(p, "std::cout << \"Failed to program any device found, exit!\\n\";");
   //  p = print_str_new_line(p, "exit(EXIT_FAILURE);");
-  //  p = isl_printer_indent(p, -4);
+  //  p = isl_printer_indent(p, -2);
   //  p = print_str_new_line(p, "}");
   p = isl_printer_end_line(p);
 
@@ -437,7 +437,7 @@ static __isl_give isl_printer *declare_and_allocate_device_arrays_xilinx(
       p = isl_printer_print_int(p, local_array->n_mem_ports);
       p = isl_printer_print_str(p, "; i++) {");
       p = isl_printer_end_line(p);
-      p = isl_printer_indent(p, 4);
+      p = isl_printer_indent(p, 2);
 
       p = isl_printer_start_line(p);
       p = isl_printer_print_str(p, "std::vector<");
@@ -461,7 +461,7 @@ static __isl_give isl_printer *declare_and_allocate_device_arrays_xilinx(
       p = isl_printer_print_str(p, "_tmp);");
       p = isl_printer_end_line(p);
 
-      p = isl_printer_indent(p, -4);
+      p = isl_printer_indent(p, -2);
       p = print_str_new_line(p, "}");
 
       if (local_array->host_serialize) {
@@ -484,7 +484,7 @@ static __isl_give isl_printer *declare_and_allocate_device_arrays_xilinx(
         p = isl_printer_print_int(p, local_array->n_mem_ports);
         p = isl_printer_print_str(p, "; i++) {");
         p = isl_printer_end_line(p);
-        p = isl_printer_indent(p, 4);
+        p = isl_printer_indent(p, 2);
 
         p = isl_printer_start_line(p);
         p = isl_printer_print_str(p, "std::vector<");
@@ -510,7 +510,7 @@ static __isl_give isl_printer *declare_and_allocate_device_arrays_xilinx(
         p = isl_printer_print_str(p, "_tmp);");
         p = isl_printer_end_line(p);
 
-        p = isl_printer_indent(p, -4);
+        p = isl_printer_indent(p, -2);
         p = print_str_new_line(p, "}");        
       }
     }
@@ -569,7 +569,7 @@ static __isl_give isl_printer *declare_and_allocate_device_arrays_xilinx(
       p = isl_printer_print_int(p, local_array->n_mem_ports);
       p = isl_printer_print_str(p, "; i++) {");
       p = isl_printer_end_line(p);
-      p = isl_printer_indent(p, 4);
+      p = isl_printer_indent(p, 2);
 
       p = isl_printer_start_line(p);
       p = isl_printer_print_str(p, "std::copy(reinterpret_cast<");
@@ -590,7 +590,7 @@ static __isl_give isl_printer *declare_and_allocate_device_arrays_xilinx(
       p = isl_printer_print_str(p, ".begin());");
       p = isl_printer_end_line(p);
 
-      p = isl_printer_indent(p, -4);
+      p = isl_printer_indent(p, -2);
       p = print_str_new_line(p, "}");
     }
     else
@@ -628,7 +628,7 @@ static __isl_give isl_printer *declare_and_allocate_device_arrays_xilinx(
         p = isl_printer_print_int(p, local_array->n_mem_ports);
         p = isl_printer_print_str(p, "; i++) {");
         p = isl_printer_end_line(p);
-        p = isl_printer_indent(p, 4);
+        p = isl_printer_indent(p, 2);
   
         p = isl_printer_start_line(p);        
         p = isl_printer_print_str(p, module->in? "host_serialize_" : "host_deserialize_");
@@ -638,7 +638,7 @@ static __isl_give isl_printer *declare_and_allocate_device_arrays_xilinx(
         p = isl_printer_print_str(p, ");");
         p = isl_printer_end_line(p);
   
-        p = isl_printer_indent(p, -4);
+        p = isl_printer_indent(p, -2);
         p = print_str_new_line(p, "}");
       } else 
       {
@@ -683,7 +683,7 @@ static __isl_give isl_printer *declare_and_allocate_device_arrays_xilinx(
     p = isl_printer_print_int(p, local_array->n_mem_ports);
     p = isl_printer_print_str(p, "; i++) {");
     p = isl_printer_end_line(p);
-    p = isl_printer_indent(p, 4);
+    p = isl_printer_indent(p, 2);
 
     p = print_str_new_line(p, "OCL_CHECK(err,");
     indent1 = strlen("OCL_CHECK(");
@@ -741,7 +741,7 @@ static __isl_give isl_printer *declare_and_allocate_device_arrays_xilinx(
     p = isl_printer_print_str(p, "_tmp));");
     p = isl_printer_end_line(p);
 
-    p = isl_printer_indent(p, -4);
+    p = isl_printer_indent(p, -2);
     p = print_str_new_line(p, "}");
   }
   p = isl_printer_end_line(p);
@@ -786,7 +786,7 @@ static __isl_give isl_printer *declare_and_allocate_cpu_arrays_xilinx(
       p = isl_printer_print_int(p, local_array->n_mem_ports);
       p = isl_printer_print_str(p, "; i++) {");
       p = isl_printer_end_line(p);
-      p = isl_printer_indent(p, 4);
+      p = isl_printer_indent(p, 2);
 
       p = isl_printer_start_line(p);
       p = isl_printer_print_str(p, local_array->array->type);
@@ -810,7 +810,7 @@ static __isl_give isl_printer *declare_and_allocate_cpu_arrays_xilinx(
       p = isl_printer_print_str(p, "_tmp);");
       p = isl_printer_end_line(p);
 
-      p = isl_printer_indent(p, -4);
+      p = isl_printer_indent(p, -2);
       p = print_str_new_line(p, "}");
 
       if (local_array->host_serialize) {
@@ -830,7 +830,7 @@ static __isl_give isl_printer *declare_and_allocate_cpu_arrays_xilinx(
         p = isl_printer_print_int(p, local_array->n_mem_ports);
         p = isl_printer_print_str(p, "; i++) {");
         p = isl_printer_end_line(p);
-        p = isl_printer_indent(p, 4);
+        p = isl_printer_indent(p, 2);
 
         p = isl_printer_start_line(p);
         p = isl_printer_print_str(p, local_array->array->type);
@@ -855,7 +855,7 @@ static __isl_give isl_printer *declare_and_allocate_cpu_arrays_xilinx(
         p = isl_printer_print_str(p, "_tmp);");
         p = isl_printer_end_line(p);
 
-        p = isl_printer_indent(p, -4);
+        p = isl_printer_indent(p, -2);
         p = print_str_new_line(p, "}");
       }
     }
@@ -920,7 +920,7 @@ static __isl_give isl_printer *declare_and_allocate_cpu_arrays_xilinx(
       p = isl_printer_print_int(p, local_array->n_mem_ports);
       p = isl_printer_print_str(p, "; i++) {");
       p = isl_printer_end_line(p);
-      p = isl_printer_indent(p, 4);
+      p = isl_printer_indent(p, 2);
 
       p = isl_printer_start_line(p);
       p = isl_printer_print_str(p, "memcpy(dev_");
@@ -937,7 +937,7 @@ static __isl_give isl_printer *declare_and_allocate_cpu_arrays_xilinx(
       p = isl_printer_print_str(p, "));");
       p = isl_printer_end_line(p);
 
-      p = isl_printer_indent(p, -4);
+      p = isl_printer_indent(p, -2);
       p = print_str_new_line(p, "}");
     }
     else
@@ -971,7 +971,7 @@ static __isl_give isl_printer *declare_and_allocate_cpu_arrays_xilinx(
         p = isl_printer_print_int(p, local_array->n_mem_ports);
         p = isl_printer_print_str(p, "; i++) {");
         p = isl_printer_end_line(p);
-        p = isl_printer_indent(p, 4);
+        p = isl_printer_indent(p, 2);
   
         p = isl_printer_start_line(p);        
         p = isl_printer_print_str(p, module->in? "host_serialize_" : "host_deserialize_");
@@ -981,7 +981,7 @@ static __isl_give isl_printer *declare_and_allocate_cpu_arrays_xilinx(
         p = isl_printer_print_str(p, ");");
         p = isl_printer_end_line(p);
   
-        p = isl_printer_indent(p, -4);
+        p = isl_printer_indent(p, -2);
         p = print_str_new_line(p, "}");
       } else 
       {
@@ -1025,7 +1025,7 @@ static __isl_give isl_printer *declare_and_allocate_cpu_arrays_xilinx(
     p = isl_printer_print_int(p, local_array->n_mem_ports);
     p = isl_printer_print_str(p, "; i++) {");
     p = isl_printer_end_line(p);
-    p = isl_printer_indent(p, 4);
+    p = isl_printer_indent(p, 2);
 
     p = isl_printer_start_line(p);
     p = autosa_print_array_type(p, local_array->array);
@@ -1050,7 +1050,7 @@ static __isl_give isl_printer *declare_and_allocate_cpu_arrays_xilinx(
     p = isl_printer_print_str(p, "_tmp);");
     p = isl_printer_end_line(p);
 
-    p = isl_printer_indent(p, -4);
+    p = isl_printer_indent(p, -2);
     p = print_str_new_line(p, "}");
   }
   p = isl_printer_end_line(p);
@@ -1097,7 +1097,7 @@ static __isl_give isl_printer *autosa_free_cpu_arrays_xilinx(
     p = isl_printer_print_int(p, local_array->n_mem_ports);
     p = isl_printer_print_str(p, "; i++) {");
     p = isl_printer_end_line(p);
-    p = isl_printer_indent(p, 4);
+    p = isl_printer_indent(p, 2);
 
     p = isl_printer_start_line(p);
     p = isl_printer_print_str(p, "free(buffer_");
@@ -1105,7 +1105,7 @@ static __isl_give isl_printer *autosa_free_cpu_arrays_xilinx(
     p = isl_printer_print_str(p, "[i]);");
     p = isl_printer_end_line(p);
 
-    p = isl_printer_indent(p, -4);
+    p = isl_printer_indent(p, -2);
     p = print_str_new_line(p, "}");
   }
 
@@ -1122,7 +1122,7 @@ static __isl_give isl_printer *autosa_free_cpu_arrays_xilinx(
       p = isl_printer_print_int(p, local_array->n_mem_ports);
       p = isl_printer_print_str(p, "; i++) {");
       p = isl_printer_end_line(p);
-      p = isl_printer_indent(p, 4);
+      p = isl_printer_indent(p, 2);
 
       p = isl_printer_start_line(p);
       p = isl_printer_print_str(p, "free(dev_");
@@ -1139,7 +1139,7 @@ static __isl_give isl_printer *autosa_free_cpu_arrays_xilinx(
         p = isl_printer_end_line(p);
       }
 
-      p = isl_printer_indent(p, -4);
+      p = isl_printer_indent(p, -2);
       p = print_str_new_line(p, "}");
     }
     else
@@ -1448,7 +1448,7 @@ static __isl_give isl_printer *drain_merge_xilinx(
   p = isl_printer_print_str(p, "; idx++) {");
   p = isl_printer_end_line(p);
 
-  p = isl_printer_indent(p, 4);
+  p = isl_printer_indent(p, 2);
   p = isl_printer_start_line(p);
   p = autosa_array_ref_group_print_prefix(group, p);
   p = isl_printer_print_str(p, "_drain_merge(");
@@ -1456,7 +1456,7 @@ static __isl_give isl_printer *drain_merge_xilinx(
   p = isl_printer_print_str(p, ");");
   p = isl_printer_end_line(p);
 
-  p = isl_printer_indent(p, -4);
+  p = isl_printer_indent(p, -2);
   p = print_str_new_line(p, "}");
   p = isl_printer_end_line(p);
   return p;
@@ -1481,7 +1481,7 @@ static __isl_give isl_printer *copy_array_to_device_xilinx(
     p = isl_printer_print_int(p, local_array->n_mem_ports);
     p = isl_printer_print_str(p, "; i++) {");
     p = isl_printer_end_line(p);
-    p = isl_printer_indent(p, 4);
+    p = isl_printer_indent(p, 2);
 
     p = print_str_new_line(p, "OCL_CHECK(err,");
     indent = strlen("OCL_CHECK(");
@@ -1494,7 +1494,7 @@ static __isl_give isl_printer *copy_array_to_device_xilinx(
     p = isl_printer_end_line(p);
     p = isl_printer_indent(p, -indent);
 
-    p = isl_printer_indent(p, -4);
+    p = isl_printer_indent(p, -2);
     p = print_str_new_line(p, "}");
     p = isl_printer_end_line(p);
   }
@@ -1507,7 +1507,7 @@ static __isl_give isl_printer *copy_array_to_device_xilinx(
     p = isl_printer_print_int(p, local_array->n_mem_ports);
     p = isl_printer_print_str(p, "; i++) {");
     p = isl_printer_end_line(p);
-    p = isl_printer_indent(p, 4);
+    p = isl_printer_indent(p, 2);
 
     p = isl_printer_start_line(p);
     p = isl_printer_print_str(p, "memcpy(buffer_");
@@ -1527,7 +1527,7 @@ static __isl_give isl_printer *copy_array_to_device_xilinx(
     p = isl_printer_print_str(p, ");");
     p = isl_printer_end_line(p);
 
-    p = isl_printer_indent(p, -4);
+    p = isl_printer_indent(p, -2);
     p = print_str_new_line(p, "}");
     p = isl_printer_end_line(p);
   }
@@ -1554,7 +1554,7 @@ static __isl_give isl_printer *copy_array_from_device_xilinx(
     p = isl_printer_print_int(p, local_array->n_io_group_refs);
     p = isl_printer_print_str(p, "; i++) {");
     p = isl_printer_end_line(p);
-    p = isl_printer_indent(p, 4);
+    p = isl_printer_indent(p, 2);
 
     p = print_str_new_line(p, "OCL_CHECK(err,");
     indent = strlen("OCL_CHECK(");
@@ -1567,7 +1567,7 @@ static __isl_give isl_printer *copy_array_from_device_xilinx(
     p = isl_printer_end_line(p);
     p = isl_printer_indent(p, -indent);
 
-    p = isl_printer_indent(p, -4);
+    p = isl_printer_indent(p, -2);
     p = print_str_new_line(p, "}");
   }
   else
@@ -1577,7 +1577,7 @@ static __isl_give isl_printer *copy_array_from_device_xilinx(
     p = isl_printer_print_int(p, local_array->n_mem_ports);
     p = isl_printer_print_str(p, "; i++) {");
     p = isl_printer_end_line(p);
-    p = isl_printer_indent(p, 4);
+    p = isl_printer_indent(p, 2);
 
     p = isl_printer_start_line(p);
     p = isl_printer_print_str(p, "memcpy(dev_");
@@ -1597,7 +1597,7 @@ static __isl_give isl_printer *copy_array_from_device_xilinx(
     p = isl_printer_print_str(p, ");");
     p = isl_printer_end_line(p);
 
-    p = isl_printer_indent(p, -4);
+    p = isl_printer_indent(p, -2);
     p = print_str_new_line(p, "}");
     p = isl_printer_end_line(p);
     //    p = isl_printer_start_line(p);
@@ -2240,7 +2240,7 @@ static isl_stat print_host_serialize_funcs(
       p = print_host_serialize_arguments(p, kernel, module->io_groups[0], module, 1, hls->hls);
       p = isl_printer_print_str(p, "){");
       p = isl_printer_end_line(p);
-      p = isl_printer_indent(p, 4);
+      p = isl_printer_indent(p, 2);
 
       p = print_str_new_line(p, "/* Variable Declaration */");
       p = print_str_new_line(p, "unsigned int cnt = 0;");      
@@ -2252,7 +2252,7 @@ static isl_stat print_host_serialize_funcs(
                                                            &print_module_stmt, &hw_data);
       p = isl_ast_node_print(module->serialize_tree, p, print_options);
 
-      p = isl_printer_indent(p, -4);
+      p = isl_printer_indent(p, -2);
       p = print_str_new_line(p, "}");
       p = print_str_new_line(p, "/* Helper Function */");
       p = isl_printer_end_line(p);
@@ -2358,7 +2358,7 @@ static __isl_give isl_printer *autosa_print_intra_trans_module(
     else   
       fprintf(hls->kernel_c, "#pragma HLS INLINE\n");
   }
-  p = isl_printer_indent(p, 4);
+  p = isl_printer_indent(p, 2);
   p = print_str_new_line(p, "/* Variable Declaration */");
   print_module_iterators(hls->kernel_c, module);
   p = print_module_vars_xilinx(p, module, 0);
@@ -2383,7 +2383,7 @@ static __isl_give isl_printer *autosa_print_intra_trans_module(
   }
 
   p = isl_ast_node_print(module->intra_tree, p, print_options);
-  p = isl_printer_indent(p, -4);
+  p = isl_printer_indent(p, -2);
 
   fprintf(hls->kernel_c, "}\n");
   p = isl_printer_start_line(p);
@@ -2419,7 +2419,7 @@ static __isl_give isl_printer *autosa_print_inter_trans_module(
     else
       fprintf(hls->kernel_c, "#pragma HLS INLINE\n");
   }
-  p = isl_printer_indent(p, 4);
+  p = isl_printer_indent(p, 2);
   p = print_str_new_line(p, "/* Variable Declaration */");
   print_module_iterators(hls->kernel_c, module);
   if (hls->target == XILINX_HW)
@@ -2445,7 +2445,7 @@ static __isl_give isl_printer *autosa_print_inter_trans_module(
   }
 
   p = isl_ast_node_print((boundary == 0) ? module->inter_tree : module->boundary_inter_tree, p, print_options);
-  p = isl_printer_indent(p, -4);
+  p = isl_printer_indent(p, -2);
 
   fprintf(hls->kernel_c, "}\n");
   p = isl_printer_start_line(p);
@@ -2492,7 +2492,7 @@ static isl_stat print_drain_merge_funcs(
     p = print_drain_merge_arguments_xilinx(p, kernel, group, funcs[i], 1, hls->hls);
     p = isl_printer_print_str(p, "){");
     p = isl_printer_end_line(p);
-    p = isl_printer_indent(p, 4);
+    p = isl_printer_indent(p, 2);
 
     p = print_str_new_line(p, "/* Variable Declaration */");
     if (!hls->hls)
@@ -2507,7 +2507,7 @@ static isl_stat print_drain_merge_funcs(
                                                          &print_module_stmt, &hw_data);
     p = isl_ast_node_print(funcs[i]->device_tree, p, print_options);
 
-    p = isl_printer_indent(p, -4);
+    p = isl_printer_indent(p, -2);
     p = print_str_new_line(p, "}");
     p = print_str_new_line(p, "/* Helper Function */");
   }
@@ -2857,7 +2857,7 @@ static __isl_give isl_printer *autosa_print_default_module(
     fprintf(hls->kernel_c, "#pragma HLS INLINE OFF\n");
   else
     fprintf(hls->kernel_c, "#pragma HLS INLINE\n");
-  p = isl_printer_indent(p, 4);
+  p = isl_printer_indent(p, 2);
   p = print_str_new_line(p, "/* Variable Declaration */");
   print_module_iterators(hls->kernel_c, module);  
   p = print_module_vars_xilinx(p, module, -1);
@@ -2879,7 +2879,7 @@ static __isl_give isl_printer *autosa_print_default_module(
 
   if (module->to_mem && module->options->autosa->host_serialize) {
     p = print_module_serialize_body(p, module); // TODO
-    p = isl_printer_indent(p, -4);
+    p = isl_printer_indent(p, -2);
     fprintf(hls->kernel_c, "}\n");
     p = isl_printer_start_line(p);
     p = isl_printer_print_str(p, "/* Module Definition */");
@@ -2913,7 +2913,7 @@ static __isl_give isl_printer *autosa_print_default_module(
     }
   }
 
-  p = isl_printer_indent(p, -4);
+  p = isl_printer_indent(p, -2);
 
   fprintf(hls->kernel_c, "}\n");
   p = isl_printer_start_line(p);
@@ -2933,13 +2933,13 @@ static __isl_give isl_printer *autosa_print_default_module(
       print_module_wrapper_headers_xilinx(prog, module, hls, -1, boundary);
 
       fprintf(hls->kernel_c, "{\n");
-      p = isl_printer_indent(p, 4);
+      p = isl_printer_indent(p, 2);
 
       p = print_module_core_headers_xilinx(p, prog, module, hls, -1, boundary, 0);
       p = isl_printer_print_str(p, ";");
       p = isl_printer_end_line(p);
 
-      p = isl_printer_indent(p, -4);
+      p = isl_printer_indent(p, -2);
       fprintf(hls->kernel_c, "}\n");
       p = isl_printer_start_line(p);
       p = isl_printer_print_str(p, "/* Module Definition */");
@@ -3076,7 +3076,7 @@ static __isl_give isl_printer *autosa_print_default_pe_dummy_module(
     fprintf(hls->kernel_c, "#pragma HLS INLINE\n");
   print_module_iterators(hls->kernel_c, module);
 
-  p = isl_printer_indent(p, 4);
+  p = isl_printer_indent(p, 2);
   p = isl_printer_end_line(p);
 
   print_options = isl_ast_print_options_alloc(ctx);
@@ -3090,7 +3090,7 @@ static __isl_give isl_printer *autosa_print_default_pe_dummy_module(
 
   p = isl_ast_node_print(pe_dummy_module->device_tree, p, print_options);
 
-  p = isl_printer_indent(p, -4);
+  p = isl_printer_indent(p, -2);
 
   fprintf(hls->kernel_c, "}\n");
   p = isl_printer_start_line(p);
@@ -3110,11 +3110,11 @@ static __isl_give isl_printer *autosa_print_default_pe_dummy_module(
       print_pe_dummy_module_wrapper_headers_xilinx(prog, pe_dummy_module, hls);
   
       fprintf(hls->kernel_c, "{\n");
-      p = isl_printer_indent(p, 4);
+      p = isl_printer_indent(p, 2);
       p = print_pe_dummy_module_core_headers_xilinx(p, prog, pe_dummy_module, hls, 0);
       p = isl_printer_print_str(p, ";");
       p = isl_printer_end_line(p);
-      p = isl_printer_indent(p, -4);
+      p = isl_printer_indent(p, -2);
       fprintf(hls->kernel_c, "}\n");
       p = isl_printer_start_line(p);
       p = isl_printer_print_str(p, "/* Module Definition */");
@@ -3621,7 +3621,7 @@ static __isl_give isl_printer *print_double_buffer_module_while(
 
   print_module_headers_xilinx(prog, module, hls, -1, boundary);
   p = print_str_new_line(p, "{");
-  p = isl_printer_indent(p, 4);
+  p = isl_printer_indent(p, 2);
 
   /* Print variables */
   p = print_str_new_line(p, "/* Variable Declaration */");
@@ -3632,11 +3632,11 @@ static __isl_give isl_printer *print_double_buffer_module_while(
   /* Print content */
   p = print_str_new_line(p, "while (1) {");
   p = print_str_new_line(p, "#pragma HLS PIPELINE II=1");
-  p = isl_printer_indent(p, 4);
+  p = isl_printer_indent(p, 2);
   
   /* Print inter_trans */
   p = print_str_new_line(p, "if (inter_trans_en) {");
-  p = isl_printer_indent(p, 4);
+  p = isl_printer_indent(p, 2);
   /* Print the module logic */
   p = autosa_print_inter_trans_module_double_buffer(p, module, prog, hls, boundary);
   /* Print the loop counter */  
@@ -3649,16 +3649,16 @@ static __isl_give isl_printer *print_double_buffer_module_while(
   p = print_str_new_line(p, "inter_done = 1;");
   p = print_str_new_line(p, "inter_trans_en = 0;");
   for (int i = 0; i < print_data.inter_for_level; i++) {
-    p = isl_printer_indent(p, -4);
+    p = isl_printer_indent(p, -2);
     p = print_str_new_line(p, "}");
   }
   
-  p = isl_printer_indent(p, -4);
+  p = isl_printer_indent(p, -2);
   p = print_str_new_line(p, "}");
 
   /* Print intra_trans */
   p = print_str_new_line(p, "if (intra_trans_en) {");
-  p = isl_printer_indent(p, 4);
+  p = isl_printer_indent(p, 2);
   /* Print the module logic */
   p = autosa_print_intra_trans_module_double_buffer(p, module, prog, hls, boundary);
   /* Print the loop counter */
@@ -3671,16 +3671,16 @@ static __isl_give isl_printer *print_double_buffer_module_while(
   p = print_str_new_line(p, "intra_done = 1;");
   p = print_str_new_line(p, "intra_trans_en = 0;");
   for (int i = 0; i < print_data.intra_for_level; i++) {
-    p = isl_printer_indent(p, -4);
+    p = isl_printer_indent(p, -2);
     p = print_str_new_line(p, "}");
   }
 
-  p = isl_printer_indent(p, -4);
+  p = isl_printer_indent(p, -2);
   p = print_str_new_line(p, "}");
 
   /* Print state_handle */
   p = print_str_new_line(p, "if (inter_done && intra_done) {");
-  p = isl_printer_indent(p, 4);
+  p = isl_printer_indent(p, 2);
   p = print_str_new_line(p, "if (last_run) break;");
   p = print_str_new_line(p, "intra_trans_en = 1;");
   p = print_str_new_line(p, "inter_trans_en = 1;");
@@ -3698,17 +3698,17 @@ static __isl_give isl_printer *print_double_buffer_module_while(
   p = print_str_new_line(p, module->in? "inter_done = 1;" : "intra_done = 1;");
   p = print_str_new_line(p, "last_run = true;");
   for (int i = 0; i < print_data.outer_for_level; i++) {
-    p = isl_printer_indent(p, -4);
+    p = isl_printer_indent(p, -2);
     p = print_str_new_line(p, "}");
   }
 
-  p = isl_printer_indent(p, -4);
+  p = isl_printer_indent(p, -2);
   p = print_str_new_line(p, "}");
 
-  p = isl_printer_indent(p, -4);
+  p = isl_printer_indent(p, -2);
   p = print_str_new_line(p, "}");
 
-  p = isl_printer_indent(p, -4);
+  p = isl_printer_indent(p, -2);
   p = print_str_new_line(p, "}");
   p = isl_printer_start_line(p);
   p = isl_printer_print_str(p, "/* Module Definition */");
@@ -4078,7 +4078,7 @@ static void print_top_gen_host_code(
 
   print_top_gen_headers(prog, top, hls);
   fprintf(hls->top_gen_c, "{\n");
-  p = isl_printer_indent(p, 4);
+  p = isl_printer_indent(p, 2);
 
   p = isl_printer_start_line(p);
   p = isl_printer_print_str(p, "FILE *fd = fopen(\"");
@@ -4100,7 +4100,7 @@ static void print_top_gen_host_code(
   if (hls->target == XILINX_HW)
     p = print_top_module_headers_xilinx(p, prog, top, hls);
   p = isl_printer_start_line(p);
-  p = isl_printer_print_str(p, "p = isl_printer_indent(p, 4);");
+  p = isl_printer_print_str(p, "p = isl_printer_indent(p, 2);");
   p = isl_printer_end_line(p);
 
   /* Print FIFO declarations */
@@ -4272,7 +4272,7 @@ static void print_top_gen_host_code(
   free(module_names);
 
   p = isl_printer_start_line(p);
-  p = isl_printer_print_str(p, "p = isl_printer_indent(p, -4);");
+  p = isl_printer_print_str(p, "p = isl_printer_indent(p, -2);");
   p = isl_printer_end_line(p);
 
   p = print_str_new_line(p, "p = isl_printer_start_line(p);");
@@ -4299,7 +4299,7 @@ static void print_top_gen_host_code(
   p = isl_printer_start_line(p);
   p = isl_printer_print_str(p, "isl_ctx_free(ctx);");
   p = isl_printer_end_line(p);
-  p = isl_printer_indent(p, -4);
+  p = isl_printer_indent(p, -2);
   p = isl_printer_start_line(p);
   p = isl_printer_print_str(p, "}");
   p = isl_printer_end_line(p);

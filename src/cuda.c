@@ -490,7 +490,7 @@ static void print_kernel(struct gpu_prog *prog, struct ppcg_kernel *kernel,
 
 	p = isl_printer_to_file(ctx, cuda->kernel_c);
 	p = isl_printer_set_output_format(p, ISL_FORMAT_C);
-	p = isl_printer_indent(p, 4);
+	p = isl_printer_indent(p, 2);
 
 	p = print_kernel_vars(p, kernel);
 	p = isl_printer_end_line(p);
