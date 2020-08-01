@@ -65,6 +65,14 @@ extern "C"
   p_debug = isl_printer_free(p_debug);                                 \
 }
 
+#define DBGUSET(os, uset, ctx)                                        {\
+  printf("%s(%d) Print union set.\n", __FILE__, __LINE__);             \
+  isl_printer *p_debug = isl_printer_to_file(ctx, os);                 \
+  p_debug = isl_printer_print_union_set(p_debug, uset);                \
+  p_debug = isl_printer_print_str(p_debug, "\n");                      \
+  p_debug = isl_printer_free(p_debug);                                 \
+}
+
 #define DBGUMAP(os, umap, ctx)                                        {\
   printf("%s(%d) Print union map.\n", __FILE__, __LINE__);             \
   isl_printer *p_debug = isl_printer_to_file(ctx, os);                 \

@@ -75,6 +75,10 @@ extern "C"
 		int non_block_fifo;
 		/* Double buffer coding style. 0: for loop (default) 1: while loop */
 		int double_buffer_style;
+		/* Enable local reduce */
+		int local_reduce;
+		/* Reduce op */
+		char *reduce_op;
 	};
 
 	struct ppcg_options

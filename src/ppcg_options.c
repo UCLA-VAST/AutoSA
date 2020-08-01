@@ -109,9 +109,13 @@ ISL_ARG_BOOL(struct autosa_options, host_serialize, 0, "host-serialize", 0,
 ISL_ARG_BOOL(struct autosa_options, insert_hls_dependence, 0, "insert-hls-dependence", 1,
 			 "insert Xilinx HLS dependence pragma")
 ISL_ARG_BOOL(struct autosa_options, io_module_embedding, 0, "io-module-embedding", 0,
-			 "Embed the I/O modules inside PEs if possible")
+			 "embed the I/O modules inside PEs if possible")
 ISL_ARG_BOOL(struct autosa_options, loop_infinitize, 0, "loop-infinitize", 0,
 			 "apply loop infinitization optimization (Intel OpenCL only)")
+ISL_ARG_BOOL(struct autosa_options, local_reduce, 0, "local-reduce", 0,
+			 "generate non-output-stationary array with local reduction")
+ISL_ARG_STR(struct autosa_options, reduce_op, 0, "reduce-op", "op",
+			NULL, "reduction operator (must be used with local-reduce together)")
 ISL_ARG_BOOL(struct autosa_options, non_block_fifo, 0, "non-blocking-fifo", 0,
 			 "use non-blocking fifo interface")
 ISL_ARG_BOOL(struct autosa_options, use_local_memory, 0, "local-memory", 1,

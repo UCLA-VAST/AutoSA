@@ -1416,7 +1416,7 @@ static isl_bool internal_group_in_out_overlap(
   prefix = isl_union_map_preimage_domain_union_pw_multi_aff(prefix,
                                                             isl_union_pw_multi_aff_copy(kernel->contraction));
   isl_schedule_node_free(node);
-  access = autosa_io_group_access_relation(group, read, !read);  
+  access = autosa_io_group_access_relation(group, kernel, read, !read);
   /* Remove the local dependency first. */
   access = remove_local_accesses_group_flow(kernel, group, access, prefix, read);
   tagged = group_tagged_access_relation(group);
@@ -1532,7 +1532,7 @@ static isl_bool io_group_carried_by_array_loops(
   prefix = isl_union_map_preimage_domain_union_pw_multi_aff(prefix,
                                                             isl_union_pw_multi_aff_copy(kernel->contraction));
   isl_schedule_node_free(node);
-  access = autosa_io_group_access_relation(group, read, !read);  
+  access = autosa_io_group_access_relation(group, kernel, read, !read);  
   /* Remove the local dependence first. */
   access = remove_local_accesses_group_flow(kernel, group, access, prefix, read);
 
@@ -4054,7 +4054,9 @@ __isl_give isl_union_map *autosa_drain_group_ref_access_relation(
  *     - RAW: extract the src domain of dep 
  */
 __isl_give isl_union_map *autosa_io_group_access_relation(
-    struct autosa_array_ref_group *group, int read, int write)
+  struct autosa_array_ref_group *group, 
+  struct autosa_kernel *kernel,
+  int read, int write)
 {
   isl_union_map *access;
 
@@ -4067,8 +4069,16 @@ __isl_give isl_union_map *autosa_io_group_access_relation(
           (write && group->refs[i]->write)))
       continue;
 
-    access = isl_union_map_union(access,
-                                 autosa_io_group_ref_access_relation(group, ref_i, read, write));
+    if (group->group_type == AUTOSA_IO_GROUP) 
+    {
+      access = isl_union_map_union(access,
+                                   autosa_io_group_ref_access_relation(group, ref_i, read, write));
+    } else if (group->group_type == AUTOSA_DRAIN_GROUP) 
+    {
+      access = isl_union_map_union(access,
+                                   autosa_drain_group_ref_access_relation(group, ref_i, read, write,
+                                                                          kernel->expanded_domain));
+    }
   }
 
   /* Simplify the access relation. */
@@ -4313,9 +4323,9 @@ __isl_give isl_union_map *remove_local_accesses(
  * the copy statemetns are inserted.
  */
 __isl_give isl_union_map *remove_local_accesses_flow(
-    struct autosa_prog *prog, __isl_take isl_union_map *tagged,
-    __isl_take isl_union_map *access, __isl_take isl_union_map *sched,
-    int read)
+  struct autosa_prog *prog, __isl_take isl_union_map *tagged,
+  __isl_take isl_union_map *access, __isl_take isl_union_map *sched,
+  int read)
 {
   int empty;
   isl_union_pw_multi_aff *tagger;
@@ -4408,9 +4418,9 @@ __isl_give isl_union_map *remove_local_accesses_flow(
  * then call remove_local_accesses.
  */
 __isl_give isl_union_map *remove_local_accesses_group_flow(
-    struct autosa_kernel *kernel, struct autosa_array_ref_group *group,
-    __isl_take isl_union_map *access, __isl_keep isl_union_map *prefix,
-    int read)
+  struct autosa_kernel *kernel, struct autosa_array_ref_group *group,
+  __isl_take isl_union_map *access, __isl_keep isl_union_map *prefix,
+  int read)
 {
   isl_union_map *sched, *tagged;
 
@@ -4463,7 +4473,7 @@ __isl_give isl_union_map *io_comm_access_ref(
     int read)
 {
   isl_union_map *prefix;
-  isl_union_map *access;
+  isl_union_map *access;  
 
   prefix = isl_schedule_node_get_prefix_schedule_relation(node);
   prefix = isl_union_map_preimage_domain_union_pw_multi_aff(prefix,

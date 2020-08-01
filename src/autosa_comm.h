@@ -19,7 +19,9 @@ __isl_give isl_union_map *autosa_io_group_ref_access_relation(
 __isl_give isl_union_map *autosa_array_ref_group_access_relation(
 	struct autosa_array_ref_group *group, int read, int write);	
 __isl_give isl_union_map *autosa_io_group_access_relation(
-  struct autosa_array_ref_group *group, int read, int write);
+  struct autosa_array_ref_group *group, 
+  struct autosa_kernel *kernel,
+  int read, int write);
 __isl_give isl_union_map *autosa_drain_group_ref_access_relation(
   struct autosa_array_ref_group *group,
   struct autosa_stmt_access *ref,
