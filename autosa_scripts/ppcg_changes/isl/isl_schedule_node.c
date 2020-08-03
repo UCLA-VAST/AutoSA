@@ -4971,4 +4971,37 @@ __isl_give isl_schedule_node *isl_schedule_node_band_member_set_pe_opt(
 
   return node;
 }
+
+/* Return the sched_pos property of the band member position "pos" of the 
+ * band node "node".
+ */
+int isl_schedule_node_band_member_get_sched_pos(
+	__isl_keep isl_schedule_node *node, int pos)
+{
+	if (!node)
+		return -1;
+	return isl_schedule_tree_band_member_get_sched_pos(node->tree, pos);
+}
+
+/* Mark the band member at position "pos" of the band node "node"
+ * as "sched_pos".
+ */
+__isl_give isl_schedule_node *isl_schedule_node_band_member_set_sched_pos(
+	__isl_take isl_schedule_node *node, int pos, int sched_pos)
+{
+	int sp;
+  isl_schedule_tree *tree;
+
+  if (!node)
+    return NULL;
+  sp = isl_schedule_node_band_member_get_sched_pos(node, pos);
+  if (sp == sched_pos)
+    return node;
+
+  tree = isl_schedule_tree_copy(node->tree);
+  tree = isl_schedule_tree_band_member_set_sched_pos(tree, pos, sched_pos);
+  node = isl_schedule_node_graft_tree(node, tree);
+
+  return node;	
+}
 /* AutoSA Extended */

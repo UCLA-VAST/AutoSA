@@ -306,6 +306,13 @@ enum autosa_loop_type isl_schedule_node_band_member_get_pe_opt(
 __isl_export
 __isl_give isl_schedule_node *isl_schedule_node_band_member_set_pe_opt(
 	__isl_take isl_schedule_node *node, int pos, enum autosa_loop_type loop_type);
+__isl_export
+int isl_schedule_node_band_member_get_sched_pos(
+	__isl_keep isl_schedule_node *node, int pos);
+__isl_export
+__isl_give isl_schedule_node *isl_schedule_node_band_member_set_sched_pos(
+	__isl_take isl_schedule_node *node, int pos, int sched_pos);
+__isl_export
 __isl_take isl_schedule_node *isl_schedule_node_dup(
 	__isl_keep isl_schedule_node *node);
 /* AutoSA Extended */

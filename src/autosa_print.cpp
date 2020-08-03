@@ -820,7 +820,7 @@ __isl_give isl_printer *autosa_fifo_print_call_argument(
 /* Print the call of an array argument in the module.
  */
 __isl_give isl_printer *autosa_module_array_info_print_call_argument(
-    __isl_take isl_printer *p, struct autosa_array_info *array)
+  __isl_take isl_printer *p, struct autosa_array_info *array)
 {
   if (autosa_array_is_read_only_scalar(array))
     return isl_printer_print_str(p, array->name);
@@ -828,6 +828,46 @@ __isl_give isl_printer *autosa_module_array_info_print_call_argument(
   p = isl_printer_print_str(p, array->name);
 
   return p;
+}
+
+/* Print the variable initialization. */
+__isl_give isl_printer *autosa_print_var_initialization(
+  __isl_take isl_printer *p, struct autosa_kernel_var *var)
+{  
+  for (int i = 0; i < isl_vec_size(var->size); ++i) {
+    isl_val *extent;
+
+    p = isl_printer_start_line(p);
+    p = isl_printer_print_str(p, "for (int c");
+    p = isl_printer_print_int(p, i);
+    p = isl_printer_print_str(p, " = 0; c");
+    p = isl_printer_print_int(p, i);
+    p = isl_printer_print_str(p, " < ");
+    extent = isl_vec_get_element_val(var->size, i);
+    p = isl_printer_print_val(p, extent);
+    isl_val_free(extent);
+    p = isl_printer_print_str(p, "; c");
+    p = isl_printer_print_int(p, i);
+    p = isl_printer_print_str(p, "++) {");
+    p = isl_printer_end_line(p);
+    p = isl_printer_indent(p, 2);
+  }
+  p = print_str_new_line(p, "// hls_pipeline");
+  p = isl_printer_start_line(p);
+  p = isl_printer_print_str(p, var->name);
+  for (int i = 0; i < isl_vec_size(var->size); ++i) {
+    p = isl_printer_print_str(p, "[c");
+    p = isl_printer_print_int(p, i);
+    p = isl_printer_print_str(p, "]");
+  }
+  p = isl_printer_print_str(p, " = 0;");
+  p = isl_printer_end_line(p);
+  for (int i = 0; i < isl_vec_size(var->size); ++i) {
+    p = isl_printer_indent(p, -2);
+    p = print_str_new_line(p, "}");
+  }
+
+  return p;  
 }
 
 /* Print the arguments to a module declaration or call. If "types" is set,
@@ -3132,7 +3172,12 @@ static __isl_give isl_printer *autosa_kernel_print_io_transfer_default(
       {
         p = isl_printer_print_ast_expr(p, local_index_packed);
       }
-      p = isl_printer_print_str(p, " = fifo_data;");
+
+      p = isl_printer_print_str(p, " ");
+      if (stmt->u.i.reduce) {        
+        p = isl_printer_print_str(p, stmt->u.i.reduce_op);
+      }         
+      p = isl_printer_print_str(p, "= fifo_data;");
       p = isl_printer_end_line(p);
     }
     else

@@ -67,6 +67,7 @@ __isl_give isl_schedule_band *isl_schedule_band_from_multi_union_pw_aff(
 	/* AutoSA Extended */
 	band->space_time = isl_calloc_array(ctx, enum autosa_loop_type, band->n);
   band->pe_opt = isl_calloc_array(ctx, enum autosa_loop_type, band->n);
+	band->sched_pos = isl_calloc_array(ctx, int, band->n);
 	/* AutoSA Extended */
 	band->mupa = mupa;
 	space = isl_space_params_alloc(ctx, 0);
@@ -119,6 +120,11 @@ __isl_give isl_schedule_band *isl_schedule_band_dup(
     for (i = 0; i < band->n; ++i)
       dup->pe_opt[i] = band->pe_opt[i];
   }	
+	if (band->sched_pos) {
+		dup->sched_pos = isl_alloc_array(ctx, int, band->n);
+		for (i = 0; i < band->n; ++i)
+			dup->sched_pos[i] = band->sched_pos[i];
+	}
 	/* AutoSA Extended */
 
 	dup->mupa = isl_multi_union_pw_aff_copy(band->mupa);
@@ -192,6 +198,7 @@ __isl_null isl_schedule_band *isl_schedule_band_free(
 	/* AutoSA Extended */
 	free(band->space_time);
 	free(band->pe_opt);
+	free(band->sched_pos);
 	/* AutoSA Extended */
 	free(band);
 
@@ -1240,6 +1247,9 @@ __isl_give isl_schedule_band *isl_schedule_band_drop(
   if (band->pe_opt)
     for (i = pos + n; i < band->n; ++i)
       band->pe_opt[i - n] = band->pe_opt[i];	
+	if (band->sched_pos)
+		for (i = pos + n; i < band->n; ++i)
+			band->sched_pos[i - n] = band->sched_pos[i];
 	/* AutoSA Extended */
 
 	band->n -= n;
@@ -1421,6 +1431,49 @@ __isl_give isl_schedule_band *isl_schedule_band_member_set_pe_opt(
     band->pe_opt = isl_calloc_array(isl_schedule_band_get_ctx(band), 
 			enum autosa_loop_type, band->n);
   band->pe_opt[pos] = loop_type;
+
+  return band;
+}
+
+/* Return the sched_pos property of the scheduling dimension within
+ * the band.
+ */
+int isl_schedule_band_member_get_sched_pos(
+  __isl_keep isl_schedule_band *band, int pos)
+{
+  if (!band)
+    return -1;
+
+  if (pos < 0 || pos >= band->n)
+    isl_die(isl_schedule_band_get_ctx(band), isl_error_invalid,
+        "invalid member position", return -1);
+
+  if (!band->sched_pos)
+    return -1;
+
+  return band->sched_pos[pos];
+}
+
+/* Mark the given scheduling dimension as "sched_pos".
+ */
+__isl_give isl_schedule_band *isl_schedule_band_member_set_sched_pos(
+  __isl_take isl_schedule_band *band, int pos, int sched_pos)
+{
+  if (!band)
+    return NULL;
+  band = isl_schedule_band_cow(band);
+  if (!band)
+    return NULL;
+
+  if (pos < 0 || pos >= band->n)
+    isl_die(isl_schedule_band_get_ctx(band), isl_error_invalid,
+        "invalid member position",
+        return isl_schedule_band_free(band));
+
+  if (!band->sched_pos)
+    band->sched_pos = isl_calloc_array(isl_schedule_band_get_ctx(band), 
+			int, band->n);
+  band->sched_pos[pos] = sched_pos;
 
   return band;
 }

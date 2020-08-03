@@ -274,6 +274,10 @@ enum autosa_loop_type isl_schedule_tree_band_member_get_pe_opt(
 	__isl_keep isl_schedule_tree *tree, int pos);
 __isl_give isl_schedule_tree *isl_schedule_tree_band_member_set_pe_opt(
 	__isl_take isl_schedule_tree *tree, int pos, enum autosa_loop_type loop_type);
+int isl_schedule_tree_band_member_get_sched_pos(
+	__isl_keep isl_schedule_tree *tree, int pos);
+__isl_give isl_schedule_tree *isl_schedule_tree_band_member_set_sched_pos(
+	__isl_take isl_schedule_tree *tree, int pos, int sched_pos);	
 /* AutoSA Extended */
 
 #endif

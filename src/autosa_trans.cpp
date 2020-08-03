@@ -137,13 +137,19 @@ struct autosa_kernel **sa_space_time_transform_at_dim_async(
             if (is_space_loop[i])
             {
                 isl_schedule *new_schedule = isl_schedule_dup(schedule);
+                isl_schedule_node *band = get_outermost_permutable_node(new_schedule);
+                isl_schedule_free(new_schedule);
+
                 /* Make the loop i the outermost loop. */
                 for (int d = i; d > 0; d--)
                 {
-                    isl_schedule_node *band = get_outermost_permutable_node(new_schedule);
-                    isl_schedule_free(new_schedule);
-                    new_schedule = loop_interchange_at_node(band, d, d - 1);
+                    //isl_schedule_node *band = get_outermost_permutable_node(new_schedule);
+                    //isl_schedule_free(new_schedule);
+                    //new_schedule = loop_interchange_at_node(band, d, d - 1);
+                    band = loop_interchange_at_node(band, d, d - 1);
                 }
+                new_schedule = isl_schedule_node_get_schedule(band);
+                isl_schedule_node_free(band);
 
                 /* Update the hyperplane types. */
                 struct autosa_kernel *sa = autosa_kernel_from_schedule(new_schedule);
@@ -176,19 +182,26 @@ struct autosa_kernel **sa_space_time_transform_at_dim_async(
                     if (is_space_loop[j])
                     {
                         isl_schedule *new_schedule = isl_schedule_dup(schedule);
+                        isl_schedule_node *band = get_outermost_permutable_node(new_schedule);
+                        isl_schedule_free(new_schedule);
+
                         /* Make the loop i, j the outermost loops. */
                         for (int d = j; d > 0; d--)
                         {
-                            isl_schedule_node *band = get_outermost_permutable_node(new_schedule);
-                            isl_schedule_free(new_schedule);
-                            new_schedule = loop_interchange_at_node(band, d, d - 1);
+                            //isl_schedule_node *band = get_outermost_permutable_node(new_schedule);
+                            //isl_schedule_free(new_schedule);
+                            //new_schedule = loop_interchange_at_node(band, d, d - 1);
+                            band = loop_interchange_at_node(band, d, d - 1);
                         }
                         for (int d = i + 1; d > 0; d--)
                         {
-                            isl_schedule_node *band = get_outermost_permutable_node(new_schedule);
-                            isl_schedule_free(new_schedule);
-                            new_schedule = loop_interchange_at_node(band, d, d - 1);
+                            //isl_schedule_node *band = get_outermost_permutable_node(new_schedule);
+                            //isl_schedule_free(new_schedule);
+                            //new_schedule = loop_interchange_at_node(band, d, d - 1);
+                            band = loop_interchange_at_node(band, d, d - 1);
                         }
+                        new_schedule = isl_schedule_node_get_schedule(band);
+                        isl_schedule_node_free(band);
 
                         /* Update the hyperplane types. */
                         struct autosa_kernel *sa = autosa_kernel_from_schedule(new_schedule);
@@ -227,25 +240,33 @@ struct autosa_kernel **sa_space_time_transform_at_dim_async(
                             if (is_space_loop[k])
                             {
                                 isl_schedule *new_schedule = isl_schedule_dup(schedule);
+                                isl_schedule_node *band = get_outermost_permutable_node(new_schedule);
+                                isl_schedule_free(new_schedule);
+
                                 /* Make the loop i, j, k the outermost loops. */
                                 for (int d = k; d > 0; d--)
                                 {
-                                    isl_schedule_node *band = get_outermost_permutable_node(new_schedule);
-                                    isl_schedule_free(new_schedule);
-                                    new_schedule = loop_interchange_at_node(band, d, d - 1);
+                                    //isl_schedule_node *band = get_outermost_permutable_node(new_schedule);
+                                    //isl_schedule_free(new_schedule);
+                                    //new_schedule = loop_interchange_at_node(band, d, d - 1);
+                                    band = loop_interchange_at_node(band, d, d - 1);
                                 }
                                 for (int d = j + 1; d > 0; d--)
                                 {
-                                    isl_schedule_node *band = get_outermost_permutable_node(new_schedule);
-                                    isl_schedule_free(new_schedule);
-                                    new_schedule = loop_interchange_at_node(band, d, d - 1);
+                                    //isl_schedule_node *band = get_outermost_permutable_node(new_schedule);
+                                    //isl_schedule_free(new_schedule);
+                                    //new_schedule = loop_interchange_at_node(band, d, d - 1);
+                                    band = loop_interchange_at_node(band, d, d - 1);
                                 }
                                 for (int d = i + 2; d > 0; d--)
                                 {
-                                    isl_schedule_node *band = get_outermost_permutable_node(new_schedule);
-                                    isl_schedule_free(new_schedule);
-                                    new_schedule = loop_interchange_at_node(band, d, d - 1);
+                                    //isl_schedule_node *band = get_outermost_permutable_node(new_schedule);
+                                    //isl_schedule_free(new_schedule);
+                                    //new_schedule = loop_interchange_at_node(band, d, d - 1);
+                                    band = loop_interchange_at_node(band, d, d - 1);
                                 }
+                                new_schedule = isl_schedule_node_get_schedule(band);
+                                isl_schedule_node_free(band);
 
                                 /* Update the hyperplane types. */
                                 struct autosa_kernel *sa = autosa_kernel_from_schedule(new_schedule);
@@ -337,13 +358,19 @@ struct autosa_kernel **sa_space_time_transform_at_dim_sync(
             if (is_space_loop[i])
             {
                 isl_schedule *new_schedule = isl_schedule_dup(schedule);
+                isl_schedule_node *band = get_innermost_permutable_node(new_schedule);
+                isl_schedule_free(new_schedule);
+
                 /* Make the loop i the innermost loop. */
                 for (int d = i; d < band_w - 1; d++)
                 {
-                    isl_schedule_node *band = get_innermost_permutable_node(new_schedule);
-                    isl_schedule_free(new_schedule);
-                    new_schedule = loop_interchange_at_node(band, d, d + 1);
+                    //isl_schedule_node *band = get_innermost_permutable_node(new_schedule);
+                    //isl_schedule_free(new_schedule);
+                    //new_schedule = loop_interchange_at_node(band, d, d + 1);
+                    band = loop_interchange_at_node(band, d, d + 1);
                 }
+                new_schedule = isl_schedule_node_get_schedule(band);
+                isl_schedule_node_free(band);
 
                 /* Update the hyperplane types. */
                 struct autosa_kernel *sa = autosa_kernel_from_schedule(new_schedule);
@@ -376,19 +403,26 @@ struct autosa_kernel **sa_space_time_transform_at_dim_sync(
                     if (is_space_loop[j])
                     {
                         isl_schedule *new_schedule = isl_schedule_dup(schedule);
+                        isl_schedule_node *band = get_innermost_permutable_node(new_schedule);
+                        isl_schedule_free(new_schedule);
+
                         /* Make the loop i, j the innermost loops. */
                         for (int d = i; d < band_w - 1; d++)
                         {
-                            isl_schedule_node *band = get_innermost_permutable_node(new_schedule);
-                            isl_schedule_free(new_schedule);
-                            new_schedule = loop_interchange_at_node(band, d, d + 1);
+                            //isl_schedule_node *band = get_innermost_permutable_node(new_schedule);
+                            //isl_schedule_free(new_schedule);
+                            //new_schedule = loop_interchange_at_node(band, d, d + 1);
+                            band = loop_interchange_at_node(band, d, d + 1);
                         }
                         for (int d = j - 1; d < band_w - 1; d++)
                         {
-                            isl_schedule_node *band = get_innermost_permutable_node(new_schedule);
-                            isl_schedule_free(new_schedule);
-                            new_schedule = loop_interchange_at_node(band, d, d + 1);
+                            //isl_schedule_node *band = get_innermost_permutable_node(new_schedule);
+                            //isl_schedule_free(new_schedule);
+                            //new_schedule = loop_interchange_at_node(band, d, d + 1);
+                            band = loop_interchange_at_node(band, d, d + 1);
                         }
+                        new_schedule = isl_schedule_node_get_schedule(band);
+                        isl_schedule_node_free(band);
 
                         /* Update the hyperplane types. */
                         struct autosa_kernel *sa = autosa_kernel_from_schedule(new_schedule);
@@ -427,25 +461,33 @@ struct autosa_kernel **sa_space_time_transform_at_dim_sync(
                             if (is_space_loop[k])
                             {
                                 isl_schedule *new_schedule = isl_schedule_dup(schedule);
+                                isl_schedule_node *band = get_innermost_permutable_node(new_schedule);
+                                isl_schedule_free(new_schedule);
+
                                 /* Make the loop i, j, k the innermost loops. */
                                 for (int d = i; d < band_w - 1; d++)
                                 {
-                                    isl_schedule_node *band = get_innermost_permutable_node(new_schedule);
-                                    isl_schedule_free(new_schedule);
-                                    new_schedule = loop_interchange_at_node(band, d, d + 1);
+                                    //isl_schedule_node *band = get_innermost_permutable_node(new_schedule);
+                                    //isl_schedule_free(new_schedule);
+                                    //new_schedule = loop_interchange_at_node(band, d, d + 1);
+                                    band = loop_interchange_at_node(band, d, d + 1);
                                 }
                                 for (int d = j - 1; d < band_w - 1; d++)
                                 {
-                                    isl_schedule_node *band = get_innermost_permutable_node(new_schedule);
-                                    isl_schedule_free(new_schedule);
-                                    new_schedule = loop_interchange_at_node(band, d, d + 1);
+                                    //isl_schedule_node *band = get_innermost_permutable_node(new_schedule);
+                                    //isl_schedule_free(new_schedule);
+                                    //new_schedule = loop_interchange_at_node(band, d, d + 1);
+                                    band = loop_interchange_at_node(band, d, d + 1);
                                 }
                                 for (int d = k - 2; d < band_w - 1; d++)
                                 {
-                                    isl_schedule_node *band = get_innermost_permutable_node(new_schedule);
-                                    isl_schedule_free(new_schedule);
-                                    new_schedule = loop_interchange_at_node(band, d, d + 1);
+                                    //isl_schedule_node *band = get_innermost_permutable_node(new_schedule);
+                                    //isl_schedule_free(new_schedule);
+                                    //new_schedule = loop_interchange_at_node(band, d, d + 1);
+                                    band = loop_interchange_at_node(band, d, d + 1);
                                 }
+                                new_schedule = isl_schedule_node_get_schedule(band);
+                                isl_schedule_node_free(band);
 
                                 /* Update the hyperplane types. */
                                 struct autosa_kernel *sa = autosa_kernel_from_schedule(new_schedule);
@@ -611,6 +653,7 @@ static __isl_give isl_schedule_node *init_band_node_sa_properties(
         {
             node = isl_schedule_node_band_member_set_space_time(node, i, autosa_loop_time);
             node = isl_schedule_node_band_member_set_pe_opt(node, i, autosa_loop_default);
+            //node = isl_schedule_node_band_member_set_sched_pos(node, i, -1);
         }
     }
 
@@ -655,19 +698,7 @@ isl_stat sa_space_time_loop_setup(struct autosa_kernel *sa)
         node = get_outermost_permutable_node(sa->schedule);
         for (int i = 0; i < sa->space_w; i++)
         {
-            /* #ifdef _DEBUG    
-      isl_printer *pd = isl_printer_to_file(sa->ctx, stdout);
-      pd = isl_printer_set_yaml_style(pd, ISL_YAML_STYLE_BLOCK);
-      pd = isl_printer_print_schedule_node(pd, node);
-      isl_printer_free(pd);
-#endif    */
             node = isl_schedule_node_band_member_set_space_time(node, i, autosa_loop_space);
-            /* #ifdef _DEBUG    
-      pd = isl_printer_to_file(sa->ctx, stdout);
-      pd = isl_printer_set_yaml_style(pd, ISL_YAML_STYLE_BLOCK);
-      pd = isl_printer_print_schedule_node(pd, node);
-      isl_printer_free(pd);
-#endif */
         }
     }
 
@@ -952,12 +983,12 @@ isl_stat data_transfer_update(__isl_keep isl_basic_map *dep, struct data_transfe
         access->io_info[access->n_io_info - 1]->dep->type = data->dep_type;
         access->io_info[access->n_io_info - 1]->dir = internal_data.dirvec;
         access->io_info[access->n_io_info - 1]->old_dir = isl_vec_dup(internal_data.dirvec);
-//#ifdef _DEBUG
-//        DBGMAP(stdout, access->access, kernel->ctx)
-//        DBGBMAP(stdout, access->io_info[access->n_io_info - 1]->dep->isl_dep, kernel->ctx)
-//        DBGVEC(stdout, access->io_info[access->n_io_info - 1]->dir, kernel->ctx)
-//        DBGVAR(std::cout, data->dep_type)
-//#endif
+        //#ifdef _DEBUG
+        //        DBGMAP(stdout, access->access, kernel->ctx)
+        //        DBGBMAP(stdout, access->io_info[access->n_io_info - 1]->dep->isl_dep, kernel->ctx)
+        //        DBGVEC(stdout, access->io_info[access->n_io_info - 1]->dir, kernel->ctx)
+        //        DBGVAR(std::cout, data->dep_type)
+        //#endif
     }
     else
     {
@@ -972,10 +1003,10 @@ isl_stat data_transfer_update(__isl_keep isl_basic_map *dep, struct data_transfe
         access->io_info[access->n_io_info - 1]->dep->type = data->dep_type;
         access->io_info[access->n_io_info - 1]->dir = internal_data.dirvec;
         access->io_info[access->n_io_info - 1]->old_dir = isl_vec_dup(internal_data.dirvec);
-//#ifdef _DEBUG
-//        DBGMAP(stdout, access->access, kernel->ctx)
-//        DBGBMAP(stdout, access->io_info[access->n_io_info - 1]->dep->isl_dep, kernel->ctx)
-//#endif        
+        //#ifdef _DEBUG
+        //        DBGMAP(stdout, access->access, kernel->ctx)
+        //        DBGBMAP(stdout, access->io_info[access->n_io_info - 1]->dep->isl_dep, kernel->ctx)
+        //#endif
     }
 
     isl_schedule_node_free(node);
@@ -1097,11 +1128,15 @@ isl_stat sa_array_partitioning_optimize(struct autosa_kernel *sa,
                 "systolic array type not supported", return isl_stat_error);
     }
 
+//#ifdef _DEBUG
+//    DBGSCHDNODE(stdout, node, isl_schedule_node_get_ctx(node))
+//#endif
+
     if (!en)
     {
         /* Array partitioning is disabled, we will simply add an "array" mark before
-     * the space band and return.
-     */
+         * the space band and return.
+         */
         id = isl_id_alloc(sa->ctx, "array", NULL);
         node = isl_schedule_node_insert_mark(node, id);
 
@@ -1139,8 +1174,8 @@ isl_stat sa_array_partitioning_optimize(struct autosa_kernel *sa,
         if (!tile_size)
         {
             /* User hasn't specified the tiling factors for array partitioning yet,
-       * we will dump out the number and upper bounds of array_part loops 
-       * and exit the program. */
+             * we will dump out the number and upper bounds of array_part loops 
+             * and exit the program. */
             int *ubs = extract_band_upper_bounds(sa, node);
             FILE *fp;
             char *content;
@@ -1177,7 +1212,7 @@ isl_stat sa_array_partitioning_optimize(struct autosa_kernel *sa,
     else
     {
         /* Auto mode.
-     * Perform the array partitioning following the default policy. */
+         * Perform the array partitioning following the default policy. */
         tile_size = read_default_array_part_tile_sizes(sa, tile_len);
     }
 
@@ -1186,7 +1221,7 @@ isl_stat sa_array_partitioning_optimize(struct autosa_kernel *sa,
     {
         isl_schedule_node_free(node);
         return isl_stat_error;
-    }
+    }    
 
     /* Update the systolic aray dimensions. */
     if (sa->type == AUTOSA_SA_TYPE_SYNC)
@@ -1203,6 +1238,7 @@ isl_stat sa_array_partitioning_optimize(struct autosa_kernel *sa,
             sa->sa_dim[i] = tile_size[i];
         }
     }
+    sa->array_part_w = tile_len;
 
     /* For now, our codegen doesn't support arrays with size one at any dim. 
    * We will examine if array size is one at any dimension, and return if found. 
@@ -1226,6 +1262,10 @@ isl_stat sa_array_partitioning_optimize(struct autosa_kernel *sa,
     node = autosa_tile_band(node, tile_size);
     free(tile_size);
 
+    /* Reorder the array part loops based on the dependence distance. 
+     */
+    node = reorder_band_by_dep_dis(node);
+
     /* Add the array marker */
     node = isl_schedule_node_child(node, 0);
     id = isl_id_alloc(sa->ctx, "array", NULL);
@@ -1233,10 +1273,10 @@ isl_stat sa_array_partitioning_optimize(struct autosa_kernel *sa,
     node = isl_schedule_node_parent(node);
 
     /* Examine if there is any flow dep carried in the array_part band. 
-   * For this case, we need to implement a credit-based dependence queue to 
-   * force the possible data dependence between two array partitions. 
-   * TODO: implement this feature. 
-   */
+     * For this case, we need to implement a credit-based dependence queue to 
+     * force the possible data dependence between two array partitions. 
+     * TODO: implement this feature. 
+     */
     if (!sa->options->autosa->credit_control)
     {
         for (int i = 0; i < isl_schedule_node_band_n_member(node); i++)
@@ -1683,24 +1723,12 @@ static __isl_give isl_schedule_node *autosa_latency_tile_band_loop(
 
             /* Skip loop tile size as 1 */
             if (loop_tile_size > 1)
-            {
-                /* #ifdef _DEBUG
-        isl_printer *pd = isl_printer_to_file(data->sa->ctx, stdout);
-        pd = isl_printer_set_yaml_style(pd, ISL_YAML_STYLE_BLOCK);
-        pd = isl_printer_print_schedule_node(pd, node);
-        isl_printer_free(pd);
-#endif */
+            {                
                 /* Tile the current loop and permute it to be the innermost time loop.
-         * Specifically, tile the loop in the band at "i"th position with the 
-         * size "loop_tile_size".
-         * The returned node points at the tile loop. */
+                 * Specifically, tile the loop in the band at "i"th position with the 
+                 * size "loop_tile_size".
+                 * The returned node points at the tile loop. */
                 node = autosa_node_band_tile_loop(node, loop_tile_size, i);
-                /* #ifdef _DEBUG
-        pd = isl_printer_to_file(data->sa->ctx, stdout);
-        pd = isl_printer_set_yaml_style(pd, ISL_YAML_STYLE_BLOCK);
-        pd = isl_printer_print_schedule_node(pd, node);
-        isl_printer_free(pd);
-#endif     */
                 /* Reset the candidate loop in the tile loop the pe_opt property to default. */
                 node = isl_schedule_node_band_member_set_pe_opt(node, i, autosa_loop_default);
                 /* Reset the point loop space_time property to time loop. */
@@ -1709,13 +1737,7 @@ static __isl_give isl_schedule_node *autosa_latency_tile_band_loop(
                 /* Reset the point loop pe_opt property to default .*/
                 node = isl_schedule_node_band_member_set_pe_opt(node, 0, autosa_loop_default);
                 /* Move the single loop node to the bottom of the time band. */
-                node = autosa_latency_node_band_sink_time(node, data->sa);
-                /* #ifdef _DEBUG
-        pd = isl_printer_to_file(data->sa->ctx, stdout);
-        pd = isl_printer_set_yaml_style(pd, ISL_YAML_STYLE_BLOCK);
-        pd = isl_printer_print_schedule_node(pd, node);
-        isl_printer_free(pd);
-#endif */
+                node = autosa_latency_node_band_sink_time(node, data->sa);                
                 (data->n_tiled_loop)++;
                 return node;
             }
@@ -1928,7 +1950,7 @@ isl_stat sa_latency_hiding_optimize(struct autosa_kernel *sa, bool en, char *mod
     //DBGSCHDNODE(stdout, node, sa->ctx);
     node = isl_schedule_node_map_descendant_bottom_up(node,
                                                       &latency_opt_check, &data);
-    //DBGSCHDNODE(stdout, node, sa->ctx);                                                        
+    //DBGSCHDNODE(stdout, node, sa->ctx);
     if (!data.is_required)
     {
         printf("[AutoSA] The innermost time loop is parallel. Latency hiding is skipped.\n");
@@ -1957,9 +1979,9 @@ isl_stat sa_latency_hiding_optimize(struct autosa_kernel *sa, bool en, char *mod
     isl_schedule_free(schedule);
 
     /* Tile the candidate loop. 
-   * For each candidate loop, if the loop is used for latency hiding,
-   * it is tiled and permuted to the innermost of the time loop band. 
-   * A latency hiding marker is added. */
+     * For each candidate loop, if the loop is used for latency hiding,
+     * it is tiled and permuted to the innermost of the time loop band. 
+     * A latency hiding marker is added. */
     node = autosa_latency_tile_loop(node, sa, mode);
 
     /* Clean up the band pe_opt properties. */
@@ -2205,7 +2227,7 @@ static float is_stride_coalesced(__isl_keep isl_schedule_node *node,
                         else
                             printf("(W): ");
                         p = isl_printer_print_map(p, acc->access);
-                        printf("\n");                    
+                        printf("\n");
                         printf("[AutoSA] Layout transform: Permute dim (%d) to the innermost\n", acc->simd_dim);
                         *layout_transform = 1;
                     }
@@ -2705,7 +2727,7 @@ isl_stat sa_simd_vectorization_optimize(struct autosa_kernel *sa, char *mode)
 
     if (data.layout_trans)
     {
-        printf("[AutoSA] Warning: Layout transformation is required to proceed. SIMD vectorization is skipped.\n");        
+        printf("[AutoSA] Warning: Layout transformation is required to proceed. SIMD vectorization is skipped.\n");
     }
     else
     {
@@ -2806,15 +2828,17 @@ isl_stat sa_simd_vectorization_optimize(struct autosa_kernel *sa, char *mode)
 isl_stat sa_pe_optimize(struct autosa_kernel *sa, bool pass_en[], char *pass_mode[])
 {
     printf("[AutoSA] Appy PE optimization.\n");
+//#ifdef _DEBUG
+//    DBGSCHD(stdout, sa->schedule, isl_schedule_get_ctx(sa->schedule))
+//#endif
+
     /* Prepartion before the optimization. */
     /* Initialize the autosa_loop_types. */
     sa_loop_init(sa);
     /* Set up the space_time properties. */
-    sa_space_time_loop_setup(sa);
+    sa_space_time_loop_setup(sa);    
     /* Extract the communication pairs. */
-    sa_io_update(sa);
-    
-    //DBGSCHD(stdout, sa->schedule, sa->ctx)
+    sa_io_update(sa);    
 
     /* Extract the tile sizes. */
     sa->sizes = extract_sizes_from_str(sa->ctx, sa->scop->options->autosa->sa_sizes);
@@ -2823,17 +2847,14 @@ isl_stat sa_pe_optimize(struct autosa_kernel *sa, bool pass_en[], char *pass_mod
     sa->core = isl_union_set_universe(domain);
 
     /* Array partitioning. */
-    sa_array_partitioning_optimize(sa, pass_en[0], pass_mode[0], pass_en[1], pass_mode[1]);
-    //DBGSCHD(stdout, sa->schedule, sa->ctx)
-    
+    sa_array_partitioning_optimize(sa, pass_en[0], pass_mode[0], pass_en[1], pass_mode[1]);    
+
     /* Latency hiding. */
-    sa_latency_hiding_optimize(sa, pass_en[2], pass_mode[2]);
-    //DBGSCHD(stdout, sa->schedule, sa->ctx)
-    
+    sa_latency_hiding_optimize(sa, pass_en[2], pass_mode[2]);    
+
     /* SIMD vectorization. */
     if (pass_en[3])
-        sa_simd_vectorization_optimize(sa, pass_mode[3]);
-    //DBGSCHD(stdout, sa->schedule, sa->ctx)
+        sa_simd_vectorization_optimize(sa, pass_mode[3]);    
 
     return isl_stat_ok;
 }
@@ -3161,6 +3182,13 @@ static __isl_give isl_schedule_node *compute_and_comm_optimize(
     cJSON *latency_json, *latency_en_json, *latency_mode_json;
     cJSON *simd_json, *simd_en_json, *simd_mode_json;
 
+    /* Set up the sched_pos property */
+    node = sched_pos_setup(node);
+
+//#ifdef _DEBUG
+//    DBGSCHDNODE(stdout, node, isl_schedule_node_get_ctx(node))
+//#endif
+
     /* Generate systolic arrays using space-time mapping. */
     schedule = isl_schedule_node_get_schedule(node);
     isl_schedule_node_free(node);
@@ -3169,29 +3197,20 @@ static __isl_give isl_schedule_node *compute_and_comm_optimize(
         printf("[AutoSA] %d systolic arrays generated.\n", num_sa);
     space_time_json = cJSON_GetObjectItemCaseSensitive(gen->tuning_config, "space_time");
     space_time_mode_json = cJSON_GetObjectItemCaseSensitive(space_time_json, "mode");
-    space_time_mode = space_time_mode_json->valuestring;
-//#ifdef _DEBUG
-//    struct autosa_kernel *sa_tmp = sa_candidates[2];
-//    isl_printer *p_d = isl_printer_to_file(gen->ctx, stdout);
-//    p_d = isl_printer_set_yaml_style(p_d, ISL_YAML_STYLE_BLOCK);
-//    p_d = isl_printer_print_schedule(p_d, sa_tmp->schedule);
-//    p_d = isl_printer_free(p_d);
-//    DBGVAR(std::cout, sa_tmp->space_w);
-//    //exit(0);
-//#endif
+    space_time_mode = space_time_mode_json->valuestring;    
 
     if (!strcmp(space_time_mode, "auto"))
     {
         /* Space-time transformation is set in AUTO mode. We will pick up
-     * one systolic array to proceed based on heuristics. 
-     */
+         * one systolic array to proceed based on heuristics. 
+         */
         kernel = sa_candidates_smart_pick(sa_candidates, num_sa);
     }
     else
     {
         /* Space-time transformation is set in MANUAL mode. We will take the user
-     * specification to select one systolic array to proceed.
-     */
+         * specification to select one systolic array to proceed.
+         */
         isl_union_map *sizes = extract_sizes_from_str(gen->ctx,
                                                       gen->options->autosa->sa_sizes);
         int kernel_id = read_space_time_kernel_id(sizes);
@@ -3199,8 +3218,8 @@ static __isl_give isl_schedule_node *compute_and_comm_optimize(
         if (kernel_id < 0)
         {
             /* User hasn't specified which systolic array to choose yet.
-       * We will dump out the number of systolic array designs and 
-       * exit the program. */
+             * We will dump out the number of systolic array designs and 
+             * exit the program. */
             FILE *fp;
             char *content;
             isl_printer *p_str;
@@ -3229,12 +3248,9 @@ static __isl_give isl_schedule_node *compute_and_comm_optimize(
         }
     }
 
-    /* #ifdef _DEBUG
-  isl_printer *pd = isl_printer_to_file(kernel->ctx, stdout);
-  pd = isl_printer_set_yaml_style(pd, ISL_YAML_STYLE_BLOCK);
-  pd = isl_printer_print_schedule(pd, kernel->schedule);
-  isl_printer_free(pd);
-#endif */
+//#ifdef _DEBUG
+//    DBGSCHD(stdout, kernel->schedule, isl_schedule_get_ctx(kernel->schedule))
+//#endif
 
     kernel->prog = gen->prog;
     kernel->options = gen->options;
@@ -3269,6 +3285,7 @@ static __isl_give isl_schedule_node *compute_and_comm_optimize(
     pe_opt_mode[1] = array_part_L2_mode_json->valuestring;
     pe_opt_mode[2] = latency_mode_json->valuestring;
     pe_opt_mode[3] = simd_mode_json->valuestring;
+
     sa_pe_optimize(kernel, pe_opt_en, pe_opt_mode);
     /* Create the autosa_kernel object and attach to the schedule. */
     if (!kernel)
@@ -3299,7 +3316,7 @@ static __isl_give isl_schedule_node *compute_and_comm_optimize(
     kernel->arrays = accessed_by_domain(expanded, gen->prog);
     //kernel->id = gen->kernel_id++;
     /* For FPGA, we set grid_size and block_size as 1, i.e. only one thread block 
-   * and one thread inside the thread block. */
+     * and one thread inside the thread block. */
     kernel->n_grid = 1;
     kernel->block_dim[0] = 1;
     kernel->n_block = 1;
@@ -3359,7 +3376,7 @@ static __isl_give isl_schedule_node *compute_and_comm_optimize(
     kernel->schedule = isl_schedule_free(kernel->schedule);
     kernel->schedule = isl_schedule_node_get_schedule(node);
 
-    //DBGSCHD(stdout, kernel->schedule, gen->ctx)    
+    //DBGSCHD(stdout, kernel->schedule, gen->ctx)
 
     /* Communication Management */
     sa_comm_management(kernel, gen);

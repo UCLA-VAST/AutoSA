@@ -35,7 +35,7 @@ extern "C"
 {
 #endif
 
-//#define _DEBUG
+#define _DEBUG
 
 #define DBGVAR(os, var)                                  \
   (os) << "DBG: " << __FILE__ << "(" << __LINE__ << ") " \
@@ -93,6 +93,14 @@ extern "C"
   printf("%s(%d) Print basic map.\n", __FILE__, __LINE__);             \
   isl_printer *p_debug = isl_printer_to_file(ctx, os);                 \
   p_debug = isl_printer_print_basic_map(p_debug, bmap);                \
+  p_debug = isl_printer_print_str(p_debug, "\n");                      \
+  p_debug = isl_printer_free(p_debug);                                 \
+}
+
+#define DBGMA(os, ma, ctx)                                            {\
+  printf("%s(%d) Print multi aff.\n", __FILE__, __LINE__);             \
+  isl_printer *p_debug = isl_printer_to_file(ctx, os);                 \
+  p_debug = isl_printer_print_multi_aff(p_debug, ma);                  \
   p_debug = isl_printer_print_str(p_debug, "\n");                      \
   p_debug = isl_printer_free(p_debug);                                 \
 }
@@ -241,6 +249,8 @@ struct autosa_kernel_var
   int n_lane;
   /* Array partition factors */
   int n_part;
+  /* Needs initialize */
+  int init_required;
 };
 
 struct autosa_kernel
@@ -610,6 +620,8 @@ struct autosa_array_ref_group
   int copy_in;
   /* Does copy-out module exist? */
   int copy_out;
+  /* Attached drain group */
+  struct autosa_array_ref_group *attached_drain_group;
   /* AutoSA Extended */
 };
 
@@ -968,9 +980,11 @@ struct autosa_kernel_stmt
       int boundary;
       int dummy;
       int serialize;
+      int reduce;
       char *in_fifo_name;
       char *out_fifo_name;
       char *fifo_type;
+      char *reduce_op;
       int filter_sched_depth;      
       int filter_param_id;
       int data_pack;
@@ -1030,6 +1044,7 @@ struct autosa_node_band_prop
   int *coincident;
   enum autosa_loop_type *pe_opt;
   enum autosa_loop_type *space_time;
+  int *sched_pos;
   int n_member;
   isl_multi_union_pw_aff *mupa;
 };
@@ -1124,7 +1139,9 @@ __isl_give isl_vec *get_dep_dis_at_schedule(__isl_keep isl_basic_map *dep,
                                             __isl_keep isl_schedule *schedule);
 __isl_give isl_vec *get_dep_dis_at_node(__isl_keep isl_basic_map *dep,
                                         __isl_keep isl_schedule_node *band);
-__isl_give isl_schedule *loop_interchange_at_node(
+//__isl_give isl_schedule *loop_interchange_at_node(
+//    __isl_take isl_schedule_node *node, isl_size level1, isl_size level2);
+__isl_give isl_schedule_node *loop_interchange_at_node(
     __isl_take isl_schedule_node *node, isl_size level1, isl_size level2);
 __isl_give isl_schedule_node *get_outermost_permutable_node(
     __isl_keep isl_schedule *schedule);
@@ -1158,6 +1175,8 @@ __isl_give isl_union_set *set_schedule_neq(
     __isl_keep isl_schedule_node *node, __isl_keep isl_id_list *names);    
 isl_bool is_flow_dep_carried_by_array_part_loops(__isl_keep isl_schedule *schedule,
                                                  struct autosa_array_ref_group *group, struct autosa_kernel *kernel);
+__isl_give isl_schedule_node *reorder_band_by_dep_dis(__isl_take isl_schedule_node *node);
+__isl_give isl_schedule_node *sched_pos_setup(__isl_take isl_schedule_node *node);
 
 /* Schedule */
 __isl_give isl_schedule *compute_schedule(struct autosa_gen *gen);

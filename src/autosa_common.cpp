@@ -891,6 +891,8 @@ struct autosa_array_ref_group *autosa_array_ref_group_free(
   isl_schedule_free(group->io_schedule);
   isl_schedule_free(group->io_L1_schedule);
   isl_union_pw_multi_aff_free(group->copy_schedule);
+  if (group->attached_drain_group)
+    autosa_array_ref_group_free(group->attached_drain_group);
   free(group);
 
   return NULL;
@@ -930,6 +932,7 @@ struct autosa_array_ref_group *autosa_array_ref_group_init(
   group->n_lane = 0;
   group->copy_schedule_dim = 0;
   group->copy_schedule = NULL;
+  group->attached_drain_group = NULL;
 
   return group;
 }
@@ -1344,6 +1347,7 @@ void autosa_kernel_stmt_free(void *user)
     free(stmt->u.i.out_fifo_name);
     isl_ast_expr_free(stmt->u.i.local_index);
     isl_ast_expr_free(stmt->u.i.index);
+    free(stmt->u.i.reduce_op);
     break;
   case AUTOSA_KERNEL_STMT_MODULE_CALL:
   case AUTOSA_KERNEL_STMT_EXT_MODULE:

@@ -29,6 +29,8 @@ __isl_give isl_printer *autosa_array_info_print_declaration_argument(
     const char *memory_space, int n_ref);
 __isl_give isl_printer *autosa_module_array_info_print_call_argument(
     __isl_take isl_printer *p, struct polysa_array_info *array);
+__isl_give isl_printer *autosa_print_var_initialization(
+    __isl_take isl_printer *p, struct autosa_kernel_var *var);
 
 /* Utils */
 __isl_give isl_printer *print_str_new_line(__isl_take isl_printer *p, const char *str);

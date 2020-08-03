@@ -2372,6 +2372,13 @@ static __isl_give isl_printer *autosa_print_intra_trans_module(
     p = isl_printer_end_line(p);
     p = isl_printer_end_line(p);
   }
+  /* For local reduce, print the buffer initialization. */
+  for (int i = 0; i < module->n_var; i++) {
+    if (module->var[i].init_required) {
+      p = autosa_print_var_initialization(p, &module->var[i]);
+    }
+  }
+  p = isl_printer_end_line(p);
 
   print_options = isl_ast_print_options_alloc(ctx);
   print_options = isl_ast_print_options_set_print_user(print_options,
@@ -2607,7 +2614,7 @@ static __isl_give isl_printer *print_module_serialize_body(
   total_bound = convert_pwqpoly_to_int(total_bound_pwq);
 
   if (module->data_pack_intra == 1) 
-    throw std::runtime_error("[AutoSA] Error: Host serialize for data pack factor is not supported.");
+    throw std::runtime_error("[AutoSA] Error: Host serialize for data pack factor 1 is not supported.");
 
   if (module->data_pack_inter == module->data_pack_intra) {
     // for (int i = 0; i < total_bound / module->data_pack_intra; i++) {
@@ -3074,9 +3081,12 @@ static __isl_give isl_printer *autosa_print_default_pe_dummy_module(
   fprintf(hls->kernel_c, "{\n");
   if (wrapper)
     fprintf(hls->kernel_c, "#pragma HLS INLINE\n");
-  print_module_iterators(hls->kernel_c, module);
 
   p = isl_printer_indent(p, 2);
+  p = print_str_new_line(p, "/* Variable Declaration */");    
+  print_module_iterators(hls->kernel_c, module);
+  p = print_str_new_line(p, "/* Variable Declaration */");
+
   p = isl_printer_end_line(p);
 
   print_options = isl_ast_print_options_alloc(ctx);

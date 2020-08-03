@@ -2713,6 +2713,27 @@ static isl_bool any_pe_opt(__isl_keep isl_schedule_band *band)
   
   return isl_bool_false;
 }
+
+/* Is sched_pos property existed or are any numbers in "band" marked sched_pos? 
+ */
+static isl_bool any_sched_pos(__isl_keep isl_schedule_band *band)
+{
+	int i;
+	isl_size n;
+
+	n = isl_schedule_band_n_member(band);
+	if (n < 0)
+		return isl_bool_error;
+	for (i = 0; i < n; ++i) {
+		int sched_pos;
+
+		sched_pos = isl_schedule_band_member_get_sched_pos(band, i);
+		if (sched_pos >= 0 && sched_pos < n)
+			return isl_bool_true;
+	}
+
+	return isl_bool_false;
+}
 /* AutoSA Extended */
 
 /* Print the band node "band" to "p".
@@ -2730,6 +2751,7 @@ static __isl_give isl_printer *print_tree_band(__isl_take isl_printer *p,
 	/* AutoSA Extended */
 	isl_bool pe_opt;
 	isl_bool space_time;
+	isl_bool sched_pos;
 	/* AutoSA Extended */
 
 	p = isl_printer_print_str(p, "schedule");
@@ -2861,6 +2883,30 @@ static __isl_give isl_printer *print_tree_band(__isl_take isl_printer *p,
     p = isl_printer_yaml_end_sequence(p);
     p = isl_printer_set_yaml_style(p, style);
   }
+	sched_pos = any_sched_pos(band);
+	if (sched_pos < 0)
+		return isl_printer_free(p);
+	if (sched_pos)		 {
+		int i;
+		isl_size n;
+		int style;
+
+		p = isl_printer_yaml_next(p);
+		p = isl_printer_print_str(p, "sched_pos");
+		p = isl_printer_yaml_next(p);
+		style = isl_printer_get_yaml_style(p);
+		p = isl_printer_set_yaml_style(p, ISL_YAML_STYLE_FLOW);
+		p = isl_printer_yaml_start_sequence(p);
+		n = isl_schedule_band_n_member(band);
+		if (n < 0)
+			return isl_printer_free(p);
+		for (i = 0; i < n; ++i) {
+			p = isl_printer_print_int(p, isl_schedule_band_member_get_sched_pos(band, i));
+			p = isl_printer_yaml_next(p);
+		}
+		p = isl_printer_yaml_end_sequence(p);
+		p = isl_printer_set_yaml_style(p, style);
+	}
 	/* AutoSA Extended */
 
 	options = isl_schedule_band_get_ast_build_options(band);
@@ -3107,7 +3153,7 @@ enum autosa_loop_type isl_schedule_tree_band_member_get_pe_opt(
   return isl_schedule_band_member_get_pe_opt(tree->band, pos);
 }
 
-/* Set the space_time property of the band member accoding to "loop_type".
+/* Set the pe_opt property of the band member accoding to "loop_type".
  */
 __isl_give isl_schedule_tree *isl_schedule_tree_band_member_set_pe_opt(
   __isl_take isl_schedule_tree *tree, int pos, enum autosa_loop_type loop_type)
@@ -3126,6 +3172,47 @@ __isl_give isl_schedule_tree *isl_schedule_tree_band_member_set_pe_opt(
 
   tree->band = isl_schedule_band_member_set_pe_opt(tree->band, pos,
       loop_type);
+  if (!tree->band)
+    return isl_schedule_tree_free(tree);
+  
+  return tree;
+}
+
+/* Return the sched_pos property of the band member at position 
+ * "pos" of the band tree root.
+ */
+int isl_schedule_tree_band_member_get_sched_pos(
+  __isl_keep isl_schedule_tree *tree, int pos)
+{
+  if (!tree)
+    return isl_size_error;
+  
+  if (tree->type != isl_schedule_node_band)
+    isl_die(isl_schedule_tree_get_ctx(tree), isl_error_invalid,
+        "not a band node", return -1);
+
+  return isl_schedule_band_member_get_sched_pos(tree->band, pos);
+}
+
+/* Set the sched_pos property of the band member accoding to "sched_pos".
+ */
+__isl_give isl_schedule_tree *isl_schedule_tree_band_member_set_sched_pos(
+  __isl_take isl_schedule_tree *tree, int pos, int sched_pos)
+{
+  if (!tree)
+    return NULL;
+  if (tree->type != isl_schedule_node_band)
+    isl_die(isl_schedule_tree_get_ctx(tree), isl_error_invalid,
+        "not a band node", return isl_schedule_tree_free(tree));
+  if (isl_schedule_tree_band_member_get_sched_pos(tree, pos) == 
+      sched_pos)
+    return tree;
+  tree = isl_schedule_tree_cow(tree);
+  if (!tree)
+    return NULL;
+
+  tree->band = isl_schedule_band_member_set_sched_pos(tree->band, pos,
+      sched_pos);
   if (!tree->band)
     return isl_schedule_tree_free(tree);
   
