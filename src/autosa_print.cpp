@@ -1460,11 +1460,11 @@ __isl_give isl_printer *print_pe_dummy_module_arguments(
   if (types)
   {
     p = autosa_fifo_print_declaration_arguments(p,
-                                                group, n_lane, "in", target);
+                                                group, n_lane, pe_dummy_module->in? "in" : "out", target);
   }
   else
     p = autosa_fifo_print_call_argument(p,
-                                        group, "in", target);
+                                        group, pe_dummy_module->in? "in" : "out", target);
   first = 0;
 
   return p;
@@ -2185,7 +2185,10 @@ __isl_give isl_printer *print_module_call_upper(__isl_take isl_printer *p,
         p = isl_printer_print_str(p, "p = isl_printer_print_str(p, \"_in\")");
         p = isl_printer_end_line(p);
       }
-      p = print_pretrans_inst_ids_suffix(p, n, group->io_L1_pe_expr, group->dir);
+      if (pe_dummy_module->in)
+        p = print_pretrans_inst_ids_suffix(p, n, group->io_L1_pe_expr, group->dir);
+      else
+        p = print_pretrans_inst_ids_suffix(p, n, group->io_L1_pe_expr, NULL);
     }
     else
     {
@@ -2387,8 +2390,14 @@ static __isl_give isl_printer *print_module_call_lower(__isl_take isl_printer *p
 
     if (lower_is_PE)
     {
+      //p = print_pretrans_inst_ids_suffix(p, module->kernel->n_sa_dim,
+      //                                   boundary ? group->io_pe_expr_boundary : group->io_pe_expr, 
+      //                                   NULL
+      //                                   );
       p = print_pretrans_inst_ids_suffix(p, module->kernel->n_sa_dim,
-                                         boundary ? group->io_pe_expr_boundary : group->io_pe_expr, NULL);
+                                         boundary ? group->io_pe_expr_boundary : group->io_pe_expr, 
+                                         module->in? NULL : group->dir
+                                         );
     }
     else
     {
@@ -2637,33 +2646,63 @@ __isl_give isl_printer *autosa_kernel_print_io(__isl_take isl_printer *p,
 
   if (is_dummy)
   {
-    /* [type] fifo_data; */
-    p = isl_printer_start_line(p);
-    if (data_pack == 1)
-    {
-      p = isl_printer_print_str(p, group->array->type);
-    }
-    else
-    {
-      p = isl_printer_print_str(p, group->array->name);
-      p = isl_printer_print_str(p, "_t");
-      p = isl_printer_print_int(p, data_pack);
-    }
-    p = isl_printer_print_str(p, " fifo_data;");
-    p = isl_printer_end_line(p);
+    if (stmt->u.i.in) {
+      /* [type] fifo_data; */
+      p = isl_printer_start_line(p);
+      if (data_pack == 1)
+      {
+        p = isl_printer_print_str(p, group->array->type);
+      }
+      else
+      {
+        p = isl_printer_print_str(p, group->array->name);
+        p = isl_printer_print_str(p, "_t");
+        p = isl_printer_print_int(p, data_pack);
+      }
+      p = isl_printer_print_str(p, " fifo_data;");
+      p = isl_printer_end_line(p);
 
-    /* fifo_data = fifo.read(); */
-    p = isl_printer_start_line(p);
-    p = isl_printer_print_str(p, "fifo_data = ");
-    if (hls->target == XILINX_HW)
-      p = print_fifo_rw_xilinx(p, fifo_name, 1);
-    else if (hls->target == INTEL_HW)
-      p = print_fifo_rw_intel(p, fifo_name, 1);
-    p = isl_printer_print_str(p, ";");
-    p = isl_printer_end_line(p);
+      /* fifo_data = fifo.read(); */
+      p = isl_printer_start_line(p);
+      p = isl_printer_print_str(p, "fifo_data = ");
+      if (hls->target == XILINX_HW)
+        p = print_fifo_rw_xilinx(p, fifo_name, 1);
+      else if (hls->target == INTEL_HW)
+        p = print_fifo_rw_intel(p, fifo_name, 1);
+      p = isl_printer_print_str(p, ";");
+      p = isl_printer_end_line(p);
 
-    free(fifo_name);
-    return p;
+      free(fifo_name);
+      return p;
+    } else {
+      if (stmt->u.i.reduce) {
+        /* [type] fifo_data = 0; */
+        p = isl_printer_start_line(p);
+        if (data_pack == 1) {
+          p = isl_printer_print_str(p, group->array->type);
+        } else {
+          p = isl_printer_print_str(p, group->array->name);
+          p = isl_printer_print_str(p, "_t");
+          p = isl_printer_print_int(p, data_pack);
+        }
+        p = isl_printer_print_str(p, " fifo_data = 0;");
+        p = isl_printer_end_line(p);
+        
+        /* fifo.write(fifo_data); */
+        p = isl_printer_start_line(p);
+        if (hls->target == XILINX_HW)
+          p = print_fifo_rw_xilinx(p, fifo_name, 0);
+        else if (hls->target == INTEL_HW)
+          p = print_fifo_rw_intel(p, fifo_name, 0);
+        p = isl_printer_print_str(p, "fifo_data);");
+        p = isl_printer_end_line(p);
+
+        free(fifo_name);
+        return p;
+      } else {
+        throw std::runtime_error("[AutoSA] Outbound dummy io stmt is only supported when local reduce is enabled.");
+      }
+    }
   }
 
   int nxt_data_pack = stmt->u.i.nxt_data_pack;

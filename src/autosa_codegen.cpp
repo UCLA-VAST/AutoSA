@@ -1005,13 +1005,15 @@ static __isl_give isl_schedule_node *add_io_ids_filter(
 
 static __isl_give isl_printer *print_io_stmt_prefix(
   __isl_take isl_printer *p,
-  int read, int dummy, 
+  int read, int dummy, int reduce,
   struct autosa_array_ref_group *group)
 {
   /* io_type */
   p = isl_printer_print_str(p, read ? "in" : "out");
   if (dummy)
     p = isl_printer_print_str(p, "_dummy");
+  if (reduce)
+    p = isl_printer_print_str(p, "_reduce");
   
   /* fifo_name */
   p = isl_printer_print_str(p, ".");
@@ -3287,7 +3289,9 @@ struct autosa_add_pe_ext_io_copies_data
   struct autosa_array_ref_group *io_group;
   struct autosa_stmt_access *ref;
   int read;
+  int in; /* I/O direction */
   int dummy;
+  int reduce;
   isl_union_set *filter;
 };
 
@@ -3493,7 +3497,11 @@ __isl_give isl_schedule_node *add_pe_ext_io_copies_stmt(
 
   /* read.fifoX[D -> A] -> [D -> A] */
   p_str = isl_printer_to_str(ctx);
-  p_str = print_io_stmt_prefix(p_str, read, data->dummy, io_group);  
+  if (data->dummy)
+    p_str = print_io_stmt_prefix(p_str, data->in, data->dummy, data->reduce, io_group);  
+  else
+    p_str = print_io_stmt_prefix(p_str, read, data->dummy, 0, io_group);
+  
   stmt_name = isl_printer_get_str(p_str);
   isl_printer_free(p_str);
 
@@ -3599,7 +3607,7 @@ static __isl_give isl_schedule_node *add_pe_ext_io_copies(
       struct autosa_array_ref_group *pe_group =
           autosa_find_pe_group(local_array, io_group, ref);
       struct autosa_add_pe_ext_io_copies_data data =
-          {kernel, pe_group, io_group, ref, read, 0, NULL};
+          {kernel, pe_group, io_group, ref, read, read, 0, 0, NULL};
       node = isl_schedule_node_map_descendant_bottom_up(node,
                                                         &add_pe_ext_io_copies_stmt, &data);
     }
@@ -3660,7 +3668,7 @@ __isl_give isl_schedule_node *add_pe_int_io_copies(
   /* read.fifoX[D -> A] -> [D -> A] */
   /* Generate statement name. */
   p_str = isl_printer_to_str(kernel->ctx);
-  p_str = print_io_stmt_prefix(p_str, read, 0, io_group);  
+  p_str = print_io_stmt_prefix(p_str, read, 0, 0, io_group);  
   stmt_name = isl_printer_get_str(p_str);
   isl_printer_free(p_str);
 
@@ -3972,20 +3980,26 @@ static __isl_give isl_schedule_node *add_pe_ext_io_copies_dummy(
     struct autosa_kernel *kernel,
     struct autosa_local_array_info *local_array,
     struct autosa_array_ref_group *io_group,
-    __isl_take isl_schedule_node *node, int read)
+    __isl_take isl_schedule_node *node, int read, int in, int reduce)
 {
   isl_union_set *filter = isl_union_set_from_set(isl_set_empty(
       isl_set_get_space(kernel->context)));
   for (int i = 0; i < io_group->n_ref; i++)
   {
     struct autosa_stmt_access *ref = io_group->refs[i];
-    struct autosa_array_ref_group *pe_group = autosa_find_pe_group(
-        local_array, io_group, ref);
-    struct autosa_add_pe_ext_io_copies_data data =
-        {kernel, pe_group, io_group, ref, read, 1, NULL};
-    node = isl_schedule_node_map_descendant_bottom_up(node,
-                                                      &add_pe_ext_io_copies_stmt, &data);
-    filter = isl_union_set_union(filter, data.filter);
+
+    if ((io_group->local_array->array_type == AUTOSA_EXT_ARRAY) ||
+       ((io_group->local_array->array_type == AUTOSA_INT_ARRAY) && 
+       (read && ref->read) || (!read && ref->write)))
+    {
+      struct autosa_array_ref_group *pe_group = autosa_find_pe_group(
+          local_array, io_group, ref);
+      struct autosa_add_pe_ext_io_copies_data data =
+          {kernel, pe_group, io_group, ref, 1, in, 1, reduce, NULL};
+      node = isl_schedule_node_map_descendant_bottom_up(node,
+                                                        &add_pe_ext_io_copies_stmt, &data);
+      filter = isl_union_set_union(filter, data.filter);
+    }
   }
 
   filter = isl_union_set_coalesce(filter);
@@ -3995,10 +4009,14 @@ static __isl_give isl_schedule_node *add_pe_ext_io_copies_dummy(
   return node;
 }
 
-/* Create the schedule for the PE dummy module that collects the dummy data.
+/* Create the schedule for the PE dummy module that collects/sends the dummy data.
+ * If "in" is 1, generate dummy module collects the dummy data.
+ * Else, generate dummy module sends the dummy data.
  */
 static __isl_give isl_schedule *pe_module_dummy_gen(struct autosa_gen *gen,
-                                                    struct autosa_hw_module *module, struct autosa_array_ref_group *group)
+                                                    struct autosa_hw_module *module, 
+                                                    struct autosa_array_ref_group *group,
+                                                    int in)
 {
   isl_schedule *schedule;
   isl_schedule_node *node;
@@ -4019,7 +4037,9 @@ static __isl_give isl_schedule *pe_module_dummy_gen(struct autosa_gen *gen,
   node = isl_schedule_node_child(node, 0);
   node = split_band(node, kernel->n_sa_dim);
   node = autosa_tree_move_down_to_pe(node, kernel->core);
-  node = add_pe_ext_io_copies_dummy(kernel, group->local_array, group, node, 1);
+  node = add_pe_ext_io_copies_dummy(
+            kernel, group->local_array, group, node, 1, in, 
+            gen->options->autosa->local_reduce && group->attached_drain_group);
 
   /* Insert "pipeline" mark under the last "latency" mark. */
   node = isl_schedule_node_map_descendant_bottom_up(node,
@@ -4200,14 +4220,17 @@ static __isl_give struct autosa_hw_module *sa_pe_module_gen(struct autosa_gen *g
    * PE. However, for the first/last PE on the data transfer direction, 
    * the input/output port consumes/produces dummy data. 
    * We add dummy modules to handle these cases to consume the dummy data.
+   * 
+   * In addition, when local reduce is enabled, the boundary PEs should only take 
+   * in init values (i.e., 0), we will also add dummy module for such a case.
    */
   module->n_pe_dummy_modules = 0;
   module->pe_dummy_modules = NULL;
   for (int i = 0; i < kernel->n_array; ++i)
   {
     struct autosa_local_array_info *array = &kernel->array[i];
-    if (array->array_type == AUTOSA_INT_ARRAY)
-      continue;
+    //if (array->array_type == AUTOSA_INT_ARRAY)
+    //  continue;
     for (int j = 0; j < array->n_io_group; j++)
     {
       struct autosa_array_ref_group *group = array->io_groups[j];
@@ -4217,7 +4240,9 @@ static __isl_give struct autosa_hw_module *sa_pe_module_gen(struct autosa_gen *g
         continue;
       /* Generate the dummy module. */
       isl_schedule *sched;
-      sched = pe_module_dummy_gen(gen, module, group);
+      int in = array->array_type == AUTOSA_INT_ARRAY? 0 : 1;
+
+      sched = pe_module_dummy_gen(gen, module, group, in);
       module->n_pe_dummy_modules++;
       module->pe_dummy_modules =
           (struct autosa_pe_dummy_module **)realloc(module->pe_dummy_modules,
@@ -4226,6 +4251,7 @@ static __isl_give struct autosa_hw_module *sa_pe_module_gen(struct autosa_gen *g
       dummy_module->module = module;
       dummy_module->io_group = group;
       dummy_module->sched = sched;
+      dummy_module->in = in;
       module->pe_dummy_modules[module->n_pe_dummy_modules - 1] = dummy_module;
     }
   }
@@ -4238,8 +4264,8 @@ static __isl_give struct autosa_hw_module *sa_pe_module_gen(struct autosa_gen *g
  * I/O module (copy-in and copy-out)
  * Drain module
  * We will reorder the modules following the below sequence:
- * I/O module (copy-in)
- * PE module
+ * I/O module (copy-in) 
+ * PE module 
  * I/O module (copy-out)
  * Drain module
  * The reason for the re-ordering is for CSim to proceed in Xilinx environment.
@@ -4347,7 +4373,10 @@ static __isl_give isl_schedule *pe_dummy_gen_module_call(struct autosa_gen *gen,
   }
   if (isl_schedule_node_get_type(node) == isl_schedule_node_band)
   {
-    L1_filter = schedule_eq_ub(node);
+    if (pe_dummy_module->in)
+      L1_filter = schedule_eq_ub(node);
+    else
+      L1_filter = schedule_eq_lb(node);    
     insert_L1 = isl_bool_true;
   }
 
@@ -4495,6 +4524,7 @@ static isl_stat top_module_pe_gen_module_call(struct autosa_gen *gen,
 
   if (module->n_pe_dummy_modules > 0)
   {
+    int inserted = 0;
     /* Generate dummy module calls. */
     for (int i = 0; i < module->n_pe_dummy_modules; i++)
     {
@@ -4507,7 +4537,15 @@ static isl_stat top_module_pe_gen_module_call(struct autosa_gen *gen,
       top->n_module_calls++;
       top->module_call_scheds = (isl_schedule **)realloc(top->module_call_scheds,
                                                          top->n_module_calls * sizeof(isl_schedule *));
-      top->module_call_scheds[top->n_module_calls - 1] = sched;
+      /* If the module is out, we need to place it before the PE module call. */
+      if (!pe_dummy_module->in) {        
+        for (int j = top->n_module_calls - 2; j >= top->n_module_calls - 1 - inserted - 1; j--)
+          top->module_call_scheds[j + 1] = top->module_call_scheds[j];
+        top->module_call_scheds[top->n_module_calls - 1 - inserted - 1] = sched;
+      } else {
+        top->module_call_scheds[top->n_module_calls - 1] = sched;
+      }
+      inserted++;
     }
   }
 
@@ -4731,7 +4769,15 @@ static __isl_give isl_schedule_node *io_gen_module_call(
   {
     if (module->level > 1)
     {
-      lower_level_filter = schedule_eq_lb(node);
+      if (module->to_pe) {
+        if (module->in)
+          lower_level_filter = schedule_eq_lb(node);
+        else
+          lower_level_filter = schedule_eq_ub(node);
+      } else {
+        lower_level_filter = schedule_eq_lb(node);
+      }
+      
       insert_lower = isl_bool_true;
     }
   }
@@ -7727,6 +7773,7 @@ static __isl_give isl_ast_node *create_io_leaf(struct autosa_kernel *kernel,
   int is_trans_boundary;
   int is_trans_reduce;
   int is_dummy;
+  int is_dummy_reduce;
   int is_serialize; // is dram access to be serialized
   struct autosa_array_ref_group *group = pair->local_group;
   int depth;
@@ -7745,10 +7792,10 @@ static __isl_give isl_ast_node *create_io_leaf(struct autosa_kernel *kernel,
 
   type = isl_map_get_tuple_name(access, isl_dim_in);  
   /* The format of io_trans stmt name:
-   * in/out_trans[_dram]/[_dram_serialize]/[_boundary].[in_fifo_name].[out_fifo_name].[is_buffer].
+   * in/out_trans[_dram]/[_dram_serialize]/[_boundary]/[_reduce_(reduce_op)].[in_fifo_name].[out_fifo_name].[is_buffer].
    * [cur_pack_lane].[nxt_pack_lane].[coalesce_depth].[coalesce_bound]
    * or 
-   * in/out[_dummy].[fifo_name].[cur_pack_lane].[nxt_pack_lane]
+   * in/out[_dummy][_reduce].[fifo_name].[cur_pack_lane].[nxt_pack_lane]
    */
 
   /* Classify the io stmt type. */
@@ -7767,6 +7814,11 @@ static __isl_give isl_ast_node *create_io_leaf(struct autosa_kernel *kernel,
   else
   {
     is_dummy = 0;
+  }
+  if (is_dummy) {
+    is_dummy_reduce = !prefixcmp(type, "in_dummy_reduce") || !prefixcmp(type, "out_dummy_reduce");
+  } else {
+    is_dummy_reduce = 0;
   }
   if (is_trans_dram)
   {
@@ -7792,7 +7844,7 @@ static __isl_give isl_ast_node *create_io_leaf(struct autosa_kernel *kernel,
     stmt->u.i.reduce = 1;
     stmt->u.i.reduce_op = extract_io_stmt_reduce_op(ctx, type);
   } else {
-    stmt->u.i.reduce = 0;
+    stmt->u.i.reduce = is_dummy_reduce;
     stmt->u.i.reduce_op = NULL;
   }
 
@@ -8103,47 +8155,6 @@ static __isl_give isl_ast_node *create_ext_module_leaf(
     stmt->u.m.lower = 0;
     stmt->u.m.upper = 0;
   }
-
-  //  if (stmt->u.m.lower) {
-  //    if (!stmt->u.m.boundary) {
-  //      if ((module->type == IO_MODULE || module->type == DRAIN_MODULE)
-  //            && !group->io_pe_expr) {
-  //        if (module->to_pe) {
-  //          isl_union_map *umap = isl_ast_build_get_schedule(build);
-  //          isl_union_set *uset = isl_union_map_range(umap);
-  //          isl_set *set = isl_set_from_union_set(uset);
-  //          isl_map *map = isl_set_identity(set);
-  //          map = isl_map_flatten_range(map);
-  //          trans = isl_multi_aff_copy(group->io_trans);
-  //          isl_map *map2 = isl_map_from_multi_aff(trans);
-  //          map2 = isl_map_reverse(map2);
-  //          map = isl_map_apply_range(map, map2);
-  //          isl_pw_multi_aff *pma = isl_pw_multi_aff_from_map(map);
-  //          expr = isl_ast_build_access_from_pw_multi_aff(build, pma);
-  //          group->io_pe_expr = expr;
-  //        }
-  //      }
-  //    }
-  //    /* boundary module */
-  //    if (stmt->u.m.boundary) {
-  //      if ((module->type == IO_MODULE || module->type == DRAIN_MODULE) && !group->io_pe_expr_boundary) {
-  //        if (module->to_pe) {
-  //          isl_union_map *umap = isl_ast_build_get_schedule(build);
-  //          isl_union_set *uset = isl_union_map_range(umap);
-  //          isl_set *set = isl_set_from_union_set(uset);
-  //          isl_map *map = isl_set_identity(set);
-  //          map = isl_map_flatten_range(map);
-  //          trans = isl_multi_aff_copy(group->io_trans);
-  //          isl_map *map2 = isl_map_from_multi_aff(trans);
-  //          map2 = isl_map_reverse(map2);
-  //          map = isl_map_apply_range(map, map2);
-  //          isl_pw_multi_aff *pma = isl_pw_multi_aff_from_map(map);
-  //          expr = isl_ast_build_access_from_pw_multi_aff(build, pma);
-  //          group->io_pe_expr_boundary = expr;
-  //        }
-  //      }
-  //    }
-  //  }
 
   id = isl_id_alloc(ctx, "ext_module", stmt);
   id = isl_id_set_free_user(id, &autosa_kernel_stmt_free);

@@ -772,6 +772,7 @@ struct autosa_pe_dummy_module
   isl_schedule *sched;
   isl_ast_node *tree;
   isl_ast_node *device_tree;
+  int in;
 };
 
 struct autosa_drain_merge_func

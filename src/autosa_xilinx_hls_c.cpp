@@ -3782,7 +3782,7 @@ static __isl_give isl_printer *autosa_print_host_code(__isl_take isl_printer *p,
         if (modules[i]->boundary)
           p_module = autosa_print_inter_trans_module(p_module, modules[i], prog, hls, 1);
       }
-  
+
       p_module = autosa_print_default_module(p_module, modules[i], prog, hls, 0);
   
       if (modules[i]->boundary)
@@ -3790,6 +3790,7 @@ static __isl_give isl_printer *autosa_print_host_code(__isl_take isl_printer *p,
         /* Print out the definitions for boundary trans function calls. */
         p_module = autosa_print_default_module(p_module, modules[i], prog, hls, 1);
       }
+
       if (modules[i]->n_pe_dummy_modules > 0)
       {
         /* Print out the definitions for pe dummy function calls. */
