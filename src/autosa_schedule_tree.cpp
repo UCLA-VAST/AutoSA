@@ -1778,6 +1778,113 @@ __isl_give isl_schedule *get_schedule(struct autosa_gen *gen)
                            &compute_or_set_properties, gen);
 }
 
+/* Since we are merging for the outermost band node, 
+ * we will check if for each validity constraint if the domain is lexicographically 
+ * less or equal to the range. 
+ * Note that this function only considers the outermost node.
+ */
+static isl_bool is_dep_non_neg_at_node(
+  __isl_keep isl_schedule_node *node, __isl_keep isl_schedule_constraints *sc)
+{
+  if (isl_schedule_node_get_type(node) != isl_schedule_node_band)
+    return isl_bool_false;
+  if (isl_schedule_node_band_n_member(node) == 0)
+    return isl_bool_false;
+
+  isl_union_map *validity;
+  isl_union_pw_multi_aff *contraction;
+  isl_multi_union_pw_aff *partial;
+  isl_union_set *domain;
+  int i, n;
+
+  validity = isl_schedule_constraints_get_validity(sc);
+  contraction = isl_schedule_node_get_subtree_contraction(node);
+  domain = isl_schedule_node_get_domain(node);
+  domain = isl_union_set_preimage_union_pw_multi_aff(domain, contraction);
+  validity = isl_union_map_intersect_domain(validity, isl_union_set_copy(domain));
+  validity = isl_union_map_intersect_range(validity, domain);
+
+  partial = isl_schedule_node_band_get_partial_schedule(node);
+  contraction = isl_schedule_node_get_subtree_contraction(node);
+  partial = isl_multi_union_pw_aff_pullback_union_pw_multi_aff(partial,
+                                                               contraction);
+  n = isl_schedule_node_band_n_member(node);
+  for (i = 0; i < n; i++)
+  {
+    isl_union_map *validity_i, *validity_i_eq, *validity_i_lt;
+    isl_union_pw_aff *upa;
+    isl_multi_union_pw_aff *partial_i;
+    int subset;
+
+    upa = isl_multi_union_pw_aff_get_union_pw_aff(partial, i);
+    partial_i = isl_multi_union_pw_aff_from_union_pw_aff(upa);    
+    validity_i_eq = isl_union_map_eq_at_multi_union_pw_aff(
+      isl_union_map_copy(validity), isl_multi_union_pw_aff_copy(partial_i));
+    validity_i_lt = isl_union_map_lex_lt_at_multi_union_pw_aff(
+      isl_union_map_copy(validity), partial_i);
+    validity_i = isl_union_map_union(validity_i_eq, validity_i_lt);
+    subset = isl_union_map_is_subset(validity, validity_i);
+    isl_union_map_free(validity_i);
+
+    if (subset <= 0)
+      break;    
+  }
+
+  isl_multi_union_pw_aff_free(partial);
+  isl_union_map_free(validity);
+
+  return (i == n) ? isl_bool_true : isl_bool_false;
+}
+
+/* Try to merge the outer bands of the schedule as much as possible as 
+ * long as they can form a permutable band.
+ * Start from the outermost band, if the dependence distance on the current band 
+ * is non-zero, merge it with the parent band node. 
+ * This process stops until a non-band node is encoutnered.
+ */
+__isl_give isl_schedule *merge_outer_bands(__isl_take isl_schedule *schedule, struct autosa_gen *gen)
+{
+  isl_schedule_node *node;
+  isl_schedule_constraints *sc;
+  isl_bool is_first_band = isl_bool_true;
+
+  node = isl_schedule_get_root(schedule); // points to the domain node
+  isl_schedule_free(schedule);
+  sc = construct_schedule_constraints(gen->prog);
+
+  node = isl_schedule_node_child(node, 0); // points to the first band band
+  while (isl_schedule_node_get_type(node) == isl_schedule_node_band) {
+    /* Examine if all dependence distances at this band are non-negative */
+    //DBGSCHDNODE(stdout, node, isl_schedule_node_get_ctx(node));
+    isl_bool nneg = is_dep_non_neg_at_node(node, sc);
+    if (nneg) {
+      if (is_first_band)
+        is_first_band = isl_bool_false;
+      else {
+        /* Merge the node with the parent band node. */
+        node = isl_schedule_node_parent(node);
+        node = autosa_node_merge(node); // TODO: delete the partial schedule space name
+      }
+    }
+    node = isl_schedule_node_child(node, 0);
+  }
+
+  /* Set the coincidence. */
+  node = isl_schedule_node_parent(node);
+  if (isl_schedule_node_get_type(node) == isl_schedule_node_band) {
+    node = band_set_coincident(node, sc);
+  }
+#ifdef _DEBUG  
+  DBGSCHDNODE(stdout, node, isl_schedule_node_get_ctx(node));
+#endif  
+
+  schedule = isl_schedule_node_get_schedule(node);
+  isl_schedule_node_free(node);
+  isl_schedule_constraints_free(sc);
+
+  return schedule;
+}
+
 /* Is "node" a mark node with an identifier called "name"?
  */
 static int is_marked(__isl_keep isl_schedule_node *node, const char *name)

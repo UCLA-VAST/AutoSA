@@ -1182,6 +1182,7 @@ __isl_give isl_schedule_node *sched_pos_setup(__isl_take isl_schedule_node *node
 /* Schedule */
 __isl_give isl_schedule *compute_schedule(struct autosa_gen *gen);
 __isl_give isl_schedule *get_schedule(struct autosa_gen *gen);
+__isl_give isl_schedule *merge_outer_bands(__isl_give isl_schedule *schedule, struct autosa_gen *gen);
 
 /* AutoSA kernel */
 void *autosa_kernel_free(struct autosa_kernel *kernel);

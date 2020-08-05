@@ -27,17 +27,19 @@ isl_bool sa_legality_check(__isl_keep isl_schedule *schedule, struct ppcg_scop *
     isl_schedule_node_free(node);
     if (!single_band)
     {
-        printf("[AutoSA] Error: Single outermost permutable band not found.\n");
-        return isl_bool_false;
+        throw std::runtime_error("[AutoSA] Error: Single outermost permutable band not found.");
     }
+
+    DBGSCHD(stdout, schedule, isl_schedule_get_ctx(schedule))
 
     /* Check if all flow and rar dependences are uniform. */
     isl_bool all_uniform_dep = uniform_dep_check(schedule, scop);
     if (all_uniform_dep < 1)
     {
-        printf("[AutoSA] Error: Non-uniform dependence detected.\n");
-        return isl_bool_false;
+        throw std::runtime_error("[AutoSA] Error: Non-uniform dependence detected.");
     }
+
+    std::cout << "all deps uniform" << std::endl;
 
     return isl_bool_true;
 }
@@ -142,10 +144,7 @@ struct autosa_kernel **sa_space_time_transform_at_dim_async(
 
                 /* Make the loop i the outermost loop. */
                 for (int d = i; d > 0; d--)
-                {
-                    //isl_schedule_node *band = get_outermost_permutable_node(new_schedule);
-                    //isl_schedule_free(new_schedule);
-                    //new_schedule = loop_interchange_at_node(band, d, d - 1);
+                {                    
                     band = loop_interchange_at_node(band, d, d - 1);
                 }
                 new_schedule = isl_schedule_node_get_schedule(band);
@@ -1707,8 +1706,8 @@ static __isl_give isl_schedule_node *autosa_latency_tile_band_loop(
             int loop_tile_size = data->tile_size[data->tile_len - data->n_touched_loop - 1];
             (data->n_touched_loop)++;
             /* If latency hiding is applied on the space loops, we need to update
-       * the SA dimensions. 
-       */
+             * the SA dimensions. 
+             */
             if (isl_schedule_node_band_member_get_space_time(node, i) == autosa_loop_space)
             {
                 /* Figure out the dim position. */
@@ -3930,6 +3929,17 @@ static __isl_give isl_printer *generate(__isl_take isl_printer *p,
     /* Scheduling */
     schedule = get_schedule(gen);
 
+    /* Temporary hack: If we disable reschedule, we will try another time
+     * here to merge some of the schedule bands. 
+     */
+    if (!gen->options->reschedule) {
+        schedule = merge_outer_bands(schedule, gen);
+    }
+
+#ifdef _DEBUG
+    DBGSCHD(stdout, schedule, gen->ctx);
+#endif
+
     /* Legality check */
     isl_bool is_legal = sa_legality_check(schedule, scop);
     if (is_legal < 0 || !is_legal)
@@ -3943,8 +3953,8 @@ static __isl_give isl_printer *generate(__isl_take isl_printer *p,
     else
     {
         /* Perform opt. stages:
-     * Computation Management -> Communication Management     
-     */
+         * Computation Management -> Communication Management     
+         */
         //auto start = high_resolution_clock::now();
         gen->schedule = sa_map_to_device(gen, schedule);
         //auto stop = high_resolution_clock::now();
