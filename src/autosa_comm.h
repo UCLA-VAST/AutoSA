@@ -73,5 +73,6 @@ isl_bool is_io_module_valid(
   __isl_keep isl_schedule_node *node,  
   struct autosa_kernel *kernel, 
   struct autosa_array_ref_group *group, int read);  
+void print_io_grouping_info(FILE *fp, struct autosa_kernel *kernel);
 
 #endif

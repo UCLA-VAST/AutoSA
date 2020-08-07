@@ -30,7 +30,7 @@ void init_array(data_t A[N][N])
       A[r][s] = B[r][s];
 }
 
-void lu(data_t A[N][N], data_t L[N][N], data_t U[N][N]) {
+void lu_cpu(data_t A[N][N], data_t L[N][N], data_t U[N][N]) {
   data_t prev_V[N][N][N];
   data_t V_tmp[N][N][N];
   data_t U_tmp[N][N][N];
@@ -46,7 +46,7 @@ void lu(data_t A[N][N], data_t L[N][N], data_t U[N][N]) {
         
         if (j == k) {
           U_tmp[i][j][k] = prev_V[i][j][k];
-          U[i][j] = U_tmp[i][j][k];
+          U[j][i] = U_tmp[i][j][k];
         } else {
           U_tmp[i][j][k] = U_tmp[i][j - 1][k];
 
@@ -61,62 +61,59 @@ void lu(data_t A[N][N], data_t L[N][N], data_t U[N][N]) {
       }  
 }
 
+void lu_device(data_t A[N][N], data_t L[N][N], data_t U[N][N])
+{
+#pragma scop
+  {
+    data_t prev_V[N][N];  
+    data_t V[N][N];
+    data_t U_tmp[N][N];
+    data_t L_tmp[N][N];
+
+    for (int k = 0; k < N; k++) {    
+      for (int j = k; j < N; j++)
+        for (int i = k; i < N; i++) {
+          if (k == 0)
+            prev_V[i][j] = A[i][j];
+          else
+            prev_V[i][j] = V[i][j];          
+
+          if (j == k) {          
+            U_tmp[i][j] = prev_V[i][j]; 
+            U[j][i] = U_tmp[i][j]; // final
+          } else {          
+            U_tmp[i][j] = U_tmp[i][j - 1];        
+
+            if (i == k) {
+              L_tmp[i][j] = prev_V[i][j] / U_tmp[i][j]; 
+              L[i][j] = L_tmp[i][j]; // final
+            } else {            
+              L_tmp[i][j] = L_tmp[i - 1][j];
+            }          
+          
+            V[i][j] = prev_V[i][j] - L_tmp[i][j] * U_tmp[i][j];
+          }
+
+        }
+    }
+  }
+#pragma endscop
+}
+
 int main(int argc, char **argv) {
   data_t A[N][N], L[N][N], U[N][N], L_golden[N][N], U_golden[N][N];
 
   init_array(A);
-
-#pragma scop
-  data_t prev_V[N][N];  
-  data_t V[N][N];
-  data_t U_tmp[N][N];
-  data_t L_tmp[N][N];
-
-  for (int k = 0; k < N; k++) {    
-    for (int j = k; j < N; j++)
-      for (int i = k; i < N; i++) {
-        if (k == 0)
-          prev_V[i][j] = A[i][j];
-        else
-          prev_V[i][j] = V[i][j];          
-
-        if (j == k) {          
-          U[i][j] = prev_V[i][j]; // final
-          U_tmp[i][j] = U[i][j];
-        } else if (j > k) {          
-          U_tmp[i][j] = U_tmp[i][j - 1];        
-
-          if (i == k) {
-            L[i][j] = prev_V[i][j] / U_tmp[i][j]; // final
-            L_tmp[i][j] = L[i][j];            
-          } else if (i > k) {            
-            L_tmp[i][j] = L_tmp[i - 1][j];
-          }          
-        
-          V[i][j] = prev_V[i][j] - L_tmp[i][j] * U_tmp[i][j];
-        }
-
-//        if (j == k) {          
-//          U[i][j] = prev_V[i][j]; // final
-//          U_tmp[i][j] = U[i][j];
-//        } else if (j > k) {          
-//          U_tmp[i][j] = U_tmp[i][j - 1];
-//        }
-//
-//        if (j > k && i == k) {
-//          L[i][j] = prev_V[i][j] / U_tmp[i][j]; // final
-//          L_tmp[i][j] = L[i][j];            
-//        } else if (j > k && i > k) {            
-//          L_tmp[i][j] = L_tmp[i - 1][j];
-//        }          
-//
-//        if (j > k)
-//          V[i][j] = prev_V[i][j] - L_tmp[i][j] * U_tmp[i][j];
-      }
-  }  
-#pragma endscop
-
-  lu(A, L_golden, U_golden);
+  for (int i = 0; i < N; i++)
+    for (int j = 0; j < N; j++) {
+      L[i][j] = 0;
+      U[i][j] = 0;
+      L_golden[i][j] = 0;
+      U_golden[i][j] = 0;
+    }
+    
+  lu_device(A, L, U);
+  lu_cpu(A, L_golden, U_golden);
 
   int err = 0;
   for (int i = 0; i < N; i++)
@@ -131,6 +128,45 @@ int main(int argc, char **argv) {
     printf("Failed with %d errors!\n", err);
   else
     printf("Passed!\n");
+
+  printf("A:\n");
+  for (int i = 0; i < N; i++) {
+    for (int j = 0; j < N; j++) 
+      printf("%f ", A[i][j]);
+    printf("\n");
+  }
+
+  printf("L_golden:\n");
+  for (int i = 0; i < N; i++) {
+    for (int j = 0; j < N; j++) {      
+      printf("%f ", (i == j)? 1.0 : L_golden[j][i]);      
+    }
+    printf("\n");
+  }
+
+  printf("U_golden:\n");
+  for (int i = 0; i < N; i++) {
+    for (int j = 0; j < N; j++) {
+      printf("%f ", U_golden[i][j]);
+    }
+    printf("\n");
+  }
+
+  printf("L:\n");
+  for (int i = 0; i < N; i++) {
+    for (int j = 0; j < N; j++) {      
+      printf("%f ", (i == j)? 1.0 : L[j][i]);      
+    }
+    printf("\n");
+  }
+
+  printf("U:\n");
+  for (int i = 0; i < N; i++) {
+    for (int j = 0; j < N; j++) {
+      printf("%f ", U[i][j]);
+    }
+    printf("\n");
+  }
 
   return 0;    
 }

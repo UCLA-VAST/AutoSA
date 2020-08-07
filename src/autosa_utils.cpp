@@ -2,8 +2,10 @@
 #include <string.h>
 #include <ctype.h>
 #include <stdexcept>
+#include <limits>
 
 #include <isl/space.h>
+#include <barvinok/isl.h>
 
 #include "autosa_utils.h"
 
@@ -369,4 +371,74 @@ int convert_pwqpoly_to_int(__isl_keep isl_pw_qpolynomial *to_convert)
   free(str);
 
   return ret;
+}
+
+char *isl_vec_to_str(__isl_keep isl_vec *vec)
+{
+  isl_printer *p_str;
+  p_str = isl_printer_to_str(isl_vec_get_ctx(vec));
+  p_str = isl_printer_print_vec(p_str, vec);
+  char *ret = isl_printer_get_str(p_str);
+  isl_printer_free(p_str);
+
+  return ret;
+}
+
+/* Safe conversion to integer value. */
+long isl_val_get_num(__isl_take isl_val *val)
+{
+  long ret;
+  isl_val *denominator = isl_val_get_den_val(val)  ;
+  assert(isl_val_is_one(denominator));
+  isl_val_free(denominator);
+  ret = isl_val_get_num_si(val);
+  isl_val_free(val);
+
+  return ret;
+}
+
+static isl_stat find_pa_min(__isl_take isl_set *set, __isl_take isl_aff *aff, void *user)
+{
+  long *min = (long *)user;
+  if (isl_aff_is_cst(aff)) {
+    *min = std::min(*min, isl_val_get_num(isl_aff_get_constant_val(aff)));
+  } else {
+    *min = std::numeric_limits<long>::min();
+  }
+  isl_set_free(set);
+  isl_aff_free(aff);
+  return isl_stat_ok;
+}
+
+long compute_set_min(__isl_keep isl_set *set, int dim)
+{
+  long min = std::numeric_limits<long>::max();
+  isl_pw_aff *pa = isl_set_dim_min(isl_set_copy(set), dim);
+  isl_pw_aff_foreach_piece(pa, &find_pa_min, &min);
+  isl_pw_aff_free(pa);
+
+  return min;  
+}
+
+static isl_stat find_pa_max(__isl_take isl_set *set, __isl_take isl_aff *aff, void *user)
+{
+  long *max = (long *)user;
+  if (isl_aff_is_cst(aff)) {
+    *max = std::max(*max, isl_val_get_num(isl_aff_get_constant_val(aff)));
+  } else {
+    *max = std::numeric_limits<long>::max();
+  }
+  isl_set_free(set);
+  isl_aff_free(aff);
+  return isl_stat_ok;
+}
+
+long compute_set_max(__isl_keep isl_set *set, int dim)
+{
+  long max = std::numeric_limits<long>::min();
+  isl_pw_aff *pa = isl_set_dim_max(isl_set_copy(set), dim);
+  isl_pw_aff_foreach_piece(pa, &find_pa_max, &max);
+  isl_pw_aff_free(pa);
+
+  return max;  
 }

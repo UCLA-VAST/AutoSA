@@ -1168,8 +1168,7 @@ isl_bool all_parallel_node(__isl_keep isl_schedule_node *node, void *user);
 isl_bool isl_schedule_node_is_io_mark(__isl_keep isl_schedule_node *node, int io_level);
 int is_node_under_simd(__isl_keep isl_schedule_node *node);
 int is_node_under_latency(__isl_keep isl_schedule_node *node);
-int *extract_band_upper_bounds(struct autosa_kernel *kernel,
-                               __isl_keep isl_schedule_node *node);
+int *extract_band_upper_bounds(__isl_keep isl_schedule_node *node);
 __isl_give isl_union_set *set_schedule_eq(
     __isl_keep isl_schedule_node *node, __isl_keep isl_id_list *names);
 __isl_give isl_union_set *set_schedule_neq(

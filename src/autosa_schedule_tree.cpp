@@ -1335,56 +1335,32 @@ int is_node_under_latency(__isl_keep isl_schedule_node *node)
 /* Compute a box hull of the time domain of the schedule node, and return the 
  * box dimensions in an array.
  */
-int *extract_band_upper_bounds(struct autosa_kernel *kernel,
-                               __isl_keep isl_schedule_node *node)
+int *extract_band_upper_bounds(__isl_keep isl_schedule_node *node)
 {
   isl_union_map *umap;
   isl_union_set *uset;
-  isl_map *map;
-  isl_fixed_box *box;
+  isl_map *map;  
+  isl_set *set;
   int *ubs;
+  int n;
 
   umap = isl_schedule_node_band_get_partial_schedule_union_map(node);
   uset = isl_schedule_node_get_domain(node);
   umap = isl_union_map_intersect_domain(umap, uset);
   uset = isl_union_map_range(umap);
-  map = isl_map_from_range(isl_set_from_union_set(uset));
-  box = isl_map_get_range_simple_fixed_box_hull(map);
-  isl_map_free(map);
-  if (!isl_fixed_box_is_valid(box))
-  {
-    isl_fixed_box_free(box);
-    return NULL;
-  }
-  else
-  {
-    /* Assume the loop bound starts with zero */
-    isl_multi_aff *offset = isl_fixed_box_get_offset(box);
-    isl_multi_val *size = isl_fixed_box_get_size(box);
-    int n = isl_multi_aff_dim(offset, isl_dim_out);
-    ubs = (int *)malloc(n * sizeof(int));
+  set = isl_set_from_union_set(uset);
+  
+//#ifdef _DEBUG
+//  DBGSCHDNODE(stdout, node, isl_schedule_node_get_ctx(node));
+//#endif
 
-    for (int i = 0; i < n; i++)
-    {
-      isl_aff *aff;
-      isl_val *offset_val, *size_val;
-      aff = isl_multi_aff_get_aff(offset, i);
-      if (!isl_aff_is_cst(aff))
-      {
-        isl_die(isl_schedule_node_get_ctx(node), isl_error_unsupported,
-                "non-constant loop lower bound unsupported", exit(1));
-      }
-      offset_val = isl_aff_get_constant_val(aff);
-      size_val = isl_multi_val_get_val(size, i);
-      size_val = isl_val_add(size_val, offset_val);
-      ubs[i] = isl_val_get_num_si(size_val);
-      isl_val_free(size_val);
-      isl_aff_free(aff);
-    }
-    isl_multi_aff_free(offset);
-    isl_multi_val_free(size);
+  n = isl_schedule_node_band_n_member(node);
+  ubs = (int *)malloc(n * sizeof(int));
+  for (int i = 0; i < n; i++) {
+    ubs[i] = compute_set_max(set, i) + 1;
   }
-  isl_fixed_box_free(box);
+  isl_set_free(set);
+
   return ubs;
 }
 
@@ -1854,8 +1830,7 @@ __isl_give isl_schedule *merge_outer_bands(__isl_take isl_schedule *schedule, st
 
   node = isl_schedule_node_child(node, 0); // points to the first band band
   while (isl_schedule_node_get_type(node) == isl_schedule_node_band) {
-    /* Examine if all dependence distances at this band are non-negative */
-    //DBGSCHDNODE(stdout, node, isl_schedule_node_get_ctx(node));
+    /* Examine if all dependence distances at this band are non-negative */    
     isl_bool nneg = is_dep_non_neg_at_node(node, sc);
     if (nneg) {
       if (is_first_band)
@@ -1874,9 +1849,6 @@ __isl_give isl_schedule *merge_outer_bands(__isl_take isl_schedule *schedule, st
   if (isl_schedule_node_get_type(node) == isl_schedule_node_band) {
     node = band_set_coincident(node, sc);
   }
-#ifdef _DEBUG  
-  DBGSCHDNODE(stdout, node, isl_schedule_node_get_ctx(node));
-#endif  
 
   schedule = isl_schedule_node_get_schedule(node);
   isl_schedule_node_free(node);

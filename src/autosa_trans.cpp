@@ -30,16 +30,14 @@ isl_bool sa_legality_check(__isl_keep isl_schedule *schedule, struct ppcg_scop *
         throw std::runtime_error("[AutoSA] Error: Single outermost permutable band not found.");
     }
 
-    DBGSCHD(stdout, schedule, isl_schedule_get_ctx(schedule))
+    //DBGSCHD(stdout, schedule, isl_schedule_get_ctx(schedule))
 
     /* Check if all flow and rar dependences are uniform. */
     isl_bool all_uniform_dep = uniform_dep_check(schedule, scop);
     if (all_uniform_dep < 1)
     {
         throw std::runtime_error("[AutoSA] Error: Non-uniform dependence detected.");
-    }
-
-    std::cout << "all deps uniform" << std::endl;
+    }    
 
     return isl_bool_true;
 }
@@ -96,8 +94,8 @@ struct autosa_kernel **sa_space_time_transform_at_dim_async(
     struct autosa_kernel **sas = NULL;
 
     /* Select space loop candidates.
-   * Space loops carry dependences with distance less or equal to 1.
-   */
+     * Space loops carry dependences with distance less or equal to 1.
+     */
     isl_schedule_node *band = get_outermost_permutable_node(schedule);
     isl_size band_w = isl_schedule_node_band_n_member(band);
     isl_size *is_space_loop = (isl_size *)malloc(band_w * sizeof(isl_size));
@@ -1091,6 +1089,16 @@ static isl_stat sa_io_update(struct autosa_kernel *sa)
     return isl_stat_ok;
 }
 
+void extract_sa_dims_from_node(__isl_keep isl_schedule_node *node, int *sa_dims, int n_sa_dim)
+{
+    int *ubs;
+    ubs = extract_band_upper_bounds(node);
+    for (int i = 0; i < n_sa_dim; i++) {
+        sa_dims[i] = ubs[i];
+    }
+    free(ubs);    
+}
+
 /* Apply array partitioning.
  * Apply loop tiling on the band that contains the space loops.
  * In addition, if L2 array partitioning is abled, we will tile the tile loops
@@ -1175,7 +1183,7 @@ isl_stat sa_array_partitioning_optimize(struct autosa_kernel *sa,
             /* User hasn't specified the tiling factors for array partitioning yet,
              * we will dump out the number and upper bounds of array_part loops 
              * and exit the program. */
-            int *ubs = extract_band_upper_bounds(sa, node);
+            int *ubs = extract_band_upper_bounds(node);
             FILE *fp;
             char *content;
             cJSON *tuning, *array_part_json, *loops_json, *n_sa_dim_json;
@@ -1221,34 +1229,38 @@ isl_stat sa_array_partitioning_optimize(struct autosa_kernel *sa,
         isl_schedule_node_free(node);
         return isl_stat_error;
     }    
-
-    /* Update the systolic aray dimensions. */
-    if (sa->type == AUTOSA_SA_TYPE_SYNC)
-    {
-        for (int i = 0; i < sa->n_sa_dim; i++)
-        {
-            sa->sa_dim[i] = tile_size[tile_len - sa->n_sa_dim + i];
-        }
+    /* Examine if all tiling factors are -1, in that case, we will skip array 
+     * partitioning. 
+     */
+    int c;
+    for (c = 0; c < tile_len; c++) {
+        if (tile_size[c] != -1)
+            break;
     }
-    else
-    {
-        for (int i = 0; i < sa->n_sa_dim; i++)
-        {
-            sa->sa_dim[i] = tile_size[i];
-        }
-    }
-    sa->array_part_w = tile_len;
+    if (c == tile_len) {
+        id = isl_id_alloc(sa->ctx, "array", NULL);
+        node = isl_schedule_node_insert_mark(node, id);
+        node = isl_schedule_node_child(node, 0);
+        extract_sa_dims_from_node(node, sa->sa_dim, sa->n_sa_dim);
 
+        free(tile_size);
+        isl_schedule_free(sa->schedule);
+        sa->schedule = isl_schedule_node_get_schedule(node);
+        isl_schedule_node_free(node);
+        return isl_stat_ok;
+    }
     /* For now, our codegen doesn't support arrays with size one at any dim. 
-   * We will examine if array size is one at any dimension, and return if found. 
-   */
+     * We will examine if array size is one at any dimension, and return if found. 
+     */
     for (int i = 0; i < sa->n_sa_dim; i++)
     {
-        if (sa->sa_dim[i] == 1)
-        {
+        if ((sa->type == AUTOSA_SA_TYPE_SYNC && tile_size[tile_len - sa->n_sa_dim + i] == 1) ||
+           (sa->type == AUTOSA_SA_TYPE_ASYNC && tile_size[i] == 1)) {            
             /* Skip the array partition. */
             id = isl_id_alloc(sa->ctx, "array", NULL);
             node = isl_schedule_node_insert_mark(node, id);
+            node = isl_schedule_node_child(node, 0);
+            extract_sa_dims_from_node(node, sa->sa_dim, sa->n_sa_dim);
 
             free(tile_size);
             isl_schedule_free(sa->schedule);
@@ -1258,8 +1270,30 @@ isl_stat sa_array_partitioning_optimize(struct autosa_kernel *sa,
         }
     }
 
+    /* Update the systolic aray dimensions. 
+     * TODO: should use barvinok to handle this case.
+     */
+    //if (sa->type == AUTOSA_SA_TYPE_SYNC)
+    //{
+    //    for (int i = 0; i < sa->n_sa_dim; i++)
+    //    {
+    //        sa->sa_dim[i] = tile_size[tile_len - sa->n_sa_dim + i];
+    //    }
+    //}
+    //else
+    //{
+    //    for (int i = 0; i < sa->n_sa_dim; i++)
+    //    {
+    //        sa->sa_dim[i] = tile_size[i];
+    //    }
+    //}
+    sa->array_part_w = tile_len;
+
     node = autosa_tile_band(node, tile_size);
     free(tile_size);
+    node = isl_schedule_node_child(node, 0);
+    extract_sa_dims_from_node(node, sa->sa_dim, sa->n_sa_dim);
+    node = isl_schedule_node_parent(node);
 
     /* Reorder the array part loops based on the dependence distance. 
      */
@@ -1326,7 +1360,7 @@ isl_stat sa_array_partitioning_optimize(struct autosa_kernel *sa,
                 if (!tile_size)
                 {
                     /* Dump out the number of and upper bounds of array_part loops and exit the program. */
-                    int *ubs = extract_band_upper_bounds(sa, node);
+                    int *ubs = extract_band_upper_bounds(node);
                     int *loop_coincident = (int *)malloc(sizeof(int) * tile_len);
                     FILE *fp;
                     char *content;
@@ -1375,7 +1409,7 @@ isl_stat sa_array_partitioning_optimize(struct autosa_kernel *sa,
             {
                 /* Perform second-level array partitioning following the default policy. */
                 // tile_size = read_default_array_part_L2_tile_sizes(sa, tile_len);
-                int *ubs = extract_band_upper_bounds(sa, node);
+                int *ubs = extract_band_upper_bounds(node);
                 tile_size = isl_alloc_array(sa->ctx, int, tile_len);
                 for (int i = 0; i < tile_len; i++)
                 {
@@ -1788,7 +1822,7 @@ static isl_bool count_latency_hiding_loop(
                 {
                     node_copy = isl_schedule_node_band_split(node_copy, 1);
                 }
-                int *ubs = extract_band_upper_bounds(data->kernel, node_copy);
+                int *ubs = extract_band_upper_bounds(node_copy);
                 data->ubs = (int *)realloc(data->ubs, sizeof(int) * data->tile_len);
                 data->ubs[data->tile_len - 1] = ubs[0];
                 isl_schedule_node_free(node_copy);
@@ -1872,8 +1906,8 @@ static __isl_give isl_schedule_node *autosa_latency_tile_loop(
     }
 
     /* Examine if all the tiling factors are 1, in that case, we will
-   * skip the tiling and split off the last time dimension to add a 
-   * hls_pipeline mark. */
+     * skip the tiling and split off the last time dimension to add a 
+     * hls_pipeline mark. */
     for (i = 0; i < tile_len; i++)
     {
         if (tile_size[i] != -1)
@@ -2396,7 +2430,7 @@ static isl_schedule_node *detect_simd_vectorization_loop(
                         data->legal[data->n_loops - 1] = !layout_transform;
 
                         /* Extract the loop upper bounds */
-                        int *ubs = extract_band_upper_bounds(sa, node);
+                        int *ubs = extract_band_upper_bounds(node);
                         data->ubs = (int *)realloc(data->ubs, sizeof(int) * data->n_loops);
                         data->ubs[data->n_loops - 1] = ubs[i];
                         free(ubs);
@@ -3247,9 +3281,9 @@ static __isl_give isl_schedule_node *compute_and_comm_optimize(
         }
     }
 
-//#ifdef _DEBUG
-//    DBGSCHD(stdout, kernel->schedule, isl_schedule_get_ctx(kernel->schedule))
-//#endif
+#ifdef _DEBUG
+    DBGSCHD(stdout, kernel->schedule, isl_schedule_get_ctx(kernel->schedule))    
+#endif
 
     kernel->prog = gen->prog;
     kernel->options = gen->options;
@@ -3373,9 +3407,11 @@ static __isl_give isl_schedule_node *compute_and_comm_optimize(
     node = autosa_tree_move_up_to_kernel(node);
 
     kernel->schedule = isl_schedule_free(kernel->schedule);
-    kernel->schedule = isl_schedule_node_get_schedule(node);
+    kernel->schedule = isl_schedule_node_get_schedule(node);    
 
-    //DBGSCHD(stdout, kernel->schedule, gen->ctx)
+#ifdef _DEBUG
+    DBGSCHD(stdout, kernel->schedule, isl_schedule_get_ctx(kernel->schedule))    
+#endif
 
     /* Communication Management */
     sa_comm_management(kernel, gen);
@@ -3801,20 +3837,13 @@ __isl_give isl_schedule *sa_map_to_device(struct autosa_gen *gen,
     prefix = isl_union_map_preimage_domain_union_pw_multi_aff(prefix,
                                                               contraction);
 
-    /* Perform compute and comm optimization.
-   */
+    /* Perform compute and comm optimization. */
     node = compute_and_comm_optimize(gen, node);
 
     id = isl_schedule_node_mark_get_id(node);
     kernel = (struct autosa_kernel *)isl_id_get_user(id);
     isl_id_free(id);
-    schedule = isl_schedule_node_get_schedule(node);
-    //#ifdef _DEBUG
-    //  isl_printer *pd = isl_printer_to_file(gen->ctx, stdout);
-    //  pd = isl_printer_set_yaml_style(pd, ISL_YAML_STYLE_BLOCK);
-    //  pd = isl_printer_print_schedule_node(pd, node);
-    //  pd = isl_printer_free(pd);
-    //#endif
+    schedule = isl_schedule_node_get_schedule(node);    
     /* Generate hw modules in the systolic array. */
     generate_hw_modules(schedule, gen, kernel);
 
@@ -3827,26 +3856,13 @@ __isl_give isl_schedule *sa_map_to_device(struct autosa_gen *gen,
     node = isl_schedule_node_child(node, 0);
     node = isl_schedule_node_child(node, 0);
     node = isl_schedule_node_insert_guard(node, guard);
-    node = isl_schedule_node_child(node, 0);
-    //#ifdef _DEBUG
-    //  pd = isl_printer_to_file(gen->ctx, stdout);
-    //  pd = isl_printer_set_yaml_style(pd, ISL_YAML_STYLE_BLOCK);
-    //  pd = isl_printer_print_schedule_node(pd, node);
-    //  pd = isl_printer_free(pd);
-    //#endif
+    node = isl_schedule_node_child(node, 0);    
 
     /* Add init/clear device statements. */
     node = sa_add_init_clear_device(node, kernel);
 
     /* Add drain merge nodes. */
-    node = sa_add_drain_merge(node, gen);
-
-    //#ifdef _DEBUG
-    //  isl_printer *pd = isl_printer_to_file(gen->ctx, stdout);
-    //  pd = isl_printer_set_yaml_style(pd, ISL_YAML_STYLE_BLOCK);
-    //  pd = isl_printer_print_schedule_node(pd, node);
-    //  pd = isl_printer_free(pd);
-    //#endif
+    node = sa_add_drain_merge(node, gen);    
 
     isl_schedule_free(gen->schedule);
     gen->schedule = isl_schedule_node_get_schedule(node);
@@ -3929,6 +3945,10 @@ static __isl_give isl_printer *generate(__isl_take isl_printer *p,
     /* Scheduling */
     schedule = get_schedule(gen);
 
+//#ifdef _DEBUG
+//    DBGSCHD(stdout, schedule, gen->ctx);
+//#endif
+
     /* Temporary hack: If we disable reschedule, we will try another time
      * here to merge some of the schedule bands. 
      */
@@ -3936,9 +3956,9 @@ static __isl_give isl_printer *generate(__isl_take isl_printer *p,
         schedule = merge_outer_bands(schedule, gen);
     }
 
-#ifdef _DEBUG
-    DBGSCHD(stdout, schedule, gen->ctx);
-#endif
+//#ifdef _DEBUG
+//    DBGSCHD(stdout, schedule, gen->ctx);
+//#endif
 
     /* Legality check */
     isl_bool is_legal = sa_legality_check(schedule, scop);

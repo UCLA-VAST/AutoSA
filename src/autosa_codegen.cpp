@@ -589,7 +589,7 @@ static __isl_give isl_schedule_node *add_io_copies_stmt_acc_single(
       if (isl_schedule_node_get_type(node_copy) == isl_schedule_node_band)
       {
         int n = isl_schedule_node_band_n_member(node_copy);
-        ubs = extract_band_upper_bounds(data->kernel, node_copy);
+        ubs = extract_band_upper_bounds(node_copy);
         if (ubs[n - 1] / n_lane > 1)
         {
           insert_dependence = isl_bool_true;
@@ -1248,8 +1248,7 @@ static __isl_give isl_schedule_node *insert_io_stmts_tile(
   int coalesce_bound;
 
   p = isl_printer_print_str(p, ".");
-  p = isl_printer_print_int(p, nxt_data_pack);
-  stmt_name = isl_printer_get_str(p);
+  p = isl_printer_print_int(p, nxt_data_pack);  
 
   p = print_trans_stmt_coalesce(p, node, copy_buffer, &coalesce_bound);   
   module->coalesce_bound = coalesce_bound;
@@ -7610,6 +7609,13 @@ static int extract_io_stmt_int_field(
     loc++;
   }
 
+  if (ch == '\0') {
+    std::string stmt(type);
+    std::string info = "[AutoSA] Error: Wrong pos: " + std::to_string(pos) + 
+      " in stmt: " + stmt;
+    throw std::runtime_error(info);
+  }
+
   p_str = isl_printer_to_str(ctx);
   loc++;
   while (((ch = type[loc]) != '\0') && ((ch = type[loc]) != '.'))
@@ -7652,6 +7658,13 @@ static __isl_give char *extract_io_stmt_str_field(
     if (dot_time == pos)
       break;
     loc++;
+  }
+
+  if (ch == '\0') {
+    std::string stmt(type);
+    std::string info = "[AutoSA] Error: Wrong pos: " + std::to_string(pos) + 
+      " in stmt: " + stmt;
+    throw std::runtime_error(info);
   }
 
   p_str = isl_printer_to_str(ctx);

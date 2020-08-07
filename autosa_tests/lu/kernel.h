@@ -3,4 +3,4 @@
 #include <math.h>
 
 typedef float data_t;
-#define N 16
+#define N 2

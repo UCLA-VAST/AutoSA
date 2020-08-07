@@ -68,4 +68,6 @@ isl_stat sa_pe_optimize(
 isl_stat sa_loop_init(struct autosa_kernel *sa);
 isl_stat sa_space_time_loop_setup(struct autosa_kernel *sa);
 
+void extract_sa_dims_from_node(__isl_keep isl_schedule_node *node, int *sa_dims, int n_sa_dim);
+
 #endif

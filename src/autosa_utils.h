@@ -39,4 +39,11 @@ __isl_give isl_set *add_bounded_parameters_dynamic(
 
 int convert_pwqpoly_to_int(__isl_keep isl_pw_qpolynomial *to_convert);
 
+/* Get strings */
+char *isl_vec_to_str(__isl_keep isl_vec *vec);
+
+long isl_val_get_num(__isl_take isl_val *val);
+long compute_set_min(__isl_keep isl_set *set, int dim);
+long compute_set_max(__isl_keep isl_set *set, int dim);
+
 #endif

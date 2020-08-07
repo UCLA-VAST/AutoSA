@@ -1171,6 +1171,10 @@ static __isl_give isl_schedule_node *insert_io_module_context(
   /* Update the context. */
   context = isl_set_universe(isl_set_get_space(kernel->context));
   node = autosa_tree_move_down_to_array(node, kernel->core);
+//#ifdef _DEBUG
+//  DBGSCHDNODE(stdout, node, isl_schedule_node_get_ctx(node));
+//#endif
+
   while (!isl_schedule_node_is_io_mark(node, 1))
   {
     if (isl_schedule_node_get_type(node) == isl_schedule_node_band)
@@ -1180,9 +1184,24 @@ static __isl_give isl_schedule_node *insert_io_module_context(
       isl_multi_pw_aff *size;
       isl_id *id;
       isl_id_list *ids;
+      isl_union_set *domain;
+      isl_union_pw_multi_aff *contraction;
 
+//#ifdef _DEBUG
+//      DBGSCHDNODE(stdout, node, isl_schedule_node_get_ctx(node));
+//#endif
       umap = isl_schedule_node_band_get_partial_schedule_union_map(node);
+      domain = isl_schedule_node_get_domain(node);
+      contraction = isl_schedule_node_get_subtree_contraction(node);
+      domain = isl_union_set_preimage_union_pw_multi_aff(domain, contraction);
+      umap = isl_union_map_intersect_domain(umap, domain);
+//#ifdef _DEBUG
+//      DBGUMAP(stdout, umap, isl_union_map_get_ctx(umap));
+//#endif      
       uset = isl_union_map_range(umap);
+//#ifdef _DEBUG
+//      DBGUSET(stdout, uset, isl_union_set_get_ctx(uset));
+//#endif
       size = ppcg_size_from_extent(isl_set_from_union_set(uset));
       ids = isl_id_list_from_id(isl_id_list_get_id(io_ids, n_io_ids));
       n_io_ids++;
@@ -1237,7 +1256,7 @@ static __isl_give isl_schedule_node *hbm_optimize(
     hbm_mode = hbm_mode_json->valuestring;
   }
 
-  ubs = extract_band_upper_bounds(kernel, node);
+  ubs = extract_band_upper_bounds(node);
   if (!strcmp(hbm_mode, "auto"))
   {
     /* HBM optimization is set in AUTO mode. 
@@ -1524,10 +1543,20 @@ static isl_bool io_group_carried_by_array_loops(
   isl_map *sched_identity;
   isl_union_map *external, *universe;
   isl_union_set *tag_set;
-  int empty;
+  int empty;  
 
   node = isl_schedule_node_copy(node);
   node = autosa_tree_move_down_to_array(node, kernel->core);
+
+  /* Test if the array partition band is empty */
+  node = isl_schedule_node_parent(node);
+  if (isl_schedule_node_get_type(node) != isl_schedule_node_band) {
+    /* No array partitioning, directly return. */
+    isl_schedule_node_free(node);
+    return isl_bool_false;
+  }
+  node = autosa_tree_move_down_to_array(node, kernel->core);
+
   prefix = isl_schedule_node_get_prefix_schedule_relation(node);
   prefix = isl_union_map_preimage_domain_union_pw_multi_aff(prefix,
                                                             isl_union_pw_multi_aff_copy(kernel->contraction));
@@ -3098,30 +3127,6 @@ static isl_stat hoist_L2_io_buffer(
   return isl_stat_ok;
 }
 
-///* This function performs the following tasks:
-// * - I/O module clustering
-// * - L2 I/O buffering
-// * - Data packing
-// */
-//static isl_stat autosa_io_optimize(
-//    struct autosa_kernel *kernel, struct autosa_array_ref_group *group,
-//    struct autosa_gen *gen, struct autosa_group_data *data)
-//{
-//  /* Update the I/O schedules by I/O module clustering. */
-//  compute_io_group_schedule(kernel, group, gen);
-//  /* Allocate I/O buffers inside I/O modules. */
-//  compute_io_group_buffer(kernel, group, gen);
-//  if (gen->options->autosa->two_level_buffer)
-//  {
-//    /* Seek the opportunity to hoist up the L2 I/O buffers. */
-//    hoist_L2_io_buffer(kernel, group, gen, data);
-//  }
-//  /* Compute data packing factors. */
-//  compute_io_group_data_pack(kernel, group, gen, -1);
-//
-//  return isl_stat_ok;
-//}
-
 /* Return the prefix I/O schedule at io_level "level". */
 static __isl_give isl_union_map *get_io_schedule_at_level(
     __isl_keep isl_schedule *sched, int level)
@@ -3457,6 +3462,13 @@ static int compute_group_bounds_drain(struct autosa_kernel *kernel,
 static int group_array_references_drain(struct autosa_kernel *kernel,
                                         struct autosa_local_array_info *local, struct autosa_group_data *data)
 {
+//#ifdef _DEBUG
+//  DBGUMAP(stdout, kernel->prog->scop->live_out, kernel->ctx);
+//  //exit(0);
+//#endif
+  if (local->array->local)
+    return 0;
+
   int i, j;
   int n;
   isl_ctx *ctx = isl_union_map_get_ctx(data->pe_sched);
@@ -3652,9 +3664,7 @@ static isl_stat autosa_io_buffer_allocate(struct autosa_kernel *kernel,
           /* At present, two-level buffer and local reduce can be enabled at the same time.
            */
           throw std::runtime_error("[AutoSA] Error: Two-level buffer and local reduce can't be used at the same time.");
-        }
-        ///* Hoist up the L1 I/O buffers. */
-        //hoist_L1_io_buffer_local_reduce(kernel, local->io_groups[j], gen, data);
+        }        
       }
     }
     if (local->drain_group)
@@ -3830,6 +3840,8 @@ isl_stat sa_io_construct_optimize(struct autosa_kernel *kernel, struct autosa_ge
     printf("[AutoSA] Error: Host serialization and HBM can't be enabled at the same time!\n");
     exit(1);
   }
+
+  print_io_grouping_info(stdout, kernel);
 
   /* I/O buffer allocation */
   autosa_io_buffer_allocate(kernel, gen, &data);
@@ -4849,4 +4861,33 @@ __isl_give isl_multi_aff *autosa_array_ref_group_recompute_tiling(
   free(local_name);
 
   return tiling;
+}
+
+void print_io_grouping_info(FILE *fp, struct autosa_kernel *kernel)
+{
+  const char *io_types[] = {"AUTOSA_INT_IO", "AUTOSA_EXT_IO", "AUTOSA_UNKNOWN_IO"};
+
+  fprintf(fp, "================= IO Grouping Information =================\n");
+  for (int i = 0; i < kernel->n_array; i++) {
+    struct autosa_local_array_info *local = &kernel->array[i];
+    fprintf(fp, "===================================================\n");
+    fprintf(fp, "Array: %s\n", local->array->name);
+    fprintf(fp, "===================================================\n");
+    fprintf(fp, "local: %d\n", local->array->local);
+    fprintf(fp, "n_io_groups: %d\n", local->n_io_group);
+    fprintf(fp, "n_drain_groups: %d\n", local->drain_group? 1 : 0);
+    for (int j = 0; j < local->n_io_group; j++) {
+      struct autosa_array_ref_group *group = local->io_groups[j];
+      fprintf(fp, "------------------------------\n");
+      fprintf(fp, "Group: %d\n", j);
+      fprintf(fp, "------------------------------\n");
+      fprintf(fp, "copy_in: %d\n", group->copy_in);
+      fprintf(fp, "copy_out: %d\n", group->copy_out);
+      fprintf(fp, "io_type: %s\n", io_types[group->io_type]);
+      char *vec_str = isl_vec_to_str(group->dir);
+      fprintf(fp, "io_dir: %s\n", vec_str);
+      free(vec_str);
+    }
+  }
+  fprintf(fp, "================= IO Grouping Information =================\n");
 }
