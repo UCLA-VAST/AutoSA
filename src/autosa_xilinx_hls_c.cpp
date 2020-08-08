@@ -4048,9 +4048,9 @@ static __isl_give isl_printer *print_top_module_fifo_stmt(__isl_take isl_printer
 }
 
 static __isl_give isl_printer *print_top_module_call_stmt(
-    __isl_take isl_printer *p,
-    __isl_take isl_ast_print_options *print_options,
-    __isl_keep isl_ast_node *node, void *user)
+  __isl_take isl_printer *p,
+  __isl_take isl_ast_print_options *print_options,
+  __isl_keep isl_ast_node *node, void *user)
 {
   isl_id *id;
   struct autosa_kernel_stmt *stmt;
@@ -4070,6 +4070,29 @@ static __isl_give isl_printer *print_top_module_call_stmt(
 
   return p;
 }
+
+///* Take special care when the loop is degenerated, we will still print out that loop. 
+// */
+//static __isl_give isl_printer *print_top_module_call_for(
+//  __isl_take isl_printer *p,
+//  __isl_take isl_ast_print_options *print_options,
+//  __isl_keep isl_ast_node *node, void *user)
+//{
+//  if (isl_ast_node_for_is_degenerate(node)) {
+//#ifdef _DEBUG
+//    isl_ast_expr *iter = isl_ast_node_for_get_iterator(node);
+//    isl_ast_expr *init = isl_ast_node_for_get_init(node);
+//    isl_ast_expr *cond = isl_ast_node_for_get_cond(node);
+//    DBGASTEXPR(stdout, iter, isl_ast_node_get_ctx(node));
+//    DBGASTEXPR(stdout, init, isl_ast_node_get_ctx(node));
+//    DBGASTEXPR(stdout, cond, isl_ast_node_get_ctx(node));
+//#endif
+//  } else {
+//    p = isl_ast_node_for_print(node, p, print_options);
+//  }
+//
+//  return p;
+//}
 
 /* This function prints the code that prints out the top function that 
  * calls the hardware modules and declares the fifos.
@@ -4257,7 +4280,7 @@ static void print_top_gen_host_code(
     /* Print AST */
     print_options = isl_ast_print_options_alloc(ctx);
     print_options = isl_ast_print_options_set_print_user(print_options,
-                                                         &print_top_module_call_stmt, &hw_data);
+                                                         &print_top_module_call_stmt, &hw_data);    
 
     p = isl_ast_node_print(top->module_call_wrapped_trees[i],
                            p, print_options);

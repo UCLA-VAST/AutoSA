@@ -2401,7 +2401,16 @@ static __isl_give isl_printer *print_module_call_lower(__isl_take isl_printer *p
     }
     else
     {
-      p = print_inst_ids_suffix(p, n + 1, NULL);
+      if (stmt->u.m.lower_sched_val != -1) {
+        p = print_inst_ids_suffix(p, n, NULL);
+        p = isl_printer_start_line(p);
+        p = isl_printer_print_str(p, "p = isl_printer_print_str(p, \"_");
+        p = isl_printer_print_int(p, stmt->u.m.lower_sched_val);
+        p = isl_printer_print_str(p, "\");");
+        p = isl_printer_end_line(p);        
+      } else {
+        p = print_inst_ids_suffix(p, n + 1, NULL);
+      }
     }
   }
 

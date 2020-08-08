@@ -1226,9 +1226,6 @@ static __isl_give isl_schedule_node *band_sched_pos_setup(
  */
 __isl_give isl_schedule_node *sched_pos_setup(__isl_take isl_schedule_node *node)
 {
-//#ifdef _DEBUG
-//    DBGSCHDNODE(stdout, node, isl_schedule_node_get_ctx(node))    
-//#endif
     node = isl_schedule_node_map_descendant_bottom_up(node,
                                                       &band_sched_pos_setup, NULL);
 
@@ -1236,6 +1233,39 @@ __isl_give isl_schedule_node *sched_pos_setup(__isl_take isl_schedule_node *node
 //    DBGSCHDNODE(stdout, node, isl_schedule_node_get_ctx(node))    
 //#endif
     return node;
+}
+
+/* Check if the band is single dimension and the schedule value is a constant.
+ * Return the constant value, or -1.
+ */
+int get_band_single_schedule_val(__isl_keep isl_schedule_node *node)
+{
+  isl_union_map *umap;
+  isl_union_set *domain;
+  isl_set *set;
+
+  if (isl_schedule_node_get_type(node) != isl_schedule_node_band)
+    return -1;
+  if (isl_schedule_node_band_n_member(node) != 1)
+    return -1;
+  
+  umap = isl_schedule_node_band_get_partial_schedule_union_map(node);
+  domain = isl_schedule_node_get_domain(node);
+  umap = isl_union_map_intersect_domain(umap, domain);
+  domain = isl_union_map_range(umap);
+  set = isl_set_from_union_set(domain);
+  if (isl_set_is_singleton(set)) {
+    isl_val *val;    
+    int ret;
+    val = isl_set_plain_get_val_if_fixed(set, isl_dim_set, 0);
+    ret = isl_val_get_num_si(val);
+    isl_set_free(set);
+    isl_val_free(val);
+    return ret;
+  } else {
+    isl_set_free(set);
+    return -1;
+  }
 }
 
 /* Examines if the current schedule node is a io mark at the level "io_level".

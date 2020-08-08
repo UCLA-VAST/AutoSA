@@ -113,6 +113,14 @@ extern "C"
   p_debug = isl_printer_free(p_debug);                                 \
 }
 
+#define DBGASTEXPR(os, astexpr, ctx)                                  {\
+  printf("%s(%d) Print AST expr.\n", __FILE__, __LINE__);              \
+  isl_printer *p_debug = isl_printer_to_file(ctx, os);                 \
+  p_debug = isl_printer_set_output_format(p_debug, ISL_FORMAT_C);      \
+  p_debug = isl_printer_print_ast_expr(p_debug, astexpr);              \
+  p_debug = isl_printer_free(p_debug);                                 \
+}
+
 #ifdef __cplusplus
 }
 #endif
@@ -1009,6 +1017,7 @@ struct autosa_kernel_stmt
       int dummy;
       int upper;
       int lower;
+      int lower_sched_val;
       char *module_name;
     } m;
     struct
@@ -1177,6 +1186,7 @@ isl_bool is_flow_dep_carried_by_array_part_loops(__isl_keep isl_schedule *schedu
                                                  struct autosa_array_ref_group *group, struct autosa_kernel *kernel);
 __isl_give isl_schedule_node *reorder_band_by_dep_dis(__isl_take isl_schedule_node *node);
 __isl_give isl_schedule_node *sched_pos_setup(__isl_take isl_schedule_node *node);
+int get_band_single_schedule_val(__isl_keep isl_schedule_node *node);
 
 /* Schedule */
 __isl_give isl_schedule *compute_schedule(struct autosa_gen *gen);

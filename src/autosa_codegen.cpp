@@ -4762,6 +4762,11 @@ static __isl_give isl_schedule_node *io_gen_module_call(
   isl_set *set;
   isl_map *map;
   isl_multi_union_pw_aff *mupa;
+  int lower_band_num = -1;
+
+#ifdef _DEBUG
+  DBGSCHDNODE(stdout, node, isl_schedule_node_get_ctx(node));
+#endif
 
   /* Collect the filter for the lower I/O module. */
   if (isl_schedule_node_get_type(node) == isl_schedule_node_band)
@@ -4818,18 +4823,40 @@ static __isl_give isl_schedule_node *io_gen_module_call(
 
   node = isl_schedule_node_graft_before(node, graft);
 
+#ifdef _DEBUG
+  DBGSCHDNODE(stdout, node, isl_schedule_node_get_ctx(node));
+#endif
+
   if (module->level > 1)
   {
     node = autosa_tree_move_down_to_io_mark(node, kernel->core, module->level - 1);
   }
+#ifdef _DEBUG
+  DBGSCHDNODE(stdout, node, isl_schedule_node_get_ctx(node));
+#endif  
   node = isl_schedule_node_cut(node);
+#ifdef _DEBUG
+  DBGSCHDNODE(stdout, node, isl_schedule_node_get_ctx(node));
+#endif
 
   /* Graft an extension node for lower level transfer. */
   if (insert_lower)
-  {
+  {    
+    node = isl_schedule_node_parent(node);
     node = isl_schedule_node_insert_filter(node, lower_level_filter);
     node = isl_schedule_node_child(node, 0);
+#ifdef _DEBUG
+  DBGSCHDNODE(stdout, node, isl_schedule_node_get_ctx(node));
+#endif    
+    /* In case the lower band only contains one element, we will compute the 
+     * value and append to the module_call name.
+     */
+    lower_band_num = get_band_single_schedule_val(node); // TODO
+    node = isl_schedule_node_child(node, 0);
   }
+#ifdef _DEBUG
+  DBGSCHDNODE(stdout, node, isl_schedule_node_get_ctx(node));
+#endif
   {
     isl_union_map *prefix;
     isl_union_set *domain, *range;
@@ -4849,6 +4876,10 @@ static __isl_give isl_schedule_node *io_gen_module_call(
     p_str = isl_printer_print_str(p_str, module->name);
     if (boundary)
       p_str = isl_printer_print_str(p_str, ".boundary");
+    if (lower_band_num != -1) {
+      p_str = isl_printer_print_str(p_str, ".");
+      p_str = isl_printer_print_int(p_str, lower_band_num);
+    }
 
     stmt_name = isl_printer_get_str(p_str);
     isl_printer_free(p_str);
@@ -5097,6 +5128,10 @@ static isl_stat top_module_io_gen_module_call(
   node = isl_schedule_get_root(schedule);
   isl_schedule_free(schedule);
 
+#ifdef _DEBUG
+  DBGSCHDNODE(stdout, node, isl_schedule_node_get_ctx(node));
+#endif
+
   /* Delete the node above the array mark. */
   node = autosa_tree_move_down_to_array(node, kernel->core);
   node = isl_schedule_node_parent(node);
@@ -5318,6 +5353,12 @@ static isl_stat top_module_io_gen(struct autosa_gen *gen,
   struct autosa_array_ref_group *group;
   assert(module->n_io_group == 1);
   group = module->io_groups[0];
+
+#ifdef _DEBUG
+  if (!strcmp(module->name, "L_drain_IO_L2_out"))
+    printf("debug here!\n");
+    printf("module_call_id: %d\n", top->n_module_calls);
+#endif
 
   /* Generate the function call schedule. */
   top_module_io_gen_module_call(gen, top, module, group);
@@ -7610,10 +7651,11 @@ static int extract_io_stmt_int_field(
   }
 
   if (ch == '\0') {
-    std::string stmt(type);
-    std::string info = "[AutoSA] Error: Wrong pos: " + std::to_string(pos) + 
-      " in stmt: " + stmt;
-    throw std::runtime_error(info);
+    //std::string stmt(type);
+    //std::string info = "[AutoSA] Error: Wrong pos: " + std::to_string(pos) + 
+    //  " in stmt: " + stmt;
+    //throw std::runtime_error(info);
+    return -1;
   }
 
   p_str = isl_printer_to_str(ctx);
@@ -7661,10 +7703,11 @@ static __isl_give char *extract_io_stmt_str_field(
   }
 
   if (ch == '\0') {
-    std::string stmt(type);
-    std::string info = "[AutoSA] Error: Wrong pos: " + std::to_string(pos) + 
-      " in stmt: " + stmt;
-    throw std::runtime_error(info);
+    //std::string stmt(type);
+    //std::string info = "[AutoSA] Error: Wrong pos: " + std::to_string(pos) + 
+    //  " in stmt: " + stmt;
+    //throw std::runtime_error(info);
+    return NULL;
   }
 
   p_str = isl_printer_to_str(ctx);
@@ -8060,25 +8103,35 @@ static __isl_give isl_ast_node *create_drain_merge_leaf(struct autosa_kernel *ke
  * or 
  * module_call.module_name.boundary
  * */
-static int extract_is_boundary(const char *type)
+static int extract_is_boundary(isl_ctx *ctx, const char *type)
 {
-  char ch;
-  int loc = 0;
-  int n_dot = 0;
+  //char ch;
+  //int loc = 0;
+  //int n_dot = 0;
+//
+  //while ((ch = type[loc]) != '\0')
+  //{
+  //  if (ch == '.')
+  //    n_dot++;
+  //  if (n_dot == 2)
+  //    break;
+  //  loc++;
+  //}
+//
+  //if (n_dot < 2)
+  //  return 0;
+//
+  //return 1;
 
-  while ((ch = type[loc]) != '\0')
-  {
-    if (ch == '.')
-      n_dot++;
-    if (n_dot == 2)
-      break;
-    loc++;
+  int ret_val;
+  char *boundary = extract_io_stmt_str_field(ctx, type, 2);
+  if (boundary && !strcmp(boundary, "boundary")) {
+    ret_val = 1;
+  } else {
+    ret_val = 0;
   }
-
-  if (n_dot < 2)
-    return 0;
-
-  return 1;
+  free(boundary);
+  return ret_val;
 }
 
 /* Extract the module_name field from the module call type, which is in the format of:
@@ -8149,7 +8202,7 @@ static __isl_give isl_ast_node *create_ext_module_leaf(
   stmt->type = AUTOSA_KERNEL_STMT_EXT_MODULE;
   stmt->u.m.module = module;
   stmt->u.m.group = group;
-  stmt->u.m.boundary = extract_is_boundary(name);
+  stmt->u.m.boundary = extract_is_boundary(ctx, name);
   stmt->u.m.module_name = extract_module_name(ctx, name);
   stmt->u.m.dummy = !suffixcmp(stmt->u.m.module_name, "dummy");
   stmt->u.m.pe_dummy_module = pe_dummy_module;
@@ -8205,10 +8258,12 @@ static __isl_give isl_ast_node *create_module_call_leaf(
   stmt->type = AUTOSA_KERNEL_STMT_MODULE_CALL;
   stmt->u.m.module = module;
   stmt->u.m.group = group;
-  stmt->u.m.boundary = extract_is_boundary(name);
+  stmt->u.m.boundary = extract_is_boundary(ctx, name);
   stmt->u.m.module_name = extract_module_name(ctx, name);
   stmt->u.m.dummy = !suffixcmp(stmt->u.m.module_name, "dummy");
   stmt->u.m.pe_dummy_module = pe_dummy_module;
+  stmt->u.m.lower_sched_val = extract_io_stmt_int_field(
+                                ctx, name, (stmt->u.m.boundary)? 3 : 2);
   if (!prefixcmp(name, "module_call_lower"))
   {
     stmt->u.m.lower = 1;
@@ -8350,7 +8405,7 @@ static __isl_give isl_ast_node *create_io_module_call_leaf(
     return isl_ast_node_free(node);
 
   stmt->u.f.module = module;
-  stmt->u.f.boundary = extract_is_boundary(name);
+  stmt->u.f.boundary = extract_is_boundary(ctx, name);
   if (!prefixcmp(name, "io_module.inter_trans"))
     stmt->type = AUTOSA_KERNEL_STMT_IO_MODULE_CALL_INTER_TRANS;
   else if (!prefixcmp(name, "io_module.intra_trans"))

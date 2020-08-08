@@ -4879,7 +4879,7 @@ void print_io_grouping_info(FILE *fp, struct autosa_kernel *kernel)
     for (int j = 0; j < local->n_io_group; j++) {
       struct autosa_array_ref_group *group = local->io_groups[j];
       fprintf(fp, "------------------------------\n");
-      fprintf(fp, "Group: %d\n", j);
+      fprintf(fp, "IO Group: %d\n", j);
       fprintf(fp, "------------------------------\n");
       fprintf(fp, "copy_in: %d\n", group->copy_in);
       fprintf(fp, "copy_out: %d\n", group->copy_out);
@@ -4887,6 +4887,18 @@ void print_io_grouping_info(FILE *fp, struct autosa_kernel *kernel)
       char *vec_str = isl_vec_to_str(group->dir);
       fprintf(fp, "io_dir: %s\n", vec_str);
       free(vec_str);
+    }
+    if (local->drain_group) {
+      struct autosa_array_ref_group *group = local->drain_group;
+      fprintf(fp, "------------------------------\n");
+      fprintf(fp, "Drain Group\n");
+      fprintf(fp, "------------------------------\n");
+      fprintf(fp, "copy_in: %d\n", group->copy_in);
+      fprintf(fp, "copy_out: %d\n", group->copy_out);
+      fprintf(fp, "io_type: %s\n", io_types[group->io_type]);
+      char *vec_str = isl_vec_to_str(group->dir);
+      fprintf(fp, "io_dir: %s\n", vec_str);
+      free(vec_str);      
     }
   }
   fprintf(fp, "================= IO Grouping Information =================\n");
