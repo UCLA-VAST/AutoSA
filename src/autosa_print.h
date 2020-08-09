@@ -52,7 +52,7 @@ __isl_give isl_printer *print_module_arguments(
     struct autosa_kernel *kernel,
     struct autosa_hw_module *module, int types,
     enum platform target,
-    int inter, int arb, int boundary);
+    int inter, int arb, int boundary, int serialize);
 __isl_give isl_printer *print_pe_dummy_module_arguments(
     __isl_take isl_printer *p,
     struct autosa_prog *prog,

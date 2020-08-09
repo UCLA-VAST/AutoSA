@@ -3409,10 +3409,6 @@ static __isl_give isl_schedule_node *compute_and_comm_optimize(
     kernel->schedule = isl_schedule_free(kernel->schedule);
     kernel->schedule = isl_schedule_node_get_schedule(node);    
 
-#ifdef _DEBUG
-    DBGSCHD(stdout, kernel->schedule, isl_schedule_get_ctx(kernel->schedule))    
-#endif
-
     /* Communication Management */
     sa_comm_management(kernel, gen);
 
@@ -3974,12 +3970,8 @@ static __isl_give isl_printer *generate(__isl_take isl_printer *p,
     {
         /* Perform opt. stages:
          * Computation Management -> Communication Management     
-         */
-        //auto start = high_resolution_clock::now();
-        gen->schedule = sa_map_to_device(gen, schedule);
-        //auto stop = high_resolution_clock::now();
-        //std::chrono::duration<double> duration = stop - start;
-        //std::cout << duration.count() << std::endl;
+         */        
+        gen->schedule = sa_map_to_device(gen, schedule);        
 
         /* Generate the AST tree. */
         gen->tree = sa_generate_code(gen, gen->schedule);

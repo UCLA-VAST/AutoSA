@@ -828,6 +828,8 @@ struct autosa_hw_module
   int is_buffer;
   /* Filter module */
   int is_filter;
+  /* Is the DRAM data serialized */
+  int is_serialized;
 
   /* Serialization schedule */
   isl_schedule *serialize_sched;
@@ -868,6 +870,7 @@ struct autosa_hw_module
   /* Data pack factor */
   int data_pack_inter;
   int data_pack_intra;
+  int data_pack_serialize;
 
   /* For I/O module, local array ref index */  
   int n_array_ref;
@@ -1018,6 +1021,7 @@ struct autosa_kernel_stmt
       int upper;
       int lower;
       int lower_sched_val;
+      int serialize;
       char *module_name;
     } m;
     struct

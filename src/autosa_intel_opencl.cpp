@@ -2236,7 +2236,7 @@ static __isl_give isl_printer *print_module_header_intel(
   if (boundary)
     p = isl_printer_print_str(p, "_boundary");
   p = isl_printer_print_str(p, "(");
-  p = print_module_arguments(p, prog, module->kernel, module, 1, INTEL_HW, inter, -1, boundary);
+  p = print_module_arguments(p, prog, module->kernel, module, 1, INTEL_HW, inter, -1, boundary, 0);
   p = isl_printer_print_str(p, ")");
 
   return p;
