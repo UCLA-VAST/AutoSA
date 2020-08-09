@@ -1903,7 +1903,8 @@ static __isl_give isl_printer *print_host_user_xilinx(__isl_take isl_printer *p,
     p = print_str_new_line(p, "// Launch the kernel");
     p = isl_printer_start_line(p);
     p = isl_printer_print_str(p, "kernel");
-    p = isl_printer_print_int(p, kernel->id);
+    //p = isl_printer_print_int(p, kernel->id);
+    p = isl_printer_print_int(p, 0);
     p = isl_printer_print_str(p, "(");
     p = print_kernel_arguments(p, data->prog, kernel, 0, hls);
     p = isl_printer_print_str(p, ");");

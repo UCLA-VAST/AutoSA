@@ -445,7 +445,8 @@ __isl_give isl_printer *print_kernel_header(__isl_take isl_printer *p,
 {
   p = isl_printer_start_line(p);
   p = isl_printer_print_str(p, "void kernel");
-  p = isl_printer_print_int(p, kernel->id);
+  //p = isl_printer_print_int(p, kernel->id);
+  p = isl_printer_print_int(p, 0);
   p = isl_printer_print_str(p, "(");
   p = print_kernel_arguments(p, prog, kernel, 1, hls);
   p = isl_printer_print_str(p, ")");
@@ -2702,33 +2703,30 @@ __isl_give isl_printer *autosa_kernel_print_io(__isl_take isl_printer *p,
       free(fifo_name);
       return p;
     } else {
-      if (stmt->u.i.reduce) {
-        /* [type] fifo_data = 0; */
-        p = isl_printer_start_line(p);
-        if (data_pack == 1) {
-          p = isl_printer_print_str(p, group->array->type);
-        } else {
-          p = isl_printer_print_str(p, group->array->name);
-          p = isl_printer_print_str(p, "_t");
-          p = isl_printer_print_int(p, data_pack);
-        }
-        p = isl_printer_print_str(p, " fifo_data = 0;");
-        p = isl_printer_end_line(p);
-        
-        /* fifo.write(fifo_data); */
-        p = isl_printer_start_line(p);
-        if (hls->target == XILINX_HW)
-          p = print_fifo_rw_xilinx(p, fifo_name, 0);
-        else if (hls->target == INTEL_HW)
-          p = print_fifo_rw_intel(p, fifo_name, 0);
-        p = isl_printer_print_str(p, "fifo_data);");
-        p = isl_printer_end_line(p);
-
-        free(fifo_name);
-        return p;
+      /* Send zeros by default, might be buggy. */      
+      /* [type] fifo_data = 0; */
+      p = isl_printer_start_line(p);
+      if (data_pack == 1) {
+        p = isl_printer_print_str(p, group->array->type);
       } else {
-        throw std::runtime_error("[AutoSA] Outbound dummy io stmt is only supported when local reduce is enabled.");
+        p = isl_printer_print_str(p, group->array->name);
+        p = isl_printer_print_str(p, "_t");
+        p = isl_printer_print_int(p, data_pack);
       }
+      p = isl_printer_print_str(p, " fifo_data = 0;");
+      p = isl_printer_end_line(p);
+      
+      /* fifo.write(fifo_data); */
+      p = isl_printer_start_line(p);
+      if (hls->target == XILINX_HW)
+        p = print_fifo_rw_xilinx(p, fifo_name, 0);
+      else if (hls->target == INTEL_HW)
+        p = print_fifo_rw_intel(p, fifo_name, 0);
+      p = isl_printer_print_str(p, "fifo_data);");
+      p = isl_printer_end_line(p);
+
+      free(fifo_name);
+      return p;      
     }
   }
 

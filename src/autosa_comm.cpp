@@ -4552,13 +4552,23 @@ struct autosa_array_tile *create_register_tiling(
   isl_union_map *sched;
   isl_bool ok;
   struct autosa_array_tile *tile;
+  isl_union_set *domain;
 
   ctx = isl_schedule_node_get_ctx(node);
   access = isl_union_map_from_map(isl_map_copy(ref->access));
   tile = autosa_array_tile_create(ctx, group->array->n_index);
+//#ifdef _DEBUG
+//  DBGSCHDNODE(stdout, node, ctx);
+//  DBGUMAP(stdout, access, ctx);
+//#endif
   sched = isl_schedule_node_get_prefix_schedule_union_map(node);
+  domain = isl_schedule_node_get_domain(node);
+  sched = isl_union_map_intersect_domain(sched, domain);
   access = isl_union_map_apply_domain(access, sched);
   access_i = isl_map_from_union_map(access);
+//#ifdef _DEBUG
+//  DBGMAP(stdout, access_i, ctx);
+//#endif
   ok = can_tile(access_i, tile);
   isl_map_free(access_i);
   autosa_array_ref_group_compute_tiling(tile, group);

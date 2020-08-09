@@ -3416,6 +3416,10 @@ __isl_give isl_schedule_node *add_pe_ext_io_copies_stmt(
   /* Examine if there is any SIMD mark above. */
   is_simd = is_node_under_simd(node);
 
+//#ifdef _DEBUG
+//  DBGSCHDNODE(stdout, node, ctx);
+//#endif
+
   /* Aggregate the copy-in/out access
    * S -> [D -> A]
    * S: statement domain elements
@@ -3449,8 +3453,8 @@ __isl_give isl_schedule_node *add_pe_ext_io_copies_stmt(
     data->filter = isl_schedule_node_get_domain(node);
   }
 
-  pe_group->array->global = 1;
-  pe_group->local_array->global = 1;
+  //pe_group->array->global = 1;
+  //pe_group->local_array->global = 1;
 
   /* read.fifoX[D -> A] -> [D -> A] */
   p_str = isl_printer_to_str(ctx);
@@ -3486,7 +3490,16 @@ __isl_give isl_schedule_node *add_pe_ext_io_copies_stmt(
   access = isl_union_map_reverse(access);
   access = isl_union_map_coalesce(access);
 
+//#ifdef _DEBUG
+//  DBGUMAP(stdout, access, ctx);
+//#endif
+
   graft = isl_schedule_node_from_extension(access);
+
+//#ifdef _DEBUG
+//  DBGSCHDNODE(stdout, graft, ctx);
+//  DBGMUPA(stdout, mupa, ctx);
+//#endif  
   graft = isl_schedule_node_child(graft, 0);
   graft = isl_schedule_node_insert_partial_schedule(graft, mupa);
 
@@ -3518,17 +3531,13 @@ __isl_give isl_schedule_node *add_pe_ext_io_copies_stmt(
   while (graft && isl_schedule_node_has_parent(graft))
     graft = isl_schedule_node_parent(graft);
 
-  if (read)
-  {
+  if (read) {
     node = isl_schedule_node_graft_before(node, graft);
-  }
-  else
-  {
+  } else {
     node = isl_schedule_node_graft_after(node, graft);
   }
 
-  if (data->dummy)
-  {
+  if (data->dummy) {
     /* insert an empty filter. */
     empty_filter = isl_union_set_from_set(isl_set_empty(
         isl_set_get_space(data->kernel->context)));
@@ -3619,8 +3628,8 @@ __isl_give isl_schedule_node *add_pe_int_io_copies(
     return autosa_tree_move_up_to_pe(node);
   }
 
-  pe_group->array->global = 1;
-  pe_group->local_array->global = 1;
+  //pe_group->array->global = 1;
+  //pe_group->local_array->global = 1;
 
   /* read.fifoX[D -> A] -> [D -> A] */
   /* Generate statement name. */
@@ -5926,6 +5935,7 @@ static __isl_give isl_union_set_list *create_copy_filters(struct autosa_prog *pr
       continue;
 
     array->global = 1;
+    array->local_array->global = 1;
     if (array->local)
       array->declare_local = 1;
     if (!strcmp(prefix, "to_device"))
@@ -9409,6 +9419,13 @@ isl_stat sa_module_generate_code(struct autosa_gen *gen,
   isl_schedule *schedule;
   struct autosa_at_domain_data data;
   isl_ast_node *tree;
+
+//#ifdef _DEBUG
+//  if (module->type == PE_MODULE) {
+//    printf("debug here!\n");
+//  }
+//  DBGSCHD(stdout, module->sched, gen->ctx);
+//#endif
 
   schedule = module->sched;  
   autosa_at_domain_data_init(&data, gen);
