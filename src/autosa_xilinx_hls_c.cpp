@@ -1730,7 +1730,7 @@ static __isl_give isl_printer *print_set_kernel_arguments_xilinx(
       {
         for (int j = 0; j < local_array->n_io_group_refs; j++)
         {
-          std::pair<int, int> ref_port_map = local_array->group_ref_mem_port_map[j];
+          auto ref_port_map = local_array->group_ref_mem_port_map.at(j);
           p = isl_printer_start_line(p);
           p = isl_printer_print_str(p, "OCL_CHECK(err, err = krnl.setArg(");
           p = isl_printer_print_int(p, n_arg);
@@ -3964,7 +3964,8 @@ static __isl_give isl_printer *print_top_module_headers_xilinx(
 
   p = isl_printer_start_line(p);
   p = isl_printer_print_str(p, "p = isl_printer_print_str(p, \"void kernel");
-  p = isl_printer_print_int(p, top->kernel->id);
+  //p = isl_printer_print_int(p, top->kernel->id);
+  p = isl_printer_print_int(p, 0);
   p = isl_printer_print_str(p, "(");
   p = print_kernel_arguments(p, prog, top->kernel, 1, hls);
   p = isl_printer_print_str(p, ")\");");

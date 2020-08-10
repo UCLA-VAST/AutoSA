@@ -106,8 +106,10 @@ ISL_ARG_BOOL(struct autosa_options, hls, 0, "hls", 0,
 			 "generate Xilinx HLS host")
 ISL_ARG_BOOL(struct autosa_options, host_serialize, 0, "host-serialize", 0,
 			 "serialize/deserialize the host data")
-ISL_ARG_BOOL(struct autosa_options, insert_hls_dependence, 0, "insert-hls-dependence", 1,
-			 "insert Xilinx HLS dependence pragma")
+ISL_ARG_BOOL(struct autosa_options, insert_hls_dependence, 0, "insert-hls-dependence", 0,
+			 "insert Xilinx HLS dependence pragma (alpha version)")
+ISL_ARG_INT(struct autosa_options, int_io_dir, 0, "int-io-dir", "dir", 0,
+			 "set the default interior I/O direction. 0: [1,x] 1: [x,1]")
 ISL_ARG_BOOL(struct autosa_options, io_module_embedding, 0, "io-module-embedding", 0,
 			 "embed the I/O modules inside PEs if possible")
 ISL_ARG_BOOL(struct autosa_options, loop_infinitize, 0, "loop-infinitize", 0,

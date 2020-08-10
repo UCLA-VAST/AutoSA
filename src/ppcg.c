@@ -875,6 +875,24 @@ static int rar_sol_smart_pick(__isl_keep isl_mat *mat, struct ppcg_scop *ps) {
   return pick_idx;
 }
 
+/* Construct a pseudo RAR dependence that is an identity map of the read access. */
+static __isl_give isl_map *construct_pseudo_dep_rar(__isl_keep isl_map *map)
+{
+	isl_set *set;
+
+//#ifdef _DEBUG
+//	DBGMAP(stdout, map, isl_map_get_ctx(map));
+//#endif
+	set = isl_map_domain(isl_map_copy(map));
+	isl_map *dep_map;
+	dep_map = isl_set_identity(set);
+//#ifdef _DEBUG
+//	DBGMAP(stdout, dep_map, isl_map_get_ctx(dep_map));
+//#endif
+
+	return dep_map;
+}
+
 /* Construct the RAR dependence based on the dependence vector in "sol" and the 
  * access relation "map".
  */
@@ -930,6 +948,10 @@ static isl_stat build_rar_dep(__isl_take isl_map *map, void *user) {
     return isl_stat_ok;
   }
 
+//#ifdef _DEBUG
+//	DBGMAP(stdout, map, isl_map_get_ctx(map));
+//#endif
+
   /* Take the access function and compute the null space */
   isl_mat *acc_mat = get_acc_mat_from_tagged_acc(map); 
   isl_mat *acc_null_mat = isl_mat_right_kernel(acc_mat);
@@ -945,17 +967,21 @@ static isl_stat build_rar_dep(__isl_take isl_map *map, void *user) {
     for (int row = 0; row < isl_mat_rows(acc_null_mat); row++) {
       sol = isl_vec_set_element_val(sol, row, isl_mat_get_element_val(acc_null_mat, row, col));
     }
-#ifdef _DEBUG
-		isl_printer *pd = isl_printer_to_file(isl_map_get_ctx(map), stdout);
-		pd = isl_printer_print_vec(pd, sol);
-		pd = isl_printer_end_line(pd);
-		pd = isl_printer_print_map(pd, map);
-		pd = isl_printer_end_line(pd);
-		pd = isl_printer_free(pd);
-#endif
     isl_map *tagged_dep_rar = construct_dep_rar(sol, map);
     isl_vec_free(sol);
     isl_mat_free(acc_null_mat);
+
+//#ifdef _DEBUG
+//		DBGMAP(stdout, tagged_dep_rar, isl_map_get_ctx(tagged_dep_rar));
+//#endif
+
+		/* Test if the dependence is empty. In such case, we will build a identity map 
+		 * serving as a pseudo-dependence. 
+		 */
+		if (isl_map_is_empty(tagged_dep_rar)) {
+			isl_map_free(tagged_dep_rar);
+			tagged_dep_rar = construct_pseudo_dep_rar(map);
+		}
 
     ps->tagged_dep_rar = isl_union_map_union(ps->tagged_dep_rar, isl_union_map_from_map(tagged_dep_rar));
   } else {

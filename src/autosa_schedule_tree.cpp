@@ -1268,6 +1268,37 @@ int get_band_single_schedule_val(__isl_keep isl_schedule_node *node)
   }
 }
 
+/* Mark all dimensions in the current band node atomic.
+ */
+static __isl_give isl_schedule_node *atomic(__isl_take isl_schedule_node *node)
+{
+  return ppcg_set_schedule_node_type(node, isl_ast_loop_atomic);
+}
+
+/* Mark "node" atomic, if it is a band node.
+ * Do the same for all ancestors.
+ * Return a pointer to "node" (in the updated schedule tree).
+ */
+__isl_give isl_schedule_node *autosa_atomic_ancestors(
+  __isl_take isl_schedule_node *node)
+{
+  int pos;
+
+  if (!node)
+    return NULL;
+  if (!isl_schedule_node_has_parent(node))
+    return node;
+
+  pos = isl_schedule_node_get_child_position(node);
+  node = isl_schedule_node_parent(node);
+  if (isl_schedule_node_get_type(node) == isl_schedule_node_band)
+    node = atomic(node);
+  node = autosa_atomic_ancestors(node);
+  node = isl_schedule_node_child(node, pos);
+
+  return node;
+}
+
 /* Examines if the current schedule node is a io mark at the level "io_level".
  * Specifically, the io mark at the level "io_level" has the name as "io_L[io_level]".
  */

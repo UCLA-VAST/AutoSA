@@ -1021,9 +1021,16 @@ static isl_stat autosa_interior_io_eliminate(
 {
   if (isl_vec_is_zero(group->dir))
   {
-    /* This group will generate interior I/O, which needs to be eliminated. */
-    /* By default, set the first dim to be 1. */
-    group->dir = isl_vec_set_element_si(group->dir, 0, 1);
+    /* This group will generate interior I/O, which needs to be eliminated. 
+     * By default, set the first dim to be 1. 
+     * Temporary hack: For LU, we set the the last dim to be 1. 
+     * TODO: make it an option.
+     */
+    if (gen->options->autosa->int_io_dir == 0)
+      group->dir = isl_vec_set_element_si(group->dir, 0, 1);
+    else
+      group->dir = isl_vec_set_element_si(group->dir, isl_vec_size(group->dir) - 1, 1);
+
     /* Update the array info */
     for (int i = 0; i < group->n_ref; i++)
     {
@@ -1171,9 +1178,6 @@ static __isl_give isl_schedule_node *insert_io_module_context(
   /* Update the context. */
   context = isl_set_universe(isl_set_get_space(kernel->context));
   node = autosa_tree_move_down_to_array(node, kernel->core);
-//#ifdef _DEBUG
-//  DBGSCHDNODE(stdout, node, isl_schedule_node_get_ctx(node));
-//#endif
 
   while (!isl_schedule_node_is_io_mark(node, 1))
   {
@@ -1187,21 +1191,12 @@ static __isl_give isl_schedule_node *insert_io_module_context(
       isl_union_set *domain;
       isl_union_pw_multi_aff *contraction;
 
-//#ifdef _DEBUG
-//      DBGSCHDNODE(stdout, node, isl_schedule_node_get_ctx(node));
-//#endif
       umap = isl_schedule_node_band_get_partial_schedule_union_map(node);
       domain = isl_schedule_node_get_domain(node);
       contraction = isl_schedule_node_get_subtree_contraction(node);
       domain = isl_union_set_preimage_union_pw_multi_aff(domain, contraction);
       umap = isl_union_map_intersect_domain(umap, domain);
-//#ifdef _DEBUG
-//      DBGUMAP(stdout, umap, isl_union_map_get_ctx(umap));
-//#endif      
       uset = isl_union_map_range(umap);
-//#ifdef _DEBUG
-//      DBGUSET(stdout, uset, isl_union_set_get_ctx(uset));
-//#endif
       size = ppcg_size_from_extent(isl_set_from_union_set(uset));
       ids = isl_id_list_from_id(isl_id_list_get_id(io_ids, n_io_ids));
       n_io_ids++;
@@ -3298,9 +3293,8 @@ static int group_array_references_io(struct autosa_kernel *kernel,
     for (j = 0; j < ref->n_io_info; j++) {
       struct autosa_io_info *io_info = ref->io_info[j];
       if (io_info->dep->type == AUTOSA_DEP_RAW || io_info->dep->type == AUTOSA_DEP_RAR)
-        n++;
-    }
-    //n += ref->n_io_info;
+        n++;      
+    }    
   }
 
   groups = (struct autosa_array_ref_group **)calloc(n,
@@ -3462,10 +3456,6 @@ static int compute_group_bounds_drain(struct autosa_kernel *kernel,
 static int group_array_references_drain(struct autosa_kernel *kernel,
                                         struct autosa_local_array_info *local, struct autosa_group_data *data)
 {
-//#ifdef _DEBUG
-//  DBGUMAP(stdout, kernel->prog->scop->live_out, kernel->ctx);
-//  //exit(0);
-//#endif
   if (local->array->local)
     return 0;
 
@@ -3524,7 +3514,10 @@ static int group_array_references_drain(struct autosa_kernel *kernel,
       group->dir = isl_vec_zero(ctx, kernel->n_sa_dim);
       group->old_dir = isl_vec_zero(ctx, kernel->n_sa_dim);
       /* Perform interior I/O elimination by default. */
-      group->dir = isl_vec_set_element_si(group->dir, 0, 1);
+      if (kernel->options->autosa->int_io_dir == 0)
+        group->dir = isl_vec_set_element_si(group->dir, 0, 1);
+      else
+        group->dir = isl_vec_set_element_si(group->dir, isl_vec_size(group->dir) - 1, 1);
       group->group_type = AUTOSA_DRAIN_GROUP;
       group->pe_io_dir = IO_OUT;
       group->array_io_dir = IO_OUT;
@@ -4557,18 +4550,11 @@ struct autosa_array_tile *create_register_tiling(
   ctx = isl_schedule_node_get_ctx(node);
   access = isl_union_map_from_map(isl_map_copy(ref->access));
   tile = autosa_array_tile_create(ctx, group->array->n_index);
-//#ifdef _DEBUG
-//  DBGSCHDNODE(stdout, node, ctx);
-//  DBGUMAP(stdout, access, ctx);
-//#endif
   sched = isl_schedule_node_get_prefix_schedule_union_map(node);
   domain = isl_schedule_node_get_domain(node);
   sched = isl_union_map_intersect_domain(sched, domain);
   access = isl_union_map_apply_domain(access, sched);
   access_i = isl_map_from_union_map(access);
-//#ifdef _DEBUG
-//  DBGMAP(stdout, access_i, ctx);
-//#endif
   ok = can_tile(access_i, tile);
   isl_map_free(access_i);
   autosa_array_ref_group_compute_tiling(tile, group);

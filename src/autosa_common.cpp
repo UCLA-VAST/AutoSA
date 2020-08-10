@@ -54,7 +54,6 @@ void *autosa_kernel_free(struct autosa_kernel *kernel)
     isl_ast_expr_free(array->bound_expr);
     
     isl_pw_qpolynomial_free(array->serialize_bound);    
-    //array->group_ref_mem_port_map.clear();
   }
   if (kernel->array)
     free(kernel->array);
@@ -1530,6 +1529,7 @@ struct autosa_hw_module *autosa_hw_module_alloc(struct autosa_gen *gen)
   module->serialize_sched = NULL;
   module->serialize_tree = NULL;
   module->coalesce_bound = -1;
+  module->is_serialized = 0;
 
   return module;
 }

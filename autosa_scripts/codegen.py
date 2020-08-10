@@ -679,7 +679,7 @@ def reorder_module_calls(lines):
     For I/O module calls, we will reverse the sequence of calls for output modules.
     Starting from the first module, enlist the module calls until the boundary module
     is met.
-    Reverse the list and output it.
+    Reverse the list and print it.
 
     Args:
       lines: contains the codelines of the program
@@ -739,6 +739,9 @@ def reorder_module_calls(lines):
                     module_calls.append(module_call.copy())
                     module_call.clear()
                     if boundary:
+                        # Pop out the previous module calls except the last one
+                        if new_module:
+                            module_calls = module_calls[-1:]
                         # Reverse the list
                         module_calls.reverse()
                         # Insert it back
@@ -757,8 +760,9 @@ def reorder_module_calls(lines):
                         output_io = 0
                         reset = 1
                     if new_module:
-                        # Pop out the previous module calls except the last one
+                        # Pop out the previous module calls except the last one                        
                         module_calls = module_calls[-1:]
+                        
 
         if module_start and output_io:
             module_call.append(line)

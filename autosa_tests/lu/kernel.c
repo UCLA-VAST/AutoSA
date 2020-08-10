@@ -117,9 +117,12 @@ int main(int argc, char **argv) {
 
   int err = 0;
   for (int i = 0; i < N; i++)
-    for (int j = 0; j < N; j++) {
+    for (int j = 0; j <= i; j++) {
       if (fabs((float)L_golden[i][j] - (float)L[i][j]) > 0.001)
         err++;
+    }
+  for (int i = 0; i < N; i++)
+    for (int j = i; j < N; j++) {
       if (fabs((float)U_golden[i][j] - (float)U[i][j]) > 0.001)
         err++;
     }
@@ -155,7 +158,7 @@ int main(int argc, char **argv) {
   printf("L:\n");
   for (int i = 0; i < N; i++) {
     for (int j = 0; j < N; j++) {      
-      printf("%f ", (i == j)? 1.0 : L[j][i]);      
+      printf("%f ", (i == j)? 1.0 : (j < i)? L[j][i] : 0.0);      
     }
     printf("\n");
   }
@@ -163,7 +166,7 @@ int main(int argc, char **argv) {
   printf("U:\n");
   for (int i = 0; i < N; i++) {
     for (int j = 0; j < N; j++) {
-      printf("%f ", U[i][j]);
+      printf("%f ", (j < i)? 0.0 : U[i][j]);
     }
     printf("\n");
   }

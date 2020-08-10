@@ -79,6 +79,11 @@ extern "C"
 		int local_reduce;
 		/* Reduce op */
 		char *reduce_op;
+		/* Interior I/O elimination direction. 
+		 * 0: set the first dim to 1 (default). 
+		 * 1: Set the last dim to 1.
+		 */
+		int int_io_dir;
 	};
 
 	struct ppcg_options

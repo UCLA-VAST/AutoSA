@@ -979,13 +979,7 @@ isl_stat data_transfer_update(__isl_keep isl_basic_map *dep, struct data_transfe
         access->io_info[access->n_io_info - 1]->dep->isl_dep = isl_basic_map_copy(dep);
         access->io_info[access->n_io_info - 1]->dep->type = data->dep_type;
         access->io_info[access->n_io_info - 1]->dir = internal_data.dirvec;
-        access->io_info[access->n_io_info - 1]->old_dir = isl_vec_dup(internal_data.dirvec);
-        //#ifdef _DEBUG
-        //        DBGMAP(stdout, access->access, kernel->ctx)
-        //        DBGBMAP(stdout, access->io_info[access->n_io_info - 1]->dep->isl_dep, kernel->ctx)
-        //        DBGVEC(stdout, access->io_info[access->n_io_info - 1]->dir, kernel->ctx)
-        //        DBGVAR(std::cout, data->dep_type)
-        //#endif
+        access->io_info[access->n_io_info - 1]->old_dir = isl_vec_dup(internal_data.dirvec);        
     }
     else
     {
@@ -999,11 +993,7 @@ isl_stat data_transfer_update(__isl_keep isl_basic_map *dep, struct data_transfe
         access->io_info[access->n_io_info - 1]->dep->isl_dep = isl_basic_map_copy(dep);
         access->io_info[access->n_io_info - 1]->dep->type = data->dep_type;
         access->io_info[access->n_io_info - 1]->dir = internal_data.dirvec;
-        access->io_info[access->n_io_info - 1]->old_dir = isl_vec_dup(internal_data.dirvec);
-        //#ifdef _DEBUG
-        //        DBGMAP(stdout, access->access, kernel->ctx)
-        //        DBGBMAP(stdout, access->io_info[access->n_io_info - 1]->dep->isl_dep, kernel->ctx)
-        //#endif
+        access->io_info[access->n_io_info - 1]->old_dir = isl_vec_dup(internal_data.dirvec);        
     }
 
     isl_schedule_node_free(node);
@@ -3009,37 +2999,6 @@ static __isl_give isl_multi_pw_aff *extract_grid_size(
     return isl_multi_pw_aff_gist(size, context);
 }
 
-/* Mark all dimensions in the current band node atomic.
- */
-static __isl_give isl_schedule_node *atomic(__isl_take isl_schedule_node *node)
-{
-    return ppcg_set_schedule_node_type(node, isl_ast_loop_atomic);
-}
-
-/* Mark "node" atomic, if it is a band node.
- * Do the same for all ancestors.
- * Return a pointer to "node" (in the updated schedule tree).
- */
-static __isl_give isl_schedule_node *atomic_ancestors(
-    __isl_take isl_schedule_node *node)
-{
-    int pos;
-
-    if (!node)
-        return NULL;
-    if (!isl_schedule_node_has_parent(node))
-        return node;
-
-    pos = isl_schedule_node_get_child_position(node);
-    node = isl_schedule_node_parent(node);
-    if (isl_schedule_node_get_type(node) == isl_schedule_node_band)
-        node = atomic(node);
-    node = atomic_ancestors(node);
-    node = isl_schedule_node_child(node, pos);
-
-    return node;
-}
-
 /* Group the domain elements into a single space, named kernelX,
  * with X the kernel sequence number "kernel_id".
  */
@@ -3281,9 +3240,9 @@ static __isl_give isl_schedule_node *compute_and_comm_optimize(
         }
     }
 
-#ifdef _DEBUG
-    DBGSCHD(stdout, kernel->schedule, isl_schedule_get_ctx(kernel->schedule))    
-#endif
+//#ifdef _DEBUG
+//    DBGSCHD(stdout, kernel->schedule, isl_schedule_get_ctx(kernel->schedule))    
+//#endif
 
     kernel->prog = gen->prog;
     kernel->options = gen->options;
@@ -3361,7 +3320,7 @@ static __isl_give isl_schedule_node *compute_and_comm_optimize(
     kernel->domain = domain;
 
     /* Make all the host loops atomic so that kernel is only called once. */
-    node = atomic_ancestors(node);
+    node = autosa_atomic_ancestors(node);
 
     /* Insert the "kernel" mark. */
     id = isl_id_alloc(gen->ctx, "kernel", kernel);

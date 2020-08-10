@@ -10,6 +10,107 @@
 
 #include "ppcg_options.h"
 
+#define _DEBUG
+
+#define DBGVAR(os, var)                                  \
+  (os) << "DBG: " << __FILE__ << "(" << __LINE__ << ") " \
+       << #var << " = [" << (var) << "]" << std::endl;
+
+#define DBGSCHDNODE(os, node, ctx)                                    {\
+  printf("%s(%d) Print schedule_node.\n", __FILE__, __LINE__);         \
+  isl_printer *p_debug = isl_printer_to_file(ctx, os);                 \
+  p_debug = isl_printer_set_yaml_style(p_debug, ISL_YAML_STYLE_BLOCK); \
+  p_debug = isl_printer_print_schedule_node(p_debug, node);            \
+  p_debug = isl_printer_free(p_debug);                                 \
+}
+
+#define DBGSCHD(os, node, ctx)                                        {\
+  printf("%s(%d) Print schedule.\n", __FILE__, __LINE__);              \
+  isl_printer *p_debug = isl_printer_to_file(ctx, os);                 \
+  p_debug = isl_printer_set_yaml_style(p_debug, ISL_YAML_STYLE_BLOCK); \
+  p_debug = isl_printer_print_schedule(p_debug, node);                 \
+  p_debug = isl_printer_free(p_debug);                                 \
+} 
+
+#define DBGSET(os, set, ctx)                                          {\
+  printf("%s(%d) Print set.\n", __FILE__, __LINE__);                   \
+  isl_printer *p_debug = isl_printer_to_file(ctx, os);                 \
+  p_debug = isl_printer_print_set(p_debug, set);                       \
+  p_debug = isl_printer_print_str(p_debug, "\n");                      \
+  p_debug = isl_printer_free(p_debug);                                 \
+}
+
+#define DBGUSET(os, uset, ctx)                                        {\
+  printf("%s(%d) Print union_set.\n", __FILE__, __LINE__);             \
+  isl_printer *p_debug = isl_printer_to_file(ctx, os);                 \
+  p_debug = isl_printer_print_union_set(p_debug, uset);                \
+  p_debug = isl_printer_print_str(p_debug, "\n");                      \
+  p_debug = isl_printer_free(p_debug);                                 \
+}
+
+#define DBGUMAP(os, umap, ctx)                                        {\
+  printf("%s(%d) Print union_map.\n", __FILE__, __LINE__);             \
+  isl_printer *p_debug = isl_printer_to_file(ctx, os);                 \
+  p_debug = isl_printer_print_union_map(p_debug, umap);                \
+  p_debug = isl_printer_print_str(p_debug, "\n");                      \
+  p_debug = isl_printer_free(p_debug);                                 \
+}
+
+#define DBGMAP(os, map, ctx)                                          {\
+  printf("%s(%d) Print map.\n", __FILE__, __LINE__);                   \
+  isl_printer *p_debug = isl_printer_to_file(ctx, os);                 \
+  p_debug = isl_printer_print_map(p_debug, map);                       \
+  p_debug = isl_printer_print_str(p_debug, "\n");                      \
+  p_debug = isl_printer_free(p_debug);                                 \
+}
+
+#define DBGBMAP(os, bmap, ctx)                                        {\
+  printf("%s(%d) Print basic_map.\n", __FILE__, __LINE__);             \
+  isl_printer *p_debug = isl_printer_to_file(ctx, os);                 \
+  p_debug = isl_printer_print_basic_map(p_debug, bmap);                \
+  p_debug = isl_printer_print_str(p_debug, "\n");                      \
+  p_debug = isl_printer_free(p_debug);                                 \
+}
+
+#define DBGMA(os, ma, ctx)                                            {\
+  printf("%s(%d) Print multi_aff.\n", __FILE__, __LINE__);             \
+  isl_printer *p_debug = isl_printer_to_file(ctx, os);                 \
+  p_debug = isl_printer_print_multi_aff(p_debug, ma);                  \
+  p_debug = isl_printer_print_str(p_debug, "\n");                      \
+  p_debug = isl_printer_free(p_debug);                                 \
+}
+
+#define DBGVEC(os, vec, ctx)                                          {\
+  printf("%s(%d) Print vec.\n", __FILE__, __LINE__);                   \
+  isl_printer *p_debug = isl_printer_to_file(ctx, os);                 \
+  p_debug = isl_printer_print_vec(p_debug, vec);                       \
+  p_debug = isl_printer_print_str(p_debug, "\n");                      \
+  p_debug = isl_printer_free(p_debug);                                 \
+}
+
+#define DBGASTEXPR(os, astexpr, ctx)                                  {\
+  printf("%s(%d) Print AST expr.\n", __FILE__, __LINE__);              \
+  isl_printer *p_debug = isl_printer_to_file(ctx, os);                 \
+  p_debug = isl_printer_set_output_format(p_debug, ISL_FORMAT_C);      \
+  p_debug = isl_printer_print_ast_expr(p_debug, astexpr);              \
+  p_debug = isl_printer_free(p_debug);                                 \
+}
+
+#define DBGASTNODE(os, astnode, ctx)                                  {\
+  printf("%s(%d) Print AST node.\n", __FILE__, __LINE__);              \
+  isl_printer *p_debug = isl_printer_to_file(ctx, os);                 \
+  p_debug = isl_printer_set_output_format(p_debug, ISL_FORMAT_C);      \
+  p_debug = isl_printer_print_ast_node(p_debug, astnode);              \
+  p_debug = isl_printer_free(p_debug);                                 \
+}
+
+#define DBGMUPA(os, mupa, ctx)                                        {\
+  printf("%s(%d) Print multi_union_pw_aff.\n", __FILE__, __LINE__);    \
+  isl_printer *p_debug = isl_printer_to_file(ctx, os);                 \
+  p_debug = isl_printer_print_multi_union_pw_aff(p_debug, mupa);       \
+  p_debug = isl_printer_free(p_debug);                                 \
+}
+
 #ifdef __cplusplus
 extern "C"
 {
