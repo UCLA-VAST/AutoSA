@@ -15,6 +15,7 @@
 #include <isl/val.h>
 #include <isl/space.h>
 #include <isl/set.h>
+#include <isl/ast_type.h>
 #include <isl_schedule_band.h>
 #include <isl_schedule_private.h>
 #include <isl_schedule_node_private.h>
@@ -4973,23 +4974,23 @@ __isl_give isl_schedule_node *isl_schedule_node_band_member_set_pe_opt(
 }
 
 /* Return the sched_pos property of the band member position "pos" of the 
- * band node "node".
+ * band node "node". 
  */
 int isl_schedule_node_band_member_get_sched_pos(
-	__isl_keep isl_schedule_node *node, int pos)
+  __isl_keep isl_schedule_node *node, int pos)
 {
-	if (!node)
-		return -1;
-	return isl_schedule_tree_band_member_get_sched_pos(node->tree, pos);
+  if (!node)
+    return -1;
+  return isl_schedule_tree_band_member_get_sched_pos(node->tree, pos);
 }
 
 /* Mark the band member at position "pos" of the band node "node"
  * as "sched_pos".
  */
 __isl_give isl_schedule_node *isl_schedule_node_band_member_set_sched_pos(
-	__isl_take isl_schedule_node *node, int pos, int sched_pos)
+  __isl_take isl_schedule_node *node, int pos, int sched_pos)
 {
-	int sp;
+  int sp;
   isl_schedule_tree *tree;
 
   if (!node)
@@ -5002,6 +5003,6 @@ __isl_give isl_schedule_node *isl_schedule_node_band_member_set_sched_pos(
   tree = isl_schedule_tree_band_member_set_sched_pos(tree, pos, sched_pos);
   node = isl_schedule_node_graft_tree(node, tree);
 
-  return node;	
+  return node;
 }
 /* AutoSA Extended */

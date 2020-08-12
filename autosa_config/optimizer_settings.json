@@ -49,7 +49,7 @@
             }
         },
         "multiprocess": {
-            "n_job": 16
+            "n_job": 1
         }
     },
     "search": {

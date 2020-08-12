@@ -255,6 +255,20 @@ __isl_give isl_printer *autosa_print_array_type(__isl_take isl_printer *p,
   return p;
 }
 
+__isl_give isl_printer *autosa_print_array_type_with_lane(
+  __isl_take isl_printer *p,
+  struct autosa_array_info *array, int n_lane)
+{
+  if (n_lane == 1)
+    p = isl_printer_print_str(p, array->type);
+  else {
+    p = isl_printer_print_str(p, array->name);
+    p = isl_printer_print_str(p, "_t");
+    p = isl_printer_print_int(p, n_lane);
+  }
+  return p;
+}
+
 __isl_give isl_printer *autosa_kernel_print_domain(__isl_take isl_printer *p,
                                                    struct autosa_kernel_stmt *stmt)
 {
@@ -3350,9 +3364,9 @@ static __isl_give isl_printer *autosa_kernel_print_io_transfer_default(
  *  fifo.write(fifo_data);
  */
 static __isl_give isl_printer *autosa_kernel_print_io_transfer_data_pack(
-    __isl_take isl_printer *p, struct autosa_kernel_stmt *stmt,
-    struct autosa_array_ref_group *group, int n_lane, int nxt_n_lane,
-    struct hls_info *hls, const char *iterator_prefix)
+  __isl_take isl_printer *p, struct autosa_kernel_stmt *stmt,
+  struct autosa_array_ref_group *group, int n_lane, int nxt_n_lane,
+  struct hls_info *hls, const char *iterator_prefix)
 {
   isl_ctx *ctx;
   ctx = isl_printer_get_ctx(p);
@@ -3378,16 +3392,7 @@ static __isl_give isl_printer *autosa_kernel_print_io_transfer_data_pack(
 
   /* [type] fifo_data; */
   p = isl_printer_start_line(p);
-  if (nxt_n_lane == 1)
-  {
-    p = isl_printer_print_str(p, group->array->type);
-  }
-  else
-  {
-    p = isl_printer_print_str(p, group->array->name);
-    p = isl_printer_print_str(p, "_t");
-    p = isl_printer_print_int(p, nxt_n_lane);
-  }
+  p = autosa_print_array_type_with_lane(p, group->array, nxt_n_lane);  
   p = isl_printer_print_str(p, " ");
   p = isl_printer_print_str(p, "fifo_data;");
   p = isl_printer_end_line(p);

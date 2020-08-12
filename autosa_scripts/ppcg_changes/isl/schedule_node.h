@@ -8,6 +8,7 @@
 #include <isl/val_type.h>
 #include <isl/space_type.h>
 #include <isl/id_type.h>
+#include <isl/set.h>
 
 #if defined(__cplusplus)
 extern "C" {
@@ -312,6 +313,7 @@ int isl_schedule_node_band_member_get_sched_pos(
 __isl_export
 __isl_give isl_schedule_node *isl_schedule_node_band_member_set_sched_pos(
 	__isl_take isl_schedule_node *node, int pos, int sched_pos);
+
 __isl_export
 __isl_take isl_schedule_node *isl_schedule_node_dup(
 	__isl_keep isl_schedule_node *node);

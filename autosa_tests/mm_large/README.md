@@ -15,7 +15,7 @@ autosa_tests/mm_large/connectivity.cfg
 
 __Command__:
 ```c
-./autosa ./autosa_tests/mm_large/kernel.c --AutoSA-config=./autosa_config/autosa_config.json --target=autosa_hls_c --AutoSA-autosa --AutoSA-two-level-buffer --AutoSA-uram --isl-schedule-whole-component --AutoSA-output-dir=./autosa.tmp/output --sa-sizes="{kernel[0]->array_part[260,128,256];kernel[0]->array_part_L2[4,4,4];kernel[0]->latency[26,16];kernel[0]->simd[8]}" --AutoSA-simd-info=./autosa_tests/mm_large/simd_info.json
+./autosa ./autosa_tests/mm_large/kernel.c --AutoSA-config=./autosa_config/autosa_config.json --target=autosa_hls_c --AutoSA-autosa --isl-schedule-whole-component --AutoSA-output-dir=./autosa.tmp/output --sa-sizes="{kernel[]->space_time[3];kernel[]->array_part[256,128,256];kernel[]->array_part_L2[4,4,4];kernel[]->latency[32,16];kernel[]->simd[8]}" --AutoSA-simd-info=./autosa_tests/mm_large/simd_info.json --AutoSA-host-serialize
 ```
 
 After compilation, you will find all generated files under the directory `autosa.tmp/output/src`. Copy the `Makefile` and `connectivity.cfg` to the directory `autosa.tmp/output`.
@@ -31,3 +31,11 @@ Execute the makefile to build the design.
 cd autosa.tmp/output
 make all
 ```
+
+__Auto Tuning__:
+Execute the following command to train the resource models.
+```c
+export AUTOSA_PATH=$(pwd)
+python3 ./autosa_scripts/optimizer.py -c "./autosa ./autosa_tests/mm_large/kernel.c --target=autosa_hls_c --AutoSA-autosa --isl-schedule-whole-component --AutoSA-data-pack-sizes=\"{kernel[]->data_pack[8,32,64]}\" --AutoSA-simd-info=./autosa_tests/mm/simd_info.json --AutoSA-host-serialize --AutoSA-hls" --info autosa_config/hw_info.json -s autosa_config/optimizer_settings.json --train -p xilinx
+```
+

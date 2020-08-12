@@ -3153,7 +3153,7 @@ enum autosa_loop_type isl_schedule_tree_band_member_get_pe_opt(
   return isl_schedule_band_member_get_pe_opt(tree->band, pos);
 }
 
-/* Set the pe_opt property of the band member accoding to "loop_type".
+/* Set the space_time property of the band member accoding to "loop_type".
  */
 __isl_give isl_schedule_tree *isl_schedule_tree_band_member_set_pe_opt(
   __isl_take isl_schedule_tree *tree, int pos, enum autosa_loop_type loop_type)
@@ -3189,7 +3189,7 @@ int isl_schedule_tree_band_member_get_sched_pos(
   
   if (tree->type != isl_schedule_node_band)
     isl_die(isl_schedule_tree_get_ctx(tree), isl_error_invalid,
-        "not a band node", return -1);
+        "not a band node", return autosa_loop_error);
 
   return isl_schedule_band_member_get_sched_pos(tree->band, pos);
 }

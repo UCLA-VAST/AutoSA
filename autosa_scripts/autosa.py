@@ -104,14 +104,14 @@ if __name__ == "__main__":
         if os.path.exists(headers):
             exec_sys_cmd(f'cp {headers} {output_dir}/src/')        
 
-        # Clean up the temp files        
-        if target == 'autosa_hls_c' and xilinx_host == 'opencl':
-            exec_sys_cmd(f'rm {output_dir}/src/{src_file_prefix}_kernel.h')            
-        exec_sys_cmd(f'rm {output_dir}/src/top_gen')
-        exec_sys_cmd(f'rm {output_dir}/src/top.cpp')
-        exec_sys_cmd(f'rm {output_dir}/src/{src_file_prefix}_top_gen.cpp')    
-        exec_sys_cmd(f'rm {output_dir}/src/{src_file_prefix}_top_gen.h')    
-        if target == 'autosa_hls_c':
-            exec_sys_cmd(f'rm {output_dir}/src/{src_file_prefix}_kernel_modules.cpp')
-        elif target == 'autosa_opencl':
-            exec_sys_cmd(f'rm {output_dir}/src/{src_file_prefix}_kernel_modules.cl')    
+#        # Clean up the temp files        
+#        if target == 'autosa_hls_c' and xilinx_host == 'opencl':
+#            exec_sys_cmd(f'rm {output_dir}/src/{src_file_prefix}_kernel.h')            
+#        exec_sys_cmd(f'rm {output_dir}/src/top_gen')
+#        exec_sys_cmd(f'rm {output_dir}/src/top.cpp')
+#        exec_sys_cmd(f'rm {output_dir}/src/{src_file_prefix}_top_gen.cpp')    
+#        exec_sys_cmd(f'rm {output_dir}/src/{src_file_prefix}_top_gen.h')    
+#        if target == 'autosa_hls_c':
+#            exec_sys_cmd(f'rm {output_dir}/src/{src_file_prefix}_kernel_modules.cpp')
+#        elif target == 'autosa_opencl':
+#            exec_sys_cmd(f'rm {output_dir}/src/{src_file_prefix}_kernel_modules.cl')    
