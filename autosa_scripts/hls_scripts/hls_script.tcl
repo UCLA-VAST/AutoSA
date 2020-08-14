@@ -13,7 +13,7 @@ set_part {xcu200-fsgd2104-2-e}
 create_clock -period 5 -name default
 config_compile -name_max_length 50
 #source "./prj/solution1/directives.tcl"
-csim_design
+#csim_design
 csynth_design
 #cosim_design
 #export_design -format ip_catalog

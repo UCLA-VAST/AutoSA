@@ -36,6 +36,6 @@ __Auto Tuning__:
 Execute the following command to train the resource models.
 ```c
 export AUTOSA_PATH=$(pwd)
-python3 ./autosa_scripts/optimizer.py -c "./autosa ./autosa_tests/mm_large/kernel.c --target=autosa_hls_c --AutoSA-autosa --isl-schedule-whole-component --AutoSA-data-pack-sizes=\"{kernel[]->data_pack[8,32,64]}\" --AutoSA-simd-info=./autosa_tests/mm/simd_info.json --AutoSA-host-serialize --AutoSA-hls" --info autosa_config/hw_info.json -s autosa_config/optimizer_settings.json --train -p xilinx
+python3 ./autosa_scripts/optimizer.py -c "./autosa ./autosa_tests/mm_large/kernel.c --target=autosa_hls_c --AutoSA-autosa --isl-schedule-whole-component --AutoSA-data-pack-sizes=\"{kernel[]->data_pack[8,32,64]}\" --AutoSA-simd-info=./autosa_tests/mm_large/simd_info.json --AutoSA-host-serialize --AutoSA-hls" --info autosa_config/hw_info.json -s autosa_config/optimizer_settings.json --train -p xilinx
 ```
 

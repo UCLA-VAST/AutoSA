@@ -16,7 +16,7 @@
                 "loop_limit": 64
             },
             "SIMD_vectorization": {
-                "mode": "linear",
+                "mode": "random",
                 "n": 2,
                 "loop_limit": 8
             }
@@ -25,7 +25,7 @@
             "array_part": {
                 "enable": 1,
                 "PE_num": [
-                    4,
+                    8,
                     32
                 ]
             },
@@ -35,8 +35,8 @@
             "latency_hiding": {
                 "enable": 1,
                 "reg_size": [
-                    4,
-                    128
+                    64,
+                    256
                 ]
             },
             "SIMD_vectorization": {
@@ -52,13 +52,25 @@
             "n_job": 1
         }
     },
+    "synth": {
+        "multiprocess": {
+            "n_job": 16
+        },
+        "sample": {
+            "n": 16
+        }
+    },
     "search": {
         "metric": "latency",
         "cycle_period": 5,
-        "mode": "exhaustive",
+        "mode": "random",
+        "n_random": 2,
         "log": {
             "n_record": 10
         },
+        "resource_target": ["BRAM18K", "DSP"],
+        "time_out": 30,
+        "update_time_interval": 2,        
         "sample": {
             "space_time": {
                 "mode": "exhaustive",
@@ -66,30 +78,27 @@
             },
             "array_part": {
                 "mode": "random",
-                "n": 2,
+                "n": 1,
                 "loop_limit": -1
             },
             "latency_hiding": {
                 "mode": "random",
-                "n": 2,
+                "n": 1,
                 "loop_limit": 64
             },
             "SIMD_vectorization": {
-                "mode": "linear",
-                "n": 2,
+                "mode": "random",
+                "n": 1,
                 "loop_limit": 8
             }
         },
         "pruning": {
             "random_start": {
                 "enable": 1,
-                "n_trial": 5
+                "n_trial": 5,
+                "n_random": 2
             },
-            "resource": {
-                "target": [
-                    "BRAM18K",
-                    "DSP"
-                ],
+            "resource": {                
                 "range": {
                     "FF": [
                         0,
@@ -116,7 +125,7 @@
             "array_part": {
                 "enable": 1,
                 "PE_num": [
-                    128,
+                    4,
                     256
                 ]
             },
@@ -126,29 +135,21 @@
             "latency_hiding": {
                 "enable": 1,
                 "reg_size": [
-                    64,
+                    32,
                     1024
                 ]
             },
             "SIMD_vectorization": {
                 "enable": 1,
                 "PE_num": [
-                    128,
+                    4,
                     256
                 ],
                 "PE_ratio": 3
             }
         },
         "multiprocess": {
-            "n_job": 16
-        }
-    },
-    "synth": {
-        "multiprocess": {
-            "n_job": 16
-        },
-        "sample": {
-            "n": 16
+            "n_job": 2
         }
     }
 }

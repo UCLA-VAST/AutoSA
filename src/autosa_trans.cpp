@@ -1981,7 +1981,8 @@ isl_stat sa_latency_hiding_optimize(struct autosa_kernel *sa, bool en, char *mod
         schedule = isl_schedule_node_get_schedule(node);
         isl_schedule_node_free(node);
         sa->schedule = schedule;
-        return isl_stat_ok;
+        // TODO: this will make the latency hiding stuck in the auto-tuning, fix it.
+        return isl_stat_ok;        
     }
 
     /* Detect all candidate loops. */

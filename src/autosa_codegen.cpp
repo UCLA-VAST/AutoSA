@@ -789,7 +789,9 @@ static __isl_give isl_schedule_node *add_io_copies_stmt_tile(
   __isl_take char *stmt_name,
   int before, int is_buffer,
   /* If it is proper to insert hls_pipeline for Xilinx platforms. */
-  int insert_dependence)
+  int insert_dependence,
+  /* If needs to insert a access_serialize mark. */
+  int insert_serialize)
 {
   isl_union_map *access = NULL;
   int empty;
@@ -866,6 +868,12 @@ static __isl_give isl_schedule_node *add_io_copies_stmt_tile(
   id = isl_id_alloc(ctx, "access_coalesce", NULL);
   graft = isl_schedule_node_insert_mark(graft, id);
   graft = isl_schedule_node_child(graft, 0);
+
+  if (insert_serialize) {
+    id = isl_id_alloc(ctx, "access_serialize", NULL);
+    graft = isl_schedule_node_insert_mark(graft, id);
+    graft = isl_schedule_node_child(graft, 0);
+  }
 
   if (n_lane > 1)
   {
@@ -1346,7 +1354,8 @@ static __isl_give isl_schedule_node *insert_io_stmts_tile(
                                  local_buffer? local_buffer->tile : NULL, copy_buffer->tile, 
                                  nxt_data_pack, read, stmt_name, read ? 1 : 0,
                                  is_buffer & 0,
-                                 insert_hls_dep);
+                                 insert_hls_dep,
+                                 module->is_serialized);
 
   if (cut) {
     node = isl_schedule_node_cut(node);

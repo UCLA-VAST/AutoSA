@@ -2767,6 +2767,11 @@ static cJSON *extract_buffer_info_from_module(struct autosa_gen *gen,
   else
     cJSON_AddStringToObject(buffer, "mem_type", "URAM");
 
+  ///* Array map */
+  //if (module->double_buffer) {
+  //  cJSON_AddStringToObject(buffer, "array_map", "horizontal");
+  //}
+
   return buffer;
 }
 
@@ -2805,6 +2810,13 @@ static cJSON *extract_design_info_from_module(struct autosa_gen *gen,
     cJSON_AddStringToObject(info, "ele_type", array->type);
     cJSON *data_size = cJSON_CreateNumber(array->size);
     cJSON_AddItemToObject(info, "ele_size", data_size);
+
+    /* Mark the module accessing the DRAM */
+    if (module->to_mem) {
+      cJSON_AddNumberToObject(info, "access_mem", 1);
+    } else {
+      cJSON_AddNumberToObject(info, "access_mem", 0);
+    }
   }
   /* Extract the local buffer */
   if (buffer)
@@ -2829,6 +2841,25 @@ static cJSON *extract_design_info_from_module(struct autosa_gen *gen,
     }
     cJSON_AddItemToObject(info, "local_buffers", buffers);
   }
+
+  return info;
+}
+
+static cJSON *extract_design_info_from_serialize_module(struct autosa_gen *gen,
+                                                        struct autosa_hw_module *module, char *module_name)
+{
+  cJSON *info = cJSON_CreateObject();
+  /* Extract the input and output data lanes and width */
+  cJSON *data_pack_inter = cJSON_CreateNumber(module->data_pack_serialize);
+  cJSON *data_pack_intra = cJSON_CreateNumber(module->data_pack_intra);
+  cJSON_AddItemToObject(info, "data_pack_inter", data_pack_inter);
+  cJSON_AddItemToObject(info, "data_pack_intra", data_pack_intra);
+
+  struct autosa_array_ref_group *group = module->io_groups[0];
+  struct autosa_array_info *array = group->array;
+  cJSON_AddStringToObject(info, "ele_type", array->type);
+  cJSON *data_size = cJSON_CreateNumber(array->size);
+  cJSON_AddItemToObject(info, "ele_size", data_size);
 
   return info;
 }
@@ -2946,6 +2977,13 @@ isl_stat sa_extract_design_info(struct autosa_gen *gen)
         cJSON_AddItemToObject(modules, module_name, info);
         free(module_name);
       }
+    }
+
+    if (module->is_serialized) {
+      module_name = concat(ctx, module->name, "serialize");
+      info = extract_design_info_from_serialize_module(gen, module, module_name);
+      cJSON_AddItemToObject(modules, module_name, info);
+      free(module_name);
     }
   }
 

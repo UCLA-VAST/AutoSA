@@ -262,7 +262,7 @@ def predict_module_latency_xilinx(loop_struct, config):
         if config['under_coalesce'] == 1:
             config['last_for']['under_coalesce'] = 1
         else:
-            config['last_for']['under_coalesce'] = 0
+            config['last_for']['under_coalesce'] = 0        
         predict_module_latency_xilinx(child, config)
     elif "mark" in loop_struct:
         mark = loop_struct['mark']
@@ -272,15 +272,18 @@ def predict_module_latency_xilinx(loop_struct, config):
             config['under_unroll'] = 1
         if mark_name == 'access_coalesce':
             config['under_coalesce'] = 1
+        if mark_name == 'access_serialize':
+            config['under_serialize'] = 1
         child = mark['child']
         predict_module_latency_xilinx(child, config)
     elif "user" in loop_struct:
         user = loop_struct['user']
         user_expr = user['user_expr']
         config['under_unroll'] = 0
-        config['under_coalesce'] = 0
+        config['under_coalesce'] = 0        
         if config['module_type'] == 1:
             # For outer module, we directly return.
+            config['under_serialize'] = 0
             if config['latency'] == 1:
                 config['latency'] = 0
             return
@@ -295,16 +298,21 @@ def predict_module_latency_xilinx(loop_struct, config):
             array_name = module_name.split('_')[0]
             array_info = config['array_info'][array_name]
 
-            if config['last_for']['under_coalesce'] == 1:
+            if config['last_for']['under_coalesce'] == 1 and \
+               config['under_serialize'] == 0:
                 # This statement accesses the dram under a coalesced loop.
                 burst_len = (config['last_for']['ub'] - config['last_for']['lb'])
                 # The DRAM latency is etimated as 200ns
                 dram_latency = 200 / config['cycle'] + burst_len + depth
                 latency = latency / burst_len * dram_latency
+            elif config['under_serialize'] == 1:
+                # This statement accesses the dram with serialized data.
+                latency = (latency - 1) * II + depth
             else:
                 latency = latency * (200 / config['cycle'] + depth)
         else:
             latency = (latency - 1) * II + depth
+        config['under_serialize'] = 0
         config['latency'] = latency
     elif "block" in loop_struct:
         block = loop_struct['block']
@@ -453,6 +461,7 @@ def predict_design_latency(latency_info, cycle=5, early_stop=-1):
         config['loop_offset'] = 1
         config['under_unroll'] = 0
         config['under_coalesce'] = 0
+        config['under_serialize'] = 0
         config['under_loop'] = 0
         config['last_for'] = {}
         config['array_info'] = array_info
@@ -514,4 +523,4 @@ def predict_design_latency(latency_info, cycle=5, early_stop=-1):
         if latency_all[lat] > latency:
             latency = latency_all[lat]
 
-    return latency
+    return int(latency)

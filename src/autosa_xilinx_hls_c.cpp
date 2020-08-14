@@ -2023,16 +2023,16 @@ static __isl_give isl_printer *print_module_var_xilinx(
   }
   if (use_memory)
   {
-    if (double_buffer)
-    {
-      p = isl_printer_start_line(p);
-      p = isl_printer_print_str(p, "#pragma HLS ARRAY_MAP variable=");
-      p = isl_printer_print_str(p, var->name);
-      p = isl_printer_print_str(p, "_ping instance=");
-      p = isl_printer_print_str(p, var->name);
-      p = isl_printer_print_str(p, " horizontal");
-      p = isl_printer_end_line(p);
-    }
+    //if (double_buffer)
+    //{
+    //  p = isl_printer_start_line(p);
+    //  p = isl_printer_print_str(p, "#pragma HLS ARRAY_MAP variable=");
+    //  p = isl_printer_print_str(p, var->name);
+    //  p = isl_printer_print_str(p, "_ping instance=");
+    //  p = isl_printer_print_str(p, var->name);
+    //  p = isl_printer_print_str(p, " horizontal");
+    //  p = isl_printer_end_line(p);
+    //}
     p = isl_printer_start_line(p);
     p = isl_printer_print_str(p, "#pragma HLS RESOURCE variable=");
     p = isl_printer_print_str(p, var->name);
@@ -2086,13 +2086,13 @@ static __isl_give isl_printer *print_module_var_xilinx(
     }
     if (use_memory)
     {
-      p = isl_printer_start_line(p);
-      p = isl_printer_print_str(p, "#pragma HLS ARRAY_MAP variable=");
-      p = isl_printer_print_str(p, var->name);
-      p = isl_printer_print_str(p, "_pong instance=");
-      p = isl_printer_print_str(p, var->name);
-      p = isl_printer_print_str(p, " horizontal");
-      p = isl_printer_end_line(p);
+      //p = isl_printer_start_line(p);
+      //p = isl_printer_print_str(p, "#pragma HLS ARRAY_MAP variable=");
+      //p = isl_printer_print_str(p, var->name);
+      //p = isl_printer_print_str(p, "_pong instance=");
+      //p = isl_printer_print_str(p, var->name);
+      //p = isl_printer_print_str(p, " horizontal");
+      //p = isl_printer_end_line(p);
 
       p = isl_printer_start_line(p);
       p = isl_printer_print_str(p, "#pragma HLS RESOURCE variable=");

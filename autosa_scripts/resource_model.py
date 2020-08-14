@@ -88,6 +88,23 @@ def FIFO_predict_xilinx(dw, depth):
 
     return {'BRAM18K': BRAM, 'DSP': DSP, 'FF': FF, 'LUT': LUT}
 
+def extract_axi_bram_from_hls_rpt(rpt_path):
+    """ Extract the BRAM usage for AXI modules from the HLS report in text format
+
+    Parameters
+    ----------
+    rpt_path: str
+        The path of HLS report
+    """
+    with open(rpt_path) as f:
+        lines = f.readlines()
+    total = 0
+    for line in lines:
+        if line.find('kernel0_gmem_') != -1:
+            line = line.split('|')
+            total += float(line[3])
+    return total
+
 def extract_design_info(design_dir, synth=0):
     """ Extract the design infomation.
 
@@ -192,6 +209,11 @@ def extract_design_info(design_dir, synth=0):
         # Top module
         rpt = hls_rpts['kernel']
         res = extract_resource_info_from_hls_rpt(rpt) 
+        # For the top module, we will also parse the report for BRAM usage of AXI modules
+        top_module_rpt_name = 'kernel0_csynth.rpt'
+        axi_bram = extract_axi_bram_from_hls_rpt(f'{hls_rpts_dir}/{top_module_rpt_name}')
+        res['BRAM18K'] -= axi_bram
+
         design_info['FF'] = res['FF']
         design_info['LUT'] = res['LUT']
         design_info['BRAM18K'] = res['BRAM18K']
@@ -236,7 +258,7 @@ def extract_resource_info_from_hls_rpt(rpt):
                         res['BRAM18K'] = int(item.text)
                     elif item.tag == 'URAM':
                         res['URAM'] = int(item.text)
-                    elif item.tag == 'DSP':
+                    elif item.tag == 'DSP48E':
                         res['DSP'] = int(item.text)    
                     elif item.tag == 'FF':
                         res['FF'] = int(item.text)   
@@ -411,7 +433,7 @@ def train(df, modules, fifos, design_infos, work_dir, logger):
     pred_set = []
     for module in modules:
         # Expand the dataframe if necessary        
-        df = df_feature_extract(df, module) # TODO
+        df = df_feature_extract(df, module)
         feature_set += get_feature_set(module)        
         pred_set.append(module + '_FF')
         pred_set.append(module + '_LUT')
@@ -422,6 +444,8 @@ def train(df, modules, fifos, design_infos, work_dir, logger):
     X = df.loc[:, feature_set]
     y = df.loc[:, pred_set]
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=0)
+    logger.info(f'#Training samples: {X_train.shape[0]}')
+    logger.info(f'#Validation samples: {X_test.shape[0]}')
 
     # Evaluation metrics
     FF_mape = []
@@ -484,10 +508,13 @@ def train(df, modules, fifos, design_infos, work_dir, logger):
 
         # DSP
         pred_set = [module + '_DSP']
-        X_train_module = X_train.loc[:, feature_set]
+        X_train_module = X_train.loc[:, feature_set]        
         X_train_module = X_train_module.dropna()
         y_train_module = y_train.loc[:, pred_set]
         y_train_module = y_train_module.dropna()
+        #if module == 'PE':
+        #    print(X_train_module)
+        #    print(y_train_module)
 
         model = LinearRegression()
         model.fit(X_train_module.to_numpy(), y_train_module.to_numpy())
@@ -514,16 +541,21 @@ def train(df, modules, fifos, design_infos, work_dir, logger):
         y_test_module = y_test_module.dropna()
         y_pred_module = np.zeros((y_test_module.shape[0], 1), dtype=float)
         cnt = 0
-        for index, row in y_test_module.iterrows():
-            design = 'design' + str(index)
+        for index, row in y_test_module.iterrows():            
             design_info = design_infos[index]
             BRAM_usage = 0
             if "local_buffers" in design_info['modules'][module]:
                 local_buffers = design_info['modules'][module]['local_buffers']
                 for local_buffer in local_buffers:
                     if local_buffer['mem_type'] == 'BRAM':
-                        BRAM_usage += BRAM_array_predict_HLS(local_buffer['port_width'], \
-                            local_buffer['buffer_depth'], local_buffer['partition_number'])
+                        if 'array_map' in local_buffer:
+                            # For horizontal mapping, we will merge two ping/pong buffers to one
+                            BRAM_usage += BRAM_array_predict_HLS(local_buffer['port_width'], \
+                                local_buffer['buffer_depth'] * 2, local_buffer['partition_number']) / 2
+                        else:
+                            BRAM_usage += BRAM_array_predict_HLS(local_buffer['port_width'], \
+                                local_buffer['buffer_depth'], local_buffer['partition_number'])                                  
+
             y_pred_module[cnt] = BRAM_usage
             cnt += 1
 
@@ -580,20 +612,20 @@ def train(df, modules, fifos, design_infos, work_dir, logger):
     for index, row in df_test.iterrows():
         design_info = design_infos[index]
         df_design = df_test.loc[[index], :]
-        res = predict_design_resource_usage(df_design, modules, fifos, design_info, work_dir) 
-    
-        FF_mape = mean_absolute_percentage_error(design_info['FF'], res['FF'].item())        
-        LUT_mape = mean_absolute_percentage_error(design_info['LUT'], res['LUT'].item())
-        DSP_mape = mean_absolute_percentage_error(design_info['DSP'], res['DSP'].item())        
-        BRAM18K_mape = mean_absolute_percentage_error(design_info['BRAM18K'], res['BRAM18K'])
-        URAM_mape = mean_absolute_percentage_error(design_info['URAM'], res['URAM'])
+        res = predict_design_resource_usage(df_design, modules, fifos, design_info, work_dir)                 
+
+        FF_mape = mean_absolute_percentage_error(float(design_info['FF']), res['FF'])        
+        LUT_mape = mean_absolute_percentage_error(float(design_info['LUT']), res['LUT'])
+        DSP_mape = mean_absolute_percentage_error(float(design_info['DSP']), res['DSP'])        
+        BRAM18K_mape = mean_absolute_percentage_error(float(design_info['BRAM18K']), res['BRAM18K'])
+        URAM_mape = mean_absolute_percentage_error(float(design_info['URAM']), res['URAM'])
 
         FF_design_mape.append(FF_mape)
         LUT_design_mape.append(LUT_mape)
         DSP_design_mape.append(DSP_mape)
         BRAM18K_design_mape.append(BRAM18K_mape)
         URAM_design_mape.append(URAM_mape)
-    
+
     logger.info('======== Design-Level Resource Model Validation Results ========')
     logger.info('FF Mean Absoulate Percentage Error (Arith. Mean): %.2f%%' %(mean(FF_design_mape)))
     logger.info('LUT Mean Absoulate Percentage Error (Arith. Mean): %.2f%%' %(mean(LUT_design_mape)))
@@ -679,8 +711,13 @@ def predict_design_resource_usage(df, modules, fifos, design_info, prj_dir, \
                     local_buffers = design_info['modules'][module]['local_buffers']
                     for local_buffer in local_buffers:
                         if local_buffer['mem_type'] == 'BRAM':
-                            BRAM += BRAM_array_predict_HLS(local_buffer['port_width'], \
-                                local_buffer['buffer_depth'], local_buffer['partition_number'])
+                            if 'array_map' in local_buffer:
+                                # For horizontal mapping, we will merge two ping/pong buffers to one
+                                BRAM += BRAM_array_predict_HLS(local_buffer['port_width'], \
+                                    local_buffer['buffer_depth'] * 2, local_buffer['partition_number']) / 2
+                            else:
+                                BRAM += BRAM_array_predict_HLS(local_buffer['port_width'], \
+                                    local_buffer['buffer_depth'], local_buffer['partition_number'])                            
 
             URAM = 0
             if 'URAM' in target:
@@ -694,7 +731,7 @@ def predict_design_resource_usage(df, modules, fifos, design_info, prj_dir, \
 
             resource_all[module] = {
                 'FF': FF, 'LUT': LUT, 'BRAM18K': BRAM, 'URAM': URAM, 'DSP': DSP, \
-                'n': design_info['modules'][module]['module_cnt']}
+                'n': design_info['modules'][module]['module_cnt']}    
 
     # Aggregate the resource
     for inst in resource_all:
@@ -714,8 +751,12 @@ def predict_design_resource_usage(df, modules, fifos, design_info, prj_dir, \
         resource['URAM'] += resource_all[inst]['URAM'] * resource_all[inst]['n']
 
     ret = {}
-    for r in target:
-        ret[r] = resource[r]
+    for r in resource:
+        if r in target:
+            ret[r] = int(resource[r])
+        else:
+            ret[r] = 0
+
     return ret
 
 def mean_absolute_percentage_error(y_true, y_pred):    
@@ -726,10 +767,10 @@ def mean_absolute_percentage_error(y_true, y_pred):
         # scalar
         if y_true == 0:
             return abs(y_pred) * 100
-        else:
-            return abs((y_true - y_pred) // y_true) * 100
+        else:            
+            return abs((y_true - y_pred) / y_true) * 100
 
-def resource_valid(res, hw_info, range):
+def resource_valid(res, hw_info, range, target):
     """ Test if the resource usage is valid.
 
     Parameters
@@ -740,17 +781,20 @@ def resource_valid(res, hw_info, range):
         A dict containing the hardware platform information.
     thres: dict
         A dict containing the resource threshold.
+    target: list
+        A list containing the hw resource target to predict.
 
     Returns
     -------
     ret: boolean
     """
     for r in res:
-        usage = res[r]
-        if usage > hw_info[r] * range[r][1]:
-            return False
-        if usage < hw_info[r] * range[r][0]:
-            return False
+        if r in target:
+            usage = res[r]
+            if usage > hw_info[r] * range[r][1]:
+                return False
+            if usage < hw_info[r] * range[r][0]:
+                return False
     return True
 
 def compute_res_util_score(res, hw_info):
@@ -763,14 +807,14 @@ def compute_res_util_score(res, hw_info):
     """
     score = 0
     if 'FF' in res:
-        score += 0.1 * float(res['FF']) / hw_info['FF']
+        score += 0.1 * float(int(res['FF'])) / hw_info['FF']
     if 'LUT' in res:
-        score += 0.2 * float(res['LUT']) / hw_info['LUT']
+        score += 0.2 * float(int(res['LUT'])) / hw_info['LUT']
     if 'BRAM18K' in res:
-        score += 0.3 * float(res['BRAM18K']) / hw_info['BRAM18K']
+        score += 0.3 * float(int(res['BRAM18K'])) / hw_info['BRAM18K']
     if 'DSP' in res:
-        score += 0.3 * float(res['DSP']) / hw_info['DSP']
+        score += 0.3 * float(int(res['DSP'])) / hw_info['DSP']
     if 'URAM' in res:
-        score += 0.3 * float(res['URAM']) / hw_info['URAM']
+        score += 0.3 * float(int(res['URAM'])) / hw_info['URAM']
 
     return score
