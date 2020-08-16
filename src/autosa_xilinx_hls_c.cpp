@@ -2344,6 +2344,9 @@ static __isl_give isl_printer *autosa_print_intra_trans_module(
   isl_ast_print_options *print_options;
   isl_ctx *ctx = isl_printer_get_ctx(p);
 
+  if (!module->intra_tree)
+    return p;
+
   p = isl_printer_start_line(p);
   p = isl_printer_print_str(p, "/* Module Definition */");
   p = isl_printer_end_line(p);
@@ -2413,6 +2416,14 @@ static __isl_give isl_printer *autosa_print_inter_trans_module(
   struct print_hw_module_data hw_data = {hls, prog, module, NULL};
   isl_ast_print_options *print_options;
   isl_ctx *ctx = isl_printer_get_ctx(p);
+
+  if (boundary) {
+    if (!module->boundary_inter_tree)
+      return p;
+  } else {
+    if (!module->inter_tree)
+      return p;
+  }  
 
   p = isl_printer_start_line(p);
   p = isl_printer_print_str(p, "/* Module Definition */");
@@ -2905,6 +2916,14 @@ static __isl_give isl_printer *autosa_print_default_module(
   struct autosa_hw_module *module, struct autosa_prog *prog,
   struct hls_info *hls, int boundary)
 {
+  if (!boundary) {
+    if (!module->device_tree)
+      return p;
+  } else {
+    if (!module->boundary_tree)
+      return p;
+  }    
+
   bool wrapper = 0;
   struct print_hw_module_data hw_data = {hls, prog, module, NULL};
   isl_ast_print_options *print_options;
@@ -4345,9 +4364,12 @@ static void print_top_gen_host_code(
       }
     }
 
-    if (module->is_serialized) {
-      module_name = concat(ctx, module->name, "serialize");
-
+    if (module->is_serialized) { 
+      if (module->boundary)      
+        module_name = concat(ctx, module->name, "boundary_serialize");
+      else
+        module_name = concat(ctx, module->name, "serialize");
+      
       n_module_names++;
       module_names = (char **)realloc(module_names, n_module_names * sizeof(char *));
       module_names[n_module_names - 1] = module_name;

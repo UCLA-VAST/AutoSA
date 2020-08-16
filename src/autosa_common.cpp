@@ -2497,12 +2497,21 @@ static cJSON *extract_loop_info_at_ast_node(__isl_keep isl_ast_node *node,
  */
 static char *extract_loop_info_from_module(
     struct autosa_gen *gen, __isl_keep isl_ast_node *tree,
-    char *module_name, int print)
+    char *module_name, int double_buffer, int in,
+    int print)
 {
+  if (!tree)
+    return NULL;
+
   cJSON *loop_struct = cJSON_CreateObject();
+  cJSON *module_props = cJSON_CreateObject();
   char *json_str = NULL;
 
   cJSON_AddStringToObject(loop_struct, "module_name", module_name);
+  cJSON_AddNumberToObject(module_props, "double_buffer", double_buffer);
+  cJSON_AddNumberToObject(module_props, "in", in);
+  cJSON_AddItemToObject(loop_struct, "module_prop", module_props);
+  
   extract_loop_info_at_ast_node(tree, loop_struct);
 
   /* Print the JSON file */
@@ -2558,30 +2567,30 @@ isl_stat sa_extract_loop_info(struct autosa_gen *gen, struct autosa_hw_module *m
   {
     /* Parse the loop structure of the intra trans module */
     module_name = concat(ctx, module->name, "intra_trans");
-    json_str = extract_loop_info_from_module(gen, module->intra_tree, module_name, 1);
+    json_str = extract_loop_info_from_module(gen, module->intra_tree, module_name, module->double_buffer, module->in, 1);
     free(module_name);
 
     /* Parse the loop structure of the inter trans module */
     module_name = concat(ctx, module->name, "inter_trans");
-    json_str = extract_loop_info_from_module(gen, module->inter_tree, module_name, 1);
+    json_str = extract_loop_info_from_module(gen, module->inter_tree, module_name, module->double_buffer, module->in, 1);
     free(module_name);
 
     if (module->boundary)
     {
       module_name = concat(ctx, module->name, "inter_trans_boundary");
-      json_str = extract_loop_info_from_module(gen, module->inter_tree, module_name, 1);
+      json_str = extract_loop_info_from_module(gen, module->inter_tree, module_name, module->double_buffer, module->in, 1);
       free(module_name);
     }
   }
 
   /* Parse the loop structure of the default module */
-  json_str = extract_loop_info_from_module(gen, module->device_tree, module->name, 1);
+  json_str = extract_loop_info_from_module(gen, module->device_tree, module->name, module->double_buffer, module->in, 1);
 
   /* Parse the loop structure of the boundary module */
   if (module->boundary)
   {
     module_name = concat(ctx, module->name, "boundary");
-    json_str = extract_loop_info_from_module(gen, module->boundary_tree, module_name, 1);
+    json_str = extract_loop_info_from_module(gen, module->boundary_tree, module_name, module->double_buffer, module->in, 1);
     free(module_name);
   }
 
@@ -2599,7 +2608,7 @@ isl_stat sa_extract_loop_info(struct autosa_gen *gen, struct autosa_hw_module *m
       p_str = isl_printer_print_str(p_str, "_PE_dummy");
       module_name = isl_printer_get_str(p_str);
       isl_printer_free(p_str);
-      json_str = extract_loop_info_from_module(gen, dummy_module->device_tree, module_name, 1);
+      json_str = extract_loop_info_from_module(gen, dummy_module->device_tree, module_name, 0, 0, 1);
       free(module_name);
     }
   }

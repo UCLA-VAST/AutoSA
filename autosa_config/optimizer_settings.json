@@ -63,58 +63,37 @@
     "search": {
         "metric": "latency",
         "cycle_period": 5,
-        "mode": "random",
-        "n_random": 2,
+        "mode": "customized",
+        "n_random": 5,
         "log": {
             "n_record": 10
         },
         "resource_target": ["BRAM18K", "DSP"],
-        "time_out": 30,
+        "time_out": -1,
         "update_time_interval": 2,        
-        "sample": {
-            "space_time": {
-                "mode": "exhaustive",
-                "n": -1
-            },
-            "array_part": {
-                "mode": "random",
-                "n": 1,
-                "loop_limit": -1
-            },
-            "latency_hiding": {
-                "mode": "random",
-                "n": 1,
-                "loop_limit": 64
-            },
-            "SIMD_vectorization": {
-                "mode": "random",
-                "n": 1,
-                "loop_limit": 8
-            }
-        },
         "pruning": {
             "random_start": {
                 "enable": 1,
                 "n_trial": 5,
-                "n_random": 2
+                "n_random": 3
             },
             "resource": {                
                 "range": {
                     "FF": [
-                        0,
-                        0.6
+                        0.3,
+                        0.7
                     ],
                     "LUT": [
-                        0,
-                        0.6
+                        0.3,
+                        0.7
                     ],
                     "DSP": [
-                        0,
-                        0.6
+                        0.3,
+                        0.8
                     ],
                     "BRAM18K": [
-                        0,
-                        0.6
+                        0.3,
+                        0.7
                     ],
                     "URAM": [
                         0,
@@ -125,7 +104,7 @@
             "array_part": {
                 "enable": 1,
                 "PE_num": [
-                    4,
+                    64,
                     256
                 ]
             },
@@ -135,21 +114,42 @@
             "latency_hiding": {
                 "enable": 1,
                 "reg_size": [
-                    32,
-                    1024
+                    64,
+                    1280
                 ]
             },
             "SIMD_vectorization": {
                 "enable": 1,
                 "PE_num": [
-                    4,
+                    64,
                     256
                 ],
                 "PE_ratio": 3
             }
         },
         "multiprocess": {
-            "n_job": 2
+            "n_job": 24
+        },
+        "sample": {
+            "space_time": {
+                "mode": "exhaustive",
+                "n": -1
+            },
+            "array_part": {
+                "mode": "exhaustive",
+                "n": -1,
+                "loop_limit": -1
+            },
+            "latency_hiding": {
+                "mode": "exhaustive",
+                "n": -1,
+                "loop_limit": 64
+            },
+            "SIMD_vectorization": {
+                "mode": "exhaustive",
+                "n": -1,
+                "loop_limit": 16
+            }
         }
     }
 }

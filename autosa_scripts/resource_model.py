@@ -12,9 +12,10 @@ from scipy.stats.mstats import gmean
 from statistics import mean
 import shutil
 import math
+import pprint
 
 # Helper functions to predict certain modules
-def BRAM_predict_HLS(dw, depth):
+def BRAM_predict_HLS(dw, depth, use_18K=0):
     """ Predict the resource usage of BRAM on Xilinx platforms.  
 
     Parameters
@@ -23,13 +24,16 @@ def BRAM_predict_HLS(dw, depth):
         BRAM port width
     depth: int
         BRAM depth
+    use_18K: int
+        Force the estimator to use the BRAM18K model. (for HLS FIFOs)
     """
-    if dw > 18:
-        alpha = np.ceil(float(dw) / 36)
-        BRAM = alpha * np.ceil(float(depth) / 512)
-    else:
+    if dw <= 18 or use_18K:
         alpha = np.ceil(float(dw) / 18)
-        BRAM = alpha * np.ceil(float(depth) / 1024)
+        BRAM = alpha * np.ceil(float(depth) / 1024)   
+    else:
+        alpha = np.ceil(float(dw) / 36)
+        BRAM = alpha * np.ceil(float(depth) / 512)    
+        
     return BRAM
 
 def URAM_predict_HLS(dw, depth):
@@ -80,30 +84,38 @@ def FIFO_predict_xilinx(dw, depth):
         FF = 5
         LUT = dw + 12
     else:
-    #    BRAM = BRAM_predict_HLS(dw, depth)
+        BRAM = BRAM_predict_HLS(dw, depth, 1)        
     # In the current codegen, we will use SRL to implement FIFOs
-        BRAM = 0
+    #    BRAM = 0
         FF = dw + 10
         LUT = int(0.9687 * dw + 13.982)
 
     return {'BRAM18K': BRAM, 'DSP': DSP, 'FF': FF, 'LUT': LUT}
 
-def extract_axi_bram_from_hls_rpt(rpt_path):
-    """ Extract the BRAM usage for AXI modules from the HLS report in text format
+def extract_axi_res_from_hls_rpt(rpt_path):
+    """ Extract the resource usage for AXI modules from the HLS report in text format
 
     Parameters
     ----------
     rpt_path: str
         The path of HLS report
+
+    Returns
+    -------
+    BRAM18K, FF, LUT
     """
     with open(rpt_path) as f:
         lines = f.readlines()
-    total = 0
+    BRAM18K_total = 0
+    FF_total = 0
+    LUT_total = 0
     for line in lines:
         if line.find('kernel0_gmem_') != -1:
             line = line.split('|')
-            total += float(line[3])
-    return total
+            BRAM18K_total += float(line[3])
+            FF_total += float(line[5])
+            LUT_total += float(line[6])
+    return BRAM18K_total, FF_total, LUT_total
 
 def extract_design_info(design_dir, synth=0):
     """ Extract the design infomation.
@@ -211,8 +223,10 @@ def extract_design_info(design_dir, synth=0):
         res = extract_resource_info_from_hls_rpt(rpt) 
         # For the top module, we will also parse the report for BRAM usage of AXI modules
         top_module_rpt_name = 'kernel0_csynth.rpt'
-        axi_bram = extract_axi_bram_from_hls_rpt(f'{hls_rpts_dir}/{top_module_rpt_name}')
+        axi_bram, axi_ff, axi_lut = extract_axi_res_from_hls_rpt(f'{hls_rpts_dir}/{top_module_rpt_name}')
         res['BRAM18K'] -= axi_bram
+        res['FF'] -= axi_ff
+        res['LUT'] -= axi_lut
 
         design_info['FF'] = res['FF']
         design_info['LUT'] = res['LUT']
@@ -610,9 +624,14 @@ def train(df, modules, fifos, design_infos, work_dir, logger):
     URAM_design_mape = []
 
     for index, row in df_test.iterrows():
+        #print(index)
         design_info = design_infos[index]
         df_design = df_test.loc[[index], :]
         res = predict_design_resource_usage(df_design, modules, fifos, design_info, work_dir)                 
+
+        #print(design_info['BRAM18K'], res['BRAM18K'])
+        #print(design_info['FF'], res['FF'])
+        #print(design_info['LUT'], res['LUT'])
 
         FF_mape = mean_absolute_percentage_error(float(design_info['FF']), res['FF'])        
         LUT_mape = mean_absolute_percentage_error(float(design_info['LUT']), res['LUT'])
@@ -731,22 +750,34 @@ def predict_design_resource_usage(df, modules, fifos, design_info, prj_dir, \
 
             resource_all[module] = {
                 'FF': FF, 'LUT': LUT, 'BRAM18K': BRAM, 'URAM': URAM, 'DSP': DSP, \
-                'n': design_info['modules'][module]['module_cnt']}    
+                'n': design_info['modules'][module]['module_cnt']}        
+
+    #pp = pprint.PrettyPrinter(indent=4)
+    #pp.pprint(resource_all)
 
     # Aggregate the resource
     for inst in resource_all:
         # For FF/LUT/DSP prediction, if the module contains inner module, skip it.
-        is_outer_module = 0
-        if inst.find('boundary') != -1:
-            if inst[:-9] + '_inter_trans' in resource_all:
-                is_outer_module = 1
-        else:
-            if inst + '_inter_trans' in resource_all:
-                is_outer_module = 1
-        if not is_outer_module:
-            resource['FF'] += resource_all[inst]['FF'] * resource_all[inst]['n']
-            resource['LUT'] += resource_all[inst]['LUT'] * resource_all[inst]['n']
-            resource['DSP'] += resource_all[inst]['DSP'] * resource_all[inst]['n']
+        #is_outer_module = 0
+        #if inst.find('boundary') != -1:
+        #    if inst[:-9] + '_inter_trans' in resource_all:
+        #        is_outer_module = 1
+        #else:
+        #    if inst + '_inter_trans' in resource_all:
+        #        is_outer_module = 1
+        is_inner_module = 0
+        if inst.find('inter_trans') != -1 or inst.find('intra_trans') != -1:
+            is_inner_module = 1
+        #if not is_outer_module:
+        #    resource['FF'] += resource_all[inst]['FF'] * resource_all[inst]['n']
+        #    resource['LUT'] += resource_all[inst]['LUT'] * resource_all[inst]['n']
+        #    resource['DSP'] += resource_all[inst]['DSP'] * resource_all[inst]['n']
+        if is_inner_module:
+            continue
+
+        resource['FF'] += resource_all[inst]['FF'] * resource_all[inst]['n']
+        resource['LUT'] += resource_all[inst]['LUT'] * resource_all[inst]['n']
+        resource['DSP'] += resource_all[inst]['DSP'] * resource_all[inst]['n']
         resource['BRAM18K'] += resource_all[inst]['BRAM18K'] * resource_all[inst]['n']
         resource['URAM'] += resource_all[inst]['URAM'] * resource_all[inst]['n']
 

@@ -2,7 +2,7 @@
 
 Board        | Software Version
 -------------|-----------------
-Xilinx Alveo U200 | Xilinx Vitis 2019.2
+Xilinx Alveo U250 | Xilinx Vitis 2019.2
 
 __Files__:
 ```
@@ -14,8 +14,8 @@ autosa_tests/mm/connectivity.cfg
 ```
 
 __Command__:
-```c
-./autosa ./autosa_tests/mm/kernel.c --AutoSA-config=./autosa_config/autosa_config.json --target=autosa_hls_c --AutoSA-autosa --isl-schedule-whole-component --AutoSA-output-dir=./autosa.tmp/output --sa-sizes="{kernel[]->space_time[3];kernel[]->array_part[16,16,16];kernel[]->array_part_L2[2,2,2];kernel[]->latency[8,8];kernel[]->simd[2]}" --AutoSA-simd-info=./autosa_tests/mm/simd_info.json --AutoSA-host-serialize
+```bash
+./autosa ./autosa_tests/mm/kernel.c --AutoSA-config=./autosa_config/autosa_config.json --target=autosa_hls_c --AutoSA-autosa --isl-schedule-whole-component --AutoSA-output-dir=./autosa.tmp/output --sa-sizes="{kernel[]->space_time[3];kernel[]->array_part[16,16,16];kernel[]->latency[8,8];kernel[]->simd[2]}" --AutoSA-simd-info=./autosa_tests/mm/simd_info.json --AutoSA-host-serialize
 ```
 
 After compilation, you will find all generated files under the directory `autosa.tmp/output/src`. Copy the `Makefile` and `connectivity.cfg` to the directory `autosa.tmp/output`.
@@ -30,4 +30,25 @@ Execute the makefile to build the design.
 ```
 cd autosa.tmp/output
 make all
+```
+
+__Tuning__:
+Run this command to train the resource model.
+```bash
+python3 ./autosa_scripts/optimizer.py -c './autosa ./autosa_tests/mm/kernel.c --target=autosa_hls_c --AutoSA-autosa --isl-schedule-whole-component --AutoSA-data-pack-sizes="{kernel[]->data_pack[8,32,64]}" --AutoSA-simd-info=./autosa_tests/mm/simd_info.json --AutoSA-host-serialize --AutoSA-hls' --info autosa_config/hw_info.json -s autosa_config/optimizer_settings.json --train -p xilinx
+```
+
+After resource models are trained, run the following command to search for the best design.
+```bash
+python3 ./autosa_scripts/optimizer.py -c './autosa ./autosa_tests/mm/kernel.c --target=autosa_hls_c --AutoSA-autosa --isl-schedule-whole-component --AutoSA-data-pack-sizes="{kernel[]->data_pack[8,32,64]}" --AutoSA-simd-info=./autosa_tests/mm/simd_info.json --AutoSA-host-serialize --AutoSA-hls' --info autosa_config/hw_info.json -s autosa_config/optimizer_settings.json --search -p xilinx
+```
+
+__Other Test Cases__:
+1. 1D systolic array
+```bash
+./autosa ./autosa_tests/mm/kernel.c --AutoSA-config=./autosa_config/autosa_config.json --target=autosa_hls_c --AutoSA-autosa --isl-schedule-whole-component --AutoSA-output-dir=./autosa.tmp/output --sa-sizes="{kernel[]->space_time[0];kernel[]->array_part[32,32,32];kernel[]->latency[8,8];kernel[]->simd[2]}" --AutoSA-simd-info=./autosa_tests/mm/simd_info.json --AutoSA-host-serialize --AutoSA-hls
+```
+Tuning
+```bash
+
 ```

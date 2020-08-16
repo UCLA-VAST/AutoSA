@@ -117,7 +117,7 @@ def generate_loop_candidates(loops, config, stage):
             ub = ub - 1
         if not l_inclusive:
             lb = lb + 1
-        if sample_mode == 'exhausive':
+        if sample_mode == 'exhaustive':
             samples = [s for s in range(lb, ub + 1) if loop % s == 0]
         elif sample_mode == 'log':
             samples = [
@@ -279,8 +279,8 @@ def train_resource_models_xilinx(config):
     The trained models are placed in /training/resource_models/
 
     """
-    autosa_prj_path = os.environ['AUTOSA_PATH']
-    config['work_dir'] = f'{autosa_prj_path}/autosa.tmp/optimizer/synth'
+    tmp_dir = config['tmp_dir']
+    config['work_dir'] = f'{tmp_dir}/optimizer/synth'
     jobs = os.listdir(config['work_dir'])
     training_samples = {}
     for job in jobs:
@@ -295,7 +295,7 @@ def train_resource_models_xilinx(config):
                 design_dir = f'{kernel_dir}/{design}/output'
                 training_samples[kernel].append(design_dir)
     # Train the resource model for each kernel
-    work_dir = f'{autosa_prj_path}/autosa.tmp/optimizer/training/resource_models'
+    work_dir = f'{tmp_dir}/optimizer/training/resource_models'
     if os.path.exists(work_dir):
         shutil.rmtree(work_dir)
     os.mkdir(work_dir)
@@ -336,7 +336,7 @@ def execute_autosa_cmd(config):
     -------
     ret: int
         The command return code.
-    """    
+    """        
     # Check if time out
     if config['monitor']['time_out_start'] != -1:
         elapsed_time = time.time() - config['monitor']['time_out_start']
@@ -344,6 +344,7 @@ def execute_autosa_cmd(config):
             return -1
 
     cmd = ' '.join(config['cmds'])
+    #config['logger'].info(f'Execute CMD: {cmd}')        
     config['logger'].debug(f'Execute CMD: {cmd}')
     p = subprocess.Popen(cmd, shell=True, stdout=config['stdout'])
     ret = p.wait()
@@ -360,11 +361,27 @@ def execute_sys_cmd(cmd, config):
     config: dict
         Global configuration
     """
-    config['logger'].info(f'Execute CMD: {cmd}')
+    config['logger'].debug(f'Execute CMD: {cmd}')
     p = subprocess.Popen(cmd, shell=True, stdout=config['stdout'])
     ret = p.wait()
     return ret
 
+def generate_autosa_cmd_str(cmds):
+    """ Generate the cmd to print.
+
+    Specifically, 'tuning' flag is filtered out if exists.
+    """
+    cmd_str = ''
+    is_first = True
+    for cmd in cmds:
+        if cmd.find(' --tuning') != -1:
+            cmd = cmd.replace(' --tuning', '')        
+        if not is_first:
+            cmd_str += ' '
+        cmd_str += cmd
+        is_first = False
+
+    return cmd_str
 
 def save_design_files(config):
     """ Save the current design.
@@ -383,10 +400,9 @@ def save_design_files(config):
     design_path = f'{config["work_dir"]}/kernel{kernel_id}/design{design_id}'
     os.mkdir(design_path)
 
-    # Save the cmd
-    cmd = ' '.join(config['cmds'])
+    # Save the cmd    
     with open(design_path + '/design.info', 'w') as f:
-        f.write(cmd)
+        f.write(generate_autosa_cmd_str(config['cmds']))
 
     # if config['mode'] == 'search':
         # Store the estimated latency and resource info
@@ -397,6 +413,14 @@ def save_design_files(config):
         f'cp -r {config["work_dir"]}/output {design_path}/',
         config)
 
+def clear_design_files(config):
+    """ Clean up the design folder files
+
+    """
+    execute_sys_cmd(f'rm {config["work_dir"]}/output/latency_est/*', config)
+    execute_sys_cmd(f'rm {config["work_dir"]}/output/resource_est/*', config)
+    execute_sys_cmd(f'rm {config["work_dir"]}/output/src/*', config)        
+
 def explore_design(config):
     """ Explore the final design.
 
@@ -406,19 +430,21 @@ def explore_design(config):
     In the search mode, we will evaluate the resource and latency of the current
     design and update the config accordingly.
 
-    """
-    autosa_prj_path = os.environ['AUTOSA_PATH']    
+    """    
+    tmp_dir = config['tmp_dir']
     # Update the monitor
     config['monitor']['n_designs'] += 1
 
     if config['mode'] == 'training':
         save_design_files(config)
+        clear_design_files(config)
+        return
     elif config['mode'] == 'search':                    
         cur_design = {
             'latency': -1,
             'resource': {},
             'power': -1,
-            'cmd': ' '.join(config['cmds'])
+            'cmd': generate_autosa_cmd_str(config['cmds'])
         }
         config['monitor']['last_design'] = cur_design
         design_dir = f'{config["work_dir"]}/output'
@@ -433,10 +459,12 @@ def explore_design(config):
             #print(f'resource runtime: {runtime}')
             if config['search_results']['opt']['found']:
                 if latency > config['search_results']['opt']['latency']:
+                    clear_design_files(config)                    
                     return
             cur_design['latency'] = int(latency)
         elif config['setting']['search']['metric'] == 'power':            
             # Predict the power
+            clear_design_files(config)
             raise NotImplementedError(f'DSE for power is not supported.')            
 
         # Predict the resource usage
@@ -445,7 +473,7 @@ def explore_design(config):
         modules, fifos, df = res_model.convert_design_infos_to_df([design_info])
         kernel_id = design_info['kernel_id']        
         # Resource model path
-        res_model_path = f'{autosa_prj_path}/autosa.tmp/optimizer/training/resource_models/kernel{kernel_id}'
+        res_model_path = f'{tmp_dir}/optimizer/training/resource_models/kernel{kernel_id}'
         res = res_model.predict_design_resource_usage(
             df, modules, fifos, design_info, 
             res_model_path,
@@ -454,8 +482,8 @@ def explore_design(config):
                 
         if not res_model.resource_valid(res, config['hw_info'], \
             config['setting']['search']['pruning']['resource']['range'],
-            config['setting']['search']['resource_target']):
-            # TODO: do we need to clear files here?
+            config['setting']['search']['resource_target']):            
+            clear_design_files(config)
             return        
         #runtime = time.perf_counter() - start_time
         #print(f'resource runtime: {runtime}')
@@ -476,7 +504,8 @@ def explore_design(config):
                     # print the best results so far
                     config['logger'].info(print_best_design(config['search_results']['opt']))
                     config['monitor']['update_last_time'] = time.time()             
-        
+
+    clear_design_files(config)       
     return
 
 def simd_loop_filter(loops, tuning):
@@ -855,12 +884,13 @@ def explore_space_time(config):
     if config['autosa_config']['space_time']['mode'] == 'manual':
         # The program will terminate after the space-time transformation
         # Fetch the tuning info
-        with open(f'config["work_dir"]/output/tuning.json') as f:
+        with open(f'{config["work_dir"]}/output/tuning.json') as f:
             tuning = json.load(f)
         n_kernel = tuning['space_time']['n_kernel']
 
         # Iterate through different kernels
-        for kernel_id in range(n_kernel):
+        for kernel_id in [0]:
+        #for kernel_id in range(n_kernel):
             config['logger'].info(f'Search kernel {kernel_id}...')
             sa_sizes = config['sa_sizes'].copy()
             config['sa_sizes'].append(f'kernel[]->space_time[{kernel_id}]')
@@ -900,7 +930,7 @@ def explore_design_space(config):
         Global configuration.
     """
     # Execute the cmd
-    config['cmds'][3] = generate_sa_sizes_cmd(config['sa_sizes'])
+    config['cmds'][3] = generate_sa_sizes_cmd(config['sa_sizes'])    
     ret = execute_autosa_cmd(config)
     if ret != 0:
         config['logger'].error(f'CMD failed with error code {ret}')
@@ -938,11 +968,11 @@ def generate_train_samples(config):
 
     """
     # Prepare the directory and files
-    autosa_prj_path = os.environ['AUTOSA_PATH']
-    if os.path.exists(f'{autosa_prj_path}/autosa.tmp/optimizer/training'):
-        shutil.rmtree(f'{autosa_prj_path}/autosa.tmp/optimizer/training')
-    os.mkdir(f'{autosa_prj_path}/autosa.tmp/optimizer/training')
-    os.mkdir(f'{autosa_prj_path}/autosa.tmp/optimizer/training/job0')
+    tmp_dir = config['tmp_dir']
+    if os.path.exists(f'{tmp_dir}/optimizer/training'):
+        shutil.rmtree(f'{tmp_dir}/optimizer/training')
+    os.mkdir(f'{tmp_dir}/optimizer/training')
+    os.mkdir(f'{tmp_dir}/optimizer/training/job0')
     # Initialize file directory
     Path(f'{config["work_dir"]}/output').mkdir(exist_ok=True)
     Path(f'{config["work_dir"]}/output/src').mkdir(exist_ok=True)
@@ -964,8 +994,8 @@ def synth_train_samples(config):
     Next, we call Vivado HLS to synthesize each design.
 
     """
-    autosa_prj_path = os.environ['AUTOSA_PATH']
-    config['work_dir'] = f'{autosa_prj_path}/autosa.tmp/optimizer/training'
+    tmp_dir = config['tmp_dir']
+    config['work_dir'] = f'{tmp_dir}/optimizer/training'
     # Collect all designs into a list
     design_paths = {}
     for n in range(config['setting']['training']['multiprocess']['n_job']):
@@ -981,7 +1011,7 @@ def synth_train_samples(config):
                     prj_path = f'{d_path}/{d}'
                     design_paths[f].append(prj_path)
     # Random sample a few designs for each kernel and build the synthesis folder
-    config['work_dir'] = f'{autosa_prj_path}/autosa.tmp/optimizer/synth'
+    config['work_dir'] = f'{tmp_dir}/optimizer/synth'
     if os.path.exists(config['work_dir']):
         shutil.rmtree(config['work_dir'])
     os.mkdir(config['work_dir'])
@@ -1044,13 +1074,13 @@ def train_xilinx(config):
     """
     config['mode'] = 'training'    
 
-    # Generate sample designs
-    config['logger'].info('Generate training samples...')
-    generate_train_samples(config)    
-
-    # Synthesize designs
-    config['logger'].info('Synthesize training samples...')
-    synth_train_samples(config)
+    ## Generate sample designs
+    #config['logger'].info('Generate training samples...')
+    #generate_train_samples(config)    
+#
+    ## Synthesize designs
+    #config['logger'].info('Synthesize training samples...')
+    #synth_train_samples(config)
 
     # Train the resource models
     config['logger'].info('Train resource models...')
@@ -1179,12 +1209,12 @@ def search_xilinx(config):
     """ Perform search phase on Xilinx platform.
 
     """
-    # Prepare the directory and files
-    autosa_prj_path = os.environ['AUTOSA_PATH']
-    if os.path.exists(f'{autosa_prj_path}/autosa.tmp/optimizer/search'):
-        shutil.rmtree(f'{autosa_prj_path}/autosa.tmp/optimizer/search')        
-    os.mkdir(f'{autosa_prj_path}/autosa.tmp/optimizer/search')
-    os.mkdir(f'{autosa_prj_path}/autosa.tmp/optimizer/search/job0')
+    # Prepare the directory and files    
+    tmp_dir = config['tmp_dir']
+    if os.path.exists(f'{tmp_dir}/optimizer/search'):
+        shutil.rmtree(f'{tmp_dir}/optimizer/search')        
+    os.mkdir(f'{tmp_dir}/optimizer/search')
+    os.mkdir(f'{tmp_dir}/optimizer/search/job0')
     # Initialize file directory
     Path(f'{config["work_dir"]}/output').mkdir(exist_ok=True)
     Path(f'{config["work_dir"]}/output/src').mkdir(exist_ok=True)
@@ -1211,15 +1241,13 @@ def search_xilinx(config):
             explore_design_space(config)            
             config['logger'].info(print_best_design(config['search_results']['opt']))
             n_trial += 1                        
-        config['setting'][config['mode']]['sample'] = user_policy
-
-    log_path = f'{autosa_prj_path}/autosa.tmp/optimizer/search/debug.log'
-    save_search_log(config['search_results']['records'], log_path)
+        config['setting'][config['mode']]['sample'] = user_policy    
 
     config['logger'].info('Start searching...')
     # Set up the time-out counter
-    config['monitor']['time_out_start'] = time.time()
-    if config['setting'][config['mode']]['mode'] == 'exhausive':
+    if config['setting']['search']['time_out'] != -1:
+        config['monitor']['time_out_start'] = time.time()
+    if config['setting'][config['mode']]['mode'] == 'exhaustive':
         config['logger'].info('Search mode: Exhaustive')
         config['setting'][config['mode']]['sample'] = \
             get_sample_policy(config['setting'][config['mode']]['mode'])
@@ -1236,16 +1264,16 @@ def search_xilinx(config):
 
     # Print out the best design
     config['logger'].info(print_best_design(config['search_results']['opt']))
-    # Store the tuning log    
-    autosa_prj_path = os.environ['AUTOSA_PATH']        
-    log_path = f'{autosa_prj_path}/autosa.tmp/optimizer/search/DSE.log'
+    # Store the tuning log        
+    tmp_dir = config['tmp_dir']
+    log_path = f'{tmp_dir}/optimizer/search/DSE.log'
     config['logger'].info(f'Saving the DSE results to: {log_path}')
     save_search_log(config['search_results']['records'], log_path)
 
     return
 
 
-def init_logger(training, search, verbose):
+def init_logger(training, search, verbose, tmp_dir):
     """ Init AutoSA logger.
 
     Initialize the AutoSA logger.
@@ -1261,6 +1289,8 @@ def init_logger(training, search, verbose):
         0: Print minimal information from Optimizer.
         1: Print all information from Optimizer.
         2: Print information from Optimizer and AutoSA.
+    tmp_dir: str
+        Path to the temp files.
 
     Returns
     -------
@@ -1276,9 +1306,9 @@ def init_logger(training, search, verbose):
     s_handler = logging.StreamHandler()
     if training:
         f_handler = logging.FileHandler(
-            'autosa.tmp/optimizer/training.log', 'w')
+            f'{tmp_dir}/optimizer/training.log', 'w')
     elif search:
-        f_handler = logging.FileHandler('autosa.tmp/optimizer/search.log', 'w')
+        f_handler = logging.FileHandler(f'{tmp_dir}/optimizer/search.log', 'w')
     if verbose > 1:
         s_handler.setLevel(level=logging.DEBUG)
         f_handler.setLevel(level=logging.DEBUG)
@@ -1402,14 +1432,10 @@ def merge_search_results(results, metric, n_record, hw_info):
     """     
     ret = init_search_results()   
     if metric == 'latency':        
-        is_first = 1
-        debug_cnt = 0
+        is_first = 1        
         for result in results:         
             if len(result['records']) == 0:
-                continue
-            save_search_log(result['records'], \
-                f'/curr/jaywang/research/autosa/AutoSA/autosa.tmp/optimizer/search/{datetime.datetime.now().time()}-{debug_cnt}.log')
-            debug_cnt += 1
+                continue            
 
             if is_first == 1:
                 ret = result
@@ -1447,14 +1473,11 @@ def merge_search_results(results, metric, n_record, hw_info):
                 ret['opt'] = ret['records'][0]
                 ret['records'] = ret['records'][:n_record]
         
-        save_search_log(ret['records'], \
-                f'/curr/jaywang/research/autosa/AutoSA/autosa.tmp/optimizer/search/{datetime.datetime.now().time()}-merged.log')        
-
         return ret
     else:
         raise NotImplementedError(f'Merge results for metric {metric} is not supported.')
 
-def init_config(setting, verbose, hw_info, cmd, training, search):
+def init_config(setting, verbose, hw_info, cmd, training, search, tmp_dir):
     """ Init AutoSA Optimizer global configuration.
 
     Init the global configuration used in Optimizer.
@@ -1465,6 +1488,8 @@ def init_config(setting, verbose, hw_info, cmd, training, search):
         AutoSA Optimizer setting.
     verbose: int
         Print verbose level.
+    tmp_dir: str
+        Path to the temporary files.
 
     Note
     ----
@@ -1511,16 +1536,16 @@ def init_config(setting, verbose, hw_info, cmd, training, search):
     config = {}
     config['setting'] = setting
     config['verbose'] = verbose
+    config['tmp_dir'] = tmp_dir
     if verbose == 2:
         # Print AutoSA info
         config['stdout'] = None
     else:
-        config['stdout'] = subprocess.DEVNULL
-    autosa_prj_path = os.environ['AUTOSA_PATH']
+        config['stdout'] = subprocess.DEVNULL    
     if training:
-        config['work_dir'] = f'{autosa_prj_path}/autosa.tmp/optimizer/training/job0'
+        config['work_dir'] = f'{tmp_dir}/optimizer/training/job0'
     else:
-        config['work_dir'] = f'{autosa_prj_path}/autosa.tmp/optimizer/search/job0'
+        config['work_dir'] = f'{tmp_dir}/optimizer/search/job0'
     with open(hw_info) as f:
         config['hw_info'] = json.load(f)
     config['cmds'] = [cmd]
@@ -1548,7 +1573,7 @@ def init_config(setting, verbose, hw_info, cmd, training, search):
     return config
 
 
-def xilinx_run(cmd, hw_info, setting, training, search, verbose):
+def xilinx_run(cmd, hw_info, setting, training, search, verbose, tmp_dir):
     """ Design space exploration on Xilinx platform.
 
     The following four stages are explored in the DSE:
@@ -1602,22 +1627,22 @@ def xilinx_run(cmd, hw_info, setting, training, search, verbose):
         Enable search phase.
     verbose: int
         Print verbose information.
+    tmp_dir: str
+        Path to the folder that stores the temp files.
     """
-    if 'AUTOSA_PATH' not in os.environ:
-        raise NameError('Environment variable AUTOSA_PATH is not set.')
-    autosa_prj_path = os.environ['AUTOSA_PATH']
-    if not os.path.exists(f'{autosa_prj_path}/autosa.tmp/optimizer'):
-        os.mkdir(f'{autosa_prj_path}/autosa.tmp/optimizer')      
+    
+    if not os.path.exists(f'{tmp_dir}/optimizer'):
+        os.mkdir(f'{tmp_dir}/optimizer')      
 
     # Init logger and optimizer config
-    logger = init_logger(training, search, verbose)
-    config = init_config(setting, verbose, hw_info, cmd, training, search)
+    logger = init_logger(training, search, verbose, tmp_dir)
+    config = init_config(setting, verbose, hw_info, cmd, training, search, tmp_dir)
     config['logger'] = logger
     # Init monitor
     config['monitor'] = init_monitor()
 
     # Init the AutoSA configuration
-    autosa_config = {"space_time": {"mode": "auto"},
+    autosa_config = {"space_time": {"mode": "manual"},
                      "array_part": {"enable": 1, "mode": "manual"},
                      "array_part_L2": {
         "enable": config['two_level_buffer'],
@@ -1678,6 +1703,11 @@ if __name__ == "__main__":
         required=False,
         default=1,
         help='provide verbose information [0-2]')
+    parser.add_argument(
+        '--tmp-dir',
+        required=False,
+        default='./autosa.tmp',
+        help='temporary file directory')
 
     args = parser.parse_args()
 
@@ -1694,4 +1724,5 @@ if __name__ == "__main__":
             setting,
             args.training,
             args.search,
-            args.verbose)
+            args.verbose,
+            args.tmp_dir)
