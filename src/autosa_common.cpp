@@ -2578,7 +2578,7 @@ isl_stat sa_extract_loop_info(struct autosa_gen *gen, struct autosa_hw_module *m
     if (module->boundary)
     {
       module_name = concat(ctx, module->name, "inter_trans_boundary");
-      json_str = extract_loop_info_from_module(gen, module->inter_tree, module_name, module->double_buffer, module->in, 1);
+      json_str = extract_loop_info_from_module(gen, module->boundary_inter_tree, module_name, module->double_buffer, module->in, 1);
       free(module_name);
     }
   }
@@ -2989,7 +2989,10 @@ isl_stat sa_extract_design_info(struct autosa_gen *gen)
     }
 
     if (module->is_serialized) {
-      module_name = concat(ctx, module->name, "serialize");
+      if (module->boundary)
+        module_name = concat(ctx, module->name, "boundary_serialize");
+      else
+        module_name = concat(ctx, module->name, "serialize");
       info = extract_design_info_from_serialize_module(gen, module, module_name);
       cJSON_AddItemToObject(modules, module_name, info);
       free(module_name);

@@ -451,9 +451,11 @@ def predict_design_latency(latency_info, cycle=5, early_stop=-1):
     array_info = latency_info['array_info']
     loop_infos = latency_info['loop_infos']
 
-    for module_name in module_grouped:
+    for module_name in module_grouped:        
         if 'dummy' in module_name:
             # Simply skip the dummy module
+            continue
+        if module_name not in loop_infos:
             continue
 
         ## debug
@@ -477,8 +479,7 @@ def predict_design_latency(latency_info, cycle=5, early_stop=-1):
         config['module_type'] = 0
 
         if 'inter_trans' in module or 'intra_trans' in module:
-            # This is a filter module. We take it as double buffered by default.
-            # TODO: consider when double buffer is disabled.
+            # This is a filter module. We take it as double buffered by default.            
             config['module_type'] = 1
             module_loop_info = loop_infos[module_name]
             predict_module_latency_xilinx(module_loop_info, config)
@@ -534,7 +535,7 @@ def predict_design_latency(latency_info, cycle=5, early_stop=-1):
             if config['latency'] > early_stop:
                 return config['latency']
 
-    print(latency_all)
+    #print(latency_all)
     latency = 0
     for lat in latency_all:
         if latency_all[lat] > latency:

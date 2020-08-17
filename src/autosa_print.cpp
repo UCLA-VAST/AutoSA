@@ -2564,7 +2564,7 @@ __isl_give isl_printer *autosa_kernel_print_module_call(
         p = isl_printer_print_str(p, "_serialize");
       p = isl_printer_print_str(p, "_cnt++;");
       p = isl_printer_end_line(p);
-      if (module->is_filter && module->is_buffer)
+      if (module->is_filter && module->is_buffer && !serialize)
       {
         /* Print counter for inter_trans and intra_trans module */
         p = isl_printer_start_line(p);

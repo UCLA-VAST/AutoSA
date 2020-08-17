@@ -426,9 +426,8 @@ static __isl_give isl_printer *declare_and_allocate_device_arrays_xilinx(
       p = isl_printer_print_str(p, ">>> ");
       p = isl_printer_print_str(p, "dev_");
       p = isl_printer_print_str(p, local_array->array->name);
-      if (local_array->host_serialize) {
-        p = isl_printer_print_str(p, "_unserialized");
-      }
+      if (local_array->host_serialize)
+        p = isl_printer_print_str(p, "_unserialized");      
       p = isl_printer_print_str(p, ";");
       p = isl_printer_end_line(p);
 
@@ -456,6 +455,8 @@ static __isl_give isl_printer *declare_and_allocate_device_arrays_xilinx(
       p = isl_printer_start_line(p);
       p = isl_printer_print_str(p, "dev_");
       p = isl_printer_print_str(p, local_array->array->name);
+      if (local_array->host_serialize)
+        p = isl_printer_print_str(p, "_unserialized");
       p = isl_printer_print_str(p, ".push_back(dev_");
       p = isl_printer_print_str(p, local_array->array->name);
       p = isl_printer_print_str(p, "_tmp);");
@@ -805,6 +806,8 @@ static __isl_give isl_printer *declare_and_allocate_cpu_arrays_xilinx(
       p = isl_printer_start_line(p);
       p = isl_printer_print_str(p, "dev_");
       p = isl_printer_print_str(p, local_array->array->name);
+      if (local_array->host_serialize)
+        p = isl_printer_print_str(p, "_unserialized");
       p = isl_printer_print_str(p, ".push_back(dev_");
       p = isl_printer_print_str(p, local_array->array->name);
       p = isl_printer_print_str(p, "_tmp);");
@@ -2650,9 +2653,11 @@ static __isl_give isl_printer *print_module_serialize_body(
       p = isl_printer_end_line(p);
 
       p = isl_printer_start_line(p);
-      p = isl_printer_print_str(p, "fifo_");
-      p = isl_printer_print_str(p, module->io_groups[0]->array->name);
+      p = autosa_array_ref_group_print_fifo_name(module->io_groups[0], p);
       p = isl_printer_print_str(p, "_local_out.write(fifo_data);");
+      //p = isl_printer_print_str(p, "fifo_");
+      //p = isl_printer_print_str(p, module->io_groups[0]->array->name);      
+      //p = isl_printer_print_str(p, "_local_out.write(fifo_data);");
       p = isl_printer_end_line(p);
 
       p = isl_printer_indent(p, -2);
@@ -2672,11 +2677,14 @@ static __isl_give isl_printer *print_module_serialize_body(
       p = isl_printer_end_line(p);
 
       p = isl_printer_start_line(p);
-      p = isl_printer_print_str(p, "fifo_data = fifo_");
-      p = isl_printer_print_str(p, module->io_groups[0]->array->name);
-      if (module->type == DRAIN_MODULE)      
-        p = isl_printer_print_str(p, "_drain");
+      p = isl_printer_print_str(p, "fifo_data = ");
+      p = autosa_array_ref_group_print_fifo_name(module->io_groups[0], p);
       p = isl_printer_print_str(p, "_local_in.read();");
+      //p = isl_printer_print_str(p, "fifo_data = fifo_");
+      //p = isl_printer_print_str(p, module->io_groups[0]->array->name);
+      //if (module->type == DRAIN_MODULE)      
+        //p = isl_printer_print_str(p, "_drain");
+      //p = isl_printer_print_str(p, "_local_in.read();");
       p = isl_printer_end_line(p);
 
       p = isl_printer_start_line(p);
@@ -2757,9 +2765,11 @@ static __isl_give isl_printer *print_module_serialize_body(
       p = isl_printer_end_line(p);
 
       p = isl_printer_start_line(p);
-      p = isl_printer_print_str(p, "fifo_");
-      p = isl_printer_print_str(p, module->io_groups[0]->array->name);
+      p = autosa_array_ref_group_print_fifo_name(module->io_groups[0], p);
       p = isl_printer_print_str(p, "_local_out.write(fifo_data);");
+      //p = isl_printer_print_str(p, "fifo_");
+      //p = isl_printer_print_str(p, module->io_groups[0]->array->name);
+      //p = isl_printer_print_str(p, "_local_out.write(fifo_data);");
       p = isl_printer_end_line(p);
 
       p = isl_printer_indent(p, -2);
@@ -2821,11 +2831,14 @@ static __isl_give isl_printer *print_module_serialize_body(
       p = isl_printer_indent(p, 2);
 
       p = isl_printer_start_line(p);
-      p = isl_printer_print_str(p, "fifo_data = fifo_");
-      p = isl_printer_print_str(p, module->io_groups[0]->array->name);
-      if (module->type == DRAIN_MODULE)      
-        p = isl_printer_print_str(p, "_drain");
+      p = isl_printer_print_str(p, "fifo_data = ");
+      p = autosa_array_ref_group_print_fifo_name(module->io_groups[0], p);
       p = isl_printer_print_str(p, "_local_in.read();");
+      //p = isl_printer_print_str(p, "fifo_data = fifo_");
+      //p = isl_printer_print_str(p, module->io_groups[0]->array->name);
+      //if (module->type == DRAIN_MODULE)      
+        //p = isl_printer_print_str(p, "_drain");
+      //p = isl_printer_print_str(p, "_local_in.read();");
       p = isl_printer_end_line(p);
 
       if (data_pack_out == 1) {

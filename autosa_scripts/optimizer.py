@@ -1074,13 +1074,13 @@ def train_xilinx(config):
     """
     config['mode'] = 'training'    
 
-    ## Generate sample designs
-    #config['logger'].info('Generate training samples...')
-    #generate_train_samples(config)    
-#
-    ## Synthesize designs
-    #config['logger'].info('Synthesize training samples...')
-    #synth_train_samples(config)
+    # Generate sample designs
+    config['logger'].info('Generate training samples...')
+    generate_train_samples(config)    
+
+    # Synthesize designs
+    config['logger'].info('Synthesize training samples...')
+    synth_train_samples(config)
 
     # Train the resource models
     config['logger'].info('Train resource models...')

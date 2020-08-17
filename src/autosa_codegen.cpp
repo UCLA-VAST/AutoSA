@@ -2623,10 +2623,14 @@ static __isl_give isl_schedule *generate_serialize_schedule(
   ctx = gen->ctx;
   node = isl_schedule_get_root(group->io_schedule);
   node = autosa_tree_move_down_to_kernel(node);
+
   /* Compute the union of domains of all the array references in the group. */
   node = isl_schedule_node_child(node, 0); // context
   node = isl_schedule_node_child(node, 0);
-  node = insert_io_group_access_domain(node, group, kernel, in);
+  if (gen->options->autosa->local_reduce && group->attached_drain_group)
+    node = insert_io_group_access_domain_local_reduce(node, group, kernel, in, 0, 1);
+  else
+    node = insert_io_group_access_domain(node, group, kernel, in);
   node = autosa_tree_move_up_to_kernel(node);
 
   /* Generate the statement */
@@ -5315,10 +5319,6 @@ static isl_stat top_module_io_gen_module_call(
   schedule = isl_schedule_dup(group->io_schedule);
   node = isl_schedule_get_root(schedule);
   isl_schedule_free(schedule);
-
-//#ifdef _DEBUG
-//  DBGSCHDNODE(stdout, node, isl_schedule_node_get_ctx(node));
-//#endif
 
   /* Delete the node above the array mark. */
   node = autosa_tree_move_down_to_array(node, kernel->core);

@@ -164,17 +164,20 @@ def extract_design_info(design_dir, synth=0):
             fifo_name = line[1]
             fifo_cnt = int(line[2])
             fifo_w = int(line[3])
-            fifo_depth = 2 # default
+            fifo_depth = 2 # default                 
             design_info['fifos'][fifo_name] = {
                 'fifo_cnt': fifo_cnt,
                 'fifo_width': fifo_w,
                 'fifo_depth': fifo_depth
             }
+            if fifo_cnt == 0 and fifo_name in design_info['fifos']:
+                design_info['fifos'].pop(fifo_name)
         elif line[0] == 'module':
             module_name = line[1]
-            module_cnt = int(line[2])
+            module_cnt = int(line[2])                        
             design_info['modules'][module_name]['module_cnt'] = module_cnt
-          
+            if module_cnt == 0 and module_name in design_info['modules']:
+                design_info['modules'].pop(module_name)
     if synth:
         # Load the HLS project              
         hls_rpts = {}

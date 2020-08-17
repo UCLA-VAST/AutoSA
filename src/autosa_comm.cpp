@@ -3790,6 +3790,7 @@ isl_stat sa_io_construct_optimize(struct autosa_kernel *kernel, struct autosa_ge
         local->io_groups[group_id]->attached_drain_group = local->drain_group;
         local->drain_group = NULL;
         local->io_groups[group_id]->copy_in = 0;
+        local->n_mem_ports = 1;
       }    
     }
   }
