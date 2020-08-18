@@ -1925,9 +1925,7 @@ static __isl_give isl_schedule *generate_io_module_outer(
   io_ids = ppcg_scop_generate_names(gen->prog->scop, n_io_ids, "p");
   n_io_ids = 0;
   
-  if (io_level > space_dim && boundary == 1) {
-    node = autosa_tree_move_down_to_array(node, kernel->core);
-    node = isl_schedule_node_child(node, 0);
+  if (io_level > space_dim && boundary == 1) {    
     goto OUTER_INSERT_STMT;
   }
 
@@ -1954,17 +1952,21 @@ static __isl_give isl_schedule *generate_io_module_outer(
   }
 
   node = autosa_tree_move_up_to_kernel(node);
+OUTER_INSERT_STMT:  
   if (gen->options->autosa->local_reduce && group->attached_drain_group) {
     node = autosa_tree_move_down_to_depth(
               node, 
               get_local_reduce_sched_depth(isl_schedule_node_copy(node), kernel), 
               kernel->core);        
   } else {
-    node = autosa_tree_move_down_to_io_mark(node, kernel->core, upper_io_level);
+    if (io_level > space_dim && boundary == 1) {
+      node = autosa_tree_move_down_to_array(node, kernel->core);
+    } else {
+      node = autosa_tree_move_down_to_io_mark(node, kernel->core, upper_io_level);
+    }
     node = isl_schedule_node_child(node, 0);              
   }
 
-OUTER_INSERT_STMT:
   /* Add the inter_trans and intra_trans function calls. */
   stmt_name1 = boundary == 0 ? "io_module.inter_trans.0" : "io_module.inter_trans.1";
   stmt_name2 = "io_module.intra_trans";
@@ -3177,7 +3179,6 @@ static __isl_give struct autosa_hw_module **sa_io_module_gen(
         is_filter = 0;
       else
         is_filter = 1;
-
       if (group->group_type == AUTOSA_DRAIN_GROUP)
       {
         if (i == innermost)
@@ -3289,7 +3290,7 @@ static __isl_give struct autosa_hw_module **sa_io_module_gen(
       else
         innermost = 2; // IO_L1 is integrated into PEs.
 
-      if (i == outermost)
+      if (i == outermost && outermost != innermost)
         is_filter = 0;
       else
         is_filter = 1;
