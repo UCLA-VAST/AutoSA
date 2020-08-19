@@ -786,6 +786,9 @@ struct autosa_hw_module
    */
   int coalesce_bound;
 
+  /* The module uses FF to implement arrays. */
+  int use_FF;
+
   struct autosa_kernel *kernel;
 };
 

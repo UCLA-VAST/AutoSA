@@ -535,7 +535,7 @@ def predict_design_latency(latency_info, cycle=5, early_stop=-1):
             if config['latency'] > early_stop:
                 return config['latency']
 
-    #print(latency_all)
+    print(latency_all)
     latency = 0
     for lat in latency_all:
         if latency_all[lat] > latency:

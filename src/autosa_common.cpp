@@ -1530,6 +1530,7 @@ struct autosa_hw_module *autosa_hw_module_alloc(struct autosa_gen *gen)
   module->serialize_tree = NULL;
   module->coalesce_bound = -1;
   module->is_serialized = 0;
+  module->use_FF = 0;
 
   return module;
 }
@@ -2702,8 +2703,12 @@ int extract_memory_type(struct autosa_hw_module *module,
   {
     if (var->n_lane == 1 && var_size <= 32)
       use_memory = 0;
-    else
-      use_memory = 2;
+    else {
+      if (bram_util > 0.2)
+        use_memory = 2;
+      else
+        use_memory = 0;
+    }
   }
   else
   {
@@ -2722,6 +2727,9 @@ int extract_memory_type(struct autosa_hw_module *module,
         use_memory = 1;
     }
   }
+
+  if (use_memory == 0) 
+    module->use_FF = 1;
 
   return use_memory;
 }

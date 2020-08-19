@@ -2023,7 +2023,16 @@ static __isl_give isl_printer *print_module_var_xilinx(
     p = isl_printer_print_int(p, var->n_part);
     p = isl_printer_print_str(p, " cyclic");
     p = isl_printer_end_line(p);
+  } else if (use_memory == 0) {
+    p = isl_printer_start_line(p);
+    p = isl_printer_print_str(p, "#pragma HLS ARRAY_PARTITION variable=");
+    p = isl_printer_print_str(p, var->name);
+    if (double_buffer)
+      p = isl_printer_print_str(p, "_ping");
+    p = isl_printer_print_str(p, " dim=0 complete");
+    p = isl_printer_end_line(p);
   }
+
   if (use_memory)
   {
     //if (double_buffer)
@@ -2086,7 +2095,16 @@ static __isl_give isl_printer *print_module_var_xilinx(
       p = isl_printer_print_int(p, var->n_part);
       p = isl_printer_print_str(p, " cyclic");
       p = isl_printer_end_line(p);
+    } else if (use_memory == 0) {
+      p = isl_printer_start_line(p);
+      p = isl_printer_print_str(p, "#pragma HLS ARRAY_PARTITION variable=");
+      p = isl_printer_print_str(p, var->name);
+      if (double_buffer)
+        p = isl_printer_print_str(p, "_pong");
+      p = isl_printer_print_str(p, " dim=0 complete");
+      p = isl_printer_end_line(p);
     }
+
     if (use_memory)
     {
       //p = isl_printer_start_line(p);
@@ -2360,7 +2378,7 @@ static __isl_give isl_printer *autosa_print_intra_trans_module(
     /* If double buffer is disabled, the module is then inlined to reduce the 
      * overheads.
      */
-    if (module->double_buffer)
+    if (module->double_buffer && module->use_FF == 0)
       fprintf(hls->kernel_c, "#pragma HLS INLINE OFF\n");
     else   
       fprintf(hls->kernel_c, "#pragma HLS INLINE\n");
@@ -2436,7 +2454,7 @@ static __isl_give isl_printer *autosa_print_inter_trans_module(
     print_module_headers_xilinx(prog, module, hls, 1, boundary);
   fprintf(hls->kernel_c, "{\n");
   if (hls->target == XILINX_HW) {
-    if (module->double_buffer)
+    if (module->double_buffer && module->use_FF == 0)
       fprintf(hls->kernel_c, "#pragma HLS INLINE OFF\n");
     else
       fprintf(hls->kernel_c, "#pragma HLS INLINE\n");
