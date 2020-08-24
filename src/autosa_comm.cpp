@@ -3260,9 +3260,9 @@ static __isl_give isl_schedule *generate_io_L1_lower_schedule(
   /* Insert the io_L1 mark */
   int depth_inc = depth - 1;
   node = isl_schedule_node_map_descendant_bottom_up(node, &insert_io_L1_mark, &depth_inc);
-#ifdef _DEBUG
-  DBGSCHDNODE(stdout, node, isl_schedule_node_get_ctx(node));
-#endif
+//#ifdef _DEBUG
+//  DBGSCHDNODE(stdout, node, isl_schedule_node_get_ctx(node));
+//#endif
 
   new_schedule = isl_schedule_node_get_schedule(node);
   isl_schedule_node_free(node);
@@ -3313,6 +3313,34 @@ static isl_stat lower_int_io_L1_buffer(
     node = isl_schedule_node_map_descendant_bottom_up(node, &update_int_io_L1_buffer, &data);
     isl_schedule_node_free(node);
   }
+
+  return isl_stat_ok;
+}
+
+/* This function is used when lower IO L1 buffer is enabled.
+ * An extra second-level buffer is inserted to increase the effective DRAM BW.
+ */
+static isl_stat insert_L2_io_buffer(
+  struct autosa_kernel *kernel,
+  struct autosa_array_ref_group *group,
+  struct autosa_gen *gen
+){
+  if (!(group->io_type == AUTOSA_INT_IO && group->local_array->array_type == AUTOSA_EXT_ARRAY))
+    return isl_stat_ok;
+
+  isl_schedule_node *node;
+  struct autosa_io_buffer *buffer;
+
+  node = isl_schedule_get_root(group->io_L1_lower_schedule);
+  node = autosa_tree_move_down_to_array(node, kernel->core);
+  buffer = group->io_buffers[group->io_level - 1];
+  if (group->group_type == AUTOSA_DRAIN_GROUP)
+    compute_group_bounds_drain_at_node(kernel, group, node, buffer);
+  else if (group->group_type == AUTOSA_IO_GROUP)
+    compute_group_bounds_io_at_node(kernel, group, node, buffer);
+
+  autosa_array_ref_group_compute_tiling(buffer->tile, group);
+  isl_schedule_node_free(node);
 
   return isl_stat_ok;
 }
@@ -3998,6 +4026,8 @@ static isl_stat autosa_io_buffer_allocate(struct autosa_kernel *kernel,
       if (gen->options->autosa->lower_int_io_L1_buffer) {
         /* Lower the L1 buffer for interior I/O module if possible. */
         lower_int_io_L1_buffer(kernel, local->io_groups[j], gen);
+        /* Enable the second-level buffer for this array */
+        insert_L2_io_buffer(kernel, local->io_groups[j], gen);
       }
     }
     if (local->drain_group)

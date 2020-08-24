@@ -2810,9 +2810,9 @@ static __isl_give isl_schedule *generate_serialize_schedule(
    * TODO: fix it when the buf->tile == NULL.
    */
   node = autosa_tree_move_down_to_depth(node, buf->tile->depth, group_core);
-#ifdef _DEBUG
-  DBGSCHDNODE(stdout, node, isl_schedule_node_get_ctx(node));
-#endif
+//#ifdef _DEBUG
+//  DBGSCHDNODE(stdout, node, isl_schedule_node_get_ctx(node));
+//#endif
   if (!buf->tile)
   {
     /* If there is more than one reference in the I/O group to be serialized.
@@ -3021,7 +3021,7 @@ static isl_stat generate_default_io_module_schedule(
       if (!buf->tile) {
         module->data_pack_intra = group->n_lane;        
       } else {
-        module->data_pack_inter = buf->n_lane;
+        module->data_pack_intra = buf->n_lane;
       }
       
       /* Insert the first statement. */
@@ -3160,12 +3160,12 @@ static __isl_give struct autosa_hw_module *generate_io_module_by_type(
     struct autosa_gen *gen, int io_level, int space_dim,
     int is_filter, int is_buffer, int read)
 {
-#ifdef _DEBUG
-  printf("array_name: %s\n", group->array->name);
-  printf("module name: %s\n", module->name);
-  if (!strcmp(module->name, "A_IO_L1_in"))
-    printf("here\n");
-#endif
+//#ifdef _DEBUG
+//  printf("array_name: %s\n", group->array->name);
+//  printf("module name: %s\n", module->name);
+//  if (!strcmp(module->name, "A_IO_L1_in"))
+//    printf("here\n");
+//#endif
 
   if (is_filter && is_buffer)
   {
@@ -3388,6 +3388,11 @@ static __isl_give struct autosa_hw_module **sa_io_module_gen(
         if (i == outermost)
           is_buffer = 1;
       }
+      if (gen->options->autosa->lower_int_io_L1_buffer)
+      {
+        if (i == outermost) 
+          is_buffer = group->io_buffers[outermost - 1]->tile? 1 : 0;
+      }      
 
       /* Generate the I/O module */
       if (i >= innermost && i <= outermost)
