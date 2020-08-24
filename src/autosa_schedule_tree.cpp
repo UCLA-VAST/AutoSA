@@ -7,6 +7,29 @@
 #include "autosa_utils.h"
 #include "autosa_schedule_tree.h"
 
+/* Is "node" a mark node with an identifier called "name"?
+ */
+int is_marked(__isl_keep isl_schedule_node *node, const char *name)
+{
+  isl_id *mark;
+  int has_name;
+
+  if (!node)
+    return -1;
+
+  if (isl_schedule_node_get_type(node) != isl_schedule_node_mark)
+    return 0;
+
+  mark = isl_schedule_node_mark_get_id(node);
+  if (!mark)
+    return -1;
+
+  has_name = !strcmp(isl_id_get_name(mark), name);
+  isl_id_free(mark);
+
+  return has_name;
+}
+
 static __isl_give isl_multi_val *multi_val_from_int_list(
     __isl_take isl_space *space, int *list)
 {
@@ -1179,6 +1202,257 @@ isl_bool is_flow_dep_carried_by_array_part_loops(__isl_keep isl_schedule *schedu
   return carried;
 }
 
+/* Test if the dependence is carried by the current schedule node. */
+int is_dep_carried_by_node(__isl_keep isl_basic_map *dep, __isl_keep isl_schedule_node *node)
+{
+  if (!node || isl_schedule_node_get_type(node) != isl_schedule_node_band)
+    return -1;
+  if (isl_schedule_node_band_n_member(node) != 1)
+    return -1;
+  if (!dep)
+    return -1;
+
+  isl_union_map *umap, *umap_dep;
+  isl_map *map_dep, *test;
+  int is_carried;
+
+  umap = isl_schedule_node_band_get_partial_schedule_union_map(node);
+  umap_dep = isl_union_map_from_map(isl_map_factor_domain(isl_map_from_basic_map(isl_basic_map_copy(dep))));
+  umap_dep = isl_union_map_apply_range(umap_dep, isl_union_map_copy(umap));
+  umap_dep = isl_union_map_apply_domain(umap_dep, umap);
+  if (isl_union_map_is_empty(umap_dep)) {
+    isl_union_map_free(umap_dep);
+    return -1;
+  }
+  map_dep = isl_map_from_union_map(umap_dep);
+  test = isl_map_universe(isl_map_get_space(map_dep));
+  test = isl_map_equate(test, isl_dim_in, 0, isl_dim_out, 0);
+  is_carried = !isl_map_is_subset(map_dep, test);
+  isl_map_free(map_dep);
+  isl_map_free(test);
+  
+  return is_carried;
+}
+
+struct insert_node_at_depth_data {
+  isl_multi_union_pw_aff *mupa;
+  struct autosa_node_band_prop *prop;
+  int depth;
+};
+
+static isl_bool has_inserted_mark(__isl_keep isl_schedule_node *node, void *user)
+{
+  if (is_marked(node, "inserted"))
+    return isl_bool_false;
+  
+  return isl_bool_true;
+}
+
+static __isl_give isl_schedule_node *delete_inserted_mark(__isl_take isl_schedule_node *node, void *user)
+{
+  if (is_marked(node, "inserted"))
+    node = isl_schedule_node_delete(node);
+  
+  return node;
+}
+
+/* Insert the node at the "depth" position. To prevent inserting the node 
+ * multiple times, a "inserted" mark will be inserted before the node.
+ * After the insertion, we will delete this "inserted" mark.
+ */
+static __isl_give isl_schedule_node *insert_node_at_depth(
+  __isl_take isl_schedule_node *node, void *user)
+{
+  struct insert_node_at_depth_data *data = (struct insert_node_at_depth_data *)user;
+  isl_id *id;
+
+  if (isl_schedule_node_get_type(node) != isl_schedule_node_band)
+    return node;
+
+  /* Examine the subtree contains the "inserted" mark node */
+  if (!isl_schedule_node_every_descendant(node, &has_inserted_mark, NULL)) {    
+    return node;
+  }
+
+  if (isl_schedule_node_get_schedule_depth(node) != data->depth) {
+//#ifdef _DEBUG
+//    DBGSCHDNODE(stdout, node, isl_schedule_node_get_ctx(node));
+//#endif        
+    return node;
+  }
+
+//#ifdef _DEBUG
+//  DBGSCHDNODE(stdout, node, isl_schedule_node_get_ctx(node));
+//#endif
+
+  /* Check if the node is right under the "latency" node.
+   * If true, move the node to the mark node.
+   */
+  node = isl_schedule_node_parent(node);
+  if (!is_marked(node, "latency"))
+    node = isl_schedule_node_child(node, 0);
+  node = isl_schedule_node_parent(node);
+  if (!is_marked(node, "simd"))
+    node = isl_schedule_node_child(node, 0);
+
+  /* Insert the node at current position */
+  node = isl_schedule_node_insert_partial_schedule(node, isl_multi_union_pw_aff_copy(data->mupa));
+  node = isl_schedule_node_band_set_permutable(node, data->prop->permutable);
+  for (int i = 0; i < isl_schedule_node_band_n_member(node); i++) {
+    node = isl_schedule_node_band_member_set_coincident(node, i, data->prop->coincident[i]);
+    node = isl_schedule_node_band_member_set_pe_opt(node, i, data->prop->pe_opt[i]);
+    node = isl_schedule_node_band_member_set_space_time(node, i, data->prop->space_time[i]);
+    node = isl_schedule_node_band_member_set_sched_pos(node, i, data->prop->sched_pos[i]);
+  }
+
+  /* Insert a "inserted" mark */
+  id = isl_id_alloc(isl_schedule_node_get_ctx(node), "inserted", NULL);
+  node = isl_schedule_node_insert_mark(node, id);
+
+//#ifdef _DEBUG
+//  DBGSCHDNODE(stdout, node, isl_schedule_node_get_ctx(node));
+//#endif
+
+  return node;
+}
+
+/* This function sinks the node to the schedule depth "depth". */
+__isl_give isl_schedule_node *autosa_node_sink_to_depth(
+  __isl_take isl_schedule_node *node, int depth)
+{
+  isl_multi_union_pw_aff *mupa;
+  struct autosa_node_band_prop *prop;
+
+  if (isl_schedule_node_get_type(node) != isl_schedule_node_band)
+    return node;
+  
+  mupa = isl_schedule_node_band_get_partial_schedule(node);
+  prop = extract_node_band_prop(node);
+  /* Delete the current node */
+  node = isl_schedule_node_delete(node);
+//#ifdef _DEBUG
+//  DBGSCHDNODE(stdout, node, isl_schedule_node_get_ctx(node));
+//#endif  
+  struct insert_node_at_depth_data data = {mupa, prop, depth};
+  node = isl_schedule_node_map_descendant_bottom_up(node, &insert_node_at_depth, &data);
+//#ifdef _DEBUG
+//  DBGSCHDNODE(stdout, node, isl_schedule_node_get_ctx(node));
+//#endif
+  /* Delete the inserted mark */
+  node = isl_schedule_node_map_descendant_bottom_up(node, &delete_inserted_mark, NULL);
+
+  autosa_node_band_prop_free(prop);
+  isl_multi_union_pw_aff_free(mupa);
+
+  return node;
+}
+
+struct sink_node_to_mark_data {
+  isl_multi_union_pw_aff *mupa;
+  struct autosa_node_band_prop *prop;
+  const char *name;  
+  bool inserted;
+};
+
+static __isl_give isl_schedule_node *sink_node_to_mark(
+  __isl_take isl_schedule_node *node, void *user)
+{
+  struct sink_node_to_mark_data *data = (struct sink_node_to_mark_data *)user;
+  isl_id *id;
+  isl_schedule_node *node_tmp;  
+
+  if (isl_schedule_node_get_type(node) != isl_schedule_node_band)
+    return node;
+  
+  /* Examine the subtree contains the "inserted" mark node */
+  if (!isl_schedule_node_every_descendant(node, &has_inserted_mark, NULL)) {    
+    return node;
+  }
+
+  node = isl_schedule_node_child(node, 0);
+  /* Check if the node is under any exisiting "name" node.
+   * If true, move the node to the mark node.
+   */
+  int mark_cnt = 0;
+  node_tmp = isl_schedule_node_copy(node);
+  while (isl_schedule_node_has_parent(node_tmp)) {
+    node_tmp = isl_schedule_node_parent(node_tmp);
+    if (is_marked(node_tmp, data->name))
+      mark_cnt++;
+  }
+  isl_schedule_node_free(node_tmp);
+  
+  while (mark_cnt > 0) {
+    node = isl_schedule_node_parent(node);
+    if (is_marked(node, data->name))
+      mark_cnt--;
+  }
+
+  /* Insert the node at current position */
+  node = isl_schedule_node_insert_partial_schedule(node, isl_multi_union_pw_aff_copy(data->mupa));
+  node = isl_schedule_node_band_set_permutable(node, data->prop->permutable);
+  for (int i = 0; i < isl_schedule_node_band_n_member(node); i++) {
+    node = isl_schedule_node_band_member_set_coincident(node, i, data->prop->coincident[i]);
+    node = isl_schedule_node_band_member_set_pe_opt(node, i, data->prop->pe_opt[i]);
+    node = isl_schedule_node_band_member_set_space_time(node, i, data->prop->space_time[i]);
+    node = isl_schedule_node_band_member_set_sched_pos(node, i, data->prop->sched_pos[i]);
+  }
+
+  /* Insert a "name" mark */
+  id = isl_id_alloc(isl_schedule_node_get_ctx(node), data->name, NULL);
+  node = isl_schedule_node_insert_mark(node, id);
+
+  /* Insert a "inserted" mark */
+  id = isl_id_alloc(isl_schedule_node_get_ctx(node), "inserted", NULL);
+  node = isl_schedule_node_insert_mark(node, id);
+  
+  data->inserted = true;
+
+  return node;
+}
+
+/* Sink the node innermost, but above the mark name with "name" if set. */
+__isl_give isl_schedule_node *autosa_node_sink_to_mark(
+  __isl_take isl_schedule_node *node, const char *name)
+{
+  isl_multi_union_pw_aff *mupa;
+  struct autosa_node_band_prop *prop;
+
+  if (isl_schedule_node_get_type(node) != isl_schedule_node_band)
+    return node;
+  
+  mupa = isl_schedule_node_band_get_partial_schedule(node);
+  prop = extract_node_band_prop(node);
+  /* Delete the current node */
+  node = isl_schedule_node_delete(node);
+
+  struct sink_node_to_mark_data data = {mupa, prop, name, false};
+  node = isl_schedule_node_map_descendant_bottom_up(node, &sink_node_to_mark, &data);
+  if (!data.inserted) {
+    isl_id *id;
+    /* Insert the node at current position */
+    node = isl_schedule_node_insert_partial_schedule(node, isl_multi_union_pw_aff_copy(data.mupa));
+    node = isl_schedule_node_band_set_permutable(node, data.prop->permutable);
+    for (int i = 0; i < isl_schedule_node_band_n_member(node); i++) {
+      node = isl_schedule_node_band_member_set_coincident(node, i, data.prop->coincident[i]);
+      node = isl_schedule_node_band_member_set_pe_opt(node, i, data.prop->pe_opt[i]);
+      node = isl_schedule_node_band_member_set_space_time(node, i, data.prop->space_time[i]);
+      node = isl_schedule_node_band_member_set_sched_pos(node, i, data.prop->sched_pos[i]);
+    }
+
+    /* Insert a "name" mark */
+    id = isl_id_alloc(isl_schedule_node_get_ctx(node), data.name, NULL);
+    node = isl_schedule_node_insert_mark(node, id);
+  }
+  /* Delete the "inserted" mark */
+  node = isl_schedule_node_map_descendant_bottom_up(node, &delete_inserted_mark, NULL);
+  
+  autosa_node_band_prop_free(prop);
+  isl_multi_union_pw_aff_free(mupa);
+
+  return node;
+}
+
 /* Reorder the schedule dims in the band based on the dependence distance.
  */
 __isl_give isl_schedule_node *reorder_band_by_dep_dis(__isl_take isl_schedule_node *node)
@@ -1916,29 +2190,6 @@ __isl_give isl_schedule *merge_outer_bands(__isl_take isl_schedule *schedule, st
   isl_schedule_constraints_free(sc);
 
   return schedule;
-}
-
-/* Is "node" a mark node with an identifier called "name"?
- */
-static int is_marked(__isl_keep isl_schedule_node *node, const char *name)
-{
-  isl_id *mark;
-  int has_name;
-
-  if (!node)
-    return -1;
-
-  if (isl_schedule_node_get_type(node) != isl_schedule_node_mark)
-    return 0;
-
-  mark = isl_schedule_node_mark_get_id(node);
-  if (!mark)
-    return -1;
-
-  has_name = !strcmp(isl_id_get_name(mark), name);
-  isl_id_free(mark);
-
-  return has_name;
 }
 
 /* Is "node" a mark node with an identifier called "array"?

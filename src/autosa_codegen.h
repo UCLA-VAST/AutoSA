@@ -31,4 +31,11 @@ isl_stat sa_host_serialize_generate_code(struct autosa_gen *gen,
 
 int autosa_array_requires_device_allocation(struct autosa_array_info *array);
 
+__isl_give isl_schedule_node *insert_io_group_domain(
+  __isl_take isl_schedule_node *node, 
+  struct autosa_array_ref_group *group,
+  struct autosa_kernel *kernel,
+  struct autosa_gen *gen,
+  int read);
+
 #endif

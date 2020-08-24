@@ -889,6 +889,7 @@ struct autosa_array_ref_group *autosa_array_ref_group_free(
   free(group->io_buffers);
   isl_schedule_free(group->io_schedule);
   isl_schedule_free(group->io_L1_schedule);
+  isl_schedule_free(group->io_L1_lower_schedule);
   isl_union_pw_multi_aff_free(group->copy_schedule);
   if (group->attached_drain_group)
     autosa_array_ref_group_free(group->attached_drain_group);
@@ -926,6 +927,7 @@ struct autosa_array_ref_group *autosa_array_ref_group_init(
   group->io_L1_pe_expr_boundary = NULL;
   group->io_schedule = NULL;
   group->io_L1_schedule = NULL;
+  group->io_L1_lower_schedule = NULL;
   group->io_level = 0;
   group->space_dim = 0;
   group->n_lane = 0;
@@ -2585,6 +2587,12 @@ isl_stat sa_extract_loop_info(struct autosa_gen *gen, struct autosa_hw_module *m
   }
 
   /* Parse the loop structure of the default module */
+//#ifdef _DEBUG
+//  if (!module->device_tree) {
+//    printf("non tree module_name: %s\n", module->name);
+//    exit(0);
+//  }
+//#endif
   json_str = extract_loop_info_from_module(gen, module->device_tree, module->name, module->double_buffer, module->in, 1);
 
   /* Parse the loop structure of the boundary module */

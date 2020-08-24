@@ -516,6 +516,7 @@ struct autosa_array_ref_group
   /* I/O schedule */
   isl_schedule *io_schedule;
   isl_schedule *io_L1_schedule;
+  isl_schedule *io_L1_lower_schedule;
   /* Number of I/O levels */
   int io_level;
   /* Dims of space band */
@@ -534,7 +535,7 @@ struct autosa_array_ref_group
   /* Does copy-out module exist? */
   int copy_out;
   /* Attached drain group */
-  struct autosa_array_ref_group *attached_drain_group;
+  struct autosa_array_ref_group *attached_drain_group;  
   /* AutoSA Extended */
 };
 
@@ -1100,6 +1101,10 @@ __isl_give isl_schedule_node *reorder_band_by_dep_dis(__isl_take isl_schedule_no
 __isl_give isl_schedule_node *sched_pos_setup(__isl_take isl_schedule_node *node);
 int get_band_single_schedule_val(__isl_keep isl_schedule_node *node);
 __isl_give isl_schedule_node *autosa_atomic_ancestors(__isl_take isl_schedule_node *node);
+int is_dep_carried_by_node(__isl_keep isl_basic_map *dep, __isl_keep isl_schedule_node *node);
+__isl_give isl_schedule_node *autosa_node_sink_to_depth(__isl_take isl_schedule_node *node, int depth);
+__isl_give isl_schedule_node *autosa_node_sink_to_mark(__isl_take isl_schedule_node *node, const char *name);
+int is_marked(__isl_keep isl_schedule_node *node, const char *name);
 
 /* Schedule */
 __isl_give isl_schedule *compute_schedule(struct autosa_gen *gen);

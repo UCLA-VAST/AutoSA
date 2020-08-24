@@ -1657,10 +1657,17 @@ __isl_give isl_schedule_node *autosa_latency_node_band_sink_time(
 {
     if (sa->type == AUTOSA_SA_TYPE_ASYNC)
     {
-        node = isl_schedule_node_band_sink(node);
+        //node = isl_schedule_node_band_sink(node);
         /* Add the "latency" mark. */
-        node = isl_schedule_node_map_descendant_bottom_up(
-            node, &add_latency_mark, NULL);
+        //node = isl_schedule_node_map_descendant_bottom_up(
+        //    node, &add_latency_mark, NULL);
+//#ifdef _DEBUG
+//        DBGSCHDNODE(stdout, node, isl_schedule_node_get_ctx(node));
+//#endif
+        node = autosa_node_sink_to_mark(node, "latency");        
+//#ifdef _DEBUG
+//        DBGSCHDNODE(stdout, node, isl_schedule_node_get_ctx(node));
+//#endif        
     }
     else if (sa->type == AUTOSA_SA_TYPE_SYNC)
     {
@@ -2587,8 +2594,8 @@ static __isl_give isl_schedule_node *autosa_simd_tile_loop(
                 if (data->legal[data->loop_cnt] == 0)
                 {
                     /* Layout transformation is needed to proceed.
-           * We will skip this loop. 
-           */
+                     * We will skip this loop. 
+                     */
                     node = isl_schedule_node_band_member_set_pe_opt(node, i,
                                                                     autosa_loop_default);
                     data->loop_cnt++;
@@ -2604,10 +2611,18 @@ static __isl_give isl_schedule_node *autosa_simd_tile_loop(
                 node = isl_schedule_node_band_member_set_space_time(node, 0, autosa_loop_time);
                 /* Reset the point loop pe_opt property to default. */
                 node = isl_schedule_node_band_member_set_pe_opt(node, 0, autosa_loop_default);
-                /* Sink the point loop innermost */
-                node = isl_schedule_node_band_sink(node);
-                /* Add the simd marker */
-                node = isl_schedule_node_map_descendant_bottom_up(node, &add_simd_mark, NULL);
+                ///* Sink the point loop innermost */
+                //node = isl_schedule_node_band_sink(node);
+                ///* Add the simd marker */
+                //node = isl_schedule_node_map_descendant_bottom_up(node, &add_simd_mark, NULL);
+                /* Sink the point loop innermost and add the simd marker */
+//#ifdef _DEBUG
+//                DBGSCHDNODE(stdout, node, isl_schedule_node_get_ctx(node));
+//#endif
+                node = autosa_node_sink_to_mark(node, "simd");
+//#ifdef _DEBUG
+//                DBGSCHDNODE(stdout, node, isl_schedule_node_get_ctx(node));
+//#endif                
                 /* Update the stride information for array references under the SIMD loop. */
                 isl_schedule_node_every_descendant(node, &update_simd_acc, &stride_data);
 

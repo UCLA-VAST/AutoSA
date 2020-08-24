@@ -84,6 +84,8 @@ extern "C"
 		 * 1: Set the last dim to 1.
 		 */
 		int int_io_dir;
+		/* Lower the interior I/O module L1 buffer */
+		int lower_int_io_L1_buffer;
 	};
 
 	struct ppcg_options

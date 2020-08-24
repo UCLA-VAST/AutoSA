@@ -4281,6 +4281,7 @@ static void print_top_gen_host_code(
       p = isl_printer_end_line(p);
 
       p = isl_printer_end_line(p);      
+      free(fifo_name);
     }
   }
 

@@ -8,7 +8,8 @@ typedef float data_t;
 //#define K 1024
 
 // kernel0 1D I
-#define I 1024
+//#define I 1024
+#define I 1040
 //#define I 1080
 #define J 1024
 #define K 1024

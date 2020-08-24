@@ -585,7 +585,11 @@ static __isl_give isl_schedule_node *add_io_copies_stmt_acc_single(
     node2 = isl_schedule_node_copy(node);
     if (n_lane >= 1 && is_simd)
     {
-      node2 = isl_schedule_node_parent(node);
+      //node2 = isl_schedule_node_parent(node);
+      while (!is_marked(node2, "simd")) {
+        node2 = isl_schedule_node_parent(node2);
+      }
+      node2 = isl_schedule_node_child(node2, 0);
     }
     /* Test if the access is stride one at the current loop. */
     stride_one = is_acc_stride_one_at_node(node2, ref);
@@ -678,28 +682,32 @@ static __isl_give isl_schedule_node *add_io_copies_stmt_acc_single(
    * to only transfer the data at one loop since we will later insert a 
    * statement to handle the data transfer of the entire SIMD loop.
    */
-  if (n_lane >= 1 && is_simd)
-  {
-    /* The loop above is the SIMD loop.
-     * Check the node is below the simd mark. 
-     */
-    int n_index;
-    int tile_size[1];
-    isl_id *id;
-    isl_printer *p_str;
-    isl_union_map *umap;
-    isl_union_set *filter;
-
-    /* Create a filter. */
-    node = isl_schedule_node_parent(node);
-    if (data->read)
-      filter = schedule_eq_lb(node);
-    else
-      filter = schedule_eq_ub(node);
-    node = isl_schedule_node_insert_filter(node, filter);
-    node = isl_schedule_node_child(node, 0);
-    node = isl_schedule_node_child(node, 0);
-  }
+//#ifdef _DEBUG
+//  DBGSCHDNODE(stdout, node, isl_schedule_node_get_ctx(node));
+//  DBGSCHDNODE(stdout, graft, isl_schedule_node_get_ctx(graft));
+//#endif
+  //if (n_lane >= 1 && is_simd)
+  //{
+  //  /* The loop above is the SIMD loop.
+  //   * Check the node is below the simd mark. 
+  //   */
+  //  int n_index;
+  //  int tile_size[1];
+  //  isl_id *id;
+  //  isl_printer *p_str;
+  //  isl_union_map *umap;
+  //  isl_union_set *filter;
+//
+  //  /* Create a filter. */    
+  //  node = isl_schedule_node_parent(node);
+  //  if (data->read)
+  //    filter = schedule_eq_lb(node);
+  //  else
+  //    filter = schedule_eq_ub(node);
+  //  node = isl_schedule_node_insert_filter(node, filter);
+  //  node = isl_schedule_node_child(node, 0);
+  //  node = isl_schedule_node_child(node, 0);
+  //}
 
   /* Insert a "pipeline" mark under the band node. */
   hls_id = isl_id_alloc(ctx, "hls_pipeline", NULL);
@@ -737,6 +745,30 @@ static __isl_give isl_schedule_node *add_io_copies_stmt_acc_single(
   return node;
 }
 
+static __isl_give isl_schedule_node *modify_simd_loop(
+  __isl_take isl_schedule_node *node, void *user)
+{
+  struct add_io_copies_stmt_acc_data *data =
+      (struct add_io_copies_stmt_acc_data *)(user);
+  if (data->n_lane >= 1 && is_marked(node, "simd")) {
+    int n_index;
+    int tile_size[1];
+    isl_id *id;
+    isl_printer *p_str;
+    isl_union_map *umap;
+    isl_union_set *filter;
+
+    node = isl_schedule_node_child(node, 0);
+    if (data->read)
+      filter = schedule_eq_lb(node);
+    else
+      filter = schedule_eq_ub(node);
+    node = isl_schedule_node_insert_filter(node, filter);
+    node = isl_schedule_node_parent(node);
+  }
+  return node;
+}
+
 /* Add copies at the stmt level for each array reference in the "group" 
  * in the I/O modules.
  * 
@@ -770,6 +802,12 @@ __isl_give isl_schedule_node *add_io_copies_stmt_acc(
           node, &add_io_copies_stmt_acc_single, &data);
     }
   }
+  /* Modify the SIMD loop.
+   * If the current statement is under the SIMD loop, we will add a filter 
+   * to only transfer the data at one loop since we will later insert a 
+   * statement to handle the data transfer of the entire SIMD loop.   
+   */
+  node = isl_schedule_node_map_descendant_bottom_up(node, &modify_simd_loop, &data);
 
   return node;
 }
@@ -950,45 +988,35 @@ static __isl_give isl_schedule_node *add_io_copies_stmt_tile(
  * The node should point to the "array" mark.
  */
 static __isl_give isl_schedule_node *add_io_ids_filter(
-  __isl_take isl_schedule_node *node,
+  __isl_take isl_schedule_node *node, 
   __isl_keep isl_id_list *io_ids,  
   int io_level, int n_io_ids, int is_filter, int to_pe, int read)
 {
-  //if (n_io_ids <= 0)
-  //  return node;
-
+  isl_union_set *core;
   int io_id = 0;
-  //node = autosa_tree_move_down_to_array(node, kernel->core);  
-  while (!isl_schedule_node_is_io_mark(node, io_level))
-  {
-    if (isl_schedule_node_get_type(node) == isl_schedule_node_band)
-    {
+
+  core = isl_union_set_universe(isl_schedule_node_get_domain(node));
+  for (int i = n_io_ids + 1; i >= io_level; i--) {
+    node = autosa_tree_move_down_to_io_mark(node, core, i);
+    node = isl_schedule_node_parent(node);
+    if (isl_schedule_node_get_type(node) == isl_schedule_node_band) {
       isl_id *id;
       isl_id_list *ids;
       isl_union_set *uset;
 
       ids = isl_id_list_from_id(isl_id_list_get_id(io_ids, io_id));
-      if (io_id == n_io_ids - 1)
-      {
+      if (io_id == n_io_ids - 1) {
         if (is_filter)
-        {
           uset = set_schedule_ge(node, ids);
-        }
         else
-        {
           uset = set_schedule_eq(node, ids);
-        }
-      }
-      else
-      {
+      } else {
         uset = set_schedule_eq(node, ids);
       }
       io_id++;
       node = isl_schedule_node_insert_filter(node, uset);
       isl_id_list_free(ids);
-      node = isl_schedule_node_child(node, 0);      
     }
-    node = isl_schedule_node_child(node, 0);
   }
   if (to_pe && io_level > 1)
   {
@@ -1009,7 +1037,63 @@ static __isl_give isl_schedule_node *add_io_ids_filter(
     }
   }
 
+  isl_union_set_free(core);
+
   return node;
+
+  //int io_id = 0;
+  ////node = autosa_tree_move_down_to_array(node, kernel->core);  
+  //while (!isl_schedule_node_is_io_mark(node, io_level))
+  //{
+  //  if (isl_schedule_node_get_type(node) == isl_schedule_node_band)
+  //  {
+  //    isl_id *id;
+  //    isl_id_list *ids;
+  //    isl_union_set *uset;
+//
+  //    ids = isl_id_list_from_id(isl_id_list_get_id(io_ids, io_id));
+  //    if (io_id == n_io_ids - 1)
+  //    {
+  //      if (is_filter)
+  //      {
+  //        uset = set_schedule_ge(node, ids);
+  //      }
+  //      else
+  //      {
+  //        uset = set_schedule_eq(node, ids);
+  //      }
+  //    }
+  //    else
+  //    {
+  //      uset = set_schedule_eq(node, ids);
+  //    }
+  //    io_id++;
+  //    node = isl_schedule_node_insert_filter(node, uset);
+  //    isl_id_list_free(ids);
+  //    node = isl_schedule_node_child(node, 0);      
+  //  }
+  //  node = isl_schedule_node_child(node, 0);
+  //}
+  //if (to_pe && io_level > 1)
+  //{
+  //  /* Add filter to only send data to boundary PEs. */
+  //  while (!isl_schedule_node_is_io_mark(node, 2)) {
+  //    node = isl_schedule_node_child(node, 0);
+  //  }
+  //  node = isl_schedule_node_child(node, 0);
+  //  if (isl_schedule_node_get_type(node) == isl_schedule_node_band) {
+  //    isl_union_set *uset;
+//
+  //    if (read)
+  //      uset = schedule_eq_lb(node);
+  //    else
+  //      uset = schedule_eq_ub(node);
+  //    node = isl_schedule_node_insert_filter(node, uset);
+  //    node = isl_schedule_node_child(node, 0);
+  //  }
+  //}
+//
+  //return node;
 }
 
 static __isl_give isl_printer *print_io_stmt_prefix(
@@ -1295,6 +1379,27 @@ static __isl_give isl_schedule_node *insert_io_group_access_domain_local_reduce_
   return node;
 }
 
+/* Insert a filter node that filters the valid access domain of the current
+ * io group. The "node" should point to the "kernel" mark, and will be returned 
+ * at the "kernel" mark.
+ */
+__isl_give isl_schedule_node *insert_io_group_domain(
+  __isl_take isl_schedule_node *node, 
+  struct autosa_array_ref_group *group,
+  struct autosa_kernel *kernel,
+  struct autosa_gen *gen,
+  int read)
+{
+  node = isl_schedule_node_child(node, 0); // context
+  if (gen->options->autosa->local_reduce && group->attached_drain_group) 
+    node = insert_io_group_access_domain_local_reduce(node, group, kernel, read, 0, 1);
+  else
+    node = insert_io_group_access_domain(node, group, kernel, read);
+  node = autosa_tree_move_up_to_kernel(node);
+
+  return node;
+}
+
 static __isl_give isl_schedule_node *insert_io_stmts_acc(
   __isl_take isl_schedule_node *node,
   int nxt_data_pack,
@@ -1366,7 +1471,7 @@ static __isl_give isl_schedule_node *insert_io_stmts_tile(
     isl_union_set *empty_filter = isl_union_set_from_set(isl_set_empty(
           isl_set_get_space(kernel->context)));
     node = isl_schedule_node_insert_filter(node, empty_filter);
-  }
+  }  
 
   return node;
 }
@@ -1384,7 +1489,8 @@ static __isl_give isl_schedule_node *insert_filter_trans_stmts(
   int boundary, int is_lower,
   int is_buffer,
   char *fifo_suffix,
-  struct autosa_array_ref_group *group
+  struct autosa_array_ref_group *group,
+  __isl_keep isl_union_set *group_core
 )
 {
   isl_id_list *ids;
@@ -1401,18 +1507,21 @@ static __isl_give isl_schedule_node *insert_filter_trans_stmts(
     if (boundary == 0) {
       return isl_schedule_node_free(node);
     } else {
+      node = autosa_tree_move_down_to_io_mark(node, group_core, buf->level);
+      node = isl_schedule_node_child(node, 0);
       goto INSERT_STMT;
     }
   }
   
-  node = autosa_tree_move_down_to_io_mark(node, kernel->core, io_level);
+  node = autosa_tree_move_down_to_io_mark(node, group_core, io_level);
   node = isl_schedule_node_parent(node);
   ids = isl_id_list_from_id(isl_id_list_get_id(io_ids, io_id_level));
   eq_filter = set_schedule_eq(node, ids);  
   isl_id_list_free(ids);
 
   upper_io_level = io_level + 1;
-  node = autosa_tree_move_down_to_io_mark(node, kernel->core, io_level);
+  node = autosa_tree_move_down_to_io_mark(node, group_core, io_level);
+  node = isl_schedule_node_child(node, 0);
 
 //#ifdef _DEBUG
 //  DBGUSET(stdout, eq_filter, ctx);
@@ -1427,8 +1536,8 @@ static __isl_give isl_schedule_node *insert_filter_trans_stmts(
     node = isl_schedule_node_cut(node);
     node = isl_schedule_node_insert_filter(node, empty_filter);
   } else {
-    node = autosa_tree_move_down_to_io_mark(node, kernel->core, buf->level);
-    node = isl_schedule_node_child(node, 0);
+    //node = autosa_tree_move_down_to_io_mark(node, group_core, buf->level);
+    //node = isl_schedule_node_child(node, 0);
     p = isl_printer_to_str(ctx);
     p = print_io_trans_stmt_prefix(
           p, read, module->to_mem, gen->options->autosa->host_serialize, boundary, 0, NULL,
@@ -1442,16 +1551,25 @@ static __isl_give isl_schedule_node *insert_filter_trans_stmts(
 
   /* Keep the data filtered */
   node = autosa_tree_move_up_to_kernel(node);
-  node = autosa_tree_move_down_to_io_mark(node, kernel->core, upper_io_level);
-  node = isl_schedule_node_child(node, 0); // filter
-  node = isl_schedule_node_child(node, 0); // band
-  node = isl_schedule_node_child(node, 0); // sequence
-  node = isl_schedule_node_child(node, 0); // filter
-  node = isl_schedule_node_child(node, 0); // filter
+  node = autosa_tree_move_down_to_io_mark(node, group_core, io_level);
+  node = isl_schedule_node_child(node, 0); // seqeuence
+  node = isl_schedule_node_child(node, 0); // filter  
+  node = isl_schedule_node_child(node, 0); // filter  
 
-INSERT_STMT:
-  node = autosa_tree_move_down_to_io_mark(node, kernel->core, buf->level);
-  node = isl_schedule_node_child(node, 0);
+  //node = autosa_tree_move_down_to_io_mark(node, group_core, upper_io_level);
+  //node = isl_schedule_node_child(node, 0); // filter
+  //node = isl_schedule_node_child(node, 0); // band
+  //node = isl_schedule_node_child(node, 0); // sequence
+  //node = isl_schedule_node_child(node, 0); // filter
+  //node = isl_schedule_node_child(node, 0); // filter
+  if (io_level > 1) {
+    node = autosa_tree_move_down_to_io_mark(node, group_core, buf->level);
+    node = isl_schedule_node_child(node, 0);
+  }
+
+INSERT_STMT:  
+  //node = autosa_tree_move_down_to_io_mark(node, group_core, buf->level);
+  //node = isl_schedule_node_child(node, 0);
   p = isl_printer_to_str(ctx);
   p = print_io_trans_stmt_prefix(
         p, read, module->to_mem, gen->options->autosa->host_serialize, boundary, 0, NULL,
@@ -1529,6 +1647,7 @@ static __isl_give isl_schedule *generate_io_module_inter_trans(
   int is_filter = 1;
   int is_buffer = 1;
   int i;
+  isl_union_set *group_core = NULL;
 
   if (io_level > space_dim && boundary == 0) {
     return NULL;
@@ -1547,6 +1666,8 @@ static __isl_give isl_schedule *generate_io_module_inter_trans(
     node = insert_io_group_access_domain_local_reduce(node, group, kernel, read, 0, 1);
   else
     node = insert_io_group_access_domain(node, group, kernel, read);
+  node = isl_schedule_node_child(node, 0);
+  group_core = isl_union_set_universe(isl_schedule_node_get_domain(node));
   node = autosa_tree_move_up_to_kernel(node);
 
   /* Add the filters. */
@@ -1556,6 +1677,9 @@ static __isl_give isl_schedule *generate_io_module_inter_trans(
   node = autosa_tree_move_down_to_array(node, kernel->core);
   node = add_io_ids_filter(node, io_ids, io_level, space_dim - io_level + 1, is_filter, 0, read);
   node = autosa_tree_move_up_to_kernel(node);
+//#ifdef _DEBUG
+//  DBGSCHDNODE(stdout, node, isl_schedule_node_get_ctx(node));
+//#endif
 
   /* Locate the buffer. */
   for (i = io_level; i >= 1; i--)
@@ -1575,12 +1699,13 @@ static __isl_give isl_schedule *generate_io_module_inter_trans(
 
   init_suffix(module, group, &fifo_suffix, &buf_suffix);
   node = insert_filter_trans_stmts(node, io_ids, space_dim - io_level, io_level, read,
-      buf, module, kernel, gen, boundary, 0, is_buffer, fifo_suffix, group);
+      buf, module, kernel, gen, boundary, 0, is_buffer, fifo_suffix, group, group_core);
 
   free(fifo_suffix);
   free(buf_suffix);      
   isl_id_list_free(io_ids);
   if (!node) {
+    isl_union_set_free(group_core);
     return NULL;  
   }
 
@@ -1594,11 +1719,15 @@ static __isl_give isl_schedule *generate_io_module_inter_trans(
               get_local_reduce_sched_depth(isl_schedule_node_copy(node), kernel), 
               kernel->core);    
   } else {
-    if (io_level > space_dim)
+    if (io_level > space_dim) {
       node = autosa_tree_move_down_to_array(node, kernel->core);
-    else
-      node = autosa_tree_move_down_to_io_mark(node, kernel->core, upper_io_level);
-    node = isl_schedule_node_child(node, 0);  
+      node = isl_schedule_node_child(node, 0);  
+    } else {
+      //node = autosa_tree_move_down_to_io_mark(node, group_core, upper_io_level);
+      node = autosa_tree_move_down_to_io_mark(node, group_core, io_level);
+      node = isl_schedule_node_parent(node);
+      node = isl_schedule_node_parent(node);
+    }    
   }
   
   id = isl_id_alloc(ctx, "io_module.inter_trans", NULL);
@@ -1610,8 +1739,13 @@ static __isl_give isl_schedule *generate_io_module_inter_trans(
   node = isl_schedule_node_child(node, 0);
   node = isl_schedule_node_insert_mark(node, id);
 
+//#ifdef _DEBUG
+//  DBGSCHDNODE(stdout, node, isl_schedule_node_get_ctx(node));
+//#endif
+
   new_sched = isl_schedule_node_get_schedule(node);
   isl_schedule_node_free(node);  
+  isl_union_set_free(group_core);
 
   return new_sched;
 }
@@ -1708,6 +1842,7 @@ static __isl_give isl_schedule *generate_io_module_intra_trans(
   int i;
   isl_set *guard;
   isl_schedule_node *node_tmp;
+  isl_union_set *group_core = NULL;
 
   new_sched = isl_schedule_dup(sched);
   node = isl_schedule_get_root(new_sched);
@@ -1724,7 +1859,9 @@ static __isl_give isl_schedule *generate_io_module_intra_trans(
   if (gen->options->autosa->local_reduce && group->attached_drain_group)
     node = insert_io_group_access_domain_local_reduce(node, group, kernel, read, 1, 1);
   else
-    node = insert_io_group_access_domain(node, group, kernel, read);    
+    node = insert_io_group_access_domain(node, group, kernel, read);  
+  node = isl_schedule_node_child(node, 0);
+  group_core = isl_union_set_universe(isl_schedule_node_get_domain(node));  
 
   /* Add the filters. */
   node = autosa_tree_move_down_to_array(node, kernel->core);
@@ -1769,14 +1906,17 @@ static __isl_give isl_schedule *generate_io_module_intra_trans(
 
   if (cur_level == 1 || !buf->tile)
   {
+//#ifdef _DEBUG
+//    DBGSCHDNODE(stdout, node, isl_schedule_node_get_ctx(node));
+//#endif
     node = insert_io_stmts_acc(node, group->n_lane, p, kernel, group, cur_buf, read, is_buffer);
     module->data_pack_intra = group->n_lane;                                  
   }
   else
   {
     /* Move the schedule node to the level of the next buffer. */
-    node = autosa_tree_move_down_to_io_mark(node, kernel->core, buf->level);
-    node = isl_schedule_node_child(node, 0);
+    node = autosa_tree_move_down_to_io_mark(node, group_core, buf->level);
+    node = isl_schedule_node_child(node, 0);    
     node = insert_io_stmts_tile(
                 node, buf->n_lane, p, kernel, group, 
                 cur_buf, buf, !read, is_buffer, module, 1);
@@ -1794,11 +1934,15 @@ static __isl_give isl_schedule *generate_io_module_intra_trans(
               get_local_reduce_sched_depth(isl_schedule_node_copy(node), kernel), 
               kernel->core);    
   } else {
-    if (io_level > space_dim)
+    if (io_level > space_dim) {
       node = autosa_tree_move_down_to_array(node, kernel->core);      
-    else 
-      node = autosa_tree_move_down_to_io_mark(node, kernel->core, upper_io_level);        
-    node = isl_schedule_node_child(node, 0);
+      node = isl_schedule_node_child(node, 0);  
+    } else {
+      //node = autosa_tree_move_down_to_io_mark(node, kernel->core, upper_io_level);        
+      node = autosa_tree_move_down_to_io_mark(node, group_core, io_level);
+      node = isl_schedule_node_parent(node);
+      node = isl_schedule_node_parent(node);
+    }    
   }
 
   id = isl_id_alloc(ctx, "io_module.intra_trans", NULL);
@@ -1812,8 +1956,8 @@ static __isl_give isl_schedule *generate_io_module_intra_trans(
 
   new_sched = isl_schedule_node_get_schedule(node);
   isl_schedule_node_free(node);
-
   isl_id_list_free(io_ids);
+  isl_union_set_free(group_core);
 
   return new_sched;
 }
@@ -1901,6 +2045,7 @@ static __isl_give isl_schedule *generate_io_module_outer(
   isl_space *space;
   isl_union_set *domain;
   struct autosa_io_buffer *buf;
+  isl_union_set *group_core = NULL;
 
   if (io_level > space_dim && boundary == 0) {
     return NULL;
@@ -1920,6 +2065,8 @@ static __isl_give isl_schedule *generate_io_module_outer(
     node = insert_io_group_access_domain_local_reduce(node, group, kernel, read, 1, 1);
   else
     node = insert_io_group_access_domain(node, group, kernel, read);
+  node = isl_schedule_node_child(node, 0);
+  group_core = isl_union_set_universe(isl_schedule_node_get_domain(node));
   node = autosa_tree_move_up_to_kernel(node);
 
   io_ids = ppcg_scop_generate_names(gen->prog->scop, n_io_ids, "p");
@@ -1961,11 +2108,15 @@ OUTER_INSERT_STMT:
   } else {
     if (io_level > space_dim && boundary == 1) {
       node = autosa_tree_move_down_to_array(node, kernel->core);
+      node = isl_schedule_node_child(node, 0);              
     } else {
-      node = autosa_tree_move_down_to_io_mark(node, kernel->core, upper_io_level);
-    }
-    node = isl_schedule_node_child(node, 0);              
+      //node = autosa_tree_move_down_to_io_mark(node, kernel->core, upper_io_level);
+      node = autosa_tree_move_down_to_io_mark(node, group_core, io_level);
+      node = isl_schedule_node_parent(node);
+      //node = isl_schedule_node_parent(node);
+    }    
   }
+  isl_union_set_free(group_core);
 
   /* Add the inter_trans and intra_trans function calls. */
   stmt_name1 = boundary == 0 ? "io_module.inter_trans.0" : "io_module.inter_trans.1";
@@ -2621,9 +2772,13 @@ static __isl_give isl_schedule *generate_serialize_schedule(
   isl_union_set *group_domain;
   isl_id *id;
   isl_schedule *sched;
+  isl_union_set *group_core = NULL;
 
   ctx = gen->ctx;
-  node = isl_schedule_get_root(group->io_schedule);
+  if (gen->options->autosa->lower_int_io_L1_buffer && group->io_L1_lower_schedule)
+    node = isl_schedule_get_root(group->io_L1_lower_schedule);
+  else
+    node = isl_schedule_get_root(group->io_schedule);
   node = autosa_tree_move_down_to_kernel(node);
 
   /* Compute the union of domains of all the array references in the group. */
@@ -2633,6 +2788,8 @@ static __isl_give isl_schedule *generate_serialize_schedule(
     node = insert_io_group_access_domain_local_reduce(node, group, kernel, in, 0, 1);
   else
     node = insert_io_group_access_domain(node, group, kernel, in);
+  node = isl_schedule_node_child(node, 0);
+  group_core = isl_union_set_universe(isl_schedule_node_get_domain(node));
   node = autosa_tree_move_up_to_kernel(node);
 
   /* Generate the statement */
@@ -2652,7 +2809,10 @@ static __isl_give isl_schedule *generate_serialize_schedule(
   /* Move the schedule node to the level of the buffer.
    * TODO: fix it when the buf->tile == NULL.
    */
-  node = autosa_tree_move_down_to_depth(node, buf->tile->depth, kernel->core);
+  node = autosa_tree_move_down_to_depth(node, buf->tile->depth, group_core);
+#ifdef _DEBUG
+  DBGSCHDNODE(stdout, node, isl_schedule_node_get_ctx(node));
+#endif
   if (!buf->tile)
   {
     /* If there is more than one reference in the I/O group to be serialized.
@@ -2688,6 +2848,7 @@ static __isl_give isl_schedule *generate_serialize_schedule(
 
   sched = isl_schedule_node_get_schedule(node);
   isl_schedule_node_free(node);
+  isl_union_set_free(group_core);
 
   return sched;
 }
@@ -2784,6 +2945,7 @@ static isl_stat generate_default_io_module_schedule(
   struct autosa_io_buffer *buf = NULL;
   int i;
   isl_union_set *id_filter;
+  isl_union_set *group_core = NULL;
 
   ctx = isl_schedule_node_get_ctx(node);
   sched1 = isl_schedule_node_get_schedule(node);
@@ -2800,6 +2962,8 @@ static isl_stat generate_default_io_module_schedule(
     node = insert_io_group_access_domain_local_reduce(node, group, kernel, read, 0, 1);
   else
     node = insert_io_group_access_domain(node, group, kernel, read);  
+  node = isl_schedule_node_child(node, 0);
+  group_core = isl_union_set_universe(isl_schedule_node_get_domain(node));    
   node = autosa_tree_move_up_to_kernel(node);
 
   /* Add the module id filters. */
@@ -2836,7 +3000,7 @@ static isl_stat generate_default_io_module_schedule(
     module->data_pack_intra = buf->n_lane;
     node = insert_filter_trans_stmts(
               node, io_ids, space_dim - io_level, io_level, read,
-              buf, module, kernel, gen, boundary, 1, is_buffer, fifo_suffix, group);
+              buf, module, kernel, gen, boundary, 1, is_buffer, fifo_suffix, group, group_core);
   } else {
     if (is_buffer) {
       /* Insert two statements:
@@ -2878,8 +3042,8 @@ static isl_stat generate_default_io_module_schedule(
         node = insert_io_stmts_acc(
                   node, group->n_lane, p, kernel, group, cur_buf, read, is_buffer);
       } else {
-        node = autosa_tree_move_down_to_io_mark(node, kernel->core, buf->level);
-        node = isl_schedule_node_child(node, 0);
+        node = autosa_tree_move_down_to_io_mark(node, group_core, buf->level);
+        node = isl_schedule_node_child(node, 0);        
         node = insert_io_stmts_tile(node, buf->n_lane, p, kernel, group, 
                   cur_buf, buf, read, is_buffer, module, 1);
       }
@@ -2913,6 +3077,7 @@ static isl_stat generate_default_io_module_schedule(
 
   free(fifo_suffix);
   free(buf_suffix);
+  isl_union_set_free(group_core);
 
   /* Add the module mark. */
   id = isl_id_alloc(ctx, "module", module);
@@ -2995,11 +3160,12 @@ static __isl_give struct autosa_hw_module *generate_io_module_by_type(
     struct autosa_gen *gen, int io_level, int space_dim,
     int is_filter, int is_buffer, int read)
 {
-//#ifdef _DEBUG
-//  printf("array_name: %s\n", group->array->name);
-//  if (!strcmp(module->name, "B_IO_L2_in"))
-//    printf("here\n");
-//#endif
+#ifdef _DEBUG
+  printf("array_name: %s\n", group->array->name);
+  printf("module name: %s\n", module->name);
+  if (!strcmp(module->name, "A_IO_L1_in"))
+    printf("here\n");
+#endif
 
   if (is_filter && is_buffer)
   {
@@ -3077,7 +3243,10 @@ static __isl_give struct autosa_hw_module **sa_io_module_gen(
   int credit = 0;
 
   ctx = gen->ctx;
-  node = isl_schedule_get_root(group->io_schedule);
+  if (gen->options->autosa->lower_int_io_L1_buffer && group->io_L1_lower_schedule) 
+    node = isl_schedule_get_root(group->io_L1_lower_schedule);
+  else
+    node = isl_schedule_get_root(group->io_schedule);
   
   io_level = group->io_level;
   space_dim = group->space_dim;

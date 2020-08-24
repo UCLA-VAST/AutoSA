@@ -87,8 +87,7 @@ def generate_loop_candidates(loops, config, stage):
 
     sample_mode = config['setting'][config['mode']]['sample'][stage]['mode']
     sample_n = config['setting'][config['mode']]['sample'][stage]['n']
-    sample_loop_limit = config['setting'][config['mode']
-                                          ]['sample'][stage]['loop_limit']
+    sample_loop_limit = config['setting'][config['mode']]['sample'][stage]['loop_limit']    
 
     l_inclusive = 1
     r_inclusive = 1
@@ -104,14 +103,10 @@ def generate_loop_candidates(loops, config, stage):
             ub = int(
                 np.floor(
                     np.log2(
-                        loop if sample_loop_limit == -
-                        1 else min(
-                            loop,
-                            sample_loop_limit))))
+                        loop if sample_loop_limit == -1 else min(loop, sample_loop_limit))))
             lb = 0
         else:
-            ub = loop if sample_loop_limit == - \
-                1 else min(loop, sample_loop_limit)
+            ub = loop if sample_loop_limit == -1 else min(loop, sample_loop_limit)
             lb = 1
         if not r_inclusive:
             ub = ub - 1
@@ -147,7 +142,7 @@ def generate_loop_candidates(loops, config, stage):
 
     # Generate Cartesian product
     sample_loops = list(itertools.product(*sample_list))
-    sample_loops = [list(tup) for tup in sample_loops]
+    sample_loops = [list(tup) for tup in sample_loops]    
 
     return sample_loops
 
@@ -570,7 +565,7 @@ def explore_simd_vectorization(config):
                 return
         loops = tuning['simd']['tilable_loops']
         # Filter the SIMD loops
-        loops = simd_loop_filter(loops, tuning)
+        loops = simd_loop_filter(loops, tuning)             
         loops_pool = generate_loop_candidates(
             loops, config, "SIMD_vectorization")
 
@@ -1158,7 +1153,7 @@ def get_sample_policy(mode, n_random=2):
 
     return ret
 
-def print_best_design(opt_design):
+def print_best_design(opt_design, hw_info=None):
     """ Pretty print the best design.
 
     Parameters
@@ -1179,15 +1174,35 @@ def print_best_design(opt_design):
     )    
     
     if 'FF' in opt_design['resource']:
-        ret += f"\tFF: {int(opt_design['resource']['FF'])}\n"
+        ret += f"\tFF: {int(opt_design['resource']['FF'])}"
+        if hw_info:
+            ratio = float(opt_design['resource']['FF']) / hw_info['FF']
+            ret += f" ({ratio:.2f})"
+        ret += "\n"
     if 'LUT' in opt_design['resource']:        
-        ret += f"\tLUT: {int(opt_design['resource']['LUT'])}\n"
+        ret += f"\tLUT: {int(opt_design['resource']['LUT'])}"
+        if hw_info:
+            ratio = float(opt_design['resource']['LUT']) / hw_info['LUT']
+            ret += f" ({ratio:.2f})"
+        ret += "\n"
     if 'BRAM18K' in opt_design['resource']:
-        ret += f"\tBRAM18K: {int(opt_design['resource']['BRAM18K'])}\n"
+        ret += f"\tBRAM18K: {int(opt_design['resource']['BRAM18K'])}"
+        if hw_info:
+            ratio = float(opt_design['resource']['BRAM18K']) / hw_info['BRAM18K']
+            ret += f" ({ratio:.2f})"
+        ret += "\n"
     if 'URAM' in opt_design['resource']:
-        ret += f"\tURAM: {int(opt_design['resource']['URAM'])}\n"
+        ret += f"\tURAM: {int(opt_design['resource']['URAM'])}"
+        if hw_info:
+            ratio = float(opt_design['resource']['URAM']) / hw_info['URAM']
+            ret += f" ({ratio:.2f})"
+        ret += "\n"
     if 'DSP' in opt_design['resource']:
-        ret += f"\tDSP: {int(opt_design['resource']['DSP'])}\n"
+        ret += f"\tDSP: {int(opt_design['resource']['DSP'])}"
+        if hw_info:
+            ratio = float(opt_design['resource']['DSP']) / hw_info['DSP']
+            ret += f" ({ratio:.2f})"
+        ret += "\n"
     ret += f"============================="
 
     return ret
@@ -1239,7 +1254,7 @@ def search_xilinx(config):
         while n_trial < config['setting'][config['mode']]['pruning']['random_start']['n_trial']:
             config['logger'].info(f'Run random search to warm up... [{n_trial + 1}/{config["setting"][config["mode"]]["pruning"]["random_start"]["n_trial"]}]')
             explore_design_space(config)            
-            config['logger'].info(print_best_design(config['search_results']['opt']))
+            config['logger'].info(print_best_design(config['search_results']['opt'], config['hw_info']))
             n_trial += 1                        
         config['setting'][config['mode']]['sample'] = user_policy    
 
@@ -1263,7 +1278,7 @@ def search_xilinx(config):
         explore_design_space(config)
 
     # Print out the best design
-    config['logger'].info(print_best_design(config['search_results']['opt']))
+    config['logger'].info(print_best_design(config['search_results']['opt'], config['hw_info']))
     # Store the tuning log        
     tmp_dir = config['tmp_dir']
     log_path = f'{tmp_dir}/optimizer/search/DSE.log'

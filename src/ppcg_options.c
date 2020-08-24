@@ -116,6 +116,8 @@ ISL_ARG_BOOL(struct autosa_options, loop_infinitize, 0, "loop-infinitize", 0,
 			 "apply loop infinitization optimization (Intel OpenCL only)")
 ISL_ARG_BOOL(struct autosa_options, local_reduce, 0, "local-reduce", 0,
 			 "generate non-output-stationary array with local reduction")
+ISL_ARG_BOOL(struct autosa_options, lower_int_io_L1_buffer, 0, "lower-int-io-L1-buffer", 0,
+			 "lower the L1 buffer for interior I/O modules")
 ISL_ARG_STR(struct autosa_options, reduce_op, 0, "reduce-op", "op",
 			NULL, "reduction operator (must be used with local-reduce together)")
 ISL_ARG_BOOL(struct autosa_options, non_block_fifo, 0, "non-blocking-fifo", 0,
