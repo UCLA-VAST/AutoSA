@@ -1212,6 +1212,36 @@ static __isl_give isl_printer *print_trans_stmt_coalesce(
   return p;
 }
 
+static __isl_give isl_union_set *compute_io_group_access_domain(
+  __isl_keep isl_schedule_node *node,
+  struct autosa_array_ref_group *group,
+  struct autosa_kernel *kernel,
+  int read
+){
+  isl_union_map *group_access;
+  isl_union_set *group_domain;
+  isl_union_map *prefix;
+  isl_schedule_node *node_tmp;
+
+  node_tmp = isl_schedule_node_copy(node);
+  node_tmp = autosa_tree_move_up_to_kernel(node_tmp);
+  group_access = autosa_io_group_access_relation(group, kernel, read, !read);  
+  /* Remove the local accesses below the array level. */
+  node_tmp = autosa_tree_move_down_to_array(node_tmp, kernel->core);
+  prefix = isl_schedule_node_get_prefix_schedule_relation(node_tmp);
+  prefix = isl_union_map_preimage_domain_union_pw_multi_aff(prefix,
+                                                            isl_union_pw_multi_aff_copy(kernel->contraction));
+  if (group->local_array->array_type == AUTOSA_INT_ARRAY)
+    group_access = remove_local_accesses_group_flow(kernel, group, group_access, prefix, read);  
+  isl_union_map_free(prefix);
+  isl_schedule_node_free(node_tmp);
+
+  group_domain = isl_union_map_domain(group_access);
+  group_domain = isl_union_set_coalesce(group_domain);
+
+  return group_domain;  
+}
+
 /* Compute the iteration domain used by the io_group and add the 
  * domain as a filter at the top of the schedule tree.
  */
@@ -1221,38 +1251,76 @@ static __isl_give isl_schedule_node *insert_io_group_access_domain(
   struct autosa_kernel *kernel,
   int read)
 {
-  isl_union_map *group_access;
   isl_union_set *group_domain;
-  isl_union_map *prefix;
-  isl_schedule_node *node_tmp;
-
-  node_tmp = isl_schedule_node_copy(node);
-  node_tmp = autosa_tree_move_up_to_kernel(node_tmp);
-  group_access = autosa_io_group_access_relation(group, kernel, read, !read);  
-  /* Remove the local accesses below the array level. */
-  node_tmp = autosa_tree_move_down_to_array(node_tmp, kernel->core);
-  prefix = isl_schedule_node_get_prefix_schedule_relation(node_tmp);
-  prefix = isl_union_map_preimage_domain_union_pw_multi_aff(prefix,
-                                                            isl_union_pw_multi_aff_copy(kernel->contraction));
-  if (group->local_array->array_type == AUTOSA_INT_ARRAY)
-    group_access = remove_local_accesses_group_flow(kernel, group, group_access, prefix, read);  
-  isl_union_map_free(prefix);
-  isl_schedule_node_free(node_tmp);
-
-  group_domain = isl_union_map_domain(group_access);
-  group_domain = isl_union_set_coalesce(group_domain);
-  
-  /* Add the group domain as the filter. */  
-  node = isl_schedule_node_insert_filter(node, group_domain);  
-
+  group_domain = compute_io_group_access_domain(node, group, kernel, read);
+  node = isl_schedule_node_insert_filter(node, group_domain);
   return node;
+
+//  isl_union_map *group_access;
+//  isl_union_set *group_domain;
+//  isl_union_map *prefix;
+//  isl_schedule_node *node_tmp;
+//
+//  node_tmp = isl_schedule_node_copy(node);
+//  node_tmp = autosa_tree_move_up_to_kernel(node_tmp);
+//  group_access = autosa_io_group_access_relation(group, kernel, read, !read);  
+//  /* Remove the local accesses below the array level. */
+//  node_tmp = autosa_tree_move_down_to_array(node_tmp, kernel->core);
+//  prefix = isl_schedule_node_get_prefix_schedule_relation(node_tmp);
+//  prefix = isl_union_map_preimage_domain_union_pw_multi_aff(prefix,
+//                                                            isl_union_pw_multi_aff_copy(kernel->contraction));
+//  if (group->local_array->array_type == AUTOSA_INT_ARRAY)
+//    group_access = remove_local_accesses_group_flow(kernel, group, group_access, prefix, read);  
+//  isl_union_map_free(prefix);
+//  isl_schedule_node_free(node_tmp);
+//
+//  group_domain = isl_union_map_domain(group_access);
+//  group_domain = isl_union_set_coalesce(group_domain);
+//  /* Add the group domain as the filter. */   
+//  node = isl_schedule_node_insert_filter(node, group_domain);
+//
+//  return node;
 }
 
-static __isl_give isl_schedule_node *insert_io_group_access_domain_universe(
-  __isl_take isl_schedule_node *node, 
+//static __isl_give isl_schedule_node *insert_io_group_access_domain_universe(
+//  __isl_take isl_schedule_node *node, 
+//  struct autosa_array_ref_group *group,
+//  struct autosa_kernel *kernel,
+//  int read)
+//{
+//  isl_union_map *group_access;
+//  isl_union_set *group_domain;
+//  isl_union_map *prefix;
+//  isl_schedule_node *node_tmp;
+//
+//  node_tmp = isl_schedule_node_copy(node);
+//  node_tmp = autosa_tree_move_up_to_kernel(node_tmp);
+//  group_access = autosa_io_group_access_relation(group, kernel, read, !read);  
+//  /* Remove the local accesses below the array level. */
+//  node_tmp = autosa_tree_move_down_to_array(node_tmp, kernel->core);
+//  prefix = isl_schedule_node_get_prefix_schedule_relation(node_tmp);
+//  prefix = isl_union_map_preimage_domain_union_pw_multi_aff(prefix,
+//                                                            isl_union_pw_multi_aff_copy(kernel->contraction));
+//  if (group->local_array->array_type == AUTOSA_INT_ARRAY)
+//    group_access = remove_local_accesses_group_flow(kernel, group, group_access, prefix, read);  
+//  isl_union_map_free(prefix);
+//  isl_schedule_node_free(node_tmp);
+//
+//  group_domain = isl_union_map_domain(group_access);
+//  group_domain = isl_union_set_coalesce(group_domain);
+//  group_domain = isl_union_set_universe(group_domain);
+//  
+//  /* Add the group domain as the filter. */  
+//  node = isl_schedule_node_insert_filter(node, group_domain);  
+//
+//  return node;
+//}
+
+static __isl_give isl_union_set *compute_io_group_access_domain_local_reduce(
+  __isl_keep isl_schedule_node *node,
   struct autosa_array_ref_group *group,
   struct autosa_kernel *kernel,
-  int read)
+  int read, int io_group, int drain_group)
 {
   isl_union_map *group_access;
   isl_union_set *group_domain;
@@ -1260,26 +1328,33 @@ static __isl_give isl_schedule_node *insert_io_group_access_domain_universe(
   isl_schedule_node *node_tmp;
 
   node_tmp = isl_schedule_node_copy(node);
-  node_tmp = autosa_tree_move_up_to_kernel(node_tmp);
-  group_access = autosa_io_group_access_relation(group, kernel, read, !read);  
-  /* Remove the local accesses below the array level. */
-  node_tmp = autosa_tree_move_down_to_array(node_tmp, kernel->core);
-  prefix = isl_schedule_node_get_prefix_schedule_relation(node_tmp);
-  prefix = isl_union_map_preimage_domain_union_pw_multi_aff(prefix,
-                                                            isl_union_pw_multi_aff_copy(kernel->contraction));
-  if (group->local_array->array_type == AUTOSA_INT_ARRAY)
-    group_access = remove_local_accesses_group_flow(kernel, group, group_access, prefix, read);  
-  isl_union_map_free(prefix);
+  group_access = isl_union_map_empty(isl_map_get_space(group->access));
+
+  if (io_group) {
+    struct autosa_array_ref_group *cur_group = group;
+    group_access = isl_union_map_union(group_access,
+                                       autosa_io_group_access_relation(cur_group, kernel, read, !read));  
+    /* Remove the local accesses below the array level. */  
+    node_tmp = autosa_tree_move_up_to_kernel(node_tmp);  
+    node_tmp = autosa_tree_move_down_to_array(node_tmp, kernel->core);
+    prefix = isl_schedule_node_get_prefix_schedule_relation(node_tmp);
+    prefix = isl_union_map_preimage_domain_union_pw_multi_aff(prefix,
+                                                              isl_union_pw_multi_aff_copy(kernel->contraction));
+    if (group->local_array->array_type == AUTOSA_INT_ARRAY)
+      group_access = remove_local_accesses_group_flow(kernel, cur_group, group_access, prefix, read);  
+    isl_union_map_free(prefix);                                                                
+  }
+  if (drain_group) {
+    struct autosa_array_ref_group *cur_group = group->attached_drain_group;
+    group_access = isl_union_map_union(group_access,
+                                       autosa_io_group_access_relation(cur_group, kernel, read, !read));
+  }
   isl_schedule_node_free(node_tmp);
 
   group_domain = isl_union_map_domain(group_access);
   group_domain = isl_union_set_coalesce(group_domain);
-  group_domain = isl_union_set_universe(group_domain);
-  
-  /* Add the group domain as the filter. */  
-  node = isl_schedule_node_insert_filter(node, group_domain);  
 
-  return node;
+  return group_domain;  
 }
 
 /* Compute the iteration domain used by the io_group and add the 
@@ -1293,90 +1368,54 @@ static __isl_give isl_schedule_node *insert_io_group_access_domain_local_reduce(
   struct autosa_kernel *kernel,
   int read, int io_group, int drain_group)
 {
-  isl_union_map *group_access;
   isl_union_set *group_domain;
-  isl_union_map *prefix;
-  isl_schedule_node *node_tmp;
-
-  node_tmp = isl_schedule_node_copy(node);
-  group_access = isl_union_map_empty(isl_map_get_space(group->access));
-
-  if (io_group) {
-    struct autosa_array_ref_group *cur_group = group;
-    group_access = isl_union_map_union(group_access,
-                                       autosa_io_group_access_relation(cur_group, kernel, read, !read));  
-    /* Remove the local accesses below the array level. */  
-    node_tmp = autosa_tree_move_up_to_kernel(node_tmp);  
-    node_tmp = autosa_tree_move_down_to_array(node_tmp, kernel->core);
-    prefix = isl_schedule_node_get_prefix_schedule_relation(node_tmp);
-    prefix = isl_union_map_preimage_domain_union_pw_multi_aff(prefix,
-                                                              isl_union_pw_multi_aff_copy(kernel->contraction));
-    if (group->local_array->array_type == AUTOSA_INT_ARRAY)
-      group_access = remove_local_accesses_group_flow(kernel, cur_group, group_access, prefix, read);  
-    isl_union_map_free(prefix);                                                                
-  }
-  if (drain_group) {
-    struct autosa_array_ref_group *cur_group = group->attached_drain_group;
-    group_access = isl_union_map_union(group_access,
-                                       autosa_io_group_access_relation(cur_group, kernel, read, !read));
-  }
-  isl_schedule_node_free(node_tmp);
-
-  group_domain = isl_union_map_domain(group_access);
-  group_domain = isl_union_set_coalesce(group_domain);
-  /* Add the group domain as the filter. */  
+  group_domain = compute_io_group_access_domain_local_reduce(node, group, kernel, read, io_group, drain_group);
   node = isl_schedule_node_insert_filter(node, group_domain);  
-
   return node;
-}
 
-/* Compute the iteration domain used by the io_group and add the 
- * domain as a filter at the top of the schedule tree.
- * If io_group is one, consider io_group domain.
- * If drain_group is one, consider the attached drain group domain.
- */
-static __isl_give isl_schedule_node *insert_io_group_access_domain_local_reduce_universe(
-  __isl_take isl_schedule_node *node, 
-  struct autosa_array_ref_group *group,
-  struct autosa_kernel *kernel,
-  int read, int io_group, int drain_group)
-{
-  isl_union_map *group_access;
-  isl_union_set *group_domain;
-  isl_union_map *prefix;
-  isl_schedule_node *node_tmp;
+//  isl_union_map *group_access;
+//  isl_union_set *group_domain;
+//  isl_union_map *prefix;
+//  isl_schedule_node *node_tmp;
+//
+//  node_tmp = isl_schedule_node_copy(node);
+//  group_access = isl_union_map_empty(isl_map_get_space(group->access));
+//
+//  if (io_group) {
+//    struct autosa_array_ref_group *cur_group = group;
+//    group_access = isl_union_map_union(group_access,
+//                                       autosa_io_group_access_relation(cur_group, kernel, read, !read));  
+//    /* Remove the local accesses below the array level. */  
+//    node_tmp = autosa_tree_move_up_to_kernel(node_tmp);  
+//    node_tmp = autosa_tree_move_down_to_array(node_tmp, kernel->core);
+//    prefix = isl_schedule_node_get_prefix_schedule_relation(node_tmp);
+//    prefix = isl_union_map_preimage_domain_union_pw_multi_aff(prefix,
+//                                                              isl_union_pw_multi_aff_copy(kernel->contraction));
+//    if (group->local_array->array_type == AUTOSA_INT_ARRAY)
+//      group_access = remove_local_accesses_group_flow(kernel, cur_group, group_access, prefix, read);  
+//    isl_union_map_free(prefix);                                                                
+//  }
+//  if (drain_group) {
+//    struct autosa_array_ref_group *cur_group = group->attached_drain_group;
+//    group_access = isl_union_map_union(group_access,
+//                                       autosa_io_group_access_relation(cur_group, kernel, read, !read));
+//  }
+//  isl_schedule_node_free(node_tmp);
+//
+//  group_domain = isl_union_map_domain(group_access);
+//  group_domain = isl_union_set_coalesce(group_domain);
+//  /* Add the group domain as the filter. */  
+//  /* Temporary hack for LU: if the array_part_w is 0, insert the filter under the PE mark. */
+//  //if (kernel->array_part_w == 0) {
+//  //  node = isl_schedule_node_insert_filter(node, isl_union_set_universe(isl_union_set_copy(group_domain)));
+//  //  node = autosa_tree_move_down_to_pe(node, kernel->core);
+//  //  node = isl_schedule_node_insert_filter(node, group_domain);
+//  //} else {
+//  //  node = isl_schedule_node_insert_filter(node, group_domain);  
+//  //}
+//  node = isl_schedule_node_insert_filter(node, group_domain);  
 
-  node_tmp = isl_schedule_node_copy(node);
-  group_access = isl_union_map_empty(isl_map_get_space(group->access));
-
-  if (io_group) {
-    struct autosa_array_ref_group *cur_group = group;
-    group_access = isl_union_map_union(group_access,
-                                       autosa_io_group_access_relation(cur_group, kernel, read, !read));  
-    /* Remove the local accesses below the array level. */  
-    node_tmp = autosa_tree_move_up_to_kernel(node_tmp);  
-    node_tmp = autosa_tree_move_down_to_array(node_tmp, kernel->core);
-    prefix = isl_schedule_node_get_prefix_schedule_relation(node_tmp);
-    prefix = isl_union_map_preimage_domain_union_pw_multi_aff(prefix,
-                                                              isl_union_pw_multi_aff_copy(kernel->contraction));
-    if (group->local_array->array_type == AUTOSA_INT_ARRAY)
-      group_access = remove_local_accesses_group_flow(kernel, cur_group, group_access, prefix, read);  
-    isl_union_map_free(prefix);                                                                
-  }
-  if (drain_group) {
-    struct autosa_array_ref_group *cur_group = group->attached_drain_group;
-    group_access = isl_union_map_union(group_access,
-                                       autosa_io_group_access_relation(cur_group, kernel, read, !read));
-  }
-  isl_schedule_node_free(node_tmp);
-
-  group_domain = isl_union_map_domain(group_access);
-  group_domain = isl_union_set_coalesce(group_domain);
-  group_domain = isl_union_set_universe(group_domain);
-  /* Add the group domain as the filter. */  
-  node = isl_schedule_node_insert_filter(node, group_domain);  
-
-  return node;
+//  return node;
 }
 
 /* Insert a filter node that filters the valid access domain of the current
@@ -1398,6 +1437,24 @@ __isl_give isl_schedule_node *insert_io_group_domain(
   node = autosa_tree_move_up_to_kernel(node);
 
   return node;
+}
+
+static __isl_give isl_union_set *compute_io_group_domain(
+  __isl_keep isl_schedule_node *node, 
+  struct autosa_array_ref_group *group,
+  struct autosa_kernel *kernel,
+  struct autosa_gen *gen,
+  int read)
+{
+  isl_union_set *domain;
+  node = autosa_tree_move_down_to_kernel(isl_schedule_node_copy(node));
+  if (gen->options->autosa->local_reduce && group->attached_drain_group)
+    domain = compute_io_group_access_domain_local_reduce(node, group, kernel, read, 1, 1);
+  else
+    domain = compute_io_group_access_domain(node, group, kernel, read);
+  isl_schedule_node_free(node);
+
+  return domain;
 }
 
 static __isl_give isl_schedule_node *insert_io_stmts_acc(
@@ -1536,8 +1593,10 @@ static __isl_give isl_schedule_node *insert_filter_trans_stmts(
     node = isl_schedule_node_cut(node);
     node = isl_schedule_node_insert_filter(node, empty_filter);
   } else {
-    //node = autosa_tree_move_down_to_io_mark(node, group_core, buf->level);
-    //node = isl_schedule_node_child(node, 0);
+    if (io_level != buf->level) {
+      node = autosa_tree_move_down_to_io_mark(node, group_core, buf->level);
+      node = isl_schedule_node_child(node, 0);
+    }
     p = isl_printer_to_str(ctx);
     p = print_io_trans_stmt_prefix(
           p, read, module->to_mem, gen->options->autosa->host_serialize, boundary, 0, NULL,
@@ -1562,7 +1621,8 @@ static __isl_give isl_schedule_node *insert_filter_trans_stmts(
   //node = isl_schedule_node_child(node, 0); // sequence
   //node = isl_schedule_node_child(node, 0); // filter
   //node = isl_schedule_node_child(node, 0); // filter
-  if (io_level > 1) {
+
+  if (io_level != buf->level) {
     node = autosa_tree_move_down_to_io_mark(node, group_core, buf->level);
     node = isl_schedule_node_child(node, 0);
   }
@@ -1652,6 +1712,10 @@ static __isl_give isl_schedule *generate_io_module_inter_trans(
   if (io_level > space_dim && boundary == 0) {
     return NULL;
   }
+
+//#ifdef _DEBUG
+//  std::cout << module->name << "_inter_trans" << std::endl;
+//#endif
 
   new_sched = isl_schedule_dup(sched);
   node = isl_schedule_get_root(new_sched);
@@ -1844,6 +1908,10 @@ static __isl_give isl_schedule *generate_io_module_intra_trans(
   isl_schedule_node *node_tmp;
   isl_union_set *group_core = NULL;
 
+//#ifdef _DEBUG
+//  std::cout << module->name << "_intra_trans" << std::endl;
+//#endif
+
   new_sched = isl_schedule_dup(sched);
   node = isl_schedule_get_root(new_sched);
   node = autosa_tree_move_down_to_kernel(node);
@@ -1853,6 +1921,10 @@ static __isl_give isl_schedule *generate_io_module_intra_trans(
   io_ids = ppcg_scop_generate_names(gen->prog->scop, n_io_ids, "p");  
   int upper_io_level = io_level + 1;
 
+//#ifdef _DEBUG
+//  DBGSCHDNODE(stdout, node, gen->ctx);
+//#endif
+
   /* Insert the group domain. */   
   node = isl_schedule_node_child(node, 0); // context
   node = isl_schedule_node_child(node, 0);
@@ -1861,7 +1933,8 @@ static __isl_give isl_schedule *generate_io_module_intra_trans(
   else
     node = insert_io_group_access_domain(node, group, kernel, read);  
   node = isl_schedule_node_child(node, 0);
-  group_core = isl_union_set_universe(isl_schedule_node_get_domain(node));  
+  group_core = isl_union_set_universe(isl_schedule_node_get_domain(node)); 
+  node = autosa_tree_move_up_to_kernel(node);
 
   /* Add the filters. */
   node = autosa_tree_move_down_to_array(node, kernel->core);
@@ -1953,6 +2026,19 @@ static __isl_give isl_schedule *generate_io_module_intra_trans(
   node = autosa_tree_move_up_to_kernel(node);
   node = isl_schedule_node_child(node, 0);
   node = isl_schedule_node_insert_mark(node, id);
+
+  /* Make the node atomic */
+  node = autosa_tree_move_down_to_pe(node, kernel->core);
+  node = autosa_atomic_ancestors(node);
+
+//#ifdef _DEBUG
+//  DBGSCHDNODE(stdout, node, isl_schedule_node_get_ctx(node));
+//  node = autosa_tree_move_down_to_pe(node, kernel->core);
+//  isl_union_set *domain_tmp = isl_schedule_node_get_domain(node);
+//  DBGUSET(stdout, domain_tmp, isl_schedule_node_get_ctx(node));
+//  if (isl_union_set_is_empty(domain_tmp))
+//    printf("it's empty\n");
+//#endif
 
   new_sched = isl_schedule_node_get_schedule(node);
   isl_schedule_node_free(node);
@@ -2050,6 +2136,10 @@ static __isl_give isl_schedule *generate_io_module_outer(
   if (io_level > space_dim && boundary == 0) {
     return NULL;
   }
+
+//#ifdef _DEBUG
+//  std::cout << module->name << "_outer" << std::endl;
+//#endif
 
   new_sched = isl_schedule_dup(sched);
   node = isl_schedule_get_root(new_sched);
@@ -3163,7 +3253,7 @@ static __isl_give struct autosa_hw_module *generate_io_module_by_type(
 //#ifdef _DEBUG
 //  printf("array_name: %s\n", group->array->name);
 //  printf("module name: %s\n", module->name);
-//  if (!strcmp(module->name, "A_IO_L1_in"))
+//  if (!strcmp(module->name, "A_IO_L2_in"))
 //    printf("here\n");
 //#endif
 
@@ -5104,7 +5194,8 @@ static isl_stat top_module_pe_gen(struct autosa_gen *gen,
 static __isl_give isl_schedule_node *io_gen_module_call(
     __isl_take isl_schedule_node *node, struct autosa_hw_module *module,
     struct autosa_kernel *kernel, struct autosa_array_ref_group *group,
-    int boundary, int serialize)
+    int boundary, int serialize,
+    __isl_take isl_union_set *filter_domain)
 {
   isl_printer *p_str;
   char *stmt_name;
@@ -5119,7 +5210,9 @@ static __isl_give isl_schedule_node *io_gen_module_call(
   isl_set *set;
   isl_map *map;
   isl_multi_union_pw_aff *mupa;
-  int lower_band_num = -1;
+  int lower_band_num = -1;  
+  isl_union_set *filter_range;
+  isl_bool upper_inserted;
 
 //#ifdef _DEBUG
 //  DBGSCHDNODE(stdout, node, isl_schedule_node_get_ctx(node));
@@ -5143,11 +5236,30 @@ static __isl_give isl_schedule_node *io_gen_module_call(
     }
   }
 
+//#ifdef _DEBUG
+//  DBGSCHDNODE(stdout, node, isl_schedule_node_get_ctx(node));
+//#endif
+
+  //node = isl_schedule_node_child(node, 0);
+  //node = isl_schedule_node_insert_filter(node, filter_domain);
+  //node = isl_schedule_node_child(node, 0);
+
   /* Graft an extension node for module call. */
-  prefix = isl_schedule_node_get_prefix_schedule_relation(node);
+  prefix = isl_schedule_node_get_prefix_schedule_relation(node);  
   prefix = isl_union_map_preimage_domain_union_pw_multi_aff(prefix,
                                                             isl_union_pw_multi_aff_copy(kernel->contraction));
-  domain = isl_union_map_range(prefix);
+  //filter_domain = isl_union_set_apply(filter_domain, isl_union_map_copy(prefix));  
+  domain = isl_union_map_range(isl_union_map_copy(prefix));
+  if (filter_domain) {
+    filter_range = isl_union_set_apply(isl_union_set_copy(filter_domain), isl_union_map_copy(prefix));
+    domain = isl_union_set_intersect(domain, filter_range);
+  }
+  isl_union_map_free(prefix);
+
+//#ifdef _DEBUG
+//  std::cout << module->name << std::endl;
+//  DBGUSET(stdout, domain, isl_union_set_get_ctx(domain));
+//#endif
 
   p_str = isl_printer_to_str(ctx);
   p_str = isl_printer_print_str(p_str, "module_call_upper.");
@@ -5224,7 +5336,17 @@ static __isl_give isl_schedule_node *io_gen_module_call(
     prefix = isl_schedule_node_get_prefix_schedule_relation(node);
     prefix = isl_union_map_preimage_domain_union_pw_multi_aff(prefix,
                                                               isl_union_pw_multi_aff_copy(kernel->contraction));
-    domain = isl_union_map_range(prefix);
+    domain = isl_union_map_range(isl_union_map_copy(prefix));
+    if (filter_domain) {
+      filter_range = isl_union_set_apply(isl_union_set_copy(filter_domain), isl_union_map_copy(prefix));    
+      domain = isl_union_set_intersect(domain, filter_range);     
+    }
+    isl_union_map_free(prefix);
+//#ifdef _DEBUG
+//    std::cout << module->name << std::endl;
+//    std::cout << lower_band_num << std::endl;
+//    DBGUSET(stdout, domain, isl_union_set_get_ctx(domain));
+//#endif
 
     p_str = isl_printer_to_str(ctx);
     p_str = isl_printer_print_str(p_str, "module_call_lower.");
@@ -5278,6 +5400,7 @@ static __isl_give isl_schedule_node *io_gen_module_call(
   node = isl_schedule_node_insert_filter(node, empty_filter);
 
   node = autosa_tree_move_up_to_kernel(node);
+  isl_union_set_free(filter_domain);
 
   return node;
 }
@@ -5489,20 +5612,60 @@ static isl_stat top_module_io_gen_module_call(
   int boundary = module->boundary;
   isl_union_set *boundary_filter, *non_boundary_filter;
   isl_union_set_list *boundary_filters;
+  isl_union_set *group_domain_filter;
+
+//#ifdef _DEBUG
+//  std::cout << "module name: " << module->name << std::endl;
+//  if (!strcmp(module->name, "L_drain_IO_L2_out")) 
+//    printf("here\n");
+//#endif
 
   /* Transform the schedule. */
   schedule = isl_schedule_dup(group->io_schedule);
   node = isl_schedule_get_root(schedule);
   isl_schedule_free(schedule);
 
+//#ifdef _DEBUG
+//  DBGSCHDNODE(stdout, node, isl_schedule_node_get_ctx(node));
+//#endif
+
+  /* Compute the union of domains of all the array references in the group. */
+  group_domain_filter = compute_io_group_domain(node, group, kernel, gen, module->in);
+  if (!module->in) {
+    group_domain_filter = isl_union_set_free(group_domain_filter);
+  }
+//#ifdef _DEBUG
+//  std::cout << module->name << std::endl;
+//  DBGUSET(stdout, group_domain_filter, isl_union_set_get_ctx(group_domain_filter));
+//#endif
+
   /* Delete the node above the array mark. */
   node = autosa_tree_move_down_to_array(node, kernel->core);
   node = isl_schedule_node_parent(node);
-  while (!autosa_tree_node_is_kernel(node))
-  {
+  //while (!autosa_tree_node_is_kernel(node))
+  //{
+  //  node = isl_schedule_node_delete(node);
+  //  node = isl_schedule_node_parent(node);
+  //}
+  while (!(autosa_tree_node_is_kernel(node) || isl_schedule_node_get_type(node) == isl_schedule_node_context)) {
     node = isl_schedule_node_delete(node);
     node = isl_schedule_node_parent(node);
   }
+
+  //node = autosa_tree_move_down_to_pe(node, kernel->core);
+  //if (gen->options->autosa->local_reduce && group->attached_drain_group)
+  //  node = insert_io_group_access_domain_local_reduce(node, group, kernel, module->in, 1, 1);
+  //else
+  //  node = insert_io_group_access_domain(node, group, kernel, module->in);
+  ///* Compute the union of domains of all the array refrences in the group. */
+  //node = autosa_tree_move_up_to_kernel(node);
+  //node = isl_schedule_node_child(node, 0); // context
+  //node = isl_schedule_node_child(node, 0);  
+  //if (gen->options->autosa->local_reduce && group->attached_drain_group)
+  //  node = insert_io_group_access_domain_local_reduce(node, group, kernel, module->in, 1, 1);
+  //else
+  //  node = insert_io_group_access_domain(node, group, kernel, module->in);  
+  node = autosa_tree_move_up_to_kernel(node);
 
   /* Collect the filter for the boundary and non-boundary I/O module. */
   if (boundary && (module->level <= group->space_dim))
@@ -5532,18 +5695,27 @@ static isl_stat top_module_io_gen_module_call(
   {
     node = isl_schedule_node_child(node, 0); // filter
     node = isl_schedule_node_child(node, 0); // band
+
+    //node = isl_schedule_node_insert_filter(node, isl_union_set_copy(group_domain_filter));
+    //node = isl_schedule_node_child(node, 0);
     /* non-boundary */
-    node = io_gen_module_call(node, module, kernel, group, 0, serialize);
+    node = io_gen_module_call(node, module, kernel, group, 0, serialize, isl_union_set_copy(group_domain_filter));
     node = autosa_tree_move_down_to_io_mark(node, kernel->core, module->level);
     node = isl_schedule_node_child(node, 0); // sequence
     node = isl_schedule_node_child(node, 1); // filter
     node = isl_schedule_node_child(node, 0); // band
+
+    //node = isl_schedule_node_insert_filter(node, isl_union_set_copy(group_domain_filter));
+    //node = isl_schedule_node_child(node, 0);
     /* boundary */
-    node = io_gen_module_call(node, module, kernel, group, 1, serialize);
+    node = io_gen_module_call(node, module, kernel, group, 1, serialize, isl_union_set_copy(group_domain_filter));
   }
   else 
   {
-    node = io_gen_module_call(node, module, kernel, group, boundary, serialize);
+    //node = isl_schedule_node_insert_filter(node, isl_union_set_copy(group_domain_filter));
+    //node = isl_schedule_node_child(node, 0);
+
+    node = io_gen_module_call(node, module, kernel, group, boundary, serialize, isl_union_set_copy(group_domain_filter));
   }
 
   /* Add module mark after the kernel mark.auto */
@@ -5551,8 +5723,13 @@ static isl_stat top_module_io_gen_module_call(
   node = isl_schedule_node_child(node, 0);
   node = isl_schedule_node_insert_mark(node, id);
 
+//#ifdef _DEBUG
+//  DBGSCHDNODE(stdout, node, isl_schedule_node_get_ctx(node));
+//#endif
+
   schedule = isl_schedule_node_get_schedule(node);
   isl_schedule_node_free(node);
+  isl_union_set_free(group_domain_filter);
 
   top->n_module_calls++;
   top->module_call_scheds = (isl_schedule **)realloc(top->module_call_scheds,
@@ -5791,7 +5968,7 @@ void generate_hw_modules(__isl_take isl_schedule *schedule,
   /* IO module */
   for (int i = 0; i < kernel->n_array; i++)
   {
-    struct autosa_local_array_info *info = &kernel->array[i];
+    struct autosa_local_array_info *info = &kernel->array[i];    
     info->n_io_group_refs = 0;
     for (int j = 0; j < info->n_io_group; j++)
     {
@@ -8813,6 +8990,10 @@ static __isl_give isl_ast_node *at_domain_module(__isl_take isl_ast_node *node,
   if (device_stmt)
     return create_domain_leaf_module(data->kernel, node, build, device_stmt);
 
+//#ifdef _DEBUG
+//  std::cout << name << std::endl;
+//#endif
+
   if (!prefixcmp(name, "to_device_") || !prefixcmp(name, "from_device_"))
     return node;
   if (!strcmp(name, "init_device"))
@@ -9732,10 +9913,17 @@ isl_stat sa_filter_buffer_io_module_generate_code(struct autosa_gen *gen,
 
   /* Generate AST for intra transfer function call. */
   schedule = module->intra_sched;  
+//#ifdef _DEBUG
+//  std::cout << module->name << "_intra_trans" << std::endl;
+//  DBGSCHD(stdout, schedule, isl_schedule_get_ctx(schedule));
+//#endif
   autosa_at_domain_data_init(&data, gen);
   tree = autosa_generate_ast_from_schedule(schedule, data, gen,
                                            module->double_buffer && gen->options->autosa->double_buffer_style == 0 ? "intra_c" : NULL);
   isl_ast_node_free(tree);
+//#ifdef _DEBUG
+//  DBGASTNODE(stdout, module->intra_tree, isl_ast_node_get_ctx(module->intra_tree));
+//#endif
 
   /* Generate AST for outer loop function call. */
   schedule = module->outer_sched;  
