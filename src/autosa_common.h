@@ -1100,6 +1100,7 @@ isl_bool is_flow_dep_carried_by_array_part_loops(__isl_keep isl_schedule *schedu
 __isl_give isl_schedule_node *reorder_band_by_dep_dis(__isl_take isl_schedule_node *node);
 __isl_give isl_schedule_node *sched_pos_setup(__isl_take isl_schedule_node *node);
 int get_band_single_schedule_val(__isl_keep isl_schedule_node *node);
+int get_last_sched_dim_val(__isl_keep isl_schedule_node *node);
 __isl_give isl_schedule_node *autosa_atomic_ancestors(__isl_take isl_schedule_node *node);
 int is_dep_carried_by_node(__isl_keep isl_basic_map *dep, __isl_keep isl_schedule_node *node);
 __isl_give isl_schedule_node *autosa_node_sink_to_depth(__isl_take isl_schedule_node *node, int depth);

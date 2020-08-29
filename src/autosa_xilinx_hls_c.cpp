@@ -189,6 +189,10 @@ static void hls_open_files(struct hls_info *info, const char *input)
   fprintf(info->kernel_h, "#include <hls_stream.h>\n");
   fprintf(info->kernel_h, "\n");
 
+  fprintf(info->kernel_h, "#define min(x,y) ((x < y) ? x : y)\n");
+  fprintf(info->kernel_h, "#define max(x,y) ((x > y) ? x : y)\n");
+  fprintf(info->kernel_h, "\n");
+
   free(file_path);
 }
 
@@ -1928,6 +1932,24 @@ static __isl_give isl_printer *print_module_header_xilinx(
     struct autosa_prog *prog, struct autosa_hw_module *module,
     int inter, int boundary)
 {
+  int n = isl_id_list_n_id(module->inst_ids);;
+  int first = 1;
+
+  if (n > 0) {
+    /* Print the index template */
+    p = isl_printer_start_line(p);
+    p = isl_printer_print_str(p, "template<");  
+    for (int i = 0; i < n; i++) {
+      if (!first)
+        p = isl_printer_print_str(p, ", ");
+      p = isl_printer_print_str(p, "int p");
+      p = isl_printer_print_int(p, i);    
+      first = 0;
+    }
+    p = isl_printer_print_str(p, ">");
+    p = isl_printer_end_line(p);
+  }
+
   p = isl_printer_start_line(p);
   p = isl_printer_print_str(p, "void ");
   p = isl_printer_print_str(p, module->name);
@@ -2385,7 +2407,7 @@ static __isl_give isl_printer *autosa_print_intra_trans_module(
   }
   p = isl_printer_indent(p, 2);
   p = print_str_new_line(p, "/* Variable Declaration */");
-  print_module_iterators(hls->kernel_c, module);
+  //print_module_iterators(hls->kernel_c, module);
   p = print_module_vars_xilinx(p, module, 0);
   p = print_str_new_line(p, "/* Variable Declaration */");
   p = isl_printer_end_line(p);
@@ -2461,7 +2483,7 @@ static __isl_give isl_printer *autosa_print_inter_trans_module(
   }
   p = isl_printer_indent(p, 2);
   p = print_str_new_line(p, "/* Variable Declaration */");
-  print_module_iterators(hls->kernel_c, module);
+  //print_module_iterators(hls->kernel_c, module);
   if (hls->target == XILINX_HW)
     p = print_module_vars_xilinx(p, module, 1);
   p = print_str_new_line(p, "/* Variable Declaration */");
@@ -2562,7 +2584,22 @@ static __isl_give isl_printer *print_module_core_header_xilinx(
     struct autosa_prog *prog, struct autosa_hw_module *module,
     int inter, int boundary, int serialize, int types)
 {
-  p = isl_printer_start_line(p);
+  int n = isl_id_list_n_id(module->inst_ids);
+  if (types && n > 0) {
+    /* Print the template */
+    p = isl_printer_start_line(p);
+    p = isl_printer_print_str(p, "template<");
+    for (int i = 0; i < n; i++) {
+      if (i > 0)
+        p = isl_printer_print_str(p, ", ");
+      p = isl_printer_print_str(p, "int p");
+      p = isl_printer_print_int(p, i);
+    }
+    p = isl_printer_print_str(p, ">");
+    p = isl_printer_end_line(p);
+  }
+
+  p = isl_printer_start_line(p);  
   if (types)
     p = isl_printer_print_str(p, "void ");
   p = isl_printer_print_str(p, module->name);
@@ -2574,10 +2611,28 @@ static __isl_give isl_printer *print_module_core_header_xilinx(
     p = isl_printer_print_str(p, "_boundary");
   if (serialize)
     p = isl_printer_print_str(p, "_serialize");
+  if (!types && n > 0) {
+    p = isl_printer_print_str(p, "<");
+    for (int i = 0; i < n; i++) {
+      if (i > 0)
+        p = isl_printer_print_str(p, ", ");
+      p = isl_printer_print_str(p, "p");
+      p = isl_printer_print_int(p, i);
+    }
+    p = isl_printer_print_str(p, ">");
+  }
   p = isl_printer_print_str(p, "(");
+  if (!types) {
+    p = isl_printer_end_line(p);
+    p = isl_printer_indent(p, 2);
+    p = isl_printer_start_line(p);  
+  }
   p = print_module_arguments(p, prog, module->kernel, module, types,
-                             XILINX_HW, inter, -1, boundary, serialize);
+                             XILINX_HW, inter, -1, boundary, serialize);                             
   p = isl_printer_print_str(p, ")");
+  if (!types) {
+    p = isl_printer_indent(p, -2);
+  }
 
   return p;
 }
@@ -2597,6 +2652,20 @@ static __isl_give isl_printer *print_module_wrapper_header_xilinx(
     struct autosa_prog *prog, struct autosa_hw_module *module,
     int inter, int boundary)
 {
+  int n = isl_id_list_n_id(module->inst_ids);
+  if (n > 0) {
+    p = isl_printer_start_line(p);
+    p = isl_printer_print_str(p, "template<");
+    for (int i = 0; i < n; i++) {
+      if (i > 0)
+        p = isl_printer_print_str(p, ", ");
+      p = isl_printer_print_str(p, "int p");
+      p = isl_printer_print_int(p, i);        
+    }
+    p = isl_printer_print_str(p, ">");
+    p = isl_printer_end_line(p);
+  }
+
   p = isl_printer_start_line(p);
   p = isl_printer_print_str(p, "void ");
   p = isl_printer_print_str(p, module->name);
@@ -2922,7 +2991,7 @@ static __isl_give isl_printer *autosa_print_serialize_module(
   fprintf(hls->kernel_c, "#pragma HLS INLINE OFF\n");  
   p = isl_printer_indent(p, 2);
   p = print_str_new_line(p, "/* Variable Declaration */");
-  print_module_iterators(hls->kernel_c, module);    
+  //print_module_iterators(hls->kernel_c, module);    
   p = print_str_new_line(p, "/* Variable Declaration */");
   p = isl_printer_end_line(p);
 
@@ -2976,7 +3045,7 @@ static __isl_give isl_printer *autosa_print_default_module(
     fprintf(hls->kernel_c, "#pragma HLS INLINE\n");
   p = isl_printer_indent(p, 2);
   p = print_str_new_line(p, "/* Variable Declaration */");
-  print_module_iterators(hls->kernel_c, module);  
+  //print_module_iterators(hls->kernel_c, module);  
   p = print_module_vars_xilinx(p, module, -1);  
   p = print_str_new_line(p, "/* Variable Declaration */");
   p = isl_printer_end_line(p);
@@ -3085,6 +3154,7 @@ static __isl_give isl_printer *print_pe_dummy_module_core_header_xilinx(
     p = isl_printer_print_str(p, "drain");
   }
   p = isl_printer_print_str(p, "_PE_dummy");
+  p = isl_printer_print_str(p, module->in? "_in" : "_out");
   p = isl_printer_print_str(p, "(");
   p = print_pe_dummy_module_arguments(p, prog, module->module->kernel,
                                       module, types, XILINX_HW);
@@ -3125,7 +3195,9 @@ static __isl_give isl_printer *print_pe_dummy_module_wrapper_header_xilinx(
     p = isl_printer_print_str(p, "_");
     p = isl_printer_print_str(p, "drain");
   }
-  p = isl_printer_print_str(p, "_PE_dummy_wrapper");
+  p = isl_printer_print_str(p, "_PE_dummy");
+  p = isl_printer_print_str(p, module->in? "_in": "_out");
+  p = isl_printer_print_str(p, "_wrapper");
   p = isl_printer_print_str(p, "(");
   p = print_pe_dummy_module_arguments(p, prog, module->module->kernel,
                                       module, 1, XILINX_HW);
@@ -3185,7 +3257,7 @@ static __isl_give isl_printer *autosa_print_default_pe_dummy_module(
 
   p = isl_printer_indent(p, 2);
   p = print_str_new_line(p, "/* Variable Declaration */");    
-  print_module_iterators(hls->kernel_c, module);
+  //print_module_iterators(hls->kernel_c, module);
   p = print_str_new_line(p, "/* Variable Declaration */");
 
   p = isl_printer_end_line(p);
@@ -3268,7 +3340,7 @@ static __isl_give isl_printer *print_double_buffer_module_vars_while(
   struct print_db_module_while_data *data)
 {
   /* Inst ids */
-  print_module_iterators(hls->kernel_c, module);
+  //print_module_iterators(hls->kernel_c, module);
   /* Local buffer */
   for (int i = 0; i < module->n_var; i++) {
     struct autosa_kernel_var *var = &module->var[i];
@@ -4387,6 +4459,7 @@ static void print_top_gen_host_code(
         isl_printer *p_str = isl_printer_to_str(ctx);
         p_str = autosa_array_ref_group_print_prefix(group, p_str);
         p_str = isl_printer_print_str(p_str, "_PE_dummy");
+        p_str = isl_printer_print_str(p_str, dummy_module->in? "_in" : "_out");
         module_name = isl_printer_get_str(p_str);
         isl_printer_free(p_str);
 

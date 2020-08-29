@@ -1542,6 +1542,31 @@ int get_band_single_schedule_val(__isl_keep isl_schedule_node *node)
   }
 }
 
+/* Compute the prefix schedule of the current node and check if the last 
+ * schedule dimension only contains single values. If so, return the value.
+ */
+int get_last_sched_dim_val(__isl_keep isl_schedule_node *node)
+{
+  isl_union_map *prefix;
+  isl_set *range;
+
+  prefix = isl_schedule_node_get_prefix_schedule_relation(node);
+  range = isl_set_from_union_set(isl_union_map_range(prefix));
+  range = isl_set_project_out(range, isl_dim_set, 0, isl_set_dim(range, isl_dim_set) - 1);
+  if (isl_set_is_singleton(range)) {
+    isl_val *val;
+    int ret;
+    val = isl_set_plain_get_val_if_fixed(range, isl_dim_set, 0);
+    ret = isl_val_get_num_si(val);
+    isl_set_free(range);
+    isl_val_free(val);
+    return ret;
+  } else {
+    isl_set_free(range);
+    return -1;
+  }
+}
+
 /* Mark all dimensions in the current band node atomic.
  */
 static __isl_give isl_schedule_node *atomic(__isl_take isl_schedule_node *node)

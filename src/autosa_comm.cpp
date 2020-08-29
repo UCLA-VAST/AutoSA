@@ -147,7 +147,7 @@ static struct autosa_array_ref_group *join_groups(
     struct autosa_array_ref_group *group1,
     struct autosa_array_ref_group *group2)
 {
-  int i;
+  int i, j;
   isl_ctx *ctx;
   struct autosa_array_ref_group *group;
 
@@ -165,15 +165,36 @@ static struct autosa_array_ref_group *join_groups(
   group->write = group1->write || group2->write;
   group->exact_write = group1->exact_write && group2->exact_write;
   group->slice = group1->slice || group2->slice;
-  group->n_ref = group1->n_ref + group2->n_ref;
+  //group->n_ref = group1->n_ref + group2->n_ref;
+  //group->refs = isl_alloc_array(ctx, struct autosa_stmt_access *,
+  //                              group->n_ref);
+  //if (!group->refs)
+  //  return autosa_array_ref_group_free(group);  
+  group->n_ref = group1->n_ref;
   group->refs = isl_alloc_array(ctx, struct autosa_stmt_access *,
                                 group->n_ref);
-  if (!group->refs)
+  if (!group->refs)                                     
     return autosa_array_ref_group_free(group);
   for (i = 0; i < group1->n_ref; ++i)
     group->refs[i] = group1->refs[i];
-  for (i = 0; i < group2->n_ref; ++i)
-    group->refs[group1->n_ref + i] = group2->refs[i];
+  /* Compare if the refs equals */      
+  for (i = 0; i < group2->n_ref; ++i) {
+    struct autosa_stmt_access *ref = group2->refs[i];
+    bool found = false;
+    for (j = 0; j < group1->n_ref; j++) {
+      if (isl_map_is_equal(ref->access, group1->refs[j]->access)) {
+        found = true;
+        break;
+      }
+    }
+    if (!found) {
+      group->n_ref++;
+      group->refs = (struct autosa_stmt_access **)realloc(group->refs,
+                        group->n_ref * sizeof(struct autosa_stmt_access *));
+      //group->refs[group1->n_ref + i] = group2->refs[i];
+      group->refs[group->n_ref - 1] = group2->refs[i];
+    }
+  }
 
   group->io_type = group1->io_type;
   group->dir = isl_vec_copy(group1->dir);
@@ -1125,6 +1146,10 @@ static __isl_give isl_schedule_node *io_cluster(
     ma = isl_multi_aff_set_aff(ma, i, aff);
   }
 
+//#ifdef _DEBUG
+//  DBGMUPA(stdout, mupa, isl_schedule_node_get_ctx(node));
+//  DBGMA(stdout, ma, isl_schedule_node_get_ctx(node));
+//#endif
   /* Apply the new transformation on the original partial schedule. */
   mupa = isl_multi_union_pw_aff_apply_multi_aff(mupa, isl_multi_aff_copy(ma));
   *io_trans_ma = ma;
@@ -1785,6 +1810,11 @@ static isl_stat compute_io_group_schedule(
   int space_dim;
   isl_schedule *schedule;
 
+//#ifdef _DEBUG
+//  if (!strcmp(group->array->name, "U_tmp"))
+//    printf("here\n");
+//#endif
+
   /* Sink to the space band */
   schedule = isl_schedule_dup(kernel->schedule);
   node = isl_schedule_get_root(schedule);
@@ -1817,9 +1847,9 @@ static isl_stat compute_io_group_schedule(
     isl_mat *mat;
 
     /* Perform space-time transformation on the current band. */
-    if (i == space_dim - 1 && group->io_type == AUTOSA_EXT_IO)
-    {
-      /* For I/O L1 modules with exterior I/O, we use the default I/O direction. */
+    //if (i == space_dim - 1 && group->io_type == AUTOSA_EXT_IO)
+    if (i == space_dim - 1)
+    {      
       dir = isl_vec_dup(group->dir);
     }
     else
@@ -1828,7 +1858,9 @@ static isl_stat compute_io_group_schedule(
       dir = isl_vec_zero(ctx, i + 1);
       dir = isl_vec_set_element_si(dir, 0, 1);
     }
-
+//#ifdef _DEBUG
+//    DBGVEC(stdout, dir, isl_schedule_node_get_ctx(node));
+//#endif
     node = io_cluster(node, dir, &io_trans_mat_i, &io_trans_ma_i);
     isl_vec_free(dir);
 
@@ -2009,6 +2041,14 @@ static isl_stat compute_io_group_schedule(
   group->io_schedule = isl_schedule_dup(sched);
   isl_schedule_free(sched);
   isl_schedule_node_free(node);
+
+//#ifdef _DEBUG
+//  if (!strcmp(group->array->name, "U_tmp") && group->nr == 1) {
+//    //printf("print here\n");
+//    //print_code(gen, group->io_L1_schedule, "U_tmp_1_tmp_code.c");
+//    DBGSCHD(stdout, group->io_L1_schedule, ctx);
+//  }
+//#endif
 
   return isl_stat_ok;
 }
@@ -3654,6 +3694,17 @@ static int group_array_references_io(struct autosa_kernel *kernel,
   for (i = 0; i < local->array->n_ref; i++)
   {    
     struct autosa_stmt_access *ref = local->array->refs[i];
+//#ifdef _DEBUG    
+//    if (!strcmp(local->array->name, "U_tmp")) {
+//      DBGMAP(stdout, ref->access, ctx);
+//      printf("n_io_info: %d\n", ref->n_io_info);
+//      for (int j = 0; j < ref->n_io_info; j++) {
+//        struct autosa_io_info *io_info = ref->io_info[j];
+//        DBGBMAP(stdout, io_info->dep->isl_dep, ctx);
+//        printf("%d\n", io_info->io_type);
+//      }
+//    }
+//#endif
     for (j = 0; j < ref->n_io_info; j++) {
       struct autosa_io_info *io_info = ref->io_info[j];
       if (io_info->dep->type == AUTOSA_DEP_RAW || io_info->dep->type == AUTOSA_DEP_RAR)

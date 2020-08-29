@@ -40,6 +40,14 @@
   p_debug = isl_printer_free(p_debug);                                 \
 }
 
+#define DBGSPACE(os, space, ctx)                                      {\
+  printf("%s(%d) Print space.\n", __FILE__, __LINE__);                 \
+  isl_printer *p_debug = isl_printer_to_file(ctx, os);                 \
+  p_debug = isl_printer_print_space(p_debug, space);                   \
+  p_debug = isl_printer_print_str(p_debug, "\n");                      \
+  p_debug = isl_printer_free(p_debug);                                 \
+}
+
 #define DBGUSET(os, uset, ctx)                                        {\
   printf("%s(%d) Print union_set.\n", __FILE__, __LINE__);             \
   isl_printer *p_debug = isl_printer_to_file(ctx, os);                 \

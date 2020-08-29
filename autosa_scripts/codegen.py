@@ -10,11 +10,16 @@ import numpy as np
 def delete_arg_from_arg_list(line, arg, content):
     """ Delete the argument from the argument list
 
-    Args:
-      line: codeline containing the argument list
-      arg: argument to be deleted
-      line_id: the current line id
-      content: the printed content before current line
+    Parameters
+    ----------
+    line: list
+        codeline containing the argument list
+    arg: list
+        argument to be deleted
+    line_id: int
+        the current line id
+    content: list
+        the printed content before current line
     """
     line = line.strip()
     # print(line)
@@ -26,16 +31,15 @@ def delete_arg_from_arg_list(line, arg, content):
         content[-1] = content[-1][:comma_pos] + '\n'
 
     """
-  line = re.sub(r'( )(' + re.escape(arg) + r')(,)',
-                '', line)
-  line = re.sub(r'( )(' + re.escape(arg) + r')(\))',
-                r'\g<3>', line)
-  line = re.sub(r'(\()(' + re.escape(arg) + r')(, )',
-                r'\g<1>', line)
-  line = re.sub(r'(\()(' + re.escape(arg) + r')(\))',
-                r'\g<1>\g<3>', line)
-  """
-
+    line = re.sub(r'( )(' + re.escape(arg) + r')(,)',
+                  '', line)
+    line = re.sub(r'( )(' + re.escape(arg) + r')(\))',
+                  r'\g<3>', line)
+    line = re.sub(r'(\()(' + re.escape(arg) + r')(, )',
+                  r'\g<1>', line)
+    line = re.sub(r'(\()(' + re.escape(arg) + r')(\))',
+                  r'\g<1>\g<3>', line)
+    """
 
 def print_module_def(
         f,
@@ -56,13 +60,20 @@ def print_module_def(
     will be modified to
       void A_IO_L3_in_[arg_map[idx]]()
 
-    Args:
-      f: file handle
-      arg_map: maps from module definition args to module call args
-      module_def: a list storing the module definition texts
-      inline_module_defs: a dict containing all the inline module definitions
-      def_args: a list storing the module definition arguments
-      call_args_type: a list storing the type of each module call arg
+    Parameters
+    ----------
+    f: 
+        file handle
+    arg_map: 
+        maps from module definition args to module call args
+    module_def: 
+        a list storing the module definition texts
+    inline_module_defs: 
+        a dict containing all the inline module definitions
+    def_args:
+        a list storing the module definition arguments
+    call_args_type: 
+        a list storing the type of each module call arg
     """
     # Print inline module definitions
     if inline_module_defs:
@@ -269,12 +280,18 @@ def generate_intel_kernel(
     This function plugs in the module definitions into each module call and replace
     index ids and fifo arguments.
 
-    Args:
-      kernel: the output file
-      headers: list containing the headers to be printed
-      module_defs: dict containing the module definitions
-      module_calls: list containing the module calls
-      fifo_decls: list containing the fifo declarations
+    Parameters
+    ----------
+    kernel: 
+        the output file
+    headers: 
+        list containing the headers to be printed
+    module_defs: 
+        dict containing the module definitions
+    module_calls: 
+        list containing the module calls
+    fifo_decls: 
+        list containing the fifo declarations
     """
     inline_module_defs = {}
     with open(kernel, 'w') as f:
@@ -398,8 +415,10 @@ def insert_xlnx_pragmas(lines):
     For "// hls_dependence.x", the position is the same with hls_pipeline.
     Insert "#pragma HLS DEPENDENCE variable=x inter false".
 
-    Args:
-      lines: contains the codelines of the program
+    Parameters
+    ----------
+    lines: 
+        contains the codelines of the program
     """
     # Handle hls_dependence
     handle_dep_pragma = 1
@@ -518,14 +537,14 @@ def index_simplify(matchobj):
         return str_expr
     expr = sympy.sympify(str_expr[1: len(str_expr) - 1])
     """
-  This will sometimes cause bugs due to the different semantics in C
-  E.g., x = 9, (x+3)/4 != x/4+3/4.
-  We could use cxxcode, but it will generate floating expressions which are
-  expensive on FPGA.
-  At present, we check if there is floor or ceil in the expression.
-  If so, we abort and use the original expression. Otherwise, we replace it
-  with the simplified one.
-  """
+    This will sometimes cause bugs due to the different semantics in C
+    E.g., x = 9, (x+3)/4 != x/4+3/4.
+    We could use cxxcode, but it will generate floating expressions which are
+    expensive on FPGA.
+    At present, we check if there is floor or ceil in the expression.
+    If so, we abort and use the original expression. Otherwise, we replace it
+    with the simplified one.
+    """
     expr = sympy.simplify(expr)
     new_str_expr = sympy.printing.ccode(expr)
 #  # We will try to replace floats with integers if values won't change
@@ -552,8 +571,10 @@ def simplify_expressions(lines):
 
     Use Sympy to simplify all the array index expressions in the program.
 
-    Args:
-      lines: contains the codelines of the program
+    Parameters
+    ----------
+    lines: 
+        contains the codelines of the program
     """
     code_len = len(lines)
     # Simplify array index expressions
@@ -570,7 +591,6 @@ def simplify_expressions(lines):
 
     return lines
 
-
 def shrink_bit_width(lines, target):
     """ Calculate the bitwidth of the iterator and shrink it to the proper size
 
@@ -580,9 +600,12 @@ def shrink_bit_width(lines, target):
     "/* UB: [...] */". The shallow bitwidth is calculated and replace the previous
     data type.
 
-    Args:
-      lines: contains the codelines of the program
-      target: xilinx|intel
+    Parameters
+    ----------
+    lines: 
+        contains the codelines of the program
+    target: 
+        xilinx|intel
     """
 
     code_len = len(lines)
@@ -637,15 +660,17 @@ def shrink_bit_width(lines, target):
     return lines
 
 
-def lify_split_buffers(lines):
+def lift_split_buffers(lines):
     """ Lift the split buffers in the program
 
     For each module, if we find any split buffers with the name "buf_data_split",
     we will lift them out of the for loops and put them in the variable declaration
     section at the beginning of the module.
 
-    Args:
-      lines: contains the codelines of the program
+    Parameters
+    ----------
+    lines: 
+        contains the codelines of the program
     """
     code_len = len(lines)
     for pos in range(code_len):
@@ -672,6 +697,170 @@ def lify_split_buffers(lines):
 
     return lines
 
+def build_dummy_module_def(group_name, fifo_type, module_in, PE_ids):
+    """ Build the definition of the dummy module
+
+    Parameters
+    ----------
+    group_name: str
+    fifo_type: str
+    module_in: int
+    PE_ids: list
+    """
+    dir_str = 'out' if module_in == 0 else 'in'
+    index_str = ['idx', 'idy', 'idz']
+    fifo_name = f'fifo_{group_name}_{dir_str}'
+
+    lines = []
+    lines.append('/* Module Definition */\n')
+    lines.append(f'void {group_name}_PE_dummy_{dir_str}(')
+    for pos in range(len(PE_ids)):
+        lines.append(f'int {index_str[pos]}, ')
+    lines.append(f'hls::stream<{fifo_type}> &{fifo_name}){{\n')
+    if module_in == 0:
+        lines.append(f'  if (!{fifo_name}.full())\n')
+        lines.append(f'    {fifo_name}.write(0);\n')
+    else:
+        lines.append(f'  {fifo_type} fifo_data = {fifo_name}.read();\n')
+    lines.append(f'}}\n')
+    lines.append(f'/* Module Definition */\n')
+
+    return lines
+
+def build_dummy_module_call(group_name, fifo_name, module_in, PE_ids):
+    """ Build the call of the dummy module
+
+    Parameters
+    ----------
+    group_name: str
+    fifo_name: str
+    module_in: int
+    PE_ids: list
+    """
+    dir_str = 'out' if module_in == 0 else 'in'
+
+    lines = []
+    lines.append('\n')
+    lines.append('  /* Module Call */\n')
+    lines.append(f'  {group_name}_PE_dummy_{dir_str}(\n')
+    for id in PE_ids:
+        lines.append(f'    /* module id */ {id},\n')
+    lines.append(f'    /* fifo */ {fifo_name}\n')    
+    lines.append(f'  );\n')
+    lines.append(f'  /* Module Call */\n')
+
+    return lines
+
+def insert_dummy_modules(def_lines, call_lines):
+    """ Insert the missing dummy modules
+
+    Collect the FIFO information of PEs (fifo_name, fifo_type). 
+    Delete those FIFOs that are connected to other modules.
+    Insert dummy modules for the rest of FIFOs.
+
+    Parameters
+    ----------
+    def_lines: list
+        Contains the codelines of the module definitions
+    call_lines: list
+        Contains the codelines of the module calls
+    """
+    PE_fifos = []
+    for line in def_lines:
+        if line.find('void PE_wrapper') != -1:
+            # Parse the argument list
+            m = re.search(r'\((.+?)\)', line)            
+            args = m.group(1).strip().split(',')            
+            for arg in args:
+                if arg.find('fifo') != -1:
+                    m = re.search(r'stream<(.+?)>', arg)
+                    fifo_type = m.group(1)
+                    fifo_name = arg.split('&')[-1]
+                    PE_fifos.append({'type': fifo_type, 'name': fifo_name})
+    #print(PE_fifos)
+    # Collect all used fifos
+    used_fifos = {}
+    kernel_start = 0
+    for line in call_lines:
+        if line.find('void kernel0') != -1:
+            kernel_start = 1
+        if kernel_start:
+            if line.find('* fifo *') != -1:                                                
+                fifo = line.strip().split('*')[2][2:]
+                if fifo[-1] == ',':
+                    fifo = fifo[:-1]
+                # Only process PE level fifos
+                if fifo.find('PE') == -1:
+                    continue
+                if fifo not in used_fifos:
+                    used_fifos[fifo] = -1
+                else:
+                    del used_fifos[fifo]                    
+    #print(used_fifos)
+    # Locate the fifo position
+    inside_module = False
+    inside_PE = False
+    fifo_pos = 0    
+    PE_call_start = -1
+    PE_call_end = -1
+    line_id = 0
+    for line in call_lines:
+        if line.find('Module Call') != -1:
+            inside_module = not inside_module
+            if inside_PE:
+                PE_call_end = line_id
+            inside_PE = False
+        if inside_module:
+            if line.find('PE_wrapper') != -1:
+                inside_PE = True
+                fifo_pos = 0
+                if PE_call_start == -1:
+                    PE_call_start = line_id - 1                
+            if inside_PE:
+                if line.find('fifo') != -1:
+                    for used_fifo in used_fifos:
+                        if line.find(used_fifo) != -1:
+                            used_fifos[used_fifo] = fifo_pos
+                    fifo_pos += 1
+        line_id += 1
+    #print(used_fifos)
+    # Insert the dummy module definitions
+    offset_line = 0
+    for used_fifo in used_fifos:
+        fifo_info = PE_fifos[used_fifos[used_fifo]]
+        # Extract the module direction
+        if fifo_info['name'].endswith('in'):
+            module_in = 0
+        else:
+            module_in = 1
+        # Extract the group name
+        if fifo_info['name'].endswith('in'):
+            group_name = fifo_info['name'][5:-3]
+        else:
+            group_name = fifo_info['name'][5:-4]
+        # Extract the PE ids
+        PE_ids = used_fifo[len(f'fifo_{group_name}_PE_'):].split('_')
+        #print(used_fifo, module_in, group_name, PE_ids)
+
+        # Build the dummy module definition
+        module_def = build_dummy_module_def(group_name, fifo_info['type'], module_in, PE_ids)
+        #print(module_def)        
+        def_lines += module_def
+        def_lines.append('\n')
+
+        # Build the dummy module call
+        module_call = build_dummy_module_call(group_name, used_fifo, module_in, PE_ids) # TODO
+        if module_in == 0:
+            for i in range(len(module_call)):
+                call_lines.insert(PE_call_start - 1 + i, module_call[i])
+            offset_line += len(module_call)
+        else:
+            for i in range(len(module_call)):
+                call_lines.insert(PE_call_end + 1 + offset_line + i, module_call[i])
+
+    #print(PE_call_start, PE_call_end)
+
+    return def_lines, call_lines
 
 def reorder_module_calls(lines):
     """ Reorder the module calls in the program
@@ -681,8 +870,10 @@ def reorder_module_calls(lines):
     is met.
     Reverse the list and print it.
 
-    Args:
-      lines: contains the codelines of the program
+    Parameters
+    ----------
+    lines: list
+        contains the codelines of the program
     """
 
     code_len = len(lines)
@@ -769,7 +960,6 @@ def reorder_module_calls(lines):
 
     return lines
 
-
 def xilinx_run(
         kernel_call,
         kernel_def,
@@ -779,16 +969,23 @@ def xilinx_run(
 
     We will copy the content of kernel definitions before the kernel calls.
 
-    Args:
-      kernel_call: file containing kernel calls
-      kernel_def: file containing kernel definitions
-      kernel: output kernel file
+    Parameters
+    ----------
+    kernel_call: 
+        file containing kernel calls
+    kernel_def: 
+        file containing kernel definitions
+    kernel: 
+        output kernel file
     """
 
     # Load kernel definition file
     lines = []
     with open(kernel_def, 'r') as f:
         lines = f.readlines()
+    call_lines = []
+    with open(kernel_call, 'r') as f:
+        call_lines = f.readlines()
 
     # Simplify the expressions
     lines = simplify_expressions(lines)
@@ -800,7 +997,10 @@ def xilinx_run(
     lines = insert_xlnx_pragmas(lines)
 
     # Lift the split_buffers
-    lines = lify_split_buffers(lines)
+    lines = lift_split_buffers(lines)
+
+    ## Insert missing dummy modules
+    #lines, call_lines = insert_dummy_modules(lines, call_lines)
 
     kernel = str(kernel)
     print("Please find the generated file: " + kernel)
@@ -818,12 +1018,16 @@ def xilinx_run(
 
         f.writelines(lines)
 
-        # Load kernel call file
-        with open(kernel_call, 'r') as f2:
-            lines = f2.readlines()
-            # Reorder module calls
-            lines = reorder_module_calls(lines)
-            f.writelines(lines)
+        # Reorder module calls
+        call_lines = reorder_module_calls(call_lines)
+        f.writelines(call_lines)
+
+        ## Load kernel call file
+        #with open(kernel_call, 'r') as f2:
+        #    lines = f2.readlines()
+        #    # Reorder module calls
+        #    lines = reorder_module_calls(lines)
+        #    f.writelines(lines)
 
 
 def insert_intel_pragmas(lines):
@@ -834,8 +1038,10 @@ def insert_intel_pragmas(lines):
     Insert "#pragma unroll" above the for loop.
     Replace the comments of "// hls_coalesce" with OpenCL pragma "#pragma loop_coalesce".
 
-    Args:
-      lines: contains the codelines of the program
+    Parameters
+    ----------
+    lines: 
+        contains the codelines of the program
     """
     code_len = len(lines)
     pos = 0
@@ -875,10 +1081,14 @@ def intel_run(
     We will extract all the fifo declarations and module calls.
     Then plug in the module definitions into each module call.
 
-    Args:
-      kernel_call: file containing kernel calls
-      kernel_def: file containing kernel definitions
-      kernel: output kernel file
+    Parameters
+    ----------
+    kernel_call: 
+        file containing kernel calls
+    kernel_def: 
+        file containing kernel definitions
+    kernel: 
+        output kernel file
     """
     # Load kernel call file
     module_calls = []
