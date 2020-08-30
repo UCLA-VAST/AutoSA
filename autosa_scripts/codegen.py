@@ -905,9 +905,13 @@ def reorder_module_calls(lines):
                     if nxt_line.find("boundary") != -1:
                         boundary = 1
                 # Extract the module name
-                module_name = nxt_line.strip()[:-9]
+                nxt_line = nxt_line.strip()                
+                if (nxt_line.find('<')):
+                    module_name = nxt_line.split('<')[0]
+                else:
+                    module_name = nxt_line.split('(')[0]                
                 if boundary:
-                    module_name = module_name[:-9]
+                    module_name = module_name[:-9]                    
                 if prev_module_name == "":
                     prev_module_name = module_name
                     first_line = pos
