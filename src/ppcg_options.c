@@ -124,6 +124,8 @@ ISL_ARG_BOOL(struct autosa_options, non_block_fifo, 0, "non-blocking-fifo", 0,
 			 "use non-blocking fifo interface")
 ISL_ARG_BOOL(struct autosa_options, use_local_memory, 0, "local-memory", 1,
 			 "use local memory in kernel code")
+ISL_ARG_BOOL(struct autosa_options, use_cplusplus_template, 0, "use-cplusplus-template", 0,
+			 "use C++ template in codegen (necessary for irregular PEs)")
 ISL_ARG_INT(struct autosa_options, max_local_memory, 0,
 			"max-local-memory", "size", 8192, "maximal amount of local memory")
 ISL_ARG_INT(struct autosa_options, max_sa_dim, 0,

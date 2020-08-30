@@ -915,33 +915,34 @@ __isl_give isl_printer *print_module_arguments(
   const char *type;
 
   type = isl_options_get_ast_iterator_type(prog->ctx);
-  ///* Module identifiers */
-  //const char *dims[] = {"idx", "idy", "idz"};
-  //n = isl_id_list_n_id(module->inst_ids);
-  //for (int i = 0; i < n; ++i)
-  //{
-  //  if (!first)
-  //  {
-  //    p = isl_printer_print_str(p, ", ");
-  //    if (!types)
-  //    {
-  //      p = isl_printer_end_line(p);
-  //      p = isl_printer_start_line(p);
-  //    }
-  //  }
-  //  if (types)
-  //  {
-  //    p = isl_printer_print_str(p, type);
-  //    p = isl_printer_print_str(p, " ");
-  //  }
-  //  if (!types)
-  //  {
-  //    p = isl_printer_print_str(p, "/* module id */ ");
-  //  }
-  //  p = isl_printer_print_str(p, dims[i]);
-//
-  //  first = 0;
-  //}
+  /* Module identifiers */
+  const char *dims[] = {"idx", "idy", "idz"};
+  n = isl_id_list_n_id(module->inst_ids);
+  if (!prog->scop->options->autosa->use_cplusplus_template) {
+    for (int i = 0; i < n; ++i)
+    {
+      if (!first)
+      {
+        p = isl_printer_print_str(p, ", ");
+        if (!types)
+        {
+          p = isl_printer_end_line(p);
+          p = isl_printer_start_line(p);
+        }
+      }
+      if (types)
+      {
+        p = isl_printer_print_str(p, type);
+        p = isl_printer_print_str(p, " ");
+      }
+      if (!types)
+      {
+        p = isl_printer_print_str(p, "/* module id */ ");
+      }
+      p = isl_printer_print_str(p, dims[i]);
+      first = 0;
+    }
+  }
 
   /* params */
   space = isl_union_set_get_space(kernel->arrays);
@@ -2059,7 +2060,7 @@ __isl_give isl_printer *print_module_call_upper(__isl_take isl_printer *p,
   p = isl_printer_print_str(p, "\");");
   p = isl_printer_end_line(p);
 
-  if (isl_id_list_n_id(module->inst_ids) > 0) {
+  if (isl_id_list_n_id(module->inst_ids) > 0 && prog->scop->options->autosa->use_cplusplus_template) {
     p = print_str_new_line(p, "p = isl_printer_print_str(p, \"<\");");    
     if (!dummy) {
       for (int i = 0; i < isl_id_list_n_id(module->inst_ids); i++) {
@@ -2101,44 +2102,44 @@ __isl_give isl_printer *print_module_call_upper(__isl_take isl_printer *p,
   p = isl_printer_end_line(p);
 
   /* module identifiers */
-  //if (!dummy)
-  //{
-  //  for (int i = 0; i < isl_id_list_n_id(module->inst_ids); i++)
-  //  {
-  //    p = print_delimiter(p, &first);
-  //    p = isl_printer_start_line(p);
-  //    p = isl_printer_print_str(p, "p = isl_printer_print_str(p, \"/* module id */ \");");
-  //    p = isl_printer_end_line(p);
-  //    p = isl_printer_start_line(p);
-  //    p = isl_printer_print_str(p, "p = isl_printer_print_int(p, c");
-  //    p = isl_printer_print_int(p, i);
-  //    p = isl_printer_print_str(p, ");");
-  //    p = isl_printer_end_line(p);
-  //  }
-  //}
-  //else
-  //{
-  //  isl_ast_expr *expr = pe_dummy_module->io_group->io_L1_pe_expr;
-  //  int n_arg = isl_ast_expr_op_get_n_arg(expr);
-//
-  //  for (int i = 0; i < isl_id_list_n_id(module->inst_ids); i++)
-  //  {
-  //    int format;
-  //    p = print_delimiter(p, &first);
-  //    p = isl_printer_start_line(p);
-  //    p = isl_printer_print_str(p, "p = isl_printer_print_str(p, \"/* module id */ \");");
-  //    p = isl_printer_end_line(p);
-  //    p = isl_printer_start_line(p);
-  //    p = isl_printer_print_str(p, "p = isl_printer_print_int(p, ");
-  //    
-  //    isl_ast_expr *expr_i = isl_ast_expr_get_op_arg(expr, i + 1);
-  //    p = isl_printer_print_ast_expr(p, expr_i);
-  //    isl_ast_expr_free(expr_i);
-//
-  //    p = isl_printer_print_str(p, ");");
-  //    p = isl_printer_end_line(p);
-  //  }
-  //}
+  if (!prog->scop->options->autosa->use_cplusplus_template) {
+    if (!dummy)
+    {
+      for (int i = 0; i < isl_id_list_n_id(module->inst_ids); i++)
+      {
+        p = print_delimiter(p, &first);
+        p = isl_printer_start_line(p);
+        p = isl_printer_print_str(p, "p = isl_printer_print_str(p, \"/* module id */ \");");
+        p = isl_printer_end_line(p);
+        p = isl_printer_start_line(p);
+        p = isl_printer_print_str(p, "p = isl_printer_print_int(p, c");
+        p = isl_printer_print_int(p, i);
+        p = isl_printer_print_str(p, ");");
+        p = isl_printer_end_line(p);
+      }
+    }
+    else
+    {
+      isl_ast_expr *expr = pe_dummy_module->io_group->io_L1_pe_expr;
+      int n_arg = isl_ast_expr_op_get_n_arg(expr);
+      for (int i = 0; i < isl_id_list_n_id(module->inst_ids); i++)
+      {
+        int format;
+        p = print_delimiter(p, &first);
+        p = isl_printer_start_line(p);
+        p = isl_printer_print_str(p, "p = isl_printer_print_str(p, \"/* module id */ \");");
+        p = isl_printer_end_line(p);
+        p = isl_printer_start_line(p);
+        p = isl_printer_print_str(p, "p = isl_printer_print_int(p, ");
+        
+        isl_ast_expr *expr_i = isl_ast_expr_get_op_arg(expr, i + 1);
+        p = isl_printer_print_ast_expr(p, expr_i);
+        isl_ast_expr_free(expr_i);
+        p = isl_printer_print_str(p, ");");
+        p = isl_printer_end_line(p);
+      }
+    }
+  }
 
   /* params */
   space = isl_union_set_get_space(module->kernel->arrays);
@@ -4408,14 +4409,16 @@ static __isl_give isl_printer *print_inter_trans_module_call(
   p = isl_printer_print_str(p, "_inter_trans");
   if (boundary)
     p = isl_printer_print_str(p, "_boundary");
-  p = isl_printer_print_str(p, "<");
-  for (int i = 0; i < n; i++) {
-    if (i > 0) 
-      p = isl_printer_print_str(p, ", ");
-    p = isl_printer_print_str(p, "p");
-    p = isl_printer_print_int(p, i);
+  if (prog->scop->options->autosa->use_cplusplus_template) {
+    p = isl_printer_print_str(p, "<");
+    for (int i = 0; i < n; i++) {
+      if (i > 0) 
+        p = isl_printer_print_str(p, ", ");
+      p = isl_printer_print_str(p, "p");
+      p = isl_printer_print_int(p, i);
+    }
+    p = isl_printer_print_str(p, ">");
   }
-  p = isl_printer_print_str(p, ">");
   p = isl_printer_print_str(p, "(");
   p = isl_printer_end_line(p);
   p = isl_printer_indent(p, 2);
@@ -4481,14 +4484,17 @@ static __isl_give isl_printer *print_intra_trans_module_call(
   p = isl_printer_start_line(p);
   p = isl_printer_print_str(p, module->name);
   p = isl_printer_print_str(p, "_intra_trans");
-  p = isl_printer_print_str(p, "<");
-  for (int i = 0; i < n; i++) {
-    if (i > 0) 
-      p = isl_printer_print_str(p, ", ");
-    p = isl_printer_print_str(p, "p");
-    p = isl_printer_print_int(p, i);
+  if (prog->scop->options->autosa->use_cplusplus_template) {
+    p = isl_printer_print_str(p, "<");
+    for (int i = 0; i < n; i++) {
+      if (i > 0) 
+        p = isl_printer_print_str(p, ", ");
+      p = isl_printer_print_str(p, "p");
+      p = isl_printer_print_int(p, i);
+    }
+    p = isl_printer_print_str(p, ">");
   }
-  p = isl_printer_print_str(p, ">(");
+  p = isl_printer_print_str(p, "(");
   p = isl_printer_end_line(p);
   p = isl_printer_indent(p, 2);
   p = isl_printer_start_line(p);

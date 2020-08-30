@@ -86,6 +86,8 @@ extern "C"
 		int int_io_dir;
 		/* Lower the interior I/O module L1 buffer */
 		int lower_int_io_L1_buffer;
+		/* Use C++ template in codegen (necessary for irregular PEs) */
+		int use_cplusplus_template;
 	};
 
 	struct ppcg_options

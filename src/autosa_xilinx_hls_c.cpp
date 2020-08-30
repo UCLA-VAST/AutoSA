@@ -1935,7 +1935,7 @@ static __isl_give isl_printer *print_module_header_xilinx(
   int n = isl_id_list_n_id(module->inst_ids);;
   int first = 1;
 
-  if (n > 0) {
+  if (n > 0 && prog->scop->options->autosa->use_cplusplus_template) {
     /* Print the index template */
     p = isl_printer_start_line(p);
     p = isl_printer_print_str(p, "template<");  
@@ -2407,7 +2407,9 @@ static __isl_give isl_printer *autosa_print_intra_trans_module(
   }
   p = isl_printer_indent(p, 2);
   p = print_str_new_line(p, "/* Variable Declaration */");
-  //print_module_iterators(hls->kernel_c, module);
+  if (!prog->scop->options->autosa->use_cplusplus_template) {
+    print_module_iterators(hls->kernel_c, module);
+  }
   p = print_module_vars_xilinx(p, module, 0);
   p = print_str_new_line(p, "/* Variable Declaration */");
   p = isl_printer_end_line(p);
@@ -2483,7 +2485,9 @@ static __isl_give isl_printer *autosa_print_inter_trans_module(
   }
   p = isl_printer_indent(p, 2);
   p = print_str_new_line(p, "/* Variable Declaration */");
-  //print_module_iterators(hls->kernel_c, module);
+  if (!prog->scop->options->autosa->use_cplusplus_template) {
+    print_module_iterators(hls->kernel_c, module);
+  }
   if (hls->target == XILINX_HW)
     p = print_module_vars_xilinx(p, module, 1);
   p = print_str_new_line(p, "/* Variable Declaration */");
@@ -2585,7 +2589,7 @@ static __isl_give isl_printer *print_module_core_header_xilinx(
     int inter, int boundary, int serialize, int types)
 {
   int n = isl_id_list_n_id(module->inst_ids);
-  if (types && n > 0) {
+  if (types && n > 0 && prog->scop->options->autosa->use_cplusplus_template) {
     /* Print the template */
     p = isl_printer_start_line(p);
     p = isl_printer_print_str(p, "template<");
@@ -2653,7 +2657,7 @@ static __isl_give isl_printer *print_module_wrapper_header_xilinx(
     int inter, int boundary)
 {
   int n = isl_id_list_n_id(module->inst_ids);
-  if (n > 0) {
+  if (n > 0 && prog->scop->options->autosa->use_cplusplus_template) {
     p = isl_printer_start_line(p);
     p = isl_printer_print_str(p, "template<");
     for (int i = 0; i < n; i++) {
@@ -2991,7 +2995,9 @@ static __isl_give isl_printer *autosa_print_serialize_module(
   fprintf(hls->kernel_c, "#pragma HLS INLINE OFF\n");  
   p = isl_printer_indent(p, 2);
   p = print_str_new_line(p, "/* Variable Declaration */");
-  //print_module_iterators(hls->kernel_c, module);    
+  if (!prog->scop->options->autosa->use_cplusplus_template) {
+    print_module_iterators(hls->kernel_c, module);    
+  }
   p = print_str_new_line(p, "/* Variable Declaration */");
   p = isl_printer_end_line(p);
 
@@ -3045,7 +3051,9 @@ static __isl_give isl_printer *autosa_print_default_module(
     fprintf(hls->kernel_c, "#pragma HLS INLINE\n");
   p = isl_printer_indent(p, 2);
   p = print_str_new_line(p, "/* Variable Declaration */");
-  //print_module_iterators(hls->kernel_c, module);  
+  if (!prog->scop->options->autosa->use_cplusplus_template) {
+    print_module_iterators(hls->kernel_c, module);  
+  }
   p = print_module_vars_xilinx(p, module, -1);  
   p = print_str_new_line(p, "/* Variable Declaration */");
   p = isl_printer_end_line(p);
@@ -3256,8 +3264,10 @@ static __isl_give isl_printer *autosa_print_default_pe_dummy_module(
     fprintf(hls->kernel_c, "#pragma HLS INLINE\n");
 
   p = isl_printer_indent(p, 2);
-  p = print_str_new_line(p, "/* Variable Declaration */");    
-  //print_module_iterators(hls->kernel_c, module);
+  p = print_str_new_line(p, "/* Variable Declaration */"); 
+  if (!prog->scop->options->autosa->use_cplusplus_template) {   
+    print_module_iterators(hls->kernel_c, module);
+  }
   p = print_str_new_line(p, "/* Variable Declaration */");
 
   p = isl_printer_end_line(p);
@@ -3340,7 +3350,9 @@ static __isl_give isl_printer *print_double_buffer_module_vars_while(
   struct print_db_module_while_data *data)
 {
   /* Inst ids */
-  //print_module_iterators(hls->kernel_c, module);
+  if (!module->options->autosa->use_cplusplus_template) {
+    print_module_iterators(hls->kernel_c, module);
+  }
   /* Local buffer */
   for (int i = 0; i < module->n_var; i++) {
     struct autosa_kernel_var *var = &module->var[i];
