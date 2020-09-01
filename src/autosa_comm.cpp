@@ -182,7 +182,7 @@ static struct autosa_array_ref_group *join_groups(
     struct autosa_stmt_access *ref = group2->refs[i];
     bool found = false;
     for (j = 0; j < group1->n_ref; j++) {
-      if (isl_map_is_equal(ref->access, group1->refs[j]->access)) {
+      if (isl_map_is_equal(ref->tagged_access, group1->refs[j]->tagged_access)) {
         found = true;
         break;
       }
@@ -1457,9 +1457,15 @@ static isl_bool internal_group_in_out_overlap(
                                                             isl_union_pw_multi_aff_copy(kernel->contraction));
   isl_schedule_node_free(node);
   access = autosa_io_group_access_relation(group, kernel, read, !read);
+  tagged = group_tagged_access_relation(group);
+
   /* Remove the local dependency first. */
   access = remove_local_accesses_group_flow(kernel, group, access, prefix, read);
-  tagged = group_tagged_access_relation(group);
+  
+//#ifdef _DEBUG
+//  DBGUMAP(stdout, access, kernel->ctx);
+//  DBGUMAP(stdout, prefix, kernel->ctx);
+//#endif
 
   /* Tagger maps the tagged iteration domain to untagged iteration domain.
    * Iteration domain is tagged to the access function.
@@ -1492,16 +1498,16 @@ static isl_bool internal_group_in_out_overlap(
   overlap = isl_union_map_apply_range(overlap, isl_union_map_reverse(prefix));
   overlap = isl_union_map_coalesce(overlap);
 
-#ifdef _DEBUG
-  DBGUMAP(stdout, overlap, isl_union_map_get_ctx(overlap));
-  DBGUMAP(stdout, prog->scop->tagged_dep_flow, isl_union_map_get_ctx(overlap));
-#endif
+//#ifdef _DEBUG
+//  DBGUMAP(stdout, overlap, isl_union_map_get_ctx(overlap));
+//  DBGUMAP(stdout, prog->scop->tagged_dep_flow, isl_union_map_get_ctx(overlap));
+//#endif
   /* Derive the overlapping set. */
   overlap = isl_union_map_intersect(overlap,
                                     isl_union_map_copy(prog->scop->tagged_dep_flow));
-#ifdef _DEBUG
-  DBGUMAP(stdout, overlap, isl_union_map_get_ctx(overlap));
-#endif                                    
+//#ifdef _DEBUG
+//  DBGUMAP(stdout, overlap, isl_union_map_get_ctx(overlap));
+//#endif                                    
   empty = isl_union_map_is_empty(overlap);
 
   external = isl_union_map_copy(prog->scop->tagged_dep_flow);
@@ -1591,8 +1597,14 @@ static isl_bool io_group_carried_by_array_loops(
                                                             isl_union_pw_multi_aff_copy(kernel->contraction));
   isl_schedule_node_free(node);
   access = autosa_io_group_access_relation(group, kernel, read, !read);  
+//#ifdef _DEBUG
+//  DBGUMAP(stdout, access, kernel->ctx);
+//#endif  
   /* Remove the local dependence first. */
   access = remove_local_accesses_group_flow(kernel, group, access, prefix, read);
+//#ifdef _DEBUG
+//  DBGUMAP(stdout, access, kernel->ctx);
+//#endif
 
   tagged = group_tagged_access_relation(group);
   tagger = isl_union_pw_multi_aff_copy(prog->scop->tagger);
@@ -1611,7 +1623,9 @@ static isl_bool io_group_carried_by_array_loops(
 //#endif
   identity_sched = isl_union_map_intersect(identity_sched,
                                            isl_union_map_copy(prog->scop->tagged_dep_flow));
-
+//#ifdef _DEBUG
+//  DBGUMAP(stdout, identity_sched, kernel->ctx);
+//#endif
   empty = isl_union_map_is_empty(identity_sched);
 
   external = isl_union_map_copy(prog->scop->tagged_dep_flow);
@@ -1628,6 +1642,9 @@ static isl_bool io_group_carried_by_array_loops(
   external = isl_union_map_intersect_params(external,
                                             isl_set_copy(prog->scop->context));
   external = isl_union_map_subtract(external, identity_sched);
+///#ifdef _DEBUG
+///  DBGUMAP(stdout, external, kernel->ctx);
+///#endif
 
   if (read)
   {
@@ -1763,11 +1780,11 @@ isl_bool is_io_module_valid(
       return isl_bool_false;
   }
 
-#ifdef _DEBUG
-  if (!strcmp(group->array->name, "C") && read) {
-    DBGSCHDNODE(stdout, node, kernel->ctx);
-  }
-#endif
+//#ifdef _DEBUG
+//  if (!strcmp(group->array->name, "C") && read) {
+//    DBGSCHDNODE(stdout, node, kernel->ctx);
+//  }
+//#endif
 
   /* Internal group */
   if (io_group_carried_by_array_loops(node, kernel, group, read)) {

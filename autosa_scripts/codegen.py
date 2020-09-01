@@ -906,10 +906,10 @@ def reorder_module_calls(lines):
                         boundary = 1
                 # Extract the module name
                 nxt_line = nxt_line.strip()                
-                if (nxt_line.find('<')):
+                if nxt_line.find('<') != -1:
                     module_name = nxt_line.split('<')[0]
                 else:
-                    module_name = nxt_line.split('(')[0]                
+                    module_name = nxt_line.split('(')[0]                                
                 if boundary:
                     module_name = module_name[:-9]                    
                 if prev_module_name == "":

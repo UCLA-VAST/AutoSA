@@ -2615,7 +2615,7 @@ static __isl_give isl_printer *print_module_core_header_xilinx(
     p = isl_printer_print_str(p, "_boundary");
   if (serialize)
     p = isl_printer_print_str(p, "_serialize");
-  if (!types && n > 0) {
+  if (!types && n > 0 && prog->scop->options->autosa->use_cplusplus_template) {
     p = isl_printer_print_str(p, "<");
     for (int i = 0; i < n; i++) {
       if (i > 0)
