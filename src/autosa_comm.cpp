@@ -1490,10 +1490,18 @@ static isl_bool internal_group_in_out_overlap(
   overlap = isl_union_map_apply_range(isl_union_map_copy(prefix),
                                       isl_union_map_from_map(lt));
   overlap = isl_union_map_apply_range(overlap, isl_union_map_reverse(prefix));
+  overlap = isl_union_map_coalesce(overlap);
 
+#ifdef _DEBUG
+  DBGUMAP(stdout, overlap, isl_union_map_get_ctx(overlap));
+  DBGUMAP(stdout, prog->scop->tagged_dep_flow, isl_union_map_get_ctx(overlap));
+#endif
   /* Derive the overlapping set. */
   overlap = isl_union_map_intersect(overlap,
                                     isl_union_map_copy(prog->scop->tagged_dep_flow));
+#ifdef _DEBUG
+  DBGUMAP(stdout, overlap, isl_union_map_get_ctx(overlap));
+#endif                                    
   empty = isl_union_map_is_empty(overlap);
 
   external = isl_union_map_copy(prog->scop->tagged_dep_flow);
@@ -1726,6 +1734,8 @@ isl_bool is_io_module_valid(
 
   if (group->group_type == AUTOSA_PE_GROUP)
     return isl_bool_true;
+  if (group->group_type == AUTOSA_DRAIN_GROUP && read)
+    return isl_bool_false;
 
   /* External group */
   for (int i = 0; i < group->n_ref; i++)
@@ -1753,6 +1763,12 @@ isl_bool is_io_module_valid(
       return isl_bool_false;
   }
 
+#ifdef _DEBUG
+  if (!strcmp(group->array->name, "C") && read) {
+    DBGSCHDNODE(stdout, node, kernel->ctx);
+  }
+#endif
+
   /* Internal group */
   if (io_group_carried_by_array_loops(node, kernel, group, read)) {
     if (group->io_type == AUTOSA_INT_IO &&
@@ -1761,8 +1777,6 @@ isl_bool is_io_module_valid(
   } else {
     return isl_bool_false;
   }
-//  if (internal_group_in_out_overlap(node, kernel, group, read))
-//    return isl_bool_false;
 
   return isl_bool_true;
 }
@@ -4240,7 +4254,7 @@ isl_stat sa_io_construct_optimize(struct autosa_kernel *kernel, struct autosa_ge
       if (module_cnt > 1) {
         gen->options->autosa->host_serialize = 0;
         // TODO: In the future, we should separate this check for each array.
-        printf("[AutoSA] Warning: More than one I/O/drain group found for array: %s. Host data serialization is disabled.\n", local->array->name);
+        printf("[AutoSA] Warning: More than one IO/drain group found for array: %s. Host data serialization is disabled.\n", local->array->name);
       }
     }
   }
@@ -4256,6 +4270,7 @@ isl_stat sa_io_construct_optimize(struct autosa_kernel *kernel, struct autosa_ge
     exit(1);
   }
 
+  /* Print the IO grouping information */
   print_io_grouping_info(stdout, kernel);
 
   /* I/O buffer allocation */
