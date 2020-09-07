@@ -18,7 +18,7 @@
             "SIMD_vectorization": {
                 "mode": "random",
                 "n": 2,
-                "loop_limit": 8
+                "loop_limit": 16
             }
         },
         "pruning": {
@@ -80,19 +80,19 @@
             "resource": {                
                 "range": {
                     "FF": [
-                        0.25,
+                        0.3,
                         0.7
                     ],
                     "LUT": [
                         0.3,
-                        0.75
+                        0.7
                     ],
                     "DSP": [
                         0.6,
                         0.75
                     ],
                     "BRAM18K": [
-                        0.1,
+                        0.2,
                         0.7
                     ],
                     "URAM": [
@@ -104,8 +104,8 @@
             "array_part": {
                 "enable": 1,
                 "PE_num": [
-                    128,
-                    256
+                    480,
+                    640
                 ]
             },
             "array_part_L2": {
@@ -121,8 +121,8 @@
             "SIMD_vectorization": {
                 "enable": 1,
                 "PE_num": [
-                    128,
-                    256
+                    480,
+                    640
                 ],
                 "PE_ratio": 3
             }
@@ -143,12 +143,12 @@
             "latency_hiding": {
                 "mode": "exhaustive",
                 "n": -1,
-                "loop_limit": 512
+                "loop_limit": 64
             },
             "SIMD_vectorization": {
                 "mode": "exhaustive",
                 "n": -1,
-                "loop_limit": 8
+                "loop_limit": 16
             }
         }
     }

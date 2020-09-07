@@ -289,6 +289,8 @@ def predict_module_latency_xilinx(loop_struct, config):
                 config['latency'] = 0
             return
         
+        #if config['module_name'] == 'A_IO_L2_in':
+        #    print(latency)
         # Set II and depth to 1 by default.
         II = 1
         depth = 1
@@ -525,6 +527,7 @@ def predict_design_latency(latency_info, cycle=5, early_stop=-1):
             latency_all[module_name] = module_latency
         else:
             module_loop_info = loop_infos[module_name]
+            #print(config['module_name'])
             predict_module_latency_xilinx(module_loop_info, config)
             latency_all[module_name] = config['latency']
 

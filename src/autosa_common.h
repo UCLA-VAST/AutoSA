@@ -279,7 +279,7 @@ struct autosa_kernel
   isl_union_set *domain;
 
   isl_set *host_domain;
-  int single_statement;
+  int single_statement;  
 };
 
 struct autosa_io_info
@@ -545,6 +545,8 @@ struct autosa_array_ref_group_pair
   struct autosa_array_ref_group *io_group;
   struct autosa_array_tile *local_tile; /* Compute the local tile */
   int in_use;
+  isl_map *tagged_access;
+  int simd_depth;
 };
 
 /* Represents an outer array accessed by a autosa_kernel, localized
@@ -918,7 +920,8 @@ struct autosa_kernel_stmt
       struct autosa_array_info *array;
       struct autosa_local_array_info *local_array;
       struct autosa_array_ref_group *group;
-      struct autosa_hw_module *module;
+      struct autosa_hw_module *module;      
+      int simd_depth;
     } i;
     struct
     {

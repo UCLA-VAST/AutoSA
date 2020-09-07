@@ -1546,21 +1546,21 @@ static __isl_give isl_schedule_node *latency_opt_check(
         if (isl_schedule_node_band_member_get_coincident(node, n - 1) &&
             isl_schedule_node_band_member_get_space_time(node, n - 1) == autosa_loop_time)
         {
-            isl_id *id;
+            //isl_id *id;
             data->is_required = 0;
-            /* Split off the loop and attach a "latency" mark */
-            if (n > 1)
-            {
-                node = isl_schedule_node_band_split(node, n - 1);
-                node = isl_schedule_node_child(node, 0);
-            }
-            id = isl_id_alloc(ctx, "latency", NULL);
-            node = isl_schedule_node_insert_mark(node, id);
-            node = isl_schedule_node_parent(node);
+            ///* Split off the loop and attach a "latency" mark */
+            //if (n > 1)
+            //{
+            //    node = isl_schedule_node_band_split(node, n - 1);
+            //    node = isl_schedule_node_child(node, 0);
+            //}
+            //id = isl_id_alloc(ctx, "latency", NULL);
+            //node = isl_schedule_node_insert_mark(node, id);
+            //node = isl_schedule_node_parent(node);
         }
     }
     else if (sa->type == AUTOSA_SA_TYPE_SYNC)
-    {
+    {        
         if (isl_schedule_node_band_member_get_space_time(node, 0) != autosa_loop_time)
         {
             node = isl_schedule_node_parent(node);
@@ -1579,21 +1579,21 @@ static __isl_give isl_schedule_node *latency_opt_check(
                 {
                     if (isl_schedule_node_band_member_get_coincident(node, i))
                     {
-                        isl_id *id;
+                        //isl_id *id;
                         data->is_required = 0;
-                        /* Split off the time loop */
-                        if (i > 1)
-                        {
-                            node = isl_schedule_node_band_split(node, i);
-                            node = isl_schedule_node_child(node, 0);
-                        }
-                        if (n - i - 1 > 0)
-                        {
-                            node = isl_schedule_node_band_split(node, 1);
-                        }
-                        id = isl_id_alloc(ctx, "latency", NULL);
-                        node = isl_schedule_node_insert_mark(node, id);
-                        node = isl_schedule_node_parent(node);
+                        ///* Split off the time loop */
+                        //if (i > 1)
+                        //{
+                        //    node = isl_schedule_node_band_split(node, i);
+                        //    node = isl_schedule_node_child(node, 0);
+                        //}
+                        //if (n - i - 1 > 0)
+                        //{
+                        //    node = isl_schedule_node_band_split(node, 1);
+                        //}
+                        //id = isl_id_alloc(ctx, "latency", NULL);
+                        //node = isl_schedule_node_insert_mark(node, id);
+                        //node = isl_schedule_node_parent(node);
                     }
                     break;
                 }
@@ -1726,15 +1726,26 @@ static __isl_give isl_schedule_node *autosa_latency_tile_band_loop(
     if (isl_schedule_node_get_type(node) != isl_schedule_node_band)
         return node;
 
+// A hack for 2D GEMM, reverse the latency hiding order
+//#define REVERSE_ORDER
+
     int n;
     isl_id *id;
     n = isl_schedule_node_band_n_member(node);
 
+#ifdef REVERSE_ORDER    
+    for (int i = 0; i < n; i++)
+#else    
     for (int i = n - 1; i >= 0; i--)
+#endif    
     {
         if (isl_schedule_node_band_member_get_pe_opt(node, i) == autosa_loop_latency)
         {
+#ifdef REVERSE_ORDER
+            int loop_tile_size = data->tile_size[data->n_touched_loop];
+#else
             int loop_tile_size = data->tile_size[data->tile_len - data->n_touched_loop - 1];
+#endif            
             (data->n_touched_loop)++;
             /* If latency hiding is applied on the space loops, we need to update
              * the SA dimensions. 
@@ -1983,13 +1994,14 @@ isl_stat sa_latency_hiding_optimize(struct autosa_kernel *sa, bool en, char *mod
     //DBGSCHDNODE(stdout, node, sa->ctx);
     if (!data.is_required)
     {
-        printf("[AutoSA] The innermost time loop is parallel. Latency hiding is skipped.\n");
-        isl_schedule_free(schedule);
-        schedule = isl_schedule_node_get_schedule(node);
-        isl_schedule_node_free(node);
-        sa->schedule = schedule;
-        // TODO: this will make the latency hiding stuck in the auto-tuning, fix it.
-        return isl_stat_ok;        
+        //printf("[AutoSA] The innermost time loop is parallel. Latency hiding is skipped.\n");
+        //isl_schedule_free(schedule);
+        //schedule = isl_schedule_node_get_schedule(node);
+        //isl_schedule_node_free(node);
+        //sa->schedule = schedule;
+        //// TODO: this will make the latency hiding stuck in the auto-tuning, fix it.
+        //return isl_stat_ok;        
+        printf("[AutoSA] The innermost time loop is parallel. Latency hiding is optional.\n");
     }
 
     /* Detect all candidate loops. */
@@ -2298,10 +2310,15 @@ static isl_schedule_node *detect_simd_vectorization_loop(
     int n_member;
 
     /* If the currrent node is under the latency mark, return
-   * as we don't use latency hiding loop as candidates. */
+     * as we don't use latency hiding loop as candidates. 
+     */
     is_latency = is_node_under_latency(node);
     if (is_latency)
         return node;
+
+//#ifdef _DEBUG
+//    DBGSCHDNODE(stdout, node, ctx);
+//#endif
 
     if (isl_schedule_node_get_type(node) == isl_schedule_node_band)
     {
@@ -2885,11 +2902,23 @@ isl_stat sa_pe_optimize(struct autosa_kernel *sa, bool pass_en[], char *pass_mod
     isl_union_set *domain = isl_schedule_get_domain(sa->schedule);
     sa->core = isl_union_set_universe(domain);
 
+//#ifdef _DEBUG
+//    DBGSCHD(stdout, sa->schedule, isl_schedule_get_ctx(sa->schedule));
+//    
+//#endif
     /* Array partitioning. */
     sa_array_partitioning_optimize(sa, pass_en[0], pass_mode[0], pass_en[1], pass_mode[1]);    
 
+//#ifdef _DEBUG
+//    DBGSCHD(stdout, sa->schedule, isl_schedule_get_ctx(sa->schedule));    
+//#endif
+
     /* Latency hiding. */
     sa_latency_hiding_optimize(sa, pass_en[2], pass_mode[2]);    
+
+//#ifdef _DEBUG
+//    DBGSCHD(stdout, sa->schedule, isl_schedule_get_ctx(sa->schedule));    
+//#endif
 
     /* SIMD vectorization. */
     if (pass_en[3])

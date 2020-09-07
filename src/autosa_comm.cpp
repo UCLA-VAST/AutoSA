@@ -1139,8 +1139,8 @@ static __isl_give isl_schedule_node *io_cluster(
     isl_aff *aff = isl_multi_aff_get_aff(ma, i);
     for (int j = 0; j < isl_mat_cols(trans_mat); j++)
     {
-      isl_val *val = isl_mat_get_element_val(trans_mat, i, j);
-      aff = isl_aff_set_coefficient_si(aff, isl_dim_in, j, isl_val_get_num_si(val));
+      isl_val *val = isl_mat_get_element_val(trans_mat, i, j);      
+      aff = isl_aff_set_coefficient_si(aff, isl_dim_in, j, isl_val_get_num_si(val));      
       isl_val_free(val);
     }
     ma = isl_multi_aff_set_aff(ma, i, aff);
@@ -1957,8 +1957,8 @@ static isl_stat compute_io_group_schedule(
         isl_aff *aff = isl_multi_aff_get_aff(io_trans_ma, r);
         for (int c = 0; c < ncol; c++)
         {
-          isl_val *val = isl_mat_get_element_val(io_trans_mat, r, c);
-          aff = isl_aff_set_coefficient_si(aff, isl_dim_in, c, isl_val_get_num_si(val));
+          isl_val *val = isl_mat_get_element_val(io_trans_mat, r, c);          
+          aff = isl_aff_set_coefficient_si(aff, isl_dim_in, c, isl_val_get_num_si(val));          
           isl_val_free(val);
         }
         io_trans_ma = isl_multi_aff_set_aff(io_trans_ma, r, aff);
@@ -3059,6 +3059,7 @@ struct update_int_io_L1_buffer_data {
   struct autosa_array_ref_group *group;  
   struct autosa_kernel *kernel;
   bool inserted;
+  bool tile_computed;
   int depth;
 };
 
@@ -3087,6 +3088,10 @@ static __isl_give isl_schedule_node *update_int_io_L1_depth(__isl_take isl_sched
     return node;
   }
   isl_union_set_free(domain);
+
+//#ifdef _DEBUG
+//  DBGSCHDNODE(stdout, node, isl_schedule_node_get_ctx(node));
+//#endif
 
   n = isl_schedule_node_band_n_member(node);
   /* Examine if the dependences of the current I/O group are carreid by the current band. */
@@ -3122,15 +3127,19 @@ static __isl_give isl_schedule_node *update_int_io_L1_depth(__isl_take isl_sched
         break;      
     }
 
-    if (!is_carried) {
+    if (is_carried) {
       insert_node = isl_schedule_node_copy(node_tmp);
-      insert_node = isl_schedule_node_child(insert_node, 0);
+      //insert_node = isl_schedule_node_child(insert_node, 0);
       isl_schedule_node_free(node_tmp);
       break;
     }
 
     isl_schedule_node_free(node_tmp);
   }
+
+//#ifdef _DEBUG
+//  DBGSCHDNODE(stdout, insert_node, isl_schedule_node_get_ctx(insert_node));
+//#endif
 
   if (insert_node) {
     data->depth = isl_schedule_node_get_schedule_depth(insert_node);
@@ -3149,9 +3158,12 @@ static __isl_give isl_schedule_node *update_int_io_L1_buffer(
   isl_union_set *domain;
   struct autosa_array_ref_group *group;
 
-  /* Examine if the node is under the SIMD mark */
-  under_simd = is_node_under_simd(node);
-  if (under_simd)
+  ///* Examine if the node is under the SIMD mark */
+  //under_simd = is_node_under_simd(node);
+  //if (under_simd)
+  //  return node;
+
+  if (data->tile_computed)
     return node;
 
   if (isl_schedule_node_get_type(node) != isl_schedule_node_band)
@@ -3163,6 +3175,15 @@ static __isl_give isl_schedule_node *update_int_io_L1_buffer(
     return node;
   }
   isl_union_set_free(domain);
+
+  if (isl_schedule_node_get_schedule_depth(node) < data->depth) {
+    /* Check the child node */
+    node = isl_schedule_node_child(node, 0);
+  }
+
+//#ifdef _DEBUG
+//  DBGSCHDNODE(stdout, node, isl_schedule_node_get_ctx(node));
+//#endif
 
   if (isl_schedule_node_get_schedule_depth(node) == data->depth) {
     /* Find the L1 buffer */
@@ -3180,6 +3201,8 @@ static __isl_give isl_schedule_node *update_int_io_L1_buffer(
     else if (group->group_type == AUTOSA_IO_GROUP)
       compute_group_bounds_io_at_node(data->kernel, group, node, cur_buffer);
     autosa_array_ref_group_compute_tiling(cur_buffer->tile, group);
+
+    data->tile_computed = true;
   }
 
   return node;
@@ -3320,6 +3343,10 @@ static __isl_give isl_schedule *generate_io_L1_lower_schedule(
   node = isl_schedule_get_root(new_schedule);
   isl_schedule_free(new_schedule);
 
+//#ifdef _DEBUG
+//  DBGSCHDNODE(stdout, node, isl_schedule_node_get_ctx(node));
+//#endif
+
   node = autosa_tree_move_down_to_io_mark(node, kernel->core, 1);
   node = isl_schedule_node_delete(node);
   node = isl_schedule_node_parent(node);
@@ -3328,6 +3355,9 @@ static __isl_give isl_schedule *generate_io_L1_lower_schedule(
 //#endif
   /* Sink the L1 band to (depth - 1) */
   node = autosa_node_sink_to_depth(node, depth - 1);
+//#ifdef _DEBUG
+//  DBGSCHDNODE(stdout, node, isl_schedule_node_get_ctx(node));
+//#endif
   /* Insert the io_L1 mark */
   int depth_inc = depth - 1;
   node = isl_schedule_node_map_descendant_bottom_up(node, &insert_io_L1_mark, &depth_inc);
@@ -3359,7 +3389,7 @@ static isl_stat lower_int_io_L1_buffer(
     return isl_stat_ok;
 
   isl_schedule_node *node;
-  struct update_int_io_L1_buffer_data data = {group, kernel, false, -1};
+  struct update_int_io_L1_buffer_data data = {group, kernel, false, false, -1};
 
   node = isl_schedule_get_root(group->io_schedule);
   /* Insert the domain filter for the current I/O group */
@@ -3369,8 +3399,8 @@ static isl_stat lower_int_io_L1_buffer(
 
 //#ifdef _DEBUG
 //  DBGSCHDNODE(stdout, node, gen->ctx);
-//  printf("%s\n", group->array->name);
-//#endif  
+//  //printf("%s\n", group->array->name);
+//#endif
   /* Update the depth to insert the buffer */
   node = isl_schedule_node_map_descendant_bottom_up(node, &update_int_io_L1_depth, &data);
   isl_schedule_node_free(node);
@@ -4110,6 +4140,8 @@ static isl_stat autosa_io_buffer_allocate(struct autosa_kernel *kernel,
         lower_int_io_L1_buffer(kernel, local->io_groups[j], gen);
         /* Enable the second-level buffer for this array */
         insert_L2_io_buffer(kernel, local->io_groups[j], gen);
+        /* Seek the opportunity to hoist up the L2 I/O buffers. */
+        //hoist_L2_io_buffer(kernel, local->io_groups[j], gen, data);
       }
     }
     if (local->drain_group)
@@ -4307,8 +4339,10 @@ isl_stat sa_io_construct_optimize(struct autosa_kernel *kernel, struct autosa_ge
     int n_lane = -1;
     bool repack = false;
     for (int j = 0; j < local_array->n_io_group; j++)
-    {
+    {      
       struct autosa_array_ref_group *group = local_array->io_groups[j];
+      if (!(group->copy_in || group->copy_out))
+        continue;
       int cur_n_lane = group->io_buffers[group->n_io_buffer - 1]->n_lane;
       if (n_lane == -1)
         n_lane = cur_n_lane;
@@ -4320,7 +4354,7 @@ isl_stat sa_io_construct_optimize(struct autosa_kernel *kernel, struct autosa_ge
       }
     }
     if (local_array->drain_group)
-    {
+    {      
       struct autosa_array_ref_group *group = local_array->drain_group;
       int cur_n_lane = group->io_buffers[group->n_io_buffer - 1]->n_lane;
       if (n_lane == -1)

@@ -63,7 +63,7 @@ void *autosa_kernel_free(struct autosa_kernel *kernel)
     free(kernel->var[i].name);
     isl_vec_free(kernel->var[i].size);
   }
-  free(kernel->var);
+  free(kernel->var);  
 
   free(kernel);
   return NULL;
@@ -224,7 +224,7 @@ struct autosa_kernel *autosa_kernel_alloc(isl_ctx *ctx, struct ppcg_scop *scop)
   kernel->expanded_domain = NULL;
   kernel->host_domain = NULL;
   kernel->domain = NULL;
-  kernel->single_statement = 0;
+  kernel->single_statement = 0;  
 
   return kernel;
 }
@@ -1840,8 +1840,8 @@ static isl_stat read_sa_sizes_from_set(__isl_take isl_set *set, int *sizes, int 
 
     v = isl_set_plain_get_val_if_fixed(set, isl_dim_set, i);
     if (!v)
-      goto error;
-    sizes[i] = isl_val_get_num_si(v);
+      goto error;    
+    sizes[i] = isl_val_get_num_si(v);    
     isl_val_free(v);
   }
 
@@ -2697,7 +2697,7 @@ int extract_memory_type(struct autosa_hw_module *module,
 
   for (int i = 0; i < isl_vec_size(var->size); ++i)
   {
-    isl_val *v = isl_vec_get_element_val(var->size, i);
+    isl_val *v = isl_vec_get_element_val(var->size, i);    
     long v_i = isl_val_get_num_si(v);
     var_size *= v_i;
     isl_val_free(v);
@@ -2707,32 +2707,63 @@ int extract_memory_type(struct autosa_hw_module *module,
   else
     bram_util = (float)var_size / 512;
 
-  if (module->type == PE_MODULE || (module->type != PE_MODULE && module->level == 1))
-  {
-    if (var->n_lane == 1 && var_size <= 32)
+  //if (module->type == PE_MODULE) {
+  //  if (var->n_lane == 1 && var_size <= 32)
+  //    use_memory = 0;
+  //  else
+  //    use_memory = 2;    
+  //} else if (module->type != PE_MODULE && module->level == 1) {
+  //  if (var->n_lane == 1 && var_size <= 32)
+  //    use_memory = 0;
+  //  else {
+  //    //use_memory = 2;
+  //    if (bram_util > 0.2)
+  //      use_memory = 2;
+  //    else
+  //      use_memory = 0;      
+  //  }      
+  //} else {
+  //  if (module->to_mem == 1) {
+  //    if (uram)
+  //      use_memory = 3;
+  //    else
+  //      use_memory = 2;
+  //  } else {
+  //    if (bram_util > 0.2)
+  //      use_memory = 2;
+  //    else
+  //      use_memory = 0;
+  //      //use_memory = 1;        
+  //  }
+  //}
+
+  //if (module->type != PE_MODULE && module->to_mem == 1) {
+  //  if (uram)
+  //    use_memory = 3;
+  //  else
+  //    use_memory = 2;
+  //} else {
+  //  if (var->n_lane == 1 && var_size <= 64)
+  //    use_memory = 0;
+  //  else
+  //    use_memory = 2;
+  //}
+
+  // Special strategy for GEMM 1D 
+  if (module->type != PE_MODULE && module->to_mem == 1) {
+    if (uram)
+      use_memory = 3;
+    else
+      use_memory = 2;
+  } else {
+    //if (module->type == DRAIN_MODULE && module->level == 1) 
+    if (module->type == IO_MODULE && module->level == 1) 
       use_memory = 0;
     else {
-      if (bram_util > 0.2)
-        use_memory = 2;
-      else
+      if (var->n_lane == 1 && var_size <= 64)
         use_memory = 0;
-    }
-  }
-  else
-  {
-    if (module->to_mem == 1)
-    {
-      if (uram)
-        use_memory = 3;
       else
         use_memory = 2;
-    }
-    else
-    {
-      if (bram_util > 0.2)
-        use_memory = 2;
-      else
-        use_memory = 1;
     }
   }
 
@@ -2996,6 +3027,10 @@ isl_stat sa_extract_design_info(struct autosa_gen *gen)
           p_str = isl_printer_print_str(p_str, "drain");
         }
         p_str = isl_printer_print_str(p_str, "_PE_dummy");
+        if (dummy_module->in) 
+          p_str = isl_printer_print_str(p_str, "_in");
+        else
+          p_str = isl_printer_print_str(p_str, "_out");
         module_name = isl_printer_get_str(p_str);
         isl_printer_free(p_str);
         info = extract_design_info_from_pe_dummy_module(gen, dummy_module, module_name);

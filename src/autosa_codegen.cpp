@@ -525,7 +525,12 @@ static __isl_give isl_multi_aff *autosa_create_io_access_stmt(
   pair->local_group = local_group;
   pair->io_group = io_group;
   pair->local_tile = tile;
-  pair->in_use = 0;
+  pair->in_use = 0;  
+  if (io_group->n_lane > 1 && io_group->local_array->array_type == AUTOSA_INT_ARRAY) {    
+    pair->simd_depth = depth;
+  } else {    
+    pair->simd_depth = -1;
+  }
 
   space = isl_space_copy(io_group->array->space);
   space = isl_space_from_range(space);
@@ -668,8 +673,18 @@ static __isl_give isl_schedule_node *add_io_copies_stmt_acc_single(
        * If so, insert a hls_dep mark.
        * Only do this when there is a single access in the group.
        */
+//#ifdef _DEBUG
+//      DBGSCHDNODE(stdout, node2, isl_schedule_node_get_ctx(node2));
+//#endif
       int *ubs = NULL;
       isl_schedule_node *node_copy = isl_schedule_node_copy(node2);
+      if (is_simd) {
+        while (node_copy && isl_schedule_node_has_parent(node_copy)) {
+          if (is_marked(node_copy, "simd")) 
+            break;
+          node_copy = isl_schedule_node_parent(node_copy);
+        }
+      }
       while (node_copy && isl_schedule_node_has_parent(node_copy))
       {
         if (isl_schedule_node_get_type(node_copy) == isl_schedule_node_band)
@@ -679,6 +694,9 @@ static __isl_give isl_schedule_node *add_io_copies_stmt_acc_single(
       if (isl_schedule_node_get_type(node_copy) == isl_schedule_node_band)
       {
         int n = isl_schedule_node_band_n_member(node_copy);
+//#ifdef _DEBUG
+//        DBGSCHDNODE(stdout, node_copy, isl_schedule_node_get_ctx(node_copy));
+//#endif        
         ubs = extract_band_upper_bounds(node_copy);
         if (ubs[n - 1] / n_lane > 1)
         {
@@ -687,6 +705,8 @@ static __isl_give isl_schedule_node *add_io_copies_stmt_acc_single(
           int coalesce_depth;
           int coalesce_bound;
 
+          //coalesce_depth = isl_schedule_node_get_schedule_depth(node_copy) - 1;
+          node_copy = isl_schedule_node_child(node_copy, 0);
           coalesce_depth = isl_schedule_node_get_schedule_depth(node_copy) - 1;
           coalesce_bound = ubs[n - 1] / n_lane;
 
@@ -1268,8 +1288,8 @@ static __isl_give isl_printer *print_trans_stmt_coalesce(
   isl_val *coalesce_bound_val;
   
   coalesce_depth = isl_schedule_node_get_schedule_depth(node) + buf->tile->n - 1;
-  coalesce_bound_val = buf->tile->bound[buf->tile->n - 1].size;
-  *coalesce_bound = isl_val_get_num_si(coalesce_bound_val) / buf->n_lane;  
+  coalesce_bound_val = buf->tile->bound[buf->tile->n - 1].size;  
+  *coalesce_bound = isl_val_get_num_si(coalesce_bound_val) / buf->n_lane;    
   if (*coalesce_bound <= 1)
     coalesce_depth = -1;
 
@@ -1731,7 +1751,7 @@ static __isl_give isl_schedule_node *insert_filter_trans_stmts(
   node = isl_schedule_node_child(node, 0);
 
 //#ifdef _DEBUG
-//  DBGUSET(stdout, eq_filter, ctx);
+//  //DBGUSET(stdout, eq_filter, ctx);
 //  DBGSCHDNODE(stdout, node, ctx);
 //#endif
 
@@ -3595,10 +3615,14 @@ static __isl_give struct autosa_hw_module **sa_io_module_gen(
        * and filter out the data that they need for the lower-level modules
        * they are connected to.
        */  
-      if (i == outermost && outermost != innermost)
+      if (i == outermost && outermost != innermost) {
         is_filter = 0;
-      else
+        if (gen->options->autosa->lower_int_io_L1_buffer) {
+          is_filter = 1;
+        }
+      } else
         is_filter = 1;
+      
       if (group->group_type == AUTOSA_DRAIN_GROUP)
       {
         if (i == innermost)
@@ -4176,6 +4200,10 @@ __isl_give isl_schedule_node *add_pe_ext_io_copies_stmt(
     node = isl_schedule_node_graft_after(node, graft);
   }
 
+//#ifdef _DEBUG
+//  DBGSCHDNODE(stdout, node, isl_schedule_node_get_ctx(node));
+//#endif
+
   if (data->dummy) {
     /* insert an empty filter. */
     empty_filter = isl_union_set_from_set(isl_set_empty(
@@ -4506,8 +4534,8 @@ static void create_pe_module_var(isl_ctx *ctx,
     isl_val *product = isl_val_mul(isl_val_copy(val), isl_val_copy(lcm));
     isl_val *gcd = isl_val_gcd(val, lcm);
     lcm = isl_val_div(product, gcd);
-  }
-  var->n_part = isl_val_get_num_si(lcm);
+  }  
+  var->n_part = isl_val_get_num_si(lcm);  
   isl_val_free(lcm);
 
   tile = autosa_array_ref_group_tile(group);
@@ -4806,6 +4834,10 @@ static __isl_give struct autosa_hw_module *sa_pe_module_gen(struct autosa_gen *g
   node = isl_schedule_node_child(node, 0);
   node = isl_schedule_node_insert_filter(node,
                                          isl_union_set_copy(kernel->pe_filter));
+
+//#ifdef _DEBUG
+//  DBGSCHDNODE(stdout, node, isl_schedule_node_get_ctx(node));
+//#endif
 
   isl_schedule_free(schedule);
   new_schedule = isl_schedule_node_get_schedule(node);
@@ -7717,7 +7749,7 @@ static __isl_give isl_ast_expr *transform_expr(__isl_take isl_ast_expr *expr,
  */
 static __isl_give isl_ast_node *create_domain_leaf(
     struct autosa_kernel *kernel, __isl_take isl_ast_node *node,
-    __isl_keep isl_ast_build *build, struct autosa_stmt *polysa_stmt)
+    __isl_keep isl_ast_build *build, struct autosa_stmt *autosa_stmt)
 {
   struct autosa_transform_data data;
   struct autosa_kernel_stmt *stmt;
@@ -7746,7 +7778,7 @@ static __isl_give isl_ast_node *create_domain_leaf(
     sched2copy = NULL;
 
   stmt->type = AUTOSA_KERNEL_STMT_DOMAIN;
-  stmt->u.d.stmt = polysa_stmt;
+  stmt->u.d.stmt = autosa_stmt;
 
   data.kernel = kernel;
   data.accesses = stmt->u.d.stmt->accesses;
@@ -7755,7 +7787,6 @@ static __isl_give isl_ast_node *create_domain_leaf(
   stmt->u.d.ref2expr = pet_stmt_build_ast_exprs(stmt->u.d.stmt->stmt,
                                                 build, &transform_index, &data,
                                                 &transform_expr, &data);
-
   isl_pw_multi_aff_free(iterator_map);
   isl_pw_multi_aff_free(sched2copy);
 
@@ -8731,7 +8762,8 @@ static __isl_give isl_ast_node *create_io_leaf(struct autosa_kernel *kernel,
   {
     is_serialize = !prefixcmp(type, "in_trans_dram_serialize") || !prefixcmp(type, "out_trans_dram_serialize");
   }
-
+  
+  stmt->u.i.simd_depth = pair->simd_depth;
   stmt->u.i.dummy = is_dummy;
   stmt->u.i.in = type && !prefixcmp(type, "in");
   stmt->u.i.buf = is_trans_buf;  

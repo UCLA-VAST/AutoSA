@@ -101,6 +101,7 @@
   isl_printer *p_debug = isl_printer_to_file(ctx, os);                 \
   p_debug = isl_printer_set_output_format(p_debug, ISL_FORMAT_C);      \
   p_debug = isl_printer_print_ast_expr(p_debug, astexpr);              \
+  p_debug = isl_printer_print_str(p_debug, "\n");                      \
   p_debug = isl_printer_free(p_debug);                                 \
 }
 
@@ -109,6 +110,7 @@
   isl_printer *p_debug = isl_printer_to_file(ctx, os);                 \
   p_debug = isl_printer_set_output_format(p_debug, ISL_FORMAT_C);      \
   p_debug = isl_printer_print_ast_node(p_debug, astnode);              \
+  p_debug = isl_printer_print_str(p_debug, "\n");                      \
   p_debug = isl_printer_free(p_debug);                                 \
 }
 
@@ -116,6 +118,23 @@
   printf("%s(%d) Print multi_union_pw_aff.\n", __FILE__, __LINE__);    \
   isl_printer *p_debug = isl_printer_to_file(ctx, os);                 \
   p_debug = isl_printer_print_multi_union_pw_aff(p_debug, mupa);       \
+  p_debug = isl_printer_print_str(p_debug, "\n");                      \
+  p_debug = isl_printer_free(p_debug);                                 \
+}
+
+#define DBGVAL(os, val, ctx)                                          {\
+  printf("%s(%d) Print val.\n", __FILE__, __LINE__);                   \
+  isl_printer *p_debug = isl_printer_to_file(ctx, os);                 \
+  p_debug = isl_printer_print_val(p_debug, val);                       \
+  p_debug = isl_printer_print_str(p_debug, "\n");                      \
+  p_debug = isl_printer_free(p_debug);                                 \
+}
+
+#define DBGID(os, id, ctx)                                            {\
+  printf("%s(%d) Print id.\n", __FILE__, __LINE__);                    \
+  isl_printer *p_debug = isl_printer_to_file(ctx, os);                 \
+  p_debug = isl_printer_print_id(p_debug, id);                         \
+  p_debug = isl_printer_print_str(p_debug, "\n");                      \
   p_debug = isl_printer_free(p_debug);                                 \
 }
 

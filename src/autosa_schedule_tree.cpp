@@ -1259,6 +1259,7 @@ static __isl_give isl_schedule_node *delete_inserted_mark(__isl_take isl_schedul
 /* Insert the node at the "depth" position. To prevent inserting the node 
  * multiple times, a "inserted" mark will be inserted before the node.
  * After the insertion, we will delete this "inserted" mark.
+ * This function is not complete, might have bugs.
  */
 static __isl_give isl_schedule_node *insert_node_at_depth(
   __isl_take isl_schedule_node *node, void *user)
@@ -1272,6 +1273,14 @@ static __isl_give isl_schedule_node *insert_node_at_depth(
   /* Examine the subtree contains the "inserted" mark node */
   if (!isl_schedule_node_every_descendant(node, &has_inserted_mark, NULL)) {    
     return node;
+  }
+
+  if (isl_schedule_node_get_schedule_depth(node) < data->depth) {
+    /* Split the node and insert at certain position. However, 
+     * currently, we simply put it below the cureretn node.
+     * TODO: fix it
+     */
+    node = isl_schedule_node_child(node, 0);
   }
 
   if (isl_schedule_node_get_schedule_depth(node) != data->depth) {
@@ -1531,8 +1540,8 @@ int get_band_single_schedule_val(__isl_keep isl_schedule_node *node)
   if (isl_set_is_singleton(set)) {
     isl_val *val;    
     int ret;
-    val = isl_set_plain_get_val_if_fixed(set, isl_dim_set, 0);
-    ret = isl_val_get_num_si(val);
+    val = isl_set_plain_get_val_if_fixed(set, isl_dim_set, 0);    
+    ret = isl_val_get_num_si(val);    
     isl_set_free(set);
     isl_val_free(val);
     return ret;
@@ -1551,13 +1560,22 @@ int get_last_sched_dim_val(__isl_keep isl_schedule_node *node)
   isl_set *range;
 
   prefix = isl_schedule_node_get_prefix_schedule_relation(node);
-  range = isl_set_from_union_set(isl_union_map_range(prefix));
-  range = isl_set_project_out(range, isl_dim_set, 0, isl_set_dim(range, isl_dim_set) - 1);
+  range = isl_set_from_union_set(isl_union_map_range(prefix));  
+
+  if (isl_set_dim(range, isl_dim_set) > 1)
+    range = isl_set_project_out(range, isl_dim_set, 0, isl_set_dim(range, isl_dim_set) - 1);  
+
+  range = isl_set_coalesce(range);
   if (isl_set_is_singleton(range)) {
     isl_val *val;
     int ret;
     val = isl_set_plain_get_val_if_fixed(range, isl_dim_set, 0);
-    ret = isl_val_get_num_si(val);
+    if (isl_val_is_nan(val)) {
+      isl_set_free(range);
+      isl_val_free(val);
+      return -1;
+    }    
+    ret = isl_val_get_num_si(val);    
     isl_set_free(range);
     isl_val_free(val);
     return ret;

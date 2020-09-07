@@ -768,6 +768,9 @@ def predict_design_resource_usage(df, modules, fifos, design_info, prj_dir, \
                                 BRAM += BRAM_array_predict_HLS(local_buffer['port_width'], \
                                     local_buffer['buffer_depth'], local_buffer['partition_number'])                            
 
+            #if BRAM > 0:
+            #    print(module, BRAM)
+
             URAM = 0
             if 'URAM' in target:
                 # URAM                

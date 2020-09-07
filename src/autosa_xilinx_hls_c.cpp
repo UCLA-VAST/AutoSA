@@ -171,8 +171,8 @@ static void hls_open_files(struct hls_info *info, const char *input)
   if (info->hls)
     fprintf(info->host_c, "#include \"%s\"\n\n", name);
 
-  if (info->hls)
-    fprintf(info->kernel_c, "#include \"%s\"\n", name);
+  //if (info->hls)
+  fprintf(info->kernel_c, "#include \"%s\"\n", name);
 
   strcpy(name + len, "_top_gen.cpp");
   strcpy(dir + len_dir, name);
@@ -2400,6 +2400,7 @@ static __isl_give isl_printer *autosa_print_intra_trans_module(
     /* If double buffer is disabled, the module is then inlined to reduce the 
      * overheads.
      */
+    //printf("intra trans module name: %s %d\n", module->name, module->use_FF);
     if (module->double_buffer && module->use_FF == 0)
       fprintf(hls->kernel_c, "#pragma HLS INLINE OFF\n");
     else   
@@ -3034,8 +3035,10 @@ static __isl_give isl_printer *autosa_print_default_module(
   struct print_hw_module_data hw_data = {hls, prog, module, NULL};
   isl_ast_print_options *print_options;
   isl_ctx *ctx = isl_printer_get_ctx(p);
-  if (module->type == PE_MODULE) 
-    wrapper = 1;
+  
+
+  if (module->type == PE_MODULE || (module->type != PE_MODULE && module->level == 1)) 
+    wrapper = 1;  
 
   /* Print core. */
   p = isl_printer_start_line(p);

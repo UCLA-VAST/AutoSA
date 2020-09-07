@@ -2056,6 +2056,8 @@ __isl_give isl_printer *print_module_call_upper(__isl_take isl_printer *p,
   if (target == XILINX_HW) {
     if (!dummy && module->type == PE_MODULE)
       p = isl_printer_print_str(p, "_wrapper");
+    else if (module->type != PE_MODULE && module->level == 1)
+      p = isl_printer_print_str(p, "_wrapper");
   }
   p = isl_printer_print_str(p, "\");");
   p = isl_printer_end_line(p);
@@ -2724,13 +2726,14 @@ __isl_give isl_printer *autosa_kernel_print_io(__isl_take isl_printer *p,
 {
   struct autosa_hw_module *module = stmt->u.i.module;
   struct autosa_array_ref_group *group = stmt->u.i.group;
+  struct autosa_kernel *kernel = module->kernel;
   char *fifo_name;
   isl_ctx *ctx = isl_printer_get_ctx(p);
   int is_dummy = stmt->u.i.dummy;
   fifo_name = concat(ctx, stmt->u.i.in_fifo_name, stmt->u.i.in == 1 ? "in" : "out");
-  int data_pack = stmt->u.i.data_pack;
+  int data_pack = stmt->u.i.data_pack;  
 
-  if (is_dummy)
+  if (is_dummy)  
   {
     if (stmt->u.i.in) {
       /* [type] fifo_data; */
@@ -2906,7 +2909,13 @@ __isl_give isl_printer *autosa_kernel_print_io(__isl_take isl_printer *p,
           p = isl_printer_print_str(p, "[");
           if (i == n_arg - 2)
           {
-            p = isl_printer_print_str(p, "n");
+            if (stmt->u.i.simd_depth != -1) {
+              //DBGASTEXPR(stdout, op, ctx);
+              p = isl_printer_print_ast_expr(p, op);
+              p = isl_printer_print_str(p, " + n");
+            } else {
+              p = isl_printer_print_str(p, "n");
+            }
           }
           else
           {
@@ -3029,6 +3038,10 @@ __isl_give isl_printer *autosa_kernel_print_io(__isl_take isl_printer *p,
               p = isl_printer_print_str(p, "[");
               if (j == n_arg - 2)
               {
+                if (stmt->u.i.simd_depth != -1) {
+                  p = isl_printer_print_ast_expr(p, op);
+                  p = isl_printer_print_str(p, " + ");
+                }
                 p = isl_printer_print_int(p, i);
               }
               else
@@ -3174,7 +3187,7 @@ __isl_give isl_printer *autosa_kernel_print_io(__isl_take isl_printer *p,
     p = ppcg_end_block(p);
   }
   free(fifo_name);
-  isl_ast_expr_free(local_index_packed);
+  isl_ast_expr_free(local_index_packed);  
   return p;
 }
 

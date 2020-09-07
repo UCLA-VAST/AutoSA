@@ -46,9 +46,10 @@ python3 ./autosa_scripts/optimizer.py -c './autosa ./autosa_tests/mm/kernel.c --
 __Other Test Cases__:
 1. 1D systolic array
 ```bash
-./autosa ./autosa_tests/mm/kernel.c --AutoSA-config=./autosa_config/autosa_config.json --target=autosa_hls_c --AutoSA-autosa --isl-schedule-whole-component --AutoSA-output-dir=./autosa.tmp/output --sa-sizes="{kernel[]->space_time[0];kernel[]->array_part[32,32,32];kernel[]->latency[8,8];kernel[]->simd[2]}" --AutoSA-simd-info=./autosa_tests/mm/simd_info.json --AutoSA-host-serialize --AutoSA-hls
+./autosa ./autosa_tests/mm/kernel.c --config=./autosa_config/autosa_config.json --target=autosa_hls_c --autosa --isl-schedule-whole-component --output-dir=./autosa.tmp/output --sa-sizes="{kernel[]->space_time[0];kernel[]->array_part[32,32,32];kernel[]->latency[8,8];kernel[]->simd[2]}" --simd-info=./autosa_tests/mm/simd_info.json --host-serialize --hls
+```
+2. 2D systolic array
+```bash
+./autosa ./autosa_tests/mm/kernel.c --config=./autosa_config/autosa_config.json --target=autosa_hls_c --autosa --isl-schedule-whole-component --output-dir=./autosa.tmp/output --sa-sizes="{kernel[]->space_time[4];kernel[]->array_part[32,32,32]}" --simd-info=./autosa_tests/mm/simd_info.json --AutoSA-data-pack-sizes="{kernel[]->data_pack[8,32,64]}" --hls --local-reduce --reduce-op="+"
 ```
 Tuning
-```bash
-
-```

@@ -2,12 +2,12 @@
 #include "stdlib.h"
 #include "math.h"
 
-typedef unsigned short data_t;
+typedef char data_t;
 #define I 1024 
 #define J 1024 
 #define K 1024 
 
-//// gemm3 28x16x16
-//#define I 1064
+//// gemm3 25x16x32
+//#define I 1050 
 //#define J 1024 
 //#define K 1024 
