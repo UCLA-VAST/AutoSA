@@ -1461,50 +1461,6 @@ static __isl_give isl_schedule_node *insert_io_group_access_domain_local_reduce(
   group_domain = compute_io_group_access_domain_local_reduce(node, group, kernel, read, io_group, drain_group);
   node = isl_schedule_node_insert_filter(node, group_domain);  
   return node;
-
-//  isl_union_map *group_access;
-//  isl_union_set *group_domain;
-//  isl_union_map *prefix;
-//  isl_schedule_node *node_tmp;
-//
-//  node_tmp = isl_schedule_node_copy(node);
-//  group_access = isl_union_map_empty(isl_map_get_space(group->access));
-//
-//  if (io_group) {
-//    struct autosa_array_ref_group *cur_group = group;
-//    group_access = isl_union_map_union(group_access,
-//                                       autosa_io_group_access_relation(cur_group, kernel, read, !read));  
-//    /* Remove the local accesses below the array level. */  
-//    node_tmp = autosa_tree_move_up_to_kernel(node_tmp);  
-//    node_tmp = autosa_tree_move_down_to_array(node_tmp, kernel->core);
-//    prefix = isl_schedule_node_get_prefix_schedule_relation(node_tmp);
-//    prefix = isl_union_map_preimage_domain_union_pw_multi_aff(prefix,
-//                                                              isl_union_pw_multi_aff_copy(kernel->contraction));
-//    if (group->local_array->array_type == AUTOSA_INT_ARRAY)
-//      group_access = remove_local_accesses_group_flow(kernel, cur_group, group_access, prefix, read);  
-//    isl_union_map_free(prefix);                                                                
-//  }
-//  if (drain_group) {
-//    struct autosa_array_ref_group *cur_group = group->attached_drain_group;
-//    group_access = isl_union_map_union(group_access,
-//                                       autosa_io_group_access_relation(cur_group, kernel, read, !read));
-//  }
-//  isl_schedule_node_free(node_tmp);
-//
-//  group_domain = isl_union_map_domain(group_access);
-//  group_domain = isl_union_set_coalesce(group_domain);
-//  /* Add the group domain as the filter. */  
-//  /* Temporary hack for LU: if the array_part_w is 0, insert the filter under the PE mark. */
-//  //if (kernel->array_part_w == 0) {
-//  //  node = isl_schedule_node_insert_filter(node, isl_union_set_universe(isl_union_set_copy(group_domain)));
-//  //  node = autosa_tree_move_down_to_pe(node, kernel->core);
-//  //  node = isl_schedule_node_insert_filter(node, group_domain);
-//  //} else {
-//  //  node = isl_schedule_node_insert_filter(node, group_domain);  
-//  //}
-//  node = isl_schedule_node_insert_filter(node, group_domain);  
-
-//  return node;
 }
 
 /* Insert a filter node that filters the valid access domain of the current
@@ -4811,6 +4767,10 @@ static __isl_give struct autosa_hw_module *sa_pe_module_gen(struct autosa_gen *g
       module->io_groups[module->n_io_group - 1] = array->drain_group;
     }
   }
+
+//#ifdef _DEBUG
+//  DBGSCHDNODE(stdout, node, isl_schedule_node_get_ctx(node));
+//#endif
 
   /* Insert "pipeline" mark under the last "latency" mark. */
   node = isl_schedule_node_map_descendant_bottom_up(node,

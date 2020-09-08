@@ -1045,7 +1045,7 @@ static isl_stat autosa_interior_io_eliminate(
   {
     /* This group will generate interior I/O, which needs to be eliminated. 
      * By default, set the first dim to be 1. 
-     * Temporary hack: For LU, we set the the last dim to be 1. 
+     * Hack: For LU, we set the the last dim to be 1. 
      * TODO: make it an option.
      */
     if (gen->options->autosa->int_io_dir == 0)
@@ -4951,12 +4951,6 @@ __isl_give isl_union_map *io_comm_access_ref(
                                                             isl_union_pw_multi_aff_copy(kernel->contraction));
   if (group->group_type == AUTOSA_IO_GROUP) {
     access = autosa_io_group_ref_access_relation(group, ref, read, !read);
-    if (group->attached_drain_group && !read) {
-      // TODO: temporary solution. We assume the io group and attached drain group
-      // always share the same access. Could be buggy.
-      access = isl_union_map_union(access, 
-                                   autosa_drain_group_ref_access_relation(group->attached_drain_group, ref, read, !read, kernel->expanded_domain));
-    }
   } else if (group->group_type == AUTOSA_DRAIN_GROUP) {
     access = autosa_drain_group_ref_access_relation(
         group, ref, read, !read, kernel->expanded_domain);
@@ -4964,6 +4958,13 @@ __isl_give isl_union_map *io_comm_access_ref(
 
   if (group->local_array->array_type == AUTOSA_INT_ARRAY)
     access = remove_local_accesses_group_flow(kernel, group, access, prefix, read);
+
+  if (group->group_type == AUTOSA_IO_GROUP && group->attached_drain_group && !read) {
+    // TODO: temporary solution. We assume the io group and attached drain group
+    // always share the same access. Could be buggy.
+    access = isl_union_map_union(access, 
+                                 autosa_drain_group_ref_access_relation(group->attached_drain_group, ref, read, !read, kernel->expanded_domain));
+  }
 
   access = isl_union_map_range_product(prefix, access);
 

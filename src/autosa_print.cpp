@@ -3292,7 +3292,7 @@ __isl_give isl_printer *autosa_print_reduce_default(
   isl_ast_expr *index,
   struct autosa_array_ref_group *group)
 {
-  p = print_str_new_line(p, "/* local Reduction */");
+  p = print_str_new_line(p, "/* Local Reduction */");
 
   /* union {unsigned int ui; data_t ut;} u... */
   p = isl_printer_start_line(p);
@@ -3385,14 +3385,15 @@ __isl_give isl_printer *autosa_print_reduce_default(
       p = isl_printer_print_str(p, "(ap_uint<");
       p = isl_printer_print_int(p, group->array->size * 8);
       p = isl_printer_print_str(p, ">)uout_");
-      p = isl_printer_print_int(p, i);      
+      p = isl_printer_print_int(p, i);   
+      p = isl_printer_print_str(p, ".ui");
       is_first = 0;
     }
     p = isl_printer_print_str(p, ");");
   }
   p = isl_printer_end_line(p);
 
-  p = print_str_new_line(p, "/* local Reduction */");
+  p = print_str_new_line(p, "/* Local Reduction */");
 
   return p;
 }

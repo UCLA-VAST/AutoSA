@@ -7,22 +7,17 @@ typedef float data_t;
 //#define J 1024
 //#define K 1024
 
-//// kernel3 2D IxJ
+// kernel3 2D IxJ
 //#define I 1036
 //#define I 1040
 //#define I 1064
 //#define J 1024
 //#define K 1024
 
-// kernel4 2D IxK
-#define I 1040
+// kernel1 1D I
+#define I 1025
 #define J 1024
 #define K 1024
-
-//// kernel1 1D I
-//#define I 1025
-//#define J 1024
-//#define K 1024
 
 //// kernel1 1D J
 //#define I 1024

@@ -429,6 +429,8 @@ def predict_module_latency_xilinx(loop_struct, config):
                 config['latency'] = 1
                 predict_module_latency_xilinx(else_block, config)
                 block_latency = max(block_latency, config['latency'])
+        #print('1: ', latency)
+        #print('2: ', block_latency)
         latency = latency * max(block_latency, 1)
         config['latency'] = latency
 
@@ -452,6 +454,9 @@ def predict_design_latency(latency_info, cycle=5, early_stop=-1):
     module_grouped = latency_info['module_grouped']
     array_info = latency_info['array_info']
     loop_infos = latency_info['loop_infos']
+    
+    drain_latency = 0
+    drain_outer = 0
 
     for module_name in module_grouped:        
         if 'dummy' in module_name:
@@ -461,11 +466,14 @@ def predict_design_latency(latency_info, cycle=5, early_stop=-1):
             continue
 
         ## debug
-        #if module_name != 'C_drain_IO_L1_out':
+        #if module_name != 'A_IO_L2_in':
         #    continue
+        #print(module_name)
         ## debug
 
         module = module_grouped[module_name]
+        #print(module)
+
         config['context'] = {}
         config['latency'] = 1
         config['loop_prefix'] = 'Loop'
@@ -520,16 +528,23 @@ def predict_design_latency(latency_info, cycle=5, early_stop=-1):
                 if module_loop_info['module_prop']['in'] == 1:
                     module_latency += intra_trans_latency
                 else:
-                    module_latency += inter_trans_latency                    
+                    module_latency += inter_trans_latency                                    
             else:
-                module_latency = outer_latency * (inter_trans_latency + intra_trans_latency)
+                module_latency = outer_latency * (inter_trans_latency + intra_trans_latency)            
+            # Hack: For GEMM4
+            if 'C' in module_name:
+            #if 'drain' in module_name:                                
+                drain_outer = outer_latency
 
             latency_all[module_name] = module_latency
         else:
             module_loop_info = loop_infos[module_name]
             #print(config['module_name'])
             predict_module_latency_xilinx(module_loop_info, config)
-            latency_all[module_name] = config['latency']
+            latency_all[module_name] = config['latency']            
+            if 'C' in module_name:
+            #if 'drain' in module_name:
+                drain_latency = max(drain_latency, config['latency'])
 
         # If we set early stop, we are using a baseline latency to compare.
         # If any of the module latency is greater than the baseline, we
@@ -539,10 +554,14 @@ def predict_design_latency(latency_info, cycle=5, early_stop=-1):
                 return config['latency']
 
     #print(latency_all)
+    drain_last_tile_latency = drain_latency / drain_outer
     latency = 0
     for lat in latency_all:
         if latency_all[lat] > latency:
             latency = latency_all[lat]
+    #print(latency)
+    #print(drain_last_tile_latency)
+    latency += drain_last_tile_latency
 
     return int(latency)
 

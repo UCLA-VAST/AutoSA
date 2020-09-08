@@ -2399,9 +2399,10 @@ static __isl_give isl_printer *autosa_print_intra_trans_module(
   if (hls->target == XILINX_HW) {
     /* If double buffer is disabled, the module is then inlined to reduce the 
      * overheads.
+     * Double buffer module can't inlined, this might cause deadlocks.
      */
     //printf("intra trans module name: %s %d\n", module->name, module->use_FF);
-    if (module->double_buffer && module->use_FF == 0)
+    if (module->double_buffer)
       fprintf(hls->kernel_c, "#pragma HLS INLINE OFF\n");
     else   
       fprintf(hls->kernel_c, "#pragma HLS INLINE\n");
@@ -2479,7 +2480,7 @@ static __isl_give isl_printer *autosa_print_inter_trans_module(
     print_module_headers_xilinx(prog, module, hls, 1, boundary);
   fprintf(hls->kernel_c, "{\n");
   if (hls->target == XILINX_HW) {
-    if (module->double_buffer && module->use_FF == 0)
+    if (module->double_buffer)
       fprintf(hls->kernel_c, "#pragma HLS INLINE OFF\n");
     else
       fprintf(hls->kernel_c, "#pragma HLS INLINE\n");

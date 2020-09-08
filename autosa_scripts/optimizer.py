@@ -557,62 +557,66 @@ def explore_simd_vectorization(config):
     if config['autosa_config']['simd']['mode'] == 'manual':
         with open(f'{config["work_dir"]}/output/tuning.json') as f:
             tuning = json.load(f)
-        if pruning_en:
-            # Perform early pruning based on the PE numbers
-            config['tuning'] = tuning
-            if opt_prune.SIMD_vectorization_PE_pruning(config):
-                return
-        loops = tuning['simd']['tilable_loops']
-        # Filter the SIMD loops
-        loops = simd_loop_filter(loops, tuning)
-        loops_pool = generate_loop_candidates(
-            loops, config, "SIMD_vectorization")
-
-        if len(loops_pool) == 0:
-            simd_en = config['autosa_config']['simd']['enable']
-            sa_sizes = config['sa_sizes'].copy()
-            config['autosa_config']['simd']['enable'] = 0
-            with open(f'{config["work_dir"]}/autosa_config.json', 'w') as f:
-                json.dump(config['autosa_config'], f, indent=4)
-
-            ret = execute_autosa_cmd(config)
-            if ret != 0:
-                config['logger'].error(f'CMD failed with error code {ret}')
-                config['autosa_config']['simd']['enable'] = simd_en
-                config['sa_sizes'] = sa_sizes
-                return
+        if 'simd' not in tuning:
+            # No SIMD opportunities found, we will skip this stage
             explore_design(config)
-            config['autosa_config']['simd']['enable'] = simd_en
-            config['sa_sizes'] = sa_sizes
-            with open(f'{config["work_dir"]}/autosa_config.json', 'w') as f:
-                json.dump(config['autosa_config'], f, indent=4)
-        else:
-            if config['mode'] == 'search' and config['setting']['search']['metric'] == 'latency' \
-                and pruning_en:
-                loops_pool = opt_prune.reorder_simd_loops(loops_pool)
-            for loop in loops_pool:
+        else:    
+            if pruning_en:
+                # Perform early pruning based on the PE numbers
+                config['tuning'] = tuning
+                if opt_prune.SIMD_vectorization_PE_pruning(config):
+                    return
+            loops = tuning['simd']['tilable_loops']
+            # Filter the SIMD loops
+            loops = simd_loop_filter(loops, tuning)
+            loops_pool = generate_loop_candidates(
+                loops, config, "SIMD_vectorization")
+
+            if len(loops_pool) == 0:
+                simd_en = config['autosa_config']['simd']['enable']
                 sa_sizes = config['sa_sizes'].copy()
-                config['sa_sizes'].append(
-                    f'kernel[]->simd{str(loop).replace(" ", "")}')
-                config['cmds'][3] = generate_sa_sizes_cmd(config['sa_sizes'])
+                config['autosa_config']['simd']['enable'] = 0
+                with open(f'{config["work_dir"]}/autosa_config.json', 'w') as f:
+                    json.dump(config['autosa_config'], f, indent=4)
 
-                #start_time = time.perf_counter()
                 ret = execute_autosa_cmd(config)
-                #run_time = time.perf_counter() - start_time
-                #print(f'runtime: {run_time}')
-
                 if ret != 0:
                     config['logger'].error(f'CMD failed with error code {ret}')
+                    config['autosa_config']['simd']['enable'] = simd_en
                     config['sa_sizes'] = sa_sizes
-                    continue
-
+                    return
                 explore_design(config)
+                config['autosa_config']['simd']['enable'] = simd_en
                 config['sa_sizes'] = sa_sizes
-
+                with open(f'{config["work_dir"]}/autosa_config.json', 'w') as f:
+                    json.dump(config['autosa_config'], f, indent=4)
+            else:
                 if config['mode'] == 'search' and config['setting']['search']['metric'] == 'latency' \
                     and pruning_en:
-                    if opt_prune.SIMD_vectorization_latency_pruning(config):
-                        return
+                    loops_pool = opt_prune.reorder_simd_loops(loops_pool)
+                for loop in loops_pool:
+                    sa_sizes = config['sa_sizes'].copy()
+                    config['sa_sizes'].append(
+                        f'kernel[]->simd{str(loop).replace(" ", "")}')
+                    config['cmds'][3] = generate_sa_sizes_cmd(config['sa_sizes'])
+
+                    #start_time = time.perf_counter()
+                    ret = execute_autosa_cmd(config)
+                    #run_time = time.perf_counter() - start_time
+                    #print(f'runtime: {run_time}')
+
+                    if ret != 0:
+                        config['logger'].error(f'CMD failed with error code {ret}')
+                        config['sa_sizes'] = sa_sizes
+                        continue
+
+                    explore_design(config)
+                    config['sa_sizes'] = sa_sizes
+
+                    if config['mode'] == 'search' and config['setting']['search']['metric'] == 'latency' \
+                        and pruning_en:
+                        if opt_prune.SIMD_vectorization_latency_pruning(config):
+                            return
     else:
         explore_design(config)
 
@@ -649,7 +653,7 @@ def explore_latency_hiding(config):
                 json.dump(config['autosa_config'], f, indent=4)
             return
 
-        loops = tuning['latency']['tilable_loops']
+        loops = tuning['latency']['tilable_loops']        
         loops_pool = generate_loop_candidates(loops, config, "latency_hiding")
         if config['setting'][config['mode']
                              ]['pruning']['latency_hiding']['enable']:
@@ -662,6 +666,9 @@ def explore_latency_hiding(config):
             return
         else:
             for loop in loops_pool:
+                # Hack: For GEMM4
+                #loop[-1] = 1
+
                 sa_sizes = config['sa_sizes'].copy()
                 config['sa_sizes'].append(
                     f'kernel[]->latency{str(loop).replace(" ", "")}')

@@ -68,7 +68,7 @@
         "log": {
             "n_record": 10
         },
-        "resource_target": ["DSP"],
+        "resource_target": ["BRAM18K", "DSP"],
         "time_out": -1,
         "update_time_interval": 2,        
         "pruning": {
@@ -88,12 +88,12 @@
                         0.75
                     ],
                     "DSP": [
-                        0.5,
-                        0.7
+                        0.6,
+                        0.75
                     ],
                     "BRAM18K": [
                         0.3,
-                        0.75
+                        0.7
                     ],
                     "URAM": [
                         0,
@@ -104,8 +104,8 @@
             "array_part": {
                 "enable": 1,
                 "PE_num": [
-                    150,
-                    200
+                    190,
+                    210
                 ]
             },
             "array_part_L2": {
@@ -114,15 +114,15 @@
             "latency_hiding": {
                 "enable": 1,
                 "reg_size": [
-                    256,
-                    1000
+                    64,
+                    1280
                 ]
             },
             "SIMD_vectorization": {
                 "enable": 1,
                 "PE_num": [
-                    150,
-                    200
+                    190,
+                    210
                 ],
                 "PE_ratio": 3
             }
@@ -148,7 +148,7 @@
             "SIMD_vectorization": {
                 "mode": "exhaustive",
                 "n": -1,
-                "loop_limit": 64
+                "loop_limit": 8
             }
         }
     }

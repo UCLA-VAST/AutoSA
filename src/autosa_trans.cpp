@@ -1726,8 +1726,8 @@ static __isl_give isl_schedule_node *autosa_latency_tile_band_loop(
     if (isl_schedule_node_get_type(node) != isl_schedule_node_band)
         return node;
 
-// A hack for 2D GEMM, reverse the latency hiding order
-//#define REVERSE_ORDER
+// Hack: For 2D GEMM, reverse the latency hiding order
+#define REVERSE_ORDER
 
     int n;
     isl_id *id;
@@ -2325,8 +2325,8 @@ static isl_schedule_node *detect_simd_vectorization_loop(
         n_member = isl_schedule_node_band_n_member(node);
         for (int i = 0; i < n_member; i++)
         {
-            /* We only consider time loops. */
-            if ((isl_schedule_node_band_member_get_space_time(node, i) == autosa_loop_time))
+            /* We consider both space and time loops */
+            //if ((isl_schedule_node_band_member_get_space_time(node, i) == autosa_loop_time))
             {
                 /* Two types of loops that we are interested in:
                  * - Parallel loop.
@@ -3949,7 +3949,7 @@ static __isl_give isl_printer *generate(__isl_take isl_printer *p,
 //    DBGSCHD(stdout, schedule, gen->ctx);
 //#endif
 
-    /* Temporary hack: If we disable reschedule, we will try another time
+    /* Hack: If we disable reschedule, we will try another time
      * here to merge some of the schedule bands. 
      */
     if (!gen->options->reschedule) {

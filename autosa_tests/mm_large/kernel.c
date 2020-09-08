@@ -1,17 +1,36 @@
 #include "kernel.h"
 
+//#define LAYOUT1
+//#define LAUOUT2
+#define LAYOUT3
+
 int main(int argc, char **argv) {
 //  data_t A[I][K], B[K][J], C[I][J], C_golden[I][J]; 
-  static data_t A[I][K], B[J][K], C[I][J], C_golden[I][J];
+#ifdef LAYOUT2  
+  static data_t A[I][K], B[J][K], C[I][J], C_golden[I][J]; // gemm0,3
+#endif  
+#ifdef LAYOUT3  
+  static data_t A[K][I], B[K][J], C[I][J], C_golden[I][J]; // gemm4
+#endif  
 
   for (int i = 0; i < I; i++) 
     for (int k = 0; k < K; k++) {
-      A[i][k] = (float)rand() / RAND_MAX;
+#ifdef LAYOUT2      
+      A[i][k] = k;
+#endif
+#ifdef LAYOUT3      
+      A[k][i] = k;
+#endif      
     }
 
   for (int j = 0; j < J; j++)
     for (int k = 0; k < K; k++) {
-      B[j][k] = (float)rand() / RAND_MAX;
+#ifdef LAYOUT2      
+      B[j][k] = k;
+#endif
+#ifdef LAYOUT3      
+      B[k][j] = k;
+#endif      
     }
 
 #pragma scop
@@ -19,7 +38,12 @@ int main(int argc, char **argv) {
     for (int j = 0; j < J; j++) {
       C[i][j] = 0;
       for (int k = 0; k < K; k++) {
+#ifdef LAYOUT2        
         C[i][j] = C[i][j] + A[i][k] * B[j][k];
+#endif
+#ifdef LAYOUT3      
+        C[i][j] = C[i][j] + A[k][i] * B[k][j];
+#endif        
       }
     }
 #pragma endscop
@@ -28,7 +52,12 @@ int main(int argc, char **argv) {
     for (int j = 0; j < J; j++) {
       C_golden[i][j] = 0;
       for (int k = 0; k < K; k++) {
+#ifdef LAYOUT2        
         C_golden[i][j] = C_golden[i][j] + A[i][k] * B[j][k];
+#endif
+#ifdef LAYOUT3        
+        C_golden[i][j] = C_golden[i][j] + A[k][i] * B[k][j];
+#endif        
       }
     }
 

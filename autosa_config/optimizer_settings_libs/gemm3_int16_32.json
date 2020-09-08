@@ -93,7 +93,7 @@
                     ],
                     "BRAM18K": [
                         0.3,
-                        0.75
+                        0.7
                     ],
                     "URAM": [
                         0,
@@ -104,8 +104,8 @@
             "array_part": {
                 "enable": 1,
                 "PE_num": [
-                    150,
-                    200
+                    200,
+                    300
                 ]
             },
             "array_part_L2": {
@@ -114,15 +114,15 @@
             "latency_hiding": {
                 "enable": 1,
                 "reg_size": [
-                    256,
-                    1000
+                    64,
+                    1024
                 ]
             },
             "SIMD_vectorization": {
                 "enable": 1,
                 "PE_num": [
-                    150,
-                    200
+                    200,
+                    300
                 ],
                 "PE_ratio": 3
             }
@@ -148,7 +148,7 @@
             "SIMD_vectorization": {
                 "mode": "exhaustive",
                 "n": -1,
-                "loop_limit": 64
+                "loop_limit": 32
             }
         }
     }
