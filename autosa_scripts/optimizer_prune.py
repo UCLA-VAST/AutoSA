@@ -100,7 +100,7 @@ def latency_hiding_loops_pruning(loops, config):
     return pruned_loops
 
 
-def SIMD_vectorization_PE_pruning(config):
+def SIMD_vectorization_PE_pruning(config, postpone=0):
     """ Apply pruning based on the PE structures at the SIMD vectorization stage.
 
     At present, we apply the following heuristics:
@@ -111,6 +111,8 @@ def SIMD_vectorization_PE_pruning(config):
     ----------
     config: dict
         Global configuration
+    postpone: int
+        If the pruning is postponed after the SIMD optimization
 
     Returns
     -------
@@ -123,8 +125,13 @@ def SIMD_vectorization_PE_pruning(config):
                                   ]['pruning']['SIMD_vectorization']['PE_num'][0]
     PE_num_ub = config['setting'][config['mode']
                                   ]['pruning']['SIMD_vectorization']['PE_num'][1]
+    if postpone == 0:
+        sa_dims = tuning['simd']['sa_dims']
+    else:
+        sa_dims = tuning['sa_dims']
+
     n_pe = 1
-    for dim in tuning['simd']['sa_dims']:
+    for dim in sa_dims:
         n_pe *= int(dim)
     if PE_num_lb != -1:
         if n_pe < PE_num_lb:
@@ -132,9 +139,8 @@ def SIMD_vectorization_PE_pruning(config):
     if PE_num_ub != -1:
         if n_pe > PE_num_ub:
             return True
-
-    sa_dims = tuning['simd']['sa_dims']
-    if len(tuning['simd']['sa_dims']) > 1:
+    
+    if len(sa_dims) > 1:
         sa_dims.sort(reverse=True)
         pe_ratio = sa_dims[0] / sa_dims[1]
         if config['setting'][config['mode']]['pruning']['SIMD_vectorization']['PE_ratio'] != -1:

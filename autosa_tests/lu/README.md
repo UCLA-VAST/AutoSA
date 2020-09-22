@@ -1,4 +1,4 @@
-# Matrix Multiplication (Small)
+# LU Decomposition (Small)
 
 Board        | Software Version
 -------------|-----------------
@@ -15,14 +15,14 @@ autosa_tests/lu/connectivity.cfg
 
 __Command__:
 ```bash
-./autosa ./autosa_tests/lu/kernel.c --AutoSA-config=./autosa_config/autosa_config.json --target=autosa_hls_c --AutoSA-autosa --isl-schedule-whole-component --AutoSA-output-dir=./autosa.tmp/output --AutoSA-hls --AutoSA-double-buffer-style=1 --no-reschedule --sa-sizes="{kernel[]->space_time[3];kernel[]->array_part[-1,-1,-1];kernel[]->latency[]}" --AutoSA-simd-info=./autosa_tests/lu/simd_info.json --AutoSA-int-io-dir=1 --no-AutoSA-data-pack
+./autosa ./autosa_tests/lu/kernel.c --config=./autosa_config/autosa_config.json --target=autosa_hls_c --output-dir=./autosa.tmp/output --sa-sizes="{kernel[]->space_time[3];kernel[]->array_part[-1,-1,-1];kernel[]->latency[]}" --simd-info=./autosa_tests/lu/simd_info.json --int-io-dir=1 --no-AutoSA-data-pack --use-cplusplus-template --no-reschedule
 ```
 
 After compilation, you will find all generated files under the directory `autosa.tmp/output/src`. Copy the `Makefile` and `connectivity.cfg` to the directory `autosa.tmp/output`.
 
 ```
-cp autosa_tests/mm/Makefile autosa.tmp/output/
-cp autosa_tests/mm/connectivity.cfg autosa.tmp/output/
+cp autosa_tests/lu/Makefile autosa.tmp/output/
+cp autosa_tests/lu/connectivity.cfg autosa.tmp/output/
 ```
 
 Execute the makefile to build the design.

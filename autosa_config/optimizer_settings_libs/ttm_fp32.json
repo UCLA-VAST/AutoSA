@@ -1,0 +1,155 @@
+{
+    "training": {
+        "sample": {
+            "space_time": {
+                "mode": "exhaustive",
+                "n": -1
+            },
+            "array_part": {
+                "mode": "random",
+                "n": 2,
+                "loop_limit": -1
+            },
+            "latency_hiding": {
+                "mode": "random",
+                "n": 2,
+                "loop_limit": 64
+            },
+            "SIMD_vectorization": {
+                "mode": "random",
+                "n": 2,
+                "loop_limit": 8
+            }
+        },
+        "pruning": {
+            "array_part": {
+                "enable": 1,
+                "PE_num": [
+                    8,
+                    32
+                ]
+            },
+            "array_part_L2": {
+                "enable": 1
+            },
+            "latency_hiding": {
+                "enable": 1,
+                "reg_size": [
+                    64,
+                    256
+                ]
+            },
+            "SIMD_vectorization": {
+                "enable": 1,
+                "PE_num": [
+                    8,
+                    32
+                ],
+                "PE_ratio": 2
+            }
+        },
+        "multiprocess": {
+            "n_job": 1
+        }
+    },
+    "synth": {
+        "multiprocess": {
+            "n_job": 16
+        },
+        "sample": {
+            "n": 16
+        }
+    },
+    "search": {
+        "metric": "latency",
+        "cycle_period": 5,
+        "mode": "customized",
+        "n_random": 5,
+        "log": {
+            "n_record": 10
+        },
+        "resource_target": ["BRAM18K", "DSP"],
+        "time_out": 3,
+        "update_time_interval": 2,        
+        "pruning": {
+            "random_start": {
+                "enable": 1,
+                "n_trial": 3,
+                "n_random": 3
+            },
+            "resource": {                
+                "range": {
+                    "FF": [
+                        0.25,
+                        0.7
+                    ],
+                    "LUT": [
+                        0.3,
+                        0.75
+                    ],
+                    "DSP": [
+                        0.6,
+                        0.7
+                    ],
+                    "BRAM18K": [
+                        0.1,
+                        0.5
+                    ],
+                    "URAM": [
+                        0,
+                        0.6
+                    ]
+                }
+            },
+            "array_part": {
+                "enable": 1,
+                "PE_num": [
+                    190,
+                    200
+                ]
+            },
+            "array_part_L2": {
+                "enable": 1
+            },
+            "latency_hiding": {
+                "enable": 1,
+                "reg_size": [
+                    64,
+                    640
+                ]
+            },
+            "SIMD_vectorization": {
+                "enable": 1,
+                "PE_num": [
+                    190,
+                    200
+                ],
+                "PE_ratio": 3
+            }
+        },
+        "multiprocess": {
+            "n_job": 32
+        },
+        "sample": {
+            "space_time": {
+                "mode": "exhaustive",
+                "n": -1
+            },
+            "array_part": {
+                "mode": "exhaustive",
+                "n": -1,
+                "loop_limit": -1
+            },
+            "latency_hiding": {
+                "mode": "exhaustive",
+                "n": -1,
+                "loop_limit": 64
+            },
+            "SIMD_vectorization": {
+                "mode": "exhaustive",
+                "n": -1,
+                "loop_limit": 8
+            }
+        }
+    }
+}

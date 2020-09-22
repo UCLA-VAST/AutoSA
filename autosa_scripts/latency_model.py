@@ -456,7 +456,7 @@ def predict_design_latency(latency_info, cycle=5, early_stop=-1):
     loop_infos = latency_info['loop_infos']
     
     drain_latency = 0
-    drain_outer = 0
+    drain_outer = 1
 
     for module_name in module_grouped:        
         if 'dummy' in module_name:
@@ -532,9 +532,9 @@ def predict_design_latency(latency_info, cycle=5, early_stop=-1):
             else:
                 module_latency = outer_latency * (inter_trans_latency + intra_trans_latency)            
             # Hack: For GEMM4
-            if 'C' in module_name:
-            #if 'drain' in module_name:                                
-                drain_outer = outer_latency
+            #if 'C' in module_name:            
+            if 'drain' in module_name:                                
+                drain_outer = max(1, outer_latency)
 
             latency_all[module_name] = module_latency
         else:
@@ -542,8 +542,9 @@ def predict_design_latency(latency_info, cycle=5, early_stop=-1):
             #print(config['module_name'])
             predict_module_latency_xilinx(module_loop_info, config)
             latency_all[module_name] = config['latency']            
-            if 'C' in module_name:
-            #if 'drain' in module_name:
+            # Hack: For GEMM4
+            #if 'C' in module_name:
+            if 'drain' in module_name:
                 drain_latency = max(drain_latency, config['latency'])
 
         # If we set early stop, we are using a baseline latency to compare.

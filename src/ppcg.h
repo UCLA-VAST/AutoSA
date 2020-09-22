@@ -138,6 +138,14 @@
   p_debug = isl_printer_free(p_debug);                                 \
 }
 
+#define DBGPWQPOLY(os, pwqpoly, ctx)                                  {\
+  printf("%s(%d) Print id.\n", __FILE__, __LINE__);                    \
+  isl_printer *p_debug = isl_printer_to_file(ctx, os);                 \
+  p_debug = isl_printer_print_pw_qpolynomial(p_debug, pwqpoly);        \
+  p_debug = isl_printer_print_str(p_debug, "\n");                      \
+  p_debug = isl_printer_free(p_debug);                                 \
+}
+
 #ifdef __cplusplus
 extern "C"
 {

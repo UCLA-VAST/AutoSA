@@ -975,13 +975,13 @@ static isl_stat build_rar_dep(__isl_take isl_map *map, void *user) {
 //		DBGMAP(stdout, tagged_dep_rar, isl_map_get_ctx(tagged_dep_rar));
 //#endif
 
-		/* Test if the dependence is empty. In such case, we will build a identity map 
-		 * serving as a pseudo-dependence. 
-		 */
-		if (isl_map_is_empty(tagged_dep_rar)) {
-			isl_map_free(tagged_dep_rar);
-			tagged_dep_rar = construct_pseudo_dep_rar(map);
-		}
+	/* Test if the dependence is empty. In such case, we will build a identity map 
+	 * serving as a pseudo-dependence. 
+	 */
+	if (isl_map_is_empty(tagged_dep_rar)) {
+		isl_map_free(tagged_dep_rar);
+		tagged_dep_rar = construct_pseudo_dep_rar(map);
+	}
 
     ps->tagged_dep_rar = isl_union_map_union(ps->tagged_dep_rar, isl_union_map_from_map(tagged_dep_rar));
   } else {

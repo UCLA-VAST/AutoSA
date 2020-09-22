@@ -629,6 +629,7 @@ def shrink_bit_width(lines, target):
             if m:
                 ub = m.group(1).strip()
                 if ub.isnumeric():
+                    #print(pos)
                     # Replace it with shallow bit width
                     bitwidth = int(np.ceil(np.log2(float(ub)))) + 1
                     new_iter_t = 'ap_uint<' + str(bitwidth) + '>'

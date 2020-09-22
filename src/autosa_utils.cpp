@@ -346,10 +346,10 @@ __isl_give isl_set *add_bounded_parameters_dynamic(
   return set;
 }
 
-int convert_pwqpoly_to_int(__isl_keep isl_pw_qpolynomial *to_convert)
+long int convert_pwqpoly_to_int(__isl_keep isl_pw_qpolynomial *to_convert)
 {
   isl_ctx *ctx = isl_pw_qpolynomial_get_ctx(to_convert);
-  int ret = -1;
+  long int ret = -1;
   isl_printer *p;
   char *str;
 
@@ -367,7 +367,7 @@ int convert_pwqpoly_to_int(__isl_keep isl_pw_qpolynomial *to_convert)
     }
   }
 
-  ret = atoi(str);
+  ret = atol(str);
   free(str);
 
   return ret;

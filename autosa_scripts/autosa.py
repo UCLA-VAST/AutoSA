@@ -15,32 +15,38 @@ if __name__ == "__main__":
     target = 'autosa_hls_c'
     src_file_prefix = 'kernel'
     xilinx_host = 'opencl'
-    search = False
+    tuning = False
+    isl_flag = '--isl-schedule-whole-component' # This flag forces ISL to perform loop fusion as much as possible
 
     # Parse and update the arguments
     n_arg = len(sys.argv)
     argv = sys.argv
     argv[0] = './src/autosa'
-    search_idx = -1
+    tuning_idx = -1
+    insert_isl_flag = True
     for i in range(n_arg):
         arg = argv[i]            
         if '--output-dir' in arg:
             output_dir = arg.split('=')[-1]
         if '--target' in arg:
             target = arg.split('=')[-1]
-        if '--search' in arg:            
-            search = True
-            search_idx = i            
+        if '--tuning' in arg:            
+            tuning = True
+            tuning_idx = i
+        if '--isl-schedule-whole-component' in arg:
+            insert_isl_flag = False
     if n_arg > 1:
         src_file = argv[1]
         src_file_prefix = os.path.basename(src_file).split('.')[0]
     if n_arg > 1 and target == 'autosa_hls_c':
         # Check whether to generate HLS or OpenCL host for Xilinx FPGAs
         for arg in argv:
-            if 'AutoSA-hls' in arg:
+            if '--hls' in arg:
                 xilinx_host = 'hls'
-    if search:
-        del argv[search_idx]
+    if tuning:
+        del argv[tuning_idx]
+    if insert_isl_flag:
+        argv.append(isl_flag)
 
     # Check if the output directory exists
     if not os.path.isdir(output_dir):
@@ -79,7 +85,7 @@ if __name__ == "__main__":
     #runtime = time.perf_counter() - start_time
     #print(f'runtime: {runtime}')
 
-    if not search:
+    if not tuning:
         # Generate the final code    
         if target == 'autosa_hls_c':
             cmd = './autosa_scripts/codegen.py -c ' + output_dir + \
@@ -104,14 +110,14 @@ if __name__ == "__main__":
         if os.path.exists(headers):
             exec_sys_cmd(f'cp {headers} {output_dir}/src/')        
 
-#        # Clean up the temp files        
-#        if target == 'autosa_hls_c' and xilinx_host == 'opencl':
-#            exec_sys_cmd(f'rm {output_dir}/src/{src_file_prefix}_kernel.h')            
-#        exec_sys_cmd(f'rm {output_dir}/src/top_gen')
-#        exec_sys_cmd(f'rm {output_dir}/src/top.cpp')
-#        exec_sys_cmd(f'rm {output_dir}/src/{src_file_prefix}_top_gen.cpp')    
-#        exec_sys_cmd(f'rm {output_dir}/src/{src_file_prefix}_top_gen.h')    
-#        if target == 'autosa_hls_c':
-#            exec_sys_cmd(f'rm {output_dir}/src/{src_file_prefix}_kernel_modules.cpp')
-#        elif target == 'autosa_opencl':
-#            exec_sys_cmd(f'rm {output_dir}/src/{src_file_prefix}_kernel_modules.cl')    
+        # Clean up the temp files        
+        if target == 'autosa_hls_c' and xilinx_host == 'opencl':
+            exec_sys_cmd(f'rm {output_dir}/src/{src_file_prefix}_kernel.h')            
+        exec_sys_cmd(f'rm {output_dir}/src/top_gen')
+        exec_sys_cmd(f'rm {output_dir}/src/top.cpp')
+        exec_sys_cmd(f'rm {output_dir}/src/{src_file_prefix}_top_gen.cpp')    
+        exec_sys_cmd(f'rm {output_dir}/src/{src_file_prefix}_top_gen.h')    
+        if target == 'autosa_hls_c':
+            exec_sys_cmd(f'rm {output_dir}/src/{src_file_prefix}_kernel_modules.cpp')
+        elif target == 'autosa_opencl':
+            exec_sys_cmd(f'rm {output_dir}/src/{src_file_prefix}_kernel_modules.cl')    

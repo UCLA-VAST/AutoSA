@@ -233,6 +233,45 @@ static void hls_close_files(struct hls_info *info)
 static int *extract_data_pack_factors(int *data_pack_factors,
                                       int *n_factor, struct autosa_array_ref_group *group)
 {
+  /* Test if the group default packing factor needs to be inserted */
+  if (group->n_lane > 1)
+  {    
+    int n_lane = group->n_lane;
+    bool insert = true;
+    int pos = 0;
+    for (pos = 0; pos < *n_factor; pos++)
+    {
+      if (n_lane > data_pack_factors[pos])
+      {
+        if (pos < *n_factor - 1)
+        {
+          if (n_lane < data_pack_factors[pos + 1])
+          {
+            // insert @pos+1
+            pos++;
+            break;
+          }
+        }
+      }
+      else if (n_lane == data_pack_factors[pos])
+      {
+        insert = false;
+        break;
+      }
+    }
+
+    if (insert) {
+      *n_factor = *n_factor + 1;
+      data_pack_factors = (int *)realloc(data_pack_factors,
+                                         sizeof(int) * (*n_factor));
+      for (int j = *n_factor - 1; j > pos; j--)
+      {
+        data_pack_factors[j] = data_pack_factors[j - 1];
+      }
+      data_pack_factors[pos] = n_lane;
+    }
+  }
+
   for (int i = 0; i < group->n_io_buffer; i++)
   {
     struct autosa_io_buffer *buf = group->io_buffers[i];
@@ -295,7 +334,7 @@ static isl_stat print_data_types_xilinx(
     int *data_pack_factors = (int *)malloc(sizeof(int));
     int n_factor = 1;
     /* First insert the default data pack factor for the array. */
-    data_pack_factors[0] = local->n_lane;
+    data_pack_factors[0] = local->n_lane;    
 
     /* IO group */
     for (int n = 0; n < local->n_io_group; n++)
@@ -2718,7 +2757,7 @@ static __isl_give isl_printer *print_module_serialize_body(
     __isl_take isl_printer *p, struct autosa_hw_module *module)
 {
   isl_pw_qpolynomial *total_bound_pwq = module->io_groups[0]->array->local_array->serialize_bound;
-  int total_bound = -1;  
+  long int total_bound = -1;  
   int ele_size = module->io_groups[0]->array->size; // bytes
   total_bound = convert_pwqpoly_to_int(total_bound_pwq);
   int data_pack_in = module->data_pack_serialize;
@@ -4271,6 +4310,7 @@ static void print_top_gen_host_code(
   isl_ast_print_options *print_options;
   isl_ctx *ctx = isl_ast_node_get_ctx(node);
   isl_printer *p;
+  int fifo_depth = prog->scop->options->autosa->fifo_depth;
   struct print_hw_module_data hw_data = {hls, prog, NULL};
 
   /* Print the top module ASTs. */
@@ -4356,7 +4396,13 @@ static void print_top_gen_host_code(
       p = isl_printer_print_str(p, fifo_name);
       p = isl_printer_print_str(p, "\");");
       p = isl_printer_end_line(p);
-      p = print_str_new_line(p, "p = isl_printer_print_str(p, \" depth=2\");");      
+      //p = print_str_new_line(p, "p = isl_printer_print_str(p, \" depth=2\");");
+      p = isl_printer_start_line(p);
+      p = isl_printer_print_str(p, "p = isl_printer_print_str(p, \" depth=");
+      p = isl_printer_print_int(p, fifo_depth);
+      p = isl_printer_print_str(p, "\");");
+      p = isl_printer_end_line(p);
+
       p = print_str_new_line(p, "p = isl_printer_end_line(p);");
 
       /* fifo:fifo_name:fifo_cnt:fifo_width */

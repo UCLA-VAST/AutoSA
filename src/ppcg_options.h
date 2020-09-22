@@ -88,6 +88,10 @@ extern "C"
 		int lower_int_io_L1_buffer;
 		/* Use C++ template in codegen (necessary for irregular PEs) */
 		int use_cplusplus_template;
+		/* Default FIFO depth */
+		int fifo_depth;
+		/* Touch space loops in the SIMD vectorization */
+		int simd_touch_space;
 	};
 
 	struct ppcg_options

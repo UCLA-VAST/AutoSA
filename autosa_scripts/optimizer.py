@@ -561,11 +561,17 @@ def explore_simd_vectorization(config):
             # No SIMD opportunities found, we will skip this stage
             explore_design(config)
         else:    
-            if pruning_en:
+            PE_pruning_postpone = 0
+            if pruning_en:                
                 # Perform early pruning based on the PE numbers
                 config['tuning'] = tuning
-                if opt_prune.SIMD_vectorization_PE_pruning(config):
-                    return
+                if 'sa_dims' in config['tuning']['simd']:
+                    #print(PE_pruning_postpone)          
+                    if opt_prune.SIMD_vectorization_PE_pruning(config):
+                        return
+                else:
+                    PE_pruning_postpone = 1
+            #print(PE_pruning_postpone)                    
             loops = tuning['simd']['tilable_loops']
             # Filter the SIMD loops
             loops = simd_loop_filter(loops, tuning)
@@ -585,6 +591,14 @@ def explore_simd_vectorization(config):
                     config['autosa_config']['simd']['enable'] = simd_en
                     config['sa_sizes'] = sa_sizes
                     return
+                if PE_pruning_postpone:
+                    with open(f'{config["work_dir"]}/output/tuning.json') as f:
+                        tuning = json.load(f)              
+                    config['tuning'] = tuning  
+                    if opt_prune.SIMD_vectorization_PE_pruning(config, 1):
+                        config['autosa_config']['simd']['enable'] = simd_en
+                        config['sa_sizes'] = sa_sizes
+                        return
                 explore_design(config)
                 config['autosa_config']['simd']['enable'] = simd_en
                 config['sa_sizes'] = sa_sizes
@@ -609,6 +623,13 @@ def explore_simd_vectorization(config):
                         config['logger'].error(f'CMD failed with error code {ret}')
                         config['sa_sizes'] = sa_sizes
                         continue
+                    if PE_pruning_postpone:
+                        with open(f'{config["work_dir"]}/output/tuning.json') as f:
+                            tuning = json.load(f)              
+                        config['tuning'] = tuning  
+                        if opt_prune.SIMD_vectorization_PE_pruning(config, 1):                            
+                            config['sa_sizes'] = sa_sizes
+                            continue
 
                     explore_design(config)
                     config['sa_sizes'] = sa_sizes

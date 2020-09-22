@@ -771,32 +771,29 @@ static __isl_give isl_schedule_node *add_io_copies_stmt_acc_single(
    * to only transfer the data at one loop since we will later insert a 
    * statement to handle the data transfer of the entire SIMD loop.
    */
-//#ifdef _DEBUG
-//  DBGSCHDNODE(stdout, node, isl_schedule_node_get_ctx(node));
-//  DBGSCHDNODE(stdout, graft, isl_schedule_node_get_ctx(graft));
-//#endif
-  //if (n_lane >= 1 && is_simd)
-  //{
-  //  /* The loop above is the SIMD loop.
-  //   * Check the node is below the simd mark. 
-  //   */
-  //  int n_index;
-  //  int tile_size[1];
-  //  isl_id *id;
-  //  isl_printer *p_str;
-  //  isl_union_map *umap;
-  //  isl_union_set *filter;
-//
-  //  /* Create a filter. */    
-  //  node = isl_schedule_node_parent(node);
-  //  if (data->read)
-  //    filter = schedule_eq_lb(node);
-  //  else
-  //    filter = schedule_eq_ub(node);
-  //  node = isl_schedule_node_insert_filter(node, filter);
-  //  node = isl_schedule_node_child(node, 0);
-  //  node = isl_schedule_node_child(node, 0);
-  //}
+#ifdef ISL_SINK  
+  if (n_lane >= 1 && is_simd)
+  {
+    /* The loop above is the SIMD loop.
+     * Check the node is below the simd mark. 
+     */
+    int n_index;
+    int tile_size[1];
+    isl_id *id;
+    isl_printer *p_str;
+    isl_union_map *umap;
+    isl_union_set *filter;
+    /* Create a filter. */    
+    node = isl_schedule_node_parent(node);
+    if (data->read)
+      filter = schedule_eq_lb(node);
+    else
+      filter = schedule_eq_ub(node);
+    node = isl_schedule_node_insert_filter(node, filter);
+    node = isl_schedule_node_child(node, 0);
+    node = isl_schedule_node_child(node, 0);
+  }
+#endif
 
   /* Insert a "pipeline" mark under the band node. */
   hls_id = isl_id_alloc(ctx, "hls_pipeline", NULL);
@@ -891,12 +888,14 @@ __isl_give isl_schedule_node *add_io_copies_stmt_acc(
           node, &add_io_copies_stmt_acc_single, &data);
     }
   }
+#ifndef ISL_SINK  
   /* Modify the SIMD loop.
    * If the current statement is under the SIMD loop, we will add a filter 
    * to only transfer the data at one loop since we will later insert a 
    * statement to handle the data transfer of the entire SIMD loop.   
    */
   node = isl_schedule_node_map_descendant_bottom_up(node, &modify_simd_loop, &data);
+#endif  
 
   return node;
 }
@@ -1084,8 +1083,13 @@ static __isl_give isl_schedule_node *add_io_ids_filter(
   isl_union_set *core;
   int io_id = 0;
 
+//#ifdef _DEBUG
+//  DBGSCHDNODE(stdout, node, isl_schedule_node_get_ctx(node));
+//#endif
+
   core = isl_union_set_universe(isl_schedule_node_get_domain(node));
-  for (int i = n_io_ids + 1; i >= io_level; i--) {
+  //for (int i = n_io_ids + 1; i >= io_level; i--) {
+  for (int i = io_level + n_io_ids - 1; i >= io_level; i--) {
     node = autosa_tree_move_down_to_io_mark(node, core, i);
     node = isl_schedule_node_parent(node);
     if (isl_schedule_node_get_type(node) == isl_schedule_node_band) {
@@ -2485,7 +2489,7 @@ static __isl_give struct autosa_hw_module *generate_filter_buffer_io_module(
   /* We only enable double buffer for external array. 
    * TODO: Offer options to enable the selection of which arrays to be double buffered.
    */
-  if (gen->options->autosa->double_buffer)
+  if (gen->options->autosa->double_buffer && kernel->array_part_w > 0)
   {
     if (group->local_array->array_type == AUTOSA_EXT_ARRAY && module->in) {
       module->double_buffer = 1;
@@ -2958,9 +2962,16 @@ static __isl_give isl_schedule_node *add_serialize_stmt_tile(
     domain = isl_union_set_from_set(isl_map_wrap(map));
   }
 
+#ifdef _DEBUG
+  //DBGSCHDNODE(stdout, node, isl_schedule_node_get_ctx(node));
+  //DBGUSET(stdout, domain, isl_schedule_node_get_ctx(node));
+#endif
   /* Extract the serialization bound. */
   group->local_array->serialize_bound = isl_set_card(
       isl_set_from_union_set(isl_union_set_copy(domain)));  
+#ifdef _DEBUG
+  //DBGPWQPOLY(stdout, group->local_array->serialize_bound, isl_schedule_node_get_ctx(node));
+#endif
 
   domain = isl_union_set_preimage_multi_aff(domain, from_access);
   access = isl_union_set_wrapped_domain_map(domain);
@@ -3390,7 +3401,7 @@ static __isl_give struct autosa_hw_module *generate_io_module_by_type(
 //#ifdef _DEBUG
 //  printf("array_name: %s\n", group->array->name);
 //  printf("module name: %s\n", module->name);
-//  if (!strcmp(module->name, "L_drain_IO_L1_out"))
+//  if (!strcmp(module->name, "A_IO_L3_in"))
 //    printf("here\n");
 //#endif
 

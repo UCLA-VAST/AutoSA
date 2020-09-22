@@ -37,7 +37,7 @@ __isl_give isl_set *add_bounded_parameters_dynamic(
     __isl_take isl_set *set, __isl_keep isl_multi_pw_aff *size,
     __isl_keep isl_id_list *ids);
 
-int convert_pwqpoly_to_int(__isl_keep isl_pw_qpolynomial *to_convert);
+long int convert_pwqpoly_to_int(__isl_keep isl_pw_qpolynomial *to_convert);
 
 /* Get strings */
 char *isl_vec_to_str(__isl_keep isl_vec *vec);

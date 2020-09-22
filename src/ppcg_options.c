@@ -98,6 +98,7 @@ ISL_ARG_BOOL(struct autosa_options, double_buffer, 0, "double-buffer", 1,
 			 "enable double-buffering for data transfer")
 ISL_ARG_INT(struct autosa_options, double_buffer_style, 0, "double-buffer-style", "id", 1,
 			"change double-buffering logic coding style. 0: while loop 1: for loop")
+ISL_ARG_INT(struct autosa_options, fifo_depth, 0, "fifo-depth", "depth", 2, "default FIFO depth")
 ISL_ARG_BOOL(struct autosa_options, hbm, 0, "hbm", 0,
 			 "use multi-port DRAM/HBM")
 ISL_ARG_INT(struct autosa_options, n_hbm_port, 0, "hbm-port-num", "num", 2,
@@ -116,20 +117,16 @@ ISL_ARG_BOOL(struct autosa_options, loop_infinitize, 0, "loop-infinitize", 0,
 			 "apply loop infinitization optimization (Intel OpenCL only)")
 ISL_ARG_BOOL(struct autosa_options, local_reduce, 0, "local-reduce", 0,
 			 "generate non-output-stationary array with local reduction")
+ISL_ARG_STR(struct autosa_options, reduce_op, 0, "reduce-op", "op",
+			NULL, "reduction operator (must be used with local-reduce together)")			 
 ISL_ARG_BOOL(struct autosa_options, lower_int_io_L1_buffer, 0, "lower-int-io-L1-buffer", 0,
 			 "lower the L1 buffer for interior I/O modules")
-ISL_ARG_STR(struct autosa_options, reduce_op, 0, "reduce-op", "op",
-			NULL, "reduction operator (must be used with local-reduce together)")
-ISL_ARG_BOOL(struct autosa_options, non_block_fifo, 0, "non-blocking-fifo", 0,
-			 "use non-blocking fifo interface")
-ISL_ARG_BOOL(struct autosa_options, use_local_memory, 0, "local-memory", 1,
-			 "use local memory in kernel code")
-ISL_ARG_BOOL(struct autosa_options, use_cplusplus_template, 0, "use-cplusplus-template", 0,
-			 "use C++ template in codegen (necessary for irregular PEs)")
 ISL_ARG_INT(struct autosa_options, max_local_memory, 0,
 			"max-local-memory", "size", 8192, "maximal amount of local memory")
 ISL_ARG_INT(struct autosa_options, max_sa_dim, 0,
-			"max-sa-dim", "dim", 2, "maximal systolic array dimension")
+			"max-sa-dim", "dim", 2, "maximal systolic array dimension")			 
+ISL_ARG_BOOL(struct autosa_options, non_block_fifo, 0, "non-blocking-fifo", 0,
+			 "use non-blocking fifo interface")
 ISL_ARG_STR(struct autosa_options, output_dir, 0, "output-dir", "dir", "./autosa.tmp/output",
 			"AutoSA Output directory")
 ISL_ARG_STR(struct autosa_options, sa_sizes, 0, "sa-sizes", "sizes", NULL,
@@ -141,6 +138,8 @@ ISL_ARG_USER_OPT_CHOICE(struct autosa_options, sa_type, 0, "sa-type", sa_type,
 						"systolic array type")
 ISL_ARG_STR(struct autosa_options, simd_info, 0, "simd-info", "info", NULL,
 			"per kernel SIMD information")
+ISL_ARG_BOOL(struct autosa_options, simd_touch_space, 0, "simd-touch-space", 0,
+			"use space loops as SIMD vectorization loops")
 ISL_ARG_BOOL(struct autosa_options, two_level_buffer, 0, "two-level-buffer", 0,
 			 "enable two-level buffering in I/O modules")
 ISL_ARG_BOOL(struct autosa_options, t2s_tile, 0, "t2s-tile", 0,
@@ -149,6 +148,10 @@ ISL_ARG_INT(struct autosa_options, t2s_tile_phase, 0,
 			"t2s-tile-phase", "phase", 0, "T2S tiled URE codegen phase")
 ISL_ARG_BOOL(struct autosa_options, uram, 0, "uram", 0,
 			 "use Xilinx FPGA URAM")
+ISL_ARG_BOOL(struct autosa_options, use_local_memory, 0, "local-memory", 1,
+			 "use local memory in kernel code")
+ISL_ARG_BOOL(struct autosa_options, use_cplusplus_template, 0, "use-cplusplus-template", 0,
+			 "use C++ template in codegen (necessary for irregular PEs)")			 
 ISL_ARG_BOOL(struct autosa_options, verbose, 'v', "verbose", 0,
 			 "print verbose compilation information")
 ISL_ARGS_END

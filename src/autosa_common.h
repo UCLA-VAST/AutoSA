@@ -39,6 +39,13 @@
 #define min(a, b) (((a) < (b)) ? (a) : (b))
 #define max(a, b) (((a) > (b)) ? (a) : (b))
 
+/* If enabled, use the default ISL sink API. */
+#define ISL_SINK
+/* If enabled, the loop tiling factors should be reversed as well. 
+ * The tiled point loops will have a reverse order compared to the original loops.
+ */
+#define REVERSE_ORDER
+
 enum autosa_group_access_type
 {
   AUTOSA_ACCESS_GLOBAL,

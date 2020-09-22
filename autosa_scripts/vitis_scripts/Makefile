@@ -1,7 +1,7 @@
 VPP := $(XILINX_VITIS)/bin/v++
 EMCONFIGUTIL := $(XILINX_VITIS)/bin/emconfigutil
 MODE := hw
-PLATFORM := xilinx_u200_qdma_201920_1
+PLATFORM := xilinx_u250_xdma_201830_2
 
 # sources
 KERNEL_SRC := src/kernel_kernel.cpp

@@ -17,7 +17,7 @@ autosa_tests/mm_hbm/connectivity.cfg
 
 __Command__:
 ```c
-./autosa ./autosa_tests/mm_hbm/kernel.c --AutoSA-config=./autosa_config/autosa_config.json --target=autosa_hls_c --AutoSA-autosa --AutoSA-two-level-buffer --AutoSA-uram --isl-schedule-whole-component --AutoSA-output-dir=./autosa.tmp/output --sa-sizes="{kernel[0]->array_part[32,32,32];kernel[0]->array_part_L2[2,2,2];kernel[0]->latency[8,8];kernel[0]->simd[2];kernel[0]->hbm_A[2];kernel[0]->hbm_B[2];kernel[0]->hbm_C_drain[2]}" --AutoSA-simd-info=./autosa_tests/mm_hbm/simd_info.json --AutoSA-hbm 
+./autosa ./autosa_tests/mm_hbm/kernel.c --config=./autosa_config/autosa_config.json --target=autosa_hls_c --output-dir=./autosa.tmp/output --sa-sizes="{kernel[]->space_time[3];kernel[]->array_part[32,32,32];kernel[]->latency[8,8];kernel[]->simd[2];kernel[]->hbm_A[2];kernel[]->hbm_B[2];kernel[]->hbm_C_drain[2]}" --simd-info=./autosa_tests/mm_hbm/simd_info.json --hbm
 ```
 
 After compilation, you will find all generated files under the directory `autosa.tmp/output/src`. Copy the `Makefile` and `connectivity.cfg` to the directory `autosa.tmp/output`.

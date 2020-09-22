@@ -1738,6 +1738,7 @@ static __isl_give isl_printer *print_fifo_decl_single(
   int boundary = stmt->u.m.boundary;
   int n;
   int n_lane;
+  int fifo_depth = prog->scop->options->autosa->fifo_depth;
 
   p = isl_printer_start_line(p);
   p = isl_printer_print_str(p, "// Count channel number");
@@ -1841,14 +1842,20 @@ static __isl_give isl_printer *print_fifo_decl_single(
         p = print_pretrans_inst_ids_suffix(p, n, group->io_L1_pe_expr, NULL);
       }
     }
-    p = print_str_new_line(p, "p = isl_printer_print_str(p, \" depth=2\");");
+    //p = print_str_new_line(p, "p = isl_printer_print_str(p, \" depth=2\");");
+    p = isl_printer_start_line(p);
+    p = isl_printer_print_str(p, "p = isl_printer_print_str(p, \" depth=");
+    p = isl_printer_print_int(p, fifo_depth);
+    p = isl_printer_print_str(p, "\");");
+    p = isl_printer_end_line(p);
+    
     p = print_str_new_line(p, "p = isl_printer_end_line(p);");
 
     /* If depth * width > 512 bits, HLS will use BRAM to implement FIFOs.
      * Instead, we will insert pragmas to use SRL instead.
      */
     /* Print fifo resource pragma. */
-    if (n_lane * group->array->size > 32)
+    if (n_lane * group->array->size >= 32)
     {
       p = print_str_new_line(p, "p = isl_printer_start_line(p);");
 
