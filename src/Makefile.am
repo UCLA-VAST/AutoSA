@@ -68,7 +68,6 @@ autosa_SOURCES = \
 	print.h \
 	util.c \
 	util.h \
-	version.c \
 	main.cpp \
 	cJSON/cJSON.c \
 	autosa_codegen.cpp \
