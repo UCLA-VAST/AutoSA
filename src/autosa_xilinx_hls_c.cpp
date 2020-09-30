@@ -2786,10 +2786,7 @@ static __isl_give isl_printer *print_module_serialize_body(
 
       p = isl_printer_start_line(p);
       p = autosa_array_ref_group_print_fifo_name(module->io_groups[0], p);
-      p = isl_printer_print_str(p, "_local_out.write(fifo_data);");
-      //p = isl_printer_print_str(p, "fifo_");
-      //p = isl_printer_print_str(p, module->io_groups[0]->array->name);      
-      //p = isl_printer_print_str(p, "_local_out.write(fifo_data);");
+      p = isl_printer_print_str(p, "_local_out.write(fifo_data);");      
       p = isl_printer_end_line(p);
 
       p = isl_printer_indent(p, -2);
@@ -3042,7 +3039,7 @@ static __isl_give isl_printer *autosa_print_serialize_module(
   p = print_str_new_line(p, "/* Variable Declaration */");
   p = isl_printer_end_line(p);
 
-  p = print_module_serialize_body(p, module);
+  p = print_module_serialize_body(p, module, hls);
   p = isl_printer_indent(p, -2);
   fprintf(hls->kernel_c, "}\n");
   p = isl_printer_start_line(p);
@@ -3076,7 +3073,7 @@ static __isl_give isl_printer *autosa_print_default_module(
   isl_ast_print_options *print_options;
   isl_ctx *ctx = isl_printer_get_ctx(p);
   
-
+  /* Print wrapper for PE and L1 IO module */
   if (module->type == PE_MODULE || (module->type != PE_MODULE && module->level == 1)) 
     wrapper = 1;  
 
@@ -3085,8 +3082,8 @@ static __isl_give isl_printer *autosa_print_default_module(
   p = isl_printer_print_str(p, "/* Module Definition */");
   p = isl_printer_end_line(p);
 
-  if (hls->target == XILINX_HW)
-    p = print_module_core_headers_xilinx(p, prog, module, hls, -1, boundary, 0, 1);
+  //if (hls->target == XILINX_HW)
+  p = print_module_core_headers_xilinx(p, prog, module, hls, -1, boundary, 0, 1);
   fprintf(hls->kernel_c, "{\n");
   if (!boundary || !wrapper)
     fprintf(hls->kernel_c, "#pragma HLS INLINE OFF\n");

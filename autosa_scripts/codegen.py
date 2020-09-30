@@ -606,8 +606,7 @@ def shrink_bit_width(lines, target):
         contains the codelines of the program
     target: 
         xilinx|intel
-    """
-
+    """    
     code_len = len(lines)
     for pos in range(code_len):
         line = lines[pos]
@@ -632,7 +631,10 @@ def shrink_bit_width(lines, target):
                     #print(pos)
                     # Replace it with shallow bit width
                     bitwidth = int(np.ceil(np.log2(float(ub)))) + 1
-                    new_iter_t = 'ap_uint<' + str(bitwidth) + '>'
+                    if target == 'xilinx':
+                        new_iter_t = 'ap_uint<' + str(bitwidth) + '>'
+                    elif target == 'intel':
+                        new_iter_t = 'uint' + str(bitwidth) + '_t'
                     line = re.sub('int', new_iter_t, line)
                     lines[pos] = line
 
@@ -1159,6 +1161,7 @@ def intel_run(
                     m = re.search(r'void (.+?)\(', line)
                     if m:
                         module_name = m.group(1)
+                        #print(module_name)
             if line.find('/* Module Definition */') != -1:
                 if add:
                     module_def.pop(len(module_def) - 1)

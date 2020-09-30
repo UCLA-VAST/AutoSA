@@ -10100,14 +10100,14 @@ static isl_bool loop_infinitize_check(__isl_keep isl_ast_node *node, void *user)
  * This optimization is useful for Intel devices since we can remove some 
  * for loops with a simple while (1) loop to reduce the loop control overheads.
  * We will examine the outermost for loop band from outside to inside.
- * For each for loop, we exmaine if the loop iterator appears in any AST
+ * For each for loop, we examine if the loop iterator appears in any AST
  * expression below. If not, this loop will be marked to be infinitized later.
  * When printing out for loops later, such loops will be skipped. 
  * Since we use the nested AST for module ASTs, we examine the 
  * module->tree.
  * If we encounter any AST node calling io_module.inter_trans/io_module.intra_trans,
  * we will search from module->intra_tree and module->inter_tree
- * else, we will search from module->device_tree.
+ * otherwise, we will search from module->device_tree.
  */
 static void loop_infinitization_optimize(struct autosa_hw_module *module)
 {

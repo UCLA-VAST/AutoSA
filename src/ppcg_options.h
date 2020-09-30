@@ -92,6 +92,10 @@ extern "C"
 		int fifo_depth;
 		/* Touch space loops in the SIMD vectorization */
 		int simd_touch_space;
+		/* Use block sparsity */
+		int block_sparse;
+		/* Block sparse ratio [nonzero, vec_len] */
+		char* block_sparse_ratio;
 	};
 
 	struct ppcg_options

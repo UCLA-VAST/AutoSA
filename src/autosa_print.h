@@ -127,6 +127,8 @@ __isl_give isl_printer *autosa_kernel_print_host_serialize(
     __isl_take isl_printer *p,
     struct autosa_kernel_stmt *stmt,
     struct hls_info *hls);    
+__isl_give isl_printer *print_module_serialize_body(
+    __isl_take isl_printer *p, struct autosa_hw_module *module, struct hls_info *hls);    
 
 /* Xilinx-specific */
 __isl_give isl_printer *print_fifo_type_xilinx(__isl_take isl_printer *p,

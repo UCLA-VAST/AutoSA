@@ -47,7 +47,7 @@ static void print_intel_host_header(FILE *fp)
   fprintf(fp, "#include <sys/time.h>\n");
   fprintf(fp, "#endif\n");
   fprintf(fp, "#include <CL/opencl.h>\n");
-  fprintf(fp, "#include <CL/cl_ext_intelfpga.h>\n");
+  //fprintf(fp, "#include <CL/cl_ext_intelfpga.h>\n");
   fprintf(fp, "#include <chrono>\n");
   fprintf(fp, "#include \"AOCLUtils/aocl_utils.h\"\n\n");
 
@@ -290,8 +290,11 @@ static isl_stat print_data_types_intel(
   for (int i = 0; i < kernel->n_array; i++)
   {
     struct autosa_local_array_info *local = &kernel->array[i];
-    int *data_pack_factors = NULL;
-    int n_factor = 0;
+    int *data_pack_factors = (int *)malloc(sizeof(int));
+    int n_factor = 1;
+    /* First insert the default data pack factor for the array. */
+    data_pack_factors[0] = local->n_lane;
+
     /* IO group */
     for (int n = 0; n < local->n_io_group; n++)
     {
@@ -1054,6 +1057,8 @@ static __isl_give isl_printer *find_device_intel(__isl_take isl_printer *p,
       }
       p = isl_printer_print_str(p, "] = clCreateKernel(program, \"");
       p = isl_printer_print_str(p, module->name);
+      if (module->is_serialized)
+        p = isl_printer_print_str(p, "_serialize");
       if (group->n_mem_ports > 1)
       {
         p = isl_printer_print_str(p, "_");
@@ -2221,7 +2226,7 @@ static __isl_give isl_printer *print_host_user_intel(__isl_take isl_printer *p,
 static __isl_give isl_printer *print_module_header_intel(
     __isl_take isl_printer *p,
     struct autosa_prog *prog, struct autosa_hw_module *module,
-    int inter, int boundary)
+    int inter, int boundary, int serialize)
 {
   p = isl_printer_start_line(p);
   if (inter == -1)
@@ -2235,8 +2240,10 @@ static __isl_give isl_printer *print_module_header_intel(
     p = isl_printer_print_str(p, "_inter_trans");
   if (boundary)
     p = isl_printer_print_str(p, "_boundary");
+  if (serialize)
+    p = isl_printer_print_str(p, "_serialize");
   p = isl_printer_print_str(p, "(");
-  p = print_module_arguments(p, prog, module->kernel, module, 1, INTEL_HW, inter, -1, boundary, 0);
+  p = print_module_arguments(p, prog, module->kernel, module, 1, INTEL_HW, inter, -1, boundary, serialize);
   p = isl_printer_print_str(p, ")");
 
   return p;
@@ -2250,26 +2257,20 @@ static __isl_give isl_printer *print_module_header_intel(
  */
 static isl_stat print_module_headers_intel(
     struct autosa_prog *prog, struct autosa_hw_module *module,
-    struct hls_info *hls, int inter, int boundary)
+    struct hls_info *hls, int inter, int boundary, int serialize)
 {
-  isl_printer *p;
-
-  //  p = isl_printer_to_file(prog->ctx, hls->kernel_h);
-  //  p = isl_printer_set_output_format(p, ISL_FORMAT_C);
-  //  p = print_module_header_intel(p, prog, module, inter, boundary);
-  //  p = isl_printer_print_str(p, ";");
-  //  p = isl_printer_end_line(p);
-  //  isl_printer_free(p);
+  isl_printer *p;  
 
   p = isl_printer_to_file(prog->ctx, hls->kernel_c);
   p = isl_printer_set_output_format(p, ISL_FORMAT_C);
   if (inter == -1)
   {
     p = print_str_new_line(p, "__attribute__((max_global_work_dim(0)))");
-    if (module->to_mem != 1)
+    //if (module->to_mem != 1)
+    if ((module->is_serialized && !serialize) || (module->to_mem != 1))
       p = print_str_new_line(p, "__attribute__((autorun))");
   }
-  p = print_module_header_intel(p, prog, module, inter, boundary);
+  p = print_module_header_intel(p, prog, module, inter, boundary, serialize);
   p = isl_printer_end_line(p);
   isl_printer_free(p);
 
@@ -2409,7 +2410,7 @@ static __isl_give isl_printer *autosa_print_intra_trans_module(
   p = isl_printer_print_str(p, "/* Module Definition */");
   p = isl_printer_end_line(p);
 
-  print_module_headers_intel(prog, module, hls, 0, boundary);
+  print_module_headers_intel(prog, module, hls, 0, boundary, 0);
   fprintf(hls->kernel_c, "{\n");
   p = isl_printer_indent(p, 2);
   p = print_str_new_line(p, "/* Variable Declaration */");
@@ -2461,7 +2462,7 @@ static __isl_give isl_printer *autosa_print_inter_trans_module(
   p = isl_printer_print_str(p, "/* Module Definition */");
   p = isl_printer_end_line(p);
 
-  print_module_headers_intel(prog, module, hls, 1, boundary);
+  print_module_headers_intel(prog, module, hls, 1, boundary, 0);
   fprintf(hls->kernel_c, "{\n");
   p = isl_printer_indent(p, 2);
   p = print_str_new_line(p, "/* Variable Declaration */");
@@ -2498,15 +2499,66 @@ static __isl_give isl_printer *autosa_print_inter_trans_module(
   return p;
 }
 
+/* Print the serializaztion module that connects the external memory to the 
+ * top-level I/O module. 
+ */
+static __isl_give isl_printer *autosa_print_serialize_module(
+  __isl_take isl_printer *p,
+  struct autosa_hw_module *module, struct autosa_prog *prog,
+  struct hls_info *hls, int boundary)
+{  
+  struct print_hw_module_data hw_data = {hls, prog, module, NULL};
+  isl_ast_print_options *print_options;
+  isl_ctx *ctx = isl_printer_get_ctx(p);  
+
+  /* Print core. */
+  p = isl_printer_start_line(p);
+  p = isl_printer_print_str(p, "/* Module Definition */");
+  p = isl_printer_end_line(p);
+
+  print_module_headers_intel(prog, module, hls, -1, boundary, 1);  
+  fprintf(hls->kernel_c, "{\n");    
+  p = isl_printer_indent(p, 2);
+  p = print_str_new_line(p, "/* Variable Declaration */");
+  if (!prog->scop->options->autosa->use_cplusplus_template) {
+    print_module_iterators(hls->kernel_c, module);    
+  }
+  p = print_str_new_line(p, "/* Variable Declaration */");
+  p = isl_printer_end_line(p);
+
+  p = print_module_serialize_body(p, module, hls);
+  p = isl_printer_indent(p, -2);
+  fprintf(hls->kernel_c, "}\n");
+  p = isl_printer_start_line(p);
+  p = isl_printer_print_str(p, "/* Module Definition */");
+  p = isl_printer_end_line(p);
+
+  p = isl_printer_end_line(p);
+  return p;
+}
+
 /* Print the default module. */
 static __isl_give isl_printer *autosa_print_default_module(
     __isl_take isl_printer *p,
     struct autosa_hw_module *module, struct autosa_prog *prog,
     struct hls_info *hls, int boundary)
 {
+  if (!boundary) {
+    if (!module->device_tree)
+      return p;
+  } else {
+    if (!module->boundary_tree)
+      return p;
+  }  
+
+  bool wrapper = 0;
   struct print_hw_module_data hw_data = {hls, prog, module, NULL};
   isl_ast_print_options *print_options;
   isl_ctx *ctx = isl_printer_get_ctx(p);
+
+  /* Print wrapper for PE and L1 IO module */
+  if (module->type == PE_MODULE || (module->type != PE_MODULE && module->level == 1)) 
+    wrapper = 1; 
 
   /* Print core. */
   p = isl_printer_start_line(p);
@@ -2514,15 +2566,14 @@ static __isl_give isl_printer *autosa_print_default_module(
   p = isl_printer_end_line(p);
 
   //p = print_module_core_headers_intel(p, prog, module, hls, -1, boundary, 1);
-  print_module_headers_intel(prog, module, hls, -1, boundary);
-  fprintf(hls->kernel_c, "{\n");
+  print_module_headers_intel(prog, module, hls, -1, boundary, 0);
+  fprintf(hls->kernel_c, "{\n");  
   p = isl_printer_indent(p, 2);
   p = print_str_new_line(p, "/* Variable Declaration */");
-  print_module_iterators(hls->kernel_c, module);
-  p = print_module_vars_intel(p, module, -1);
-  if (module->to_mem && module->options->autosa->host_serialize) {
-    p = print_serialize_counter(p, module);
+  if (!prog->scop->options->autosa->use_cplusplus_template) {
+    print_module_iterators(hls->kernel_c, module);
   }
+  p = print_module_vars_intel(p, module, -1);  
   p = print_str_new_line(p, "/* Variable Declaration */");
   p = isl_printer_end_line(p);
 
@@ -2579,6 +2630,12 @@ static __isl_give isl_printer *autosa_print_default_module(
   //    p = isl_printer_end_line(p);
   //  }
 
+  /* If the module serialization is enabled, we will print out an extra module
+   * for serailizing the data. */
+  if (module->to_mem && module->options->autosa->host_serialize) {
+    p = autosa_print_serialize_module(p, module, prog, hls, boundary);
+  }
+
   return p;
 }
 
@@ -2607,6 +2664,7 @@ static __isl_give isl_printer *print_pe_dummy_module_core_header_intel(
     p = isl_printer_print_str(p, "drain");
   }
   p = isl_printer_print_str(p, "_PE_dummy");
+  p = isl_printer_print_str(p, module->in? "_in" : "_out");
   p = isl_printer_print_str(p, "(");
   p = print_pe_dummy_module_arguments(p, prog, module->module->kernel,
                                       module, types, INTEL_HW);
@@ -2651,6 +2709,7 @@ static __isl_give isl_printer *print_pe_dummy_module_header_intel(
     p = isl_printer_print_str(p, "drain");
   }
   p = isl_printer_print_str(p, "_PE_dummy");
+  p = isl_printer_print_str(p, module->in? "_in" : "_out");
   p = isl_printer_print_str(p, "(");
   p = print_pe_dummy_module_arguments(p, prog, module->module->kernel,
                                       module, 1, INTEL_HW);
@@ -3251,7 +3310,7 @@ static __isl_give isl_printer *print_double_buffer_module_while(
   p = isl_printer_print_str(p, "/* Module Definition */");
   p = isl_printer_end_line(p);
 
-  print_module_headers_intel(prog, module, hls, -1, boundary);
+  print_module_headers_intel(prog, module, hls, -1, boundary, 0);
   p = print_str_new_line(p, "{");
   p = isl_printer_indent(p, 2);
 
@@ -3560,6 +3619,7 @@ static void print_top_gen_host_code(
   isl_ast_print_options *print_options;
   isl_ctx *ctx = isl_ast_node_get_ctx(node);
   isl_printer *p;
+  int fifo_depth = prog->scop->options->autosa->fifo_depth;
   struct print_hw_module_data hw_data = {hls, prog, NULL, NULL};
 
   /* Print the top module ASTs. */
@@ -3605,6 +3665,61 @@ static void print_top_gen_host_code(
   p = isl_printer_print_str(p, "p = isl_printer_end_line(p);");
   p = isl_printer_end_line(p);
   p = isl_printer_end_line(p);
+
+  /* Print the serialize fifos if existing. */
+  for (int i = 0; i < top->n_hw_modules; i++) {
+    struct autosa_hw_module *module = top->hw_modules[i];
+    struct autosa_array_ref_group *group = module->io_groups[0];
+    if (module->is_serialized) {
+      /* Generate fifo decl counter. */
+      char *fifo_name;
+      int fifo_w;  // bytes
+      fifo_w = module->data_pack_inter * group->array->size;
+      isl_printer *p_str;
+      p_str = isl_printer_to_str(ctx);
+      p_str = autosa_array_ref_group_print_fifo_name(group, p_str);
+      p_str = isl_printer_print_str(p_str, "_");
+      p_str = isl_printer_print_str(p_str, module->name);
+      p_str = isl_printer_print_str(p_str, "_serialize");
+      fifo_name = isl_printer_get_str(p_str);
+      isl_printer_free(p_str);
+
+      p = print_str_new_line(p, "fifo_cnt = 1;");
+      p = print_str_new_line(p, "p = isl_printer_start_line(p);");
+      p = isl_printer_start_line(p);
+      p = isl_printer_print_str(p, "p = isl_printer_print_str(p, \"/* ");
+      p = isl_printer_print_str(p, module->name);
+      p = isl_printer_print_str(p, "_serialize fifo */ ");      
+      p = print_fifo_type_intel(p, group, module->data_pack_inter);
+      p = isl_printer_print_str(p, " ");
+      p = isl_printer_print_str(p, fifo_name);      
+      //p = isl_printer_print_str(p, ";\");");      
+      p = isl_printer_print_str(p, "\");");      
+      p = isl_printer_end_line(p);
+      //p = print_str_new_line(p, "p = isl_printer_end_line(p);");
+
+      /* Resource pragma */
+      p = isl_printer_start_line(p);
+      p = isl_printer_print_str(p, "p = isl_printer_print_str(p, \" __attribute__((depth(");
+      p = isl_printer_print_int(p, fifo_depth);
+      p = isl_printer_print_str(p, ")));\");");
+      p = isl_printer_end_line(p);
+
+      p = print_str_new_line(p, "p = isl_printer_end_line(p);");
+
+      /* fifo:fifo_name:fifo_cnt:fifo_width */
+      p = isl_printer_start_line(p);
+      p = isl_printer_print_str(p, "fprintf(fd, \"fifo:");
+      p = isl_printer_print_str(p, fifo_name);
+      p = isl_printer_print_str(p, ":\%d:");
+      p = isl_printer_print_int(p, fifo_w);
+      p = isl_printer_print_str(p, "\\n\", fifo_cnt);");
+      p = isl_printer_end_line(p);
+
+      p = isl_printer_end_line(p);      
+      free(fifo_name);
+    }
+  }
 
   for (int i = 0; i < top->n_fifo_decls; i++)
   {
@@ -3711,6 +3826,7 @@ static void print_top_gen_host_code(
         isl_printer *p_str = isl_printer_to_str(ctx);
         p_str = autosa_array_ref_group_print_prefix(group, p_str);
         p_str = isl_printer_print_str(p_str, "_PE_dummy");
+        p_str = isl_printer_print_str(p_str, dummy_module->in? "_in" : "_out");
         module_name = isl_printer_get_str(p_str);
         isl_printer_free(p_str);
 
@@ -3718,6 +3834,17 @@ static void print_top_gen_host_code(
         module_names = (char **)realloc(module_names, n_module_names * sizeof(char *));
         module_names[n_module_names - 1] = module_name;
       }
+    }
+
+    if (module->is_serialized) { 
+      if (module->boundary)      
+        module_name = concat(ctx, module->name, "boundary_serialize");
+      else
+        module_name = concat(ctx, module->name, "serialize");
+      
+      n_module_names++;
+      module_names = (char **)realloc(module_names, n_module_names * sizeof(char *));
+      module_names[n_module_names - 1] = module_name;
     }
   }
   for (int i = 0; i < n_module_names; i++)
