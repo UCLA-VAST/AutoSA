@@ -129,6 +129,8 @@ ISL_ARG_INT(struct autosa_options, max_local_memory, 0,
 			"max-local-memory", "size", 8192, "maximal amount of local memory")
 ISL_ARG_INT(struct autosa_options, max_sa_dim, 0,
 			"max-sa-dim", "dim", 2, "maximal systolic array dimension")			 
+ISL_ARG_STR(struct autosa_options, mem_port_map, 0, "mem-port-map", "map", NULL,
+			"memory port mapping")
 ISL_ARG_BOOL(struct autosa_options, non_block_fifo, 0, "non-blocking-fifo", 0,
 			 "use non-blocking fifo interface")
 ISL_ARG_STR(struct autosa_options, output_dir, 0, "output-dir", "dir", "./autosa.tmp/output",

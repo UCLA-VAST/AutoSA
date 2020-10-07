@@ -1741,6 +1741,7 @@ struct autosa_ast_node_userinfo *alloc_ast_node_userinfo()
   info->is_outermost_for = 0;
   info->is_infinitize_legal = 0;
   info->is_first_infinitizable_loop = 0;  
+  info->n_coalesce_loop = 0;
   info->visited = 0;
 
   return info;
@@ -1969,6 +1970,24 @@ int *read_hbm_tile_sizes(struct autosa_kernel *sa, int tile_len, char *name)
 error:
   free(tile_size);
   return NULL;
+}
+
+int read_mem_port_map(__isl_keep isl_union_map *port_map, char *name)
+{
+  isl_set *size;
+  int port;
+
+  size = extract_sa_sizes(port_map, name);
+  if (isl_set_dim(size, isl_dim_set) != 1) {
+    isl_set_free(size);
+    return -1;
+  }
+  if (read_sa_sizes_from_set(size, &port, 1) < 0)
+    goto error;
+  
+  return port;
+error:
+  return -1;
 }
 
 int *read_default_hbm_tile_sizes(struct autosa_kernel *sa, int tile_len)

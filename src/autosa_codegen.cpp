@@ -10152,6 +10152,44 @@ static isl_bool update_for_visit(__isl_keep isl_ast_node *node, void *user)
   return isl_bool_true;
 }
 
+struct count_loop_data {
+  int pe;
+  int io;
+  int under_simd;
+  int find_simd_loop;
+  int n_loop;
+};
+
+static isl_bool count_loop(__isl_keep isl_ast_node *node, void *user)
+{
+  struct count_loop_data *data = (struct count_loop_data *)user;
+  enum isl_ast_node_type type;
+
+  type = isl_ast_node_get_type(node);
+  if (type == isl_ast_node_for) {
+    data->n_loop++;        
+    if (data->pe) {
+      if (data->under_simd) {
+        data->find_simd_loop = 1;      
+      }
+    }
+  } else if (type == isl_ast_node_mark) {
+    isl_id *id;
+    id = isl_ast_node_mark_get_id(node);    
+    if (!strcmp(isl_id_get_name(id), "simd")) {
+      data->under_simd = 1;
+    }
+    isl_id_free(id);
+  }
+
+  return isl_bool_true;
+}
+
+struct loop_coalesce_update_data {
+  int update_level_for_pe;
+  int update_level_for_io;
+};
+
 /* If the ast node is a for loop node, we will first extract the annonated 
  * userinfo from the node. If the loop is marked to be infinitized, we will 
  * skip this loop.
@@ -10160,10 +10198,13 @@ static isl_bool update_for_visit(__isl_keep isl_ast_node *node, void *user)
  * We will mark all the chidren nodes of this node as visited.
  * Next time when we first meet an unvisited for node, that will be the other
  * outermost loop to be annodated. 
+ * 
+ * If the module is PE module or intra_trans I/O module with data pack, 
+ * we will also update the for loop levels beneath the current for node.
  */
 static isl_bool loop_coalesce_update(__isl_keep isl_ast_node *node, void *user)
 {
-  //struct loop_coalesce_update_data *data = (struct loop_coalesce_update_data *)user;
+  struct loop_coalesce_update_data *data = (struct loop_coalesce_update_data *)user;
   enum isl_ast_node_type type;
 
   type = isl_ast_node_get_type(node);
@@ -10185,6 +10226,21 @@ static isl_bool loop_coalesce_update(__isl_keep isl_ast_node *node, void *user)
         info->is_outermost_for = 1;
         /* Update the children. */
         isl_ast_node_foreach_descendant_top_down(node, &update_for_visit, NULL);
+        if (data->update_level_for_pe || data->update_level_for_io) {
+          /* For PE, we count the loop level if the there is loop under the SIMD mark.
+           * For IO module, we count the loop level.
+           */
+          struct count_loop_data tmp_data = {data->update_level_for_pe, data->update_level_for_io, 0, 0, 0};
+          isl_ast_node_foreach_descendant_top_down(node, &count_loop, &tmp_data);
+          if (tmp_data.pe && tmp_data.find_simd_loop) {          
+            info->n_coalesce_loop = tmp_data.n_loop - 2;            
+          } else if (tmp_data.io) {
+            info->n_coalesce_loop = tmp_data.n_loop - 1;
+          } else {
+            info->n_coalesce_loop = 0;
+          }
+          //std::cout << info->n_coalesce_loop << std::endl;
+        }
       }
       isl_id_free(id);
     }
@@ -10200,36 +10256,45 @@ static isl_bool loop_coalesce_update(__isl_keep isl_ast_node *node, void *user)
 static void loop_coalesce_optimize(struct autosa_hw_module *module)
 {
   isl_ast_node *node;
+  struct loop_coalesce_update_data data = {0, 0};
+  if (module->type == PE_MODULE)
+    data.update_level_for_pe = 1;      
 
   if (module->device_tree)
   {
     node = module->device_tree;
-    isl_ast_node_foreach_descendant_top_down(node, &loop_coalesce_update, NULL);
+    isl_ast_node_foreach_descendant_top_down(node, &loop_coalesce_update, &data);
   }
   if (module->inter_tree)
   {
     node = module->inter_tree;
-    isl_ast_node_foreach_descendant_top_down(node, &loop_coalesce_update, NULL);
+    isl_ast_node_foreach_descendant_top_down(node, &loop_coalesce_update, &data);
   }
   if (module->intra_tree)
   {
+    //std::cout << module->name << std::endl;
+    //std::cout << module->data_pack_inter << std::endl;
+    //std::cout << module->data_pack_intra << std::endl;
+    if (module->data_pack_inter != module->data_pack_intra)
+      data.update_level_for_io = 1;
     node = module->intra_tree;
-    isl_ast_node_foreach_descendant_top_down(node, &loop_coalesce_update, NULL);
+    isl_ast_node_foreach_descendant_top_down(node, &loop_coalesce_update, &data);
+    data.update_level_for_io = 0;
   }
   if (module->boundary_outer_tree)
   {
     node = module->boundary_outer_tree;
-    isl_ast_node_foreach_descendant_top_down(node, &loop_coalesce_update, NULL);
+    isl_ast_node_foreach_descendant_top_down(node, &loop_coalesce_update, &data);
   }
   if (module->boundary_inter_tree)
   {
     node = module->boundary_inter_tree;
-    isl_ast_node_foreach_descendant_top_down(node, &loop_coalesce_update, NULL);
+    isl_ast_node_foreach_descendant_top_down(node, &loop_coalesce_update, &data);
   }
   if (module->boundary_tree)
   {
     node = module->boundary_tree;
-    isl_ast_node_foreach_descendant_top_down(node, &loop_coalesce_update, NULL);
+    isl_ast_node_foreach_descendant_top_down(node, &loop_coalesce_update, &data);
   }
 }
 

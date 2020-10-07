@@ -187,9 +187,12 @@ def print_module_def(
             m = re.search(r'(.+?)\(', line)
             if m:
                 prefix = m.group(1)
-            m = re.search(r'\((.+?)\)', line)
-            if m:
-                def_args = m.group(1)
+            arg_start_pos = line.find('(')
+            arg_end_pos = line.rfind(')')
+            def_args = line[arg_start_pos + 1 : arg_end_pos]
+            #m = re.search(r'\((.+?)\)', line)
+            #if m:
+            #    def_args = m.group(1)
             def_args = def_args.split(', ')
             new_def_args = []
             for i in range(len(def_args)):
@@ -340,9 +343,12 @@ def generate_intel_kernel(
             # extract the arg list in module definition
             for line in module_def:
                 if line.find('void') != -1:
-                    m = re.search(r'\((.+?)\)', line)
-                    if m:
-                        def_args_old = m.group(1)
+                    arg_start_pos = line.find('(')
+                    arg_end_pos = line.rfind(')')
+                    def_args_old = line[arg_start_pos + 1 : arg_end_pos]
+                    #m = re.search(r'\((.+?)\)', line)
+                    #if m:
+                    #    def_args_old = m.group(1)
             def_args_old = def_args_old.split(', ')
             for arg in def_args_old:
                 arg = arg.split()[-1]

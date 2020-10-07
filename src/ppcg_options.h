@@ -43,6 +43,8 @@ extern "C"
 		int use_local_memory;
 		/* Maximal amount of local memory. */
 		int max_local_memory;
+		/* Memory port mapping (for Intel OpenCL). */
+		char *mem_port_map;
 		/* Enable data pack for transferring data. */
 		int data_pack;
 		/* Data pack factors at different I/O levels. */

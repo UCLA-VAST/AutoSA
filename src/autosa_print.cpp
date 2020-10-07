@@ -304,8 +304,18 @@ static __isl_give isl_printer *print_non_linearized_declaration_argument(
  */
 __isl_give isl_printer *autosa_array_info_print_declaration_argument(
     __isl_take isl_printer *p, struct autosa_array_info *array, int n_lane,
-    const char *memory_space, int n_ref)
+    const char *memory_space, int n_ref, char *mem_port_map)
 {
+  int mem_port = -1;
+  if (mem_port_map) {
+    /* This is only for Intel HBM. We will assign the different array to different HBM channel. */
+    isl_union_map *umap;
+
+    umap = extract_sizes_from_str(isl_printer_get_ctx(p), mem_port_map);
+    mem_port = read_mem_port_map(umap, array->name);
+    isl_union_map_free(umap);
+  }
+
   if (autosa_array_is_read_only_scalar(array))
   {
     p = isl_printer_print_str(p, array->type);
@@ -318,6 +328,11 @@ __isl_give isl_printer *autosa_array_info_print_declaration_argument(
   {
     p = isl_printer_print_str(p, memory_space);
     p = isl_printer_print_str(p, " ");
+  }
+  if (mem_port != -1) {
+    p = isl_printer_print_str(p, "__attribute((buffer_location(\"HBM");
+    p = isl_printer_print_int(p, mem_port);
+    p = isl_printer_print_str(p, "\"))) ");
   }
 
   if (array->n_index != 0 && !array->linearize)
@@ -352,7 +367,8 @@ __isl_give isl_printer *autosa_array_info_print_declaration_argument(
  * - the host loop iterators
  */
 __isl_give isl_printer *print_kernel_arguments(__isl_take isl_printer *p,
-                                               struct autosa_prog *prog, struct autosa_kernel *kernel,
+                                               struct autosa_prog *prog, 
+                                               struct autosa_kernel *kernel,
                                                int types, struct hls_info *hls)
 {
   int i, n;
@@ -382,8 +398,8 @@ __isl_give isl_printer *print_kernel_arguments(__isl_take isl_printer *p,
         p = isl_printer_print_str(p, ", ");
 
       if (types)
-        p = autosa_array_info_print_declaration_argument(p,
-                                                         local_array->array, n_lane, NULL, -1);
+        p = autosa_array_info_print_declaration_argument(
+              p, local_array->array, n_lane, NULL, -1, NULL);
       else
         p = autosa_array_info_print_call_argument(p,
                                                   local_array->array, 0);
@@ -398,8 +414,8 @@ __isl_give isl_printer *print_kernel_arguments(__isl_take isl_printer *p,
           p = isl_printer_print_str(p, ", ");
 
         if (types)
-          p = autosa_array_info_print_declaration_argument(p,
-                                                           local_array->array, n_lane, NULL, j);
+          p = autosa_array_info_print_declaration_argument(
+                p, local_array->array, n_lane, NULL, j, NULL);
         else
         {
           p = autosa_array_info_print_call_argument(p,
@@ -1041,9 +1057,9 @@ __isl_give isl_printer *print_module_arguments(
       }
       if (types)
       {
-        p = autosa_array_info_print_declaration_argument(p,
-                                                         module->io_groups[0]->array, n_lane,
-                                                         target == INTEL_HW ? "global" : NULL, -1);
+        p = autosa_array_info_print_declaration_argument(
+              p, module->io_groups[0]->array, n_lane,
+              target == INTEL_HW ? "global" : NULL, -1, prog->scop->options->autosa->mem_port_map);
       }
       else
       {
@@ -1098,8 +1114,8 @@ __isl_give isl_printer *print_module_arguments(
           }
         }
         if (types)
-          p = autosa_array_info_print_declaration_argument(p,
-                                                           &prog->array[i], 1, NULL, -1);
+          p = autosa_array_info_print_declaration_argument(
+                p, &prog->array[i], 1, NULL, -1, NULL);
         else
         {
           p = isl_printer_print_str(p, "/* scalar */ ");
@@ -1480,8 +1496,8 @@ __isl_give isl_printer *print_pe_dummy_module_arguments(
         p = isl_printer_print_str(p, ", ");
       }
       if (types)
-        p = autosa_array_info_print_declaration_argument(p,
-                                                         &prog->array[i], 1, NULL, -1);
+        p = autosa_array_info_print_declaration_argument(
+              p, &prog->array[i], 1, NULL, -1, NULL);
       else
         p = autosa_module_array_info_print_call_argument(p,
                                                          &prog->array[i]);
@@ -5065,6 +5081,7 @@ __isl_give isl_printer *print_module_serialize_body(
         p = isl_printer_end_line(p);
       } else if (hls->target == INTEL_HW) {
         int first = 1;
+        p = isl_printer_start_line(p);
         p = isl_printer_print_str(p, "mem_data.data = ");
         p = isl_printer_print_str(p, "(");
         p = isl_printer_print_str(p, module->io_groups[0]->array->type);
@@ -5089,6 +5106,7 @@ __isl_give isl_printer *print_module_serialize_body(
           first = 0;
         }
         p = isl_printer_print_str(p, ");");
+        p = isl_printer_end_line(p);
       }
 
       p = isl_printer_start_line(p);

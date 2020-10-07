@@ -493,10 +493,15 @@ static __isl_give isl_printer *print_drain_merge_arguments_intel(
 
 static __isl_give isl_printer *print_for_with_coalesce(__isl_keep isl_ast_node *node,
                                                        __isl_take isl_printer *p,
-                                                       __isl_take isl_ast_print_options *print_options)
+                                                       __isl_take isl_ast_print_options *print_options,
+                                                       int n_coalesce_loop)
 {
   p = isl_printer_start_line(p);
   p = isl_printer_print_str(p, "#pragma loop_coalesce");
+  if (n_coalesce_loop > 0) {
+    p = isl_printer_print_str(p, " ");
+    p = isl_printer_print_int(p, n_coalesce_loop);
+  }
   p = isl_printer_end_line(p);
 
   p = isl_ast_node_for_print(node, p, print_options);
@@ -539,6 +544,7 @@ static __isl_give isl_printer *print_module_for(__isl_take isl_printer *p,
   isl_id *id;
   int outermost_for;
   int infinitize, is_first_infinitize;
+  int n_coalesce_loop;
 
   outermost_for = 0;
   infinitize = 0;
@@ -554,12 +560,13 @@ static __isl_give isl_printer *print_module_for(__isl_take isl_printer *p,
       infinitize = 1;
       is_first_infinitize = info->is_first_infinitizable_loop;
     }
+    n_coalesce_loop = info->n_coalesce_loop;
   }
   
   if (infinitize)
     p = print_for_infinitize(node, p, print_options, is_first_infinitize);
   else if (outermost_for)
-    p = print_for_with_coalesce(node, p, print_options);
+    p = print_for_with_coalesce(node, p, print_options, n_coalesce_loop);
   else
     p = isl_ast_node_for_print(node, p, print_options);
 
