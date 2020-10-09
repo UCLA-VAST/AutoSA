@@ -989,6 +989,7 @@ struct autosa_ast_node_userinfo
   int is_outermost_for;
   int is_infinitize_legal;
   int is_first_infinitizable_loop;
+  int is_dep_free;
   int n_coalesce_loop;
   /* Temporary variable used in AST traversal. */
   bool visited;

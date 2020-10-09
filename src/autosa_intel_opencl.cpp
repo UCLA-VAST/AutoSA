@@ -545,6 +545,7 @@ static __isl_give isl_printer *print_module_for(__isl_take isl_printer *p,
   int outermost_for;
   int infinitize, is_first_infinitize;
   int n_coalesce_loop;
+  int is_dep_free;
 
   outermost_for = 0;
   infinitize = 0;
@@ -561,14 +562,19 @@ static __isl_give isl_printer *print_module_for(__isl_take isl_printer *p,
       is_first_infinitize = info->is_first_infinitizable_loop;
     }
     n_coalesce_loop = info->n_coalesce_loop;
+    is_dep_free = info->is_dep_free;
   }
   
   if (infinitize)
     p = print_for_infinitize(node, p, print_options, is_first_infinitize);
-  else if (outermost_for)
+  else if (outermost_for || n_coalesce_loop > 1) {
+    if (is_dep_free == 1) {
+      p = print_str_new_line(p, "#pragma ivdep");
+    }
     p = print_for_with_coalesce(node, p, print_options, n_coalesce_loop);
-  else
+  } else {
     p = isl_ast_node_for_print(node, p, print_options);
+  }
 
   isl_id_free(id);
 
@@ -2238,7 +2244,7 @@ static __isl_give isl_printer *print_module_header_intel(
 {
   p = isl_printer_start_line(p);
   if (inter == -1)
-    p = isl_printer_print_str(p, "kernel void ");
+    p = isl_printer_print_str(p, "__kernel void ");
   else
     p = isl_printer_print_str(p, "void ");
   p = isl_printer_print_str(p, module->name);
@@ -2700,7 +2706,7 @@ static __isl_give isl_printer *print_pe_dummy_module_header_intel(
   struct autosa_array_ref_group *group = module->io_group;
 
   p = isl_printer_start_line(p);
-  p = isl_printer_print_str(p, "kernel void ");
+  p = isl_printer_print_str(p, "__kernel void ");
   // group_name
   p = isl_printer_print_str(p, group->array->name);
   if (group->group_type == AUTOSA_IO_GROUP)

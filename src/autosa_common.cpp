@@ -1741,6 +1741,7 @@ struct autosa_ast_node_userinfo *alloc_ast_node_userinfo()
   info->is_outermost_for = 0;
   info->is_infinitize_legal = 0;
   info->is_first_infinitizable_loop = 0;  
+  info->is_dep_free = 0;
   info->n_coalesce_loop = 0;
   info->visited = 0;
 

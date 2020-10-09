@@ -330,7 +330,7 @@ __isl_give isl_printer *autosa_array_info_print_declaration_argument(
     p = isl_printer_print_str(p, " ");
   }
   if (mem_port != -1) {
-    p = isl_printer_print_str(p, "__attribute((buffer_location(\"HBM");
+    p = isl_printer_print_str(p, "__attribute__((buffer_location(\"HBM");
     p = isl_printer_print_int(p, mem_port);
     p = isl_printer_print_str(p, "\"))) ");
   }
@@ -1059,7 +1059,7 @@ __isl_give isl_printer *print_module_arguments(
       {
         p = autosa_array_info_print_declaration_argument(
               p, module->io_groups[0]->array, n_lane,
-              target == INTEL_HW ? "global" : NULL, -1, prog->scop->options->autosa->mem_port_map);
+              target == INTEL_HW ? "__global" : NULL, -1, prog->scop->options->autosa->mem_port_map);
       }
       else
       {

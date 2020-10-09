@@ -10158,6 +10158,9 @@ struct count_loop_data {
   int under_simd;
   int find_simd_loop;
   int n_loop;
+  int under_latency;  
+  int find_latency_loop;
+  int n_latency_loop;  
 };
 
 static isl_bool count_loop(__isl_keep isl_ast_node *node, void *user)
@@ -10172,12 +10175,18 @@ static isl_bool count_loop(__isl_keep isl_ast_node *node, void *user)
       if (data->under_simd) {
         data->find_simd_loop = 1;      
       }
+      if (data->under_latency) {
+        data->n_latency_loop++;
+      }
     }
   } else if (type == isl_ast_node_mark) {
     isl_id *id;
     id = isl_ast_node_mark_get_id(node);    
     if (!strcmp(isl_id_get_name(id), "simd")) {
       data->under_simd = 1;
+    } 
+    if (!strcmp(isl_id_get_name(id), "latency")) {
+      data->under_latency = 1;
     }
     isl_id_free(id);
   }
@@ -10189,6 +10198,42 @@ struct loop_coalesce_update_data {
   int update_level_for_pe;
   int update_level_for_io;
 };
+
+static isl_bool update_latency_coalesce(__isl_keep isl_ast_node *node, void *user)
+{
+  struct count_loop_data *data = (struct count_loop_data *)user;
+  enum isl_ast_node_type type;
+
+  //std::cout << "node" << std::endl;
+  type = isl_ast_node_get_type(node);
+  if (type == isl_ast_node_for) {
+    if (data->under_latency && data->find_latency_loop == 0) {
+      struct autosa_ast_node_userinfo *info;
+      isl_id *id;
+      
+      //std::cout << "here" << std::endl;
+      id = isl_ast_node_get_annotation(node);
+      if (id) {
+        info = (struct autosa_ast_node_userinfo *)isl_id_get_user(id);
+        //std::cout << data->n_latency_loop << std::endl;
+        info->n_coalesce_loop = data->n_latency_loop - ((data->find_simd_loop == 1)? 1 : 0);
+        //std::cout << info->n_coalesce_loop << std::endl;
+      }
+      isl_id_free(id);
+      data->find_latency_loop = 1;
+    }
+  } else if (type == isl_ast_node_mark) {
+    isl_id *id;
+    id = isl_ast_node_mark_get_id(node);
+    //std::cout << "here" << std::endl;
+    if (!strcmp(isl_id_get_name(id), "latency")) {
+      data->under_latency = 1;
+    }
+    isl_id_free(id);
+  }
+
+  return isl_bool_true;
+}
 
 /* If the ast node is a for loop node, we will first extract the annonated 
  * userinfo from the node. If the loop is marked to be infinitized, we will 
@@ -10226,14 +10271,19 @@ static isl_bool loop_coalesce_update(__isl_keep isl_ast_node *node, void *user)
         info->is_outermost_for = 1;
         /* Update the children. */
         isl_ast_node_foreach_descendant_top_down(node, &update_for_visit, NULL);
-        if (data->update_level_for_pe || data->update_level_for_io) {
-          /* For PE, we count the loop level if the there is loop under the SIMD mark.
-           * For IO module, we count the loop level.
-           */
-          struct count_loop_data tmp_data = {data->update_level_for_pe, data->update_level_for_io, 0, 0, 0};
+        if (data->update_level_for_io) {
+          info->is_dep_free = 1;
+        } else if (data->update_level_for_pe) {
+          struct count_loop_data tmp_data = 
+            {data->update_level_for_pe, data->update_level_for_io, 0, 0, 0, 0, 0, 0};
           isl_ast_node_foreach_descendant_top_down(node, &count_loop, &tmp_data);
           if (tmp_data.pe && tmp_data.find_simd_loop) {          
-            info->n_coalesce_loop = tmp_data.n_loop - 2;            
+            info->n_coalesce_loop = tmp_data.n_loop - tmp_data.n_latency_loop; 
+            /* Update the coalesce info for the latency hiding loop */
+            tmp_data.under_latency = 0;
+            tmp_data.find_latency_loop = 0;
+            //std::cout << "here" << std::endl;
+            isl_ast_node_foreach_descendant_top_down(node, &update_latency_coalesce, &tmp_data);
           } else if (tmp_data.io) {
             info->n_coalesce_loop = tmp_data.n_loop - 1;
           } else {
@@ -10275,7 +10325,7 @@ static void loop_coalesce_optimize(struct autosa_hw_module *module)
     //std::cout << module->name << std::endl;
     //std::cout << module->data_pack_inter << std::endl;
     //std::cout << module->data_pack_intra << std::endl;
-    if (module->data_pack_inter != module->data_pack_intra)
+    if (module->data_pack_inter != module->data_pack_intra && module->in == 0)
       data.update_level_for_io = 1;
     node = module->intra_tree;
     isl_ast_node_foreach_descendant_top_down(node, &loop_coalesce_update, &data);
