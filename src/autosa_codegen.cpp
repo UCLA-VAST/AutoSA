@@ -1001,8 +1001,11 @@ static __isl_give isl_schedule_node *add_io_copies_stmt_tile(
     graft = isl_schedule_node_child(graft, 0);
   }
 
-  if (n_lane > 1)
-  {
+  if (group->local_array->is_sparse) {
+    n_lane *= (kernel->n_nzero * kernel->compress_ratio);
+  }
+
+  if (n_lane > 1) {
     /* Peform data packing. 
      * We will tile the last dimension by the factor of data packing.
      * Then we insert a filter to transfer data only once.
@@ -1292,8 +1295,25 @@ static __isl_give isl_printer *print_trans_stmt_coalesce(
   isl_val *coalesce_bound_val;
   
   coalesce_depth = isl_schedule_node_get_schedule_depth(node) + buf->tile->n - 1;
-  coalesce_bound_val = buf->tile->bound[buf->tile->n - 1].size;  
-  *coalesce_bound = isl_val_get_num_si(coalesce_bound_val) / buf->n_lane;    
+  /* If the host serialization is enabled, we extend the coalesce bound to the 
+   * entire buffer. Otherwise, only the last dimension is considered.
+   */  
+  if (buf->serialize) {
+    coalesce_bound_val = isl_val_copy(buf->tile->bound[buf->tile->n - 1].size);  
+    for (int i = 0; i < buf->tile->n - 1; i++) {
+      coalesce_bound_val = isl_val_mul(isl_val_copy(buf->tile->bound[i].size), 
+                                       coalesce_bound_val);    
+    }    
+    if (buf->sparse) {
+      *coalesce_bound = isl_val_get_num_si(coalesce_bound_val) / (buf->n_lane * buf->vec_len);
+    } else {
+      *coalesce_bound = isl_val_get_num_si(coalesce_bound_val) / buf->n_lane;
+    }
+    isl_val_free(coalesce_bound_val);
+  } else {
+    coalesce_bound_val = buf->tile->bound[buf->tile->n - 1].size;  
+    *coalesce_bound = isl_val_get_num_si(coalesce_bound_val) / buf->n_lane;    
+  }
   if (*coalesce_bound <= 1)
     coalesce_depth = -1;
 
@@ -2225,10 +2245,14 @@ static void create_io_module_var(isl_ctx *ctx,
       isl_val *size;
 
       size = isl_val_copy(tile->bound[i].size);
-      if (n_lane > 1 && i == group->array->n_index - 1)
-      {
-        size = isl_val_div(size, isl_val_int_from_si(ctx, n_lane));
-      }
+      if (i == group->array->n_index - 1) {
+        if (group->local_array->is_sparse) {
+          size = isl_val_div(size, isl_val_int_from_si(ctx, n_lane * group->local_array->vec_len));
+        } else {
+          if (n_lane > 1)
+            size = isl_val_div(size, isl_val_int_from_si(ctx, n_lane));          
+        }
+      }      
       var->size = isl_vec_set_element_val(var->size, i, size);
     }
   }
@@ -2982,6 +3006,26 @@ static __isl_give isl_schedule_node *add_serialize_stmt_tile(
   graft = isl_schedule_node_child(graft, 0);
   graft = isl_schedule_node_insert_partial_schedule(graft, mupa);
 
+  if (group->local_array->is_sparse) {
+    /* We will need to modify the last dimension accordingly. */
+    int n = isl_schedule_node_band_n_member(graft);
+    if (n > 1) {
+      graft = isl_schedule_node_band_split(graft, n - 1);
+      graft = isl_schedule_node_child(graft, 0);
+    }
+    if (group->local_array->eff_compress_ratio > 1) {
+      int tile_size[1];
+      isl_union_set *filter;
+      
+      tile_size[0] = group->local_array->eff_compress_ratio;
+      graft = autosa_tile_band(graft, tile_size);
+      graft = isl_schedule_node_child(graft, 0);
+      filter = schedule_eq_lb(graft);
+      graft = isl_schedule_node_insert_filter(graft, filter);
+      graft = isl_schedule_node_parent(graft);
+    }
+  }
+
   while (graft && isl_schedule_node_has_parent(graft))
     graft = isl_schedule_node_parent(graft);
 
@@ -3438,12 +3482,25 @@ static int update_serialize_data_pack(struct autosa_gen *gen, struct autosa_hw_m
   free(data_pack_ubs);
   isl_union_map_free(sizes);
 
-  for (int limit = dram_limit; limit >= ele_size * n_lane; limit -= ele_size * n_lane) 
-  {
-    if (limit % (ele_size * n_lane) == 0 && module->coalesce_bound % (limit / (ele_size * n_lane)) == 0)
+  if (module->io_groups[0]->local_array->is_sparse) {
+    /* Extract the sparse information */
+    int n_nzero = module->io_groups[0]->local_array->n_nzero;
+    int n_meta_data = module->io_groups[0]->local_array->n_meta_data;
+    for (int limit = dram_limit; limit >= (ele_size * n_lane * (n_nzero + n_meta_data)); limit -= (ele_size * n_lane * (n_nzero + n_meta_data))) {
+      if (limit % (ele_size * n_lane * (n_nzero + n_meta_data)) == 0 &&
+          module->coalesce_bound % (limit / (ele_size * n_lane * (n_nzero + n_meta_data))) == 0) {
+        host_pack = limit / ele_size;
+        break;
+      }
+    }
+  } else {
+    for (int limit = dram_limit; limit >= ele_size * n_lane; limit -= ele_size * n_lane) 
     {
-      host_pack = limit / ele_size;
-      break;
+      if (limit % (ele_size * n_lane) == 0 && module->coalesce_bound % (limit / (ele_size * n_lane)) == 0)
+      {
+        host_pack = limit / ele_size;
+        break;
+      }
     }
   }
 
@@ -4133,6 +4190,11 @@ __isl_give isl_schedule_node *add_pe_ext_io_copies_stmt(
   graft = isl_schedule_node_child(graft, 0);
   graft = isl_schedule_node_insert_partial_schedule(graft, mupa);
 
+  /* Modify the n_lane for the sparse data */
+  if (io_group->local_array->is_sparse) {
+    n_lane *= (io_group->local_array->compress_ratio * io_group->local_array->n_nzero);
+  }
+
   if (n_lane > 1)
   {
     /* Perform data packing. */
@@ -4419,12 +4481,67 @@ static __isl_give isl_schedule_node *insert_pipeline_mark(
   return node;
 }
 
+/* Tile the SIMD loop for the sparsity */
+static __isl_give isl_schedule_node *tile_simd_sparse(
+  __isl_take isl_schedule_node *node, void *user)
+{
+  struct autosa_kernel *kernel = (struct autosa_kernel *)user;
+  isl_ctx *ctx = kernel->ctx;
+
+  if (isl_schedule_node_get_type(node) == isl_schedule_node_mark) {
+    isl_id *id;
+
+    id = isl_schedule_node_mark_get_id(node);
+    isl_id_free(id);
+    if (!strcmp(isl_id_get_name(id), "simd")) {
+      isl_union_map *umap;
+      isl_union_set *uset, *filter;
+      isl_set *set;
+      int new_ub = kernel->simd_w / kernel->compress_ratio;
+
+      umap = isl_schedule_node_get_subtree_schedule_union_map(node);
+      uset = isl_union_map_range(isl_union_map_copy(umap));
+      set = isl_set_from_union_set(uset);
+//#ifdef _DEBUG
+//      DBGSET(stdout, set, ctx);
+//      //exit(0);
+//#endif
+      set = isl_set_upper_bound_si(set, isl_dim_set, 0, new_ub);
+      filter = isl_union_map_range(isl_union_map_intersect_domain(
+                  isl_union_map_reverse(umap), isl_union_set_from_set(set)));                  
+//#ifdef _DEBUG
+//      DBGSET(stdout, set, ctx);
+//      exit(0);
+//#endif
+      while (isl_schedule_node_get_type(node) != isl_schedule_node_band) {
+        node = isl_schedule_node_child(node, 0);
+      }
+      node = isl_schedule_node_insert_filter(node, filter);
+      //node = isl_schedule_node_child(node, 0);           
+      while (isl_schedule_node_has_parent(node)) {
+        if (isl_schedule_node_get_type(node) == isl_schedule_node_mark) {
+          isl_id *id;
+          id = isl_schedule_node_mark_get_id(node);
+          if (!strcmp(isl_id_get_name(id), "simd")) {
+            isl_id_free(id);
+            break;
+          }
+          isl_id_free(id);
+        }
+        node = isl_schedule_node_parent(node);
+      }
+    }    
+  }
+
+  return node;
+}
+
 /* Insert a "hls_unroll" mark after the "simd" mark.
  * The loop will be eventually unrolled.
  * The "hls_unroll" mark is placed under the band node.
  */
 static __isl_give isl_schedule_node *insert_unroll_mark(
-    __isl_take isl_schedule_node *node, void *user)
+  __isl_take isl_schedule_node *node, void *user)
 {
   struct autosa_kernel *kernel = (struct autosa_kernel *)user;
   isl_ctx *ctx = kernel->ctx;
@@ -4482,8 +4599,10 @@ static __isl_give isl_schedule_node *insert_context(struct autosa_kernel *kernel
  * access the packed elements without any bank conflict.
  */
 static void create_pe_module_var(isl_ctx *ctx,
+                                 struct autosa_kernel *kernel,
                                  struct autosa_array_ref_group *group,
-                                 struct autosa_kernel_var *var, struct autosa_local_array_info *local)
+                                 struct autosa_kernel_var *var, struct autosa_local_array_info *local,
+                                 const char *suffix, int sparse_modify_size)
 {
   struct autosa_array_tile *tile;
   isl_printer *p;
@@ -4509,6 +4628,9 @@ static void create_pe_module_var(isl_ctx *ctx,
 
   p = isl_printer_to_str(ctx);
   p = autosa_array_ref_group_print_name(group, p);
+  if (suffix) {
+    p = isl_printer_print_str(p, suffix);
+  }
   var->name = isl_printer_get_str(p);
   isl_printer_free(p);
 
@@ -4522,8 +4644,17 @@ static void create_pe_module_var(isl_ctx *ctx,
     var->size = isl_vec_alloc(ctx, group->array->n_index);
     for (int i = 0; i < group->array->n_index; ++i)
     {
-      var->size = isl_vec_set_element_val(var->size, i,
-                                          isl_val_copy(tile->bound[i].size));
+      isl_val *size;
+
+      size = isl_val_copy(tile->bound[i].size);
+      
+      if (i == group->array->n_index - 1) {
+        if (group->local_array->is_sparse || sparse_modify_size) {
+          size = isl_val_mul_ui(size, kernel->n_nzero);
+          size = isl_val_div_ui(size, kernel->vec_len);
+        }
+      }
+      var->size = isl_vec_set_element_val(var->size, i, size);
     }
   }
 }
@@ -4545,6 +4676,9 @@ static isl_stat create_pe_module_vars(struct autosa_hw_module *module,
       type = autosa_array_ref_group_type(group);
       if (type != AUTOSA_ACCESS_GLOBAL)
         n++;
+      //if (kernel->sparse && array->array_type == AUTOSA_EXT_ARRAY && array->is_sparse == 0) {
+      //  n++;
+      //}
     }
   }
 
@@ -4566,8 +4700,15 @@ static isl_stat create_pe_module_vars(struct autosa_hw_module *module,
       type = autosa_array_ref_group_type(group);
       if (type == AUTOSA_ACCESS_GLOBAL)
         continue;
-      create_pe_module_var(kernel->ctx, group, &module->var[n], array);
-      n++;
+      if (kernel->sparse && array->array_type == AUTOSA_EXT_ARRAY && array->is_sparse == 0) {
+        //create_pe_module_var(kernel->ctx, kernel, group, &module->var[n], array, "_unselected", 0);
+        //n++;
+        create_pe_module_var(kernel->ctx, kernel, group, &module->var[n], array, NULL, 1);
+        n++;
+      } else {
+        create_pe_module_var(kernel->ctx, kernel, group, &module->var[n], array, NULL, 0);
+        n++;
+      }      
     }
   }
 
@@ -4648,6 +4789,7 @@ static __isl_give isl_schedule *pe_module_dummy_gen(struct autosa_gen *gen,
   /* Insert "unroll" mark under the last "simd" mark. */
   node = isl_schedule_node_map_descendant_bottom_up(node,
                                                     &insert_unroll_mark, kernel);
+  
 
   /* Add module mark after the kernel mark. */
   hw_id = isl_id_alloc(gen->ctx, "module", module);
@@ -4790,6 +4932,12 @@ static __isl_give struct autosa_hw_module *sa_pe_module_gen(struct autosa_gen *g
   /* Insert "unroll" mark under the last "simd" mark */
   node = isl_schedule_node_map_descendant_bottom_up(node,
                                                     &insert_unroll_mark, kernel);
+
+  /* Tile the SIMD look for sparsity */
+  if (kernel->sparse) {
+    node = isl_schedule_node_map_descendant_bottom_up(node,
+                                                      &tile_simd_sparse, kernel);
+  }
 
   /* Add module mark after the kernel mark. */
   hw_id = isl_id_alloc(gen->ctx, "module", module);

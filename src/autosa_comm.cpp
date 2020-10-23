@@ -2871,6 +2871,117 @@ static isl_bool update_group_simd(__isl_keep isl_schedule_node *node, void *user
   return isl_bool_true;
 }
 
+/* Select the data pack factor for I/O buffers. For this function, the array
+ * that the I/O group is assoicated with is a sparse matrix.
+ * The unit of data packing factor is the non_zero_num elements + one offset.
+ */
+static isl_stat compute_io_group_data_pack_sparse(
+  struct autosa_kernel *kernel, struct autosa_array_ref_group *group,
+  struct autosa_gen *gen, int max_n_lane)
+{
+  isl_schedule_node *node;
+  isl_union_map *sizes;
+  int *data_pack_ubs = NULL;
+  struct update_group_simd_data data;
+  int ele_size = group->array->size; // bytes
+  /* Given the maximal DRAM port width as 64 Bytes, 
+   * compute the maximal data pack factor. */
+  //if (max_n_lane == -1)
+  //  max_n_lane = 64 / ele_size;
+
+  group->n_lane = 1;
+  node = isl_schedule_get_root(kernel->schedule);
+  data.group = group;
+  data.kernel = kernel;
+  isl_schedule_node_foreach_descendant_top_down(node, &update_group_simd, &data);
+  isl_schedule_node_free(node);
+  /* Update the group n_lane considering the sparse information */
+  if (group->n_lane % kernel->vec_len != 0) {
+    printf("[AutoSA] Error: The sparse block size is not a sub-multiple of the SIMD factor. Abort!\n");
+    exit(1);
+  }
+  group->n_lane /= kernel->vec_len;
+  
+  /* If data packing is disabled, simply update the data packing factor of 
+   * each I/O buffer to the SIMD lanes that are required. 
+   */
+  if (!gen->options->autosa->data_pack) {
+    for (int i = 0; i < group->io_level; i++) {
+      struct autosa_io_buffer *buf = group->io_buffers[i];
+      buf->n_lane = group->n_lane;
+      /* Update the sparse information */
+      buf->sparse = 1;
+      buf->vec_len = kernel->vec_len;
+    }
+    return isl_stat_ok;
+  }
+
+  int cur_n_lane = group->n_lane;
+  int status = false;
+  /* Parse the data pack settings. */
+  sizes = extract_sizes_from_str(gen->ctx, gen->options->autosa->data_pack_sizes);
+  data_pack_ubs = read_data_pack_sizes(sizes, 3);
+  if (!data_pack_ubs) {
+    /* Use the default numbers. */
+    data_pack_ubs = isl_alloc_array(gen->ctx, int, 3);
+    data_pack_ubs[0] = 8;
+    data_pack_ubs[1] = 32;
+    data_pack_ubs[2] = 64;
+  }
+
+  int cur_max_n_lane;
+  for (int i = 0; i < group->io_level; i++) {
+    struct autosa_io_buffer *buf = group->io_buffers[i];
+    if (i == 0)
+      cur_max_n_lane = max(group->n_lane, data_pack_ubs[0] / (kernel->n_nzero * ele_size + 1));
+    else if (i > 0 && i < group->io_level - 1)
+      cur_max_n_lane = max(group->n_lane, data_pack_ubs[1] / (kernel->n_nzero * ele_size + 1));
+    else
+      cur_max_n_lane = max(group->n_lane, data_pack_ubs[2] / ((kernel->n_nzero + kernel->n_meta_data) * ele_size));
+    if (buf->tile) {      
+      int n_lane = cur_n_lane;
+      isl_val *size = isl_val_copy(buf->tile->bound[group->array->n_index - 1].size);
+      if (i == group->io_level - 1 && group->local_array->host_serialize) {
+        for (int n = 0; n < group->array->n_index - 1; n++) {
+          size = isl_val_mul(size, isl_val_copy(buf->tile->bound[n].size));
+        }        
+      }      
+      size = isl_val_div(size, isl_val_int_from_si(gen->ctx, kernel->n_nzero));
+
+      while (n_lane <= cur_max_n_lane) {
+        /* The lane should be multiples of SIMD lane. */
+        if (n_lane % group->n_lane == 0) {
+          isl_val *val = isl_val_int_from_si(gen->ctx, n_lane);
+          /* The lane should be sub-multiples of the last dim of the array. */
+          if (isl_val_is_divisible_by(size, val)) {
+            cur_n_lane = n_lane;
+            status = true;
+          }
+          isl_val_free(val);
+        }
+        n_lane *= 2;
+      }
+      if (status) {
+        buf->n_lane = cur_n_lane;        
+      } else {
+        printf("[AutoSA] Error: Cannot find data pack factors as sub-multiples of the last dim of the local array. Abort!\n");
+        printf("[AutoSA] Please try to use different tiling factors.\n");
+        exit(1);
+      }
+      isl_val_free(size);
+    } else {
+      buf->n_lane = cur_n_lane;
+    }
+    /* Update the sparse information */
+    buf->sparse = 1;
+    buf->vec_len = kernel->vec_len;
+  }
+  isl_union_map_free(sizes);
+  free(data_pack_ubs);
+
+  return isl_stat_ok;
+}
+
 /* Select the data pack factor for I/O buffers. The data pack factor
  * should be sub-multiples of the last dimension of the local array.
  * Meanwhile, it should also be sub-multiples of the data pack factors 
@@ -4162,16 +4273,33 @@ static isl_stat autosa_io_buffer_allocate(struct autosa_kernel *kernel,
 static isl_stat autosa_io_data_pack(struct autosa_kernel *kernel,
                                     struct autosa_gen *gen, struct autosa_group_data *data)
 {
-  for (int i = 0; i < kernel->n_array; i++)
-  {
+  /* Initalize the IO buffer */
+  for (int i = 0; i < kernel->n_array; i++) {
     struct autosa_local_array_info *local = &kernel->array[i];
-    for (int j = 0; j < local->n_io_group; j++)
-    {
-      compute_io_group_data_pack(kernel, local->io_groups[j], gen, -1);
+    for (int j = 0; j < local->n_io_group; j++) {
+      struct autosa_array_ref_group *group = local->io_groups[j];
+      for (int k = 0; k < group->io_level; k++) {
+        struct autosa_io_buffer *buf = group->io_buffers[k];
+        buf->sparse = 0;
+        buf->vec_len = 0;        
+        buf->serialize = (gen->options->autosa->host_serialize == 1)? 1 : 0;
+      }
     }
-    if (local->drain_group)
-    {
-      compute_io_group_data_pack(kernel, local->drain_group, gen, -1);
+  }
+
+  for (int i = 0; i < kernel->n_array; i++) {
+    struct autosa_local_array_info *local = &kernel->array[i];
+    for (int j = 0; j < local->n_io_group; j++) {
+      if (local->is_sparse)
+        compute_io_group_data_pack_sparse(kernel, local->io_groups[j], gen, -1);
+      else
+        compute_io_group_data_pack(kernel, local->io_groups[j], gen, -1);
+    }
+    if (local->drain_group) {
+      if (local->is_sparse)
+        compute_io_group_data_pack_sparse(kernel, local->drain_group, gen, -1);
+      else
+        compute_io_group_data_pack(kernel, local->drain_group, gen, -1);
     }
   }
   return isl_stat_ok;

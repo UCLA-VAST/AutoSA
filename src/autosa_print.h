@@ -27,6 +27,9 @@ __isl_give isl_printer *autosa_print_array_type(__isl_take isl_printer *p,
 __isl_give isl_printer *autosa_print_array_type_with_lane(
     __isl_take isl_printer *p,
     struct autosa_array_info *array, int n_lane);
+__isl_give isl_printer *autosa_print_array_type_with_lane_sparse(
+    __isl_take isl_printer *p,
+    struct autosa_array_info *array, int n_lane);
 __isl_give isl_printer *autosa_array_info_print_declaration_argument(
     __isl_take isl_printer *p, struct autosa_array_info *array, int n_lane,
     const char *memory_space, int n_ref);

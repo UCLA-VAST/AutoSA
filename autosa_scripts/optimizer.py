@@ -1308,6 +1308,8 @@ def search_xilinx(config):
         config['logger'].info('Search mode: Customized')
         explore_design_space(config)
 
+    #print(config['monitor']['n_designs'])
+
     # Print out the best design
     config['logger'].info(print_best_design(config['search_results']['opt'], config['hw_info']))
     # Store the tuning log

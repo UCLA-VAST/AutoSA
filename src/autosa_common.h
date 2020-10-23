@@ -287,6 +287,26 @@ struct autosa_kernel
 
   isl_set *host_domain;
   int single_statement;  
+
+  /* Data structures for block sparsity.
+   * vec_len is the vector length of each sparse block.
+   * n_nzero is the number of non-zero elements in the block.
+   * compress_ratio is calculated as vec_len / n_nzero.
+   * Each sparse block is stored as [data, data, offset]
+   * The offset is a 8-bit long unsigned char that stores a mask that 
+   * indicating the the position of non-zero elements.
+   * This block is also padded to align with 32/128/256/512-bit boundary 
+   * as required by Xilinx HLS.
+   * n_meta_data stores the size of the padded elements plus the offset together 
+   * counted in terms of the size of the data elements. 
+   * effective_compress_ratio is calculated as vec_len / (n_nzero + n_meta_data).
+   */
+  int sparse;
+  int vec_len;
+  int n_nzero;
+  float compress_ratio;
+  int n_meta_data;
+  float eff_compress_ratio;
 };
 
 struct autosa_io_info
@@ -452,6 +472,11 @@ struct autosa_io_buffer
   int level;
   /* The data packing factor */
   int n_lane;
+  /* Is the buffer data serialzied at the host size. */
+  int serialize;
+  /* Is the buffer data sparse */
+  int sparse;
+  int vec_len;
 };
 
 /* A group of array references in a kernel that should be handled together. 
@@ -610,6 +635,14 @@ struct autosa_local_array_info
   unsigned n_index;
   isl_multi_pw_aff *bound;
   isl_ast_expr *bound_expr;
+
+  /* Is this the sparse matrix in the block sparsity */
+  int is_sparse;
+  int vec_len;
+  int n_nzero;
+  float compress_ratio;
+  int n_meta_data;
+  float eff_compress_ratio;
 };
 
 /* "read" and "write" contain the original access relations, possibly 
@@ -1201,4 +1234,9 @@ isl_stat sa_extract_array_info(struct autosa_kernel *kernel);
 int extract_memory_type(struct autosa_hw_module *module,
                         struct autosa_kernel_var *var, int uram);
 isl_stat sa_extract_design_info(struct autosa_gen *gen);
+
+/* AutoSA block sparsity */
+isl_stat autosa_kernel_extract_sparse_info(struct autosa_kernel *kernel, 
+  struct autosa_gen *gen);
+
 #endif

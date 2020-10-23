@@ -2,10 +2,13 @@
 
 #include "autosa_xilinx_hls_c.h"
 #include "autosa_common.h"
+#include "autosa_comm.h"
 #include "autosa_print.h"
 #include "autosa_trans.h"
 #include "autosa_codegen.h"
 #include "autosa_utils.h"
+
+#include <set>
 
 struct print_host_user_data
 {
@@ -346,26 +349,127 @@ static isl_stat print_data_types_xilinx(
     if (local->drain_group)
       data_pack_factors = extract_data_pack_factors(data_pack_factors, &n_factor, local->drain_group);
 
-    for (int n = 0; n < n_factor; n++)
-    {
-      if (data_pack_factors[n] != 1)
-      {
-        int width;
-        width = local->array->size * 8 * data_pack_factors[n];
+    if (local->is_sparse) {
+      std::set<int> tmp_lanes;
+      for (int n = 0; n < n_factor; n++) {
+        tmp_lanes.insert(data_pack_factors[n] * kernel->n_nzero);
+        tmp_lanes.insert(data_pack_factors[n]);
+      }
+      for (auto it = tmp_lanes.begin(); it != tmp_lanes.end(); ++it) {
+        int f = *it;
+        if (f > 1) {
+          p = isl_printer_start_line(p);
+          p = isl_printer_print_str(p, "typedef ap_uint<");
+          p = isl_printer_print_int(p, local->array->size * 8 * f);
+          p = isl_printer_print_str(p, "> ");
+          p = isl_printer_print_str(p, local->array->name);
+          p = isl_printer_print_str(p, "_t");
+          p = isl_printer_print_int(p, f);
+          p = isl_printer_print_str(p, ";");
+          p = isl_printer_end_line(p);
+        }
+      }
+
+      for (int n = 0; n < n_factor; n++) {
         p = isl_printer_start_line(p);
-        p = isl_printer_print_str(p, "typedef ap_uint<");
-        p = isl_printer_print_int(p, width);
-        p = isl_printer_print_str(p, "> ");
+        p = isl_printer_print_str(p, "typedef struct ");
         p = isl_printer_print_str(p, local->array->name);
-        p = isl_printer_print_str(p, "_t");
+        p = isl_printer_print_str(p, "_s_t");
+        p = isl_printer_print_int(p, data_pack_factors[n]);
+        p = isl_printer_print_str(p, " {");
+        p = isl_printer_end_line(p);
+
+        p = isl_printer_indent(p, 2);
+        
+        p = isl_printer_start_line(p);
+        if (data_pack_factors[n] == 1) {
+          p = isl_printer_print_str(p, local->array->type);
+        } else {
+          p = isl_printer_print_str(p, local->array->name);
+          p = isl_printer_print_str(p, "_t");
+          p = isl_printer_print_int(p, data_pack_factors[n] * kernel->n_nzero);
+        }
+        p = isl_printer_print_str(p, " d;");
+        p = isl_printer_end_line(p);
+
+        p = isl_printer_start_line(p);
+        if (data_pack_factors[n] == 1) {
+          p = isl_printer_print_str(p, "unsigned char");  
+        } else {
+          p = isl_printer_print_str(p, "ap_uint<");
+          p = isl_printer_print_int(p, 8 * data_pack_factors[n]);
+          p = isl_printer_print_str(p, ">");
+        }
+        p = isl_printer_print_str(p, " i;");
+        p = isl_printer_end_line(p);
+
+        p = isl_printer_indent(p, -2);
+        p = isl_printer_start_line(p);
+        p = isl_printer_print_str(p, "} ");
+        p = isl_printer_print_str(p, local->array->name);
+        p = isl_printer_print_str(p, "_s_t");
         p = isl_printer_print_int(p, data_pack_factors[n]);
         p = isl_printer_print_str(p, ";");
         p = isl_printer_end_line(p);
       }
+    } else {
+      for (int n = 0; n < n_factor; n++)
+      {
+        if (data_pack_factors[n] != 1)
+        {
+          int width;
+          width = local->array->size * 8 * data_pack_factors[n];
+          p = isl_printer_start_line(p);
+          p = isl_printer_print_str(p, "typedef ap_uint<");
+          p = isl_printer_print_int(p, width);
+          p = isl_printer_print_str(p, "> ");
+          p = isl_printer_print_str(p, local->array->name);
+          p = isl_printer_print_str(p, "_t");
+          p = isl_printer_print_int(p, data_pack_factors[n]);
+          p = isl_printer_print_str(p, ";");
+          p = isl_printer_end_line(p);
+        }
+      }
     }
-    free(data_pack_factors);
+    free(data_pack_factors);    
   }
   p = print_str_new_line(p, "/* Data Type */");
+  p = isl_printer_end_line(p);
+  isl_printer_free(p);
+
+  return isl_stat_ok;
+}
+
+/* Print the macros for the sparse data structure. 
+ */
+static isl_stat print_sparse_macros(struct autosa_kernel *kernel, struct hls_info *hls)
+{
+  isl_printer *p;
+
+  p = isl_printer_to_file(kernel->ctx, hls->kernel_h);
+  p = isl_printer_set_output_format(p, ISL_FORMAT_C);
+  p = print_str_new_line(p, "/* Sparse Macros */");
+
+  p = isl_printer_start_line(p);
+  p = isl_printer_print_str(p, "#define VEC_LEN ");
+  p = isl_printer_print_int(p, kernel->vec_len);
+  p = isl_printer_end_line(p);
+
+  p = isl_printer_start_line(p);
+  p = isl_printer_print_str(p, "#define NON_ZERO_NUM ");
+  p = isl_printer_print_int(p, kernel->n_nzero);
+  p = isl_printer_end_line(p);
+
+  p = print_str_new_line(p, "#define COMPRESS_RATIO (VEC_LEN/NON_ZERO_NUM)");
+
+  p = isl_printer_start_line(p);
+  p = isl_printer_print_str(p, "#define META_DATA_NUM ");
+  p = isl_printer_print_int(p, kernel->n_meta_data);
+  p = isl_printer_end_line(p);
+
+  p = print_str_new_line(p, "#define EFF_COMPRESS_RATIO (VEC_LEN/(NON_ZERO_NUM+META_DATA_NUM))");
+
+  p = print_str_new_line(p, "/* Sparse Macros */");
   p = isl_printer_end_line(p);
   isl_printer_free(p);
 
@@ -543,6 +647,10 @@ static __isl_give isl_printer *declare_and_allocate_device_arrays_xilinx(
         // p = autosa_array_info_print_data_size(p, local_array->array); // TODO
         //p = isl_printer_print_ast_expr(p, local_array->serialize_bound_expr);
         p = isl_printer_print_pw_qpolynomial(p, local_array->serialize_bound);
+        if (local_array->is_sparse) {
+          p = isl_printer_print_str(p, " / ");
+          p = isl_printer_print_double(p, (double)local_array->eff_compress_ratio);
+        }
         p = isl_printer_print_str(p, ");");
         p = isl_printer_end_line(p);
 
@@ -590,6 +698,10 @@ static __isl_give isl_printer *declare_and_allocate_device_arrays_xilinx(
         //p = autosa_array_info_print_data_size(p, local_array->array);
         //p = isl_printer_print_ast_expr(p, local_array->serialize_bound_expr);
         p = isl_printer_print_pw_qpolynomial(p, local_array->serialize_bound);
+        if (local_array->is_sparse) {
+          p = isl_printer_print_str(p, " / ");
+          p = isl_printer_print_double(p, (double)local_array->eff_compress_ratio);
+        }
         p = isl_printer_print_str(p, ");");
         p = isl_printer_end_line(p);
       }
@@ -624,6 +736,8 @@ static __isl_give isl_printer *declare_and_allocate_device_arrays_xilinx(
       p = isl_printer_print_str(p, local_array->array->type);
       p = isl_printer_print_str(p, " *>(");
       p = isl_printer_print_str(p, local_array->array->name);
+      if (local_array->is_sparse)
+        p = isl_printer_print_str(p, "_s");
       p = isl_printer_print_str(p, ") + ");
       p = autosa_array_info_print_data_size(p, local_array->array);
       p = isl_printer_print_str(p, ", dev_");
@@ -648,6 +762,8 @@ static __isl_give isl_printer *declare_and_allocate_device_arrays_xilinx(
       p = isl_printer_print_str(p, local_array->array->type);
       p = isl_printer_print_str(p, " *>(");
       p = isl_printer_print_str(p, local_array->array->name);
+      if (local_array->is_sparse)
+        p = isl_printer_print_str(p, "_s");
       p = isl_printer_print_str(p, ") + ");
       p = autosa_array_info_print_data_size(p, local_array->array);
       p = isl_printer_print_str(p, ", dev_");
@@ -840,7 +956,7 @@ static __isl_give isl_printer *declare_and_allocate_cpu_arrays_xilinx(
       p = isl_printer_print_str(p, " = (");
       p = isl_printer_print_str(p, local_array->array->type);
       p = isl_printer_print_str(p, " *)malloc(");
-      p = autosa_array_info_print_data_size(p, local_array->array);
+      p = autosa_array_info_print_data_size(p, local_array->array);      
       p = isl_printer_print_str(p, " * sizeof(");
       p = isl_printer_print_str(p, local_array->array->type);
       p = isl_printer_print_str(p, "));");
@@ -888,6 +1004,10 @@ static __isl_give isl_printer *declare_and_allocate_cpu_arrays_xilinx(
         p = isl_printer_print_str(p, " *)malloc(");
         //p = autosa_array_info_print_data_size(p, local_array->array);
         p = isl_printer_print_pw_qpolynomial(p, local_array->serialize_bound);
+        if (local_array->is_sparse) {
+          p = isl_printer_print_str(p, " / ");
+          p = isl_printer_print_double(p, (double)local_array->eff_compress_ratio);
+        }
         p = isl_printer_print_str(p, " * sizeof(");
         p = isl_printer_print_str(p, local_array->array->type);
         p = isl_printer_print_str(p, "));");
@@ -934,6 +1054,10 @@ static __isl_give isl_printer *declare_and_allocate_cpu_arrays_xilinx(
         p = isl_printer_print_str(p, " *)malloc(");
         //p = autosa_array_info_print_data_size(p, local_array->array);
         p = isl_printer_print_pw_qpolynomial(p, local_array->serialize_bound);
+        if (local_array->is_sparse) {
+          p = isl_printer_print_str(p, " / ");
+          p = isl_printer_print_double(p, (double)local_array->eff_compress_ratio);
+        }
         p = isl_printer_print_str(p, " * sizeof(");
         p = isl_printer_print_str(p, local_array->array->type);
         p = isl_printer_print_str(p, "));");
@@ -976,6 +1100,8 @@ static __isl_give isl_printer *declare_and_allocate_cpu_arrays_xilinx(
       p = isl_printer_print_str(p, "[i]");      
       p = isl_printer_print_str(p, ", ");
       p = isl_printer_print_str(p, local_array->array->name);
+      if (local_array->is_sparse)
+        p = isl_printer_print_str(p, "_s");
       p = isl_printer_print_str(p, ", ");
       p = autosa_array_info_print_data_size(p, local_array->array);
       p = isl_printer_print_str(p, " * sizeof(");
@@ -995,6 +1121,8 @@ static __isl_give isl_printer *declare_and_allocate_cpu_arrays_xilinx(
         p = isl_printer_print_str(p, "_unserialized");
       p = isl_printer_print_str(p, ", ");
       p = isl_printer_print_str(p, local_array->array->name);
+      if (local_array->is_sparse)
+        p = isl_printer_print_str(p, "_s");
       p = isl_printer_print_str(p, ", ");
       p = autosa_array_info_print_data_size(p, local_array->array);
       p = isl_printer_print_str(p, " * sizeof(");
@@ -2047,13 +2175,18 @@ static __isl_give isl_printer *print_module_var_xilinx(
   use_memory = extract_memory_type(module, var, module->options->autosa->uram);
 
   p = isl_printer_start_line(p);
-  if (var->n_lane == 1)
-    p = isl_printer_print_str(p, var->array->type);
-  else
-  {
+  if (var->array->local_array->is_sparse && module->type != PE_MODULE) {
     p = isl_printer_print_str(p, var->array->name);
-    p = isl_printer_print_str(p, "_t");
+    p = isl_printer_print_str(p, "_s_t");
     p = isl_printer_print_int(p, var->n_lane);
+  } else {
+    if (var->n_lane == 1)
+      p = isl_printer_print_str(p, var->array->type);
+    else {
+      p = isl_printer_print_str(p, var->array->name);    
+      p = isl_printer_print_str(p, "_t");
+      p = isl_printer_print_int(p, var->n_lane);
+    }
   }
   p = isl_printer_print_str(p, " ");
   p = isl_printer_print_str(p, var->name);
@@ -2111,7 +2244,10 @@ static __isl_give isl_printer *print_module_var_xilinx(
     p = isl_printer_print_str(p, var->name);
     if (double_buffer)
       p = isl_printer_print_str(p, "_ping");
-    p = isl_printer_print_str(p, use_memory == 1 ? " core=RAM_2P_LUTRAM" : (use_memory == 2 ? " core=RAM_2P_BRAM" : " core=RAM_2P_URAM"));
+    if (module->data_pack_inter == module->data_pack_intra)
+      p = isl_printer_print_str(p, use_memory == 1 ? " core=RAM_1P_LUTRAM" : (use_memory == 2 ? " core=RAM_1P_BRAM" : " core=RAM_1P_URAM"));
+    else
+      p = isl_printer_print_str(p, use_memory == 1 ? " core=RAM_2P_LUTRAM" : (use_memory == 2 ? " core=RAM_2P_BRAM" : " core=RAM_2P_URAM"));
     p = isl_printer_end_line(p);
   }
 
@@ -2119,13 +2255,18 @@ static __isl_give isl_printer *print_module_var_xilinx(
   if (double_buffer)
   {
     p = isl_printer_start_line(p);
-    if (var->n_lane == 1)
-      p = isl_printer_print_str(p, var->array->type);
-    else
-    {
+    if (var->array->local_array->is_sparse) {
       p = isl_printer_print_str(p, var->array->name);
-      p = isl_printer_print_str(p, "_t");
-      p = isl_printer_print_int(p, var->n_lane);
+      p = isl_printer_print_str(p, "_s_t");      
+      p = isl_printer_print_int(p, var->n_lane);      
+    } else {
+      if (var->n_lane == 1)
+        p = isl_printer_print_str(p, var->array->type);
+      else {
+        p = isl_printer_print_str(p, var->array->name);        
+        p = isl_printer_print_str(p, "_t");
+        p = isl_printer_print_int(p, var->n_lane);
+      }
     }
     p = isl_printer_print_str(p, " ");
     p = isl_printer_print_str(p, var->name);
@@ -2180,7 +2321,11 @@ static __isl_give isl_printer *print_module_var_xilinx(
       p = isl_printer_print_str(p, "#pragma HLS RESOURCE variable=");
       p = isl_printer_print_str(p, var->name);
       p = isl_printer_print_str(p, "_pong");
-      p = isl_printer_print_str(p, use_memory == 1 ? " core=RAM_2P_LUTRAM" : (use_memory == 2 ? " core=RAM_2P_BRAM" : " core=RAM_2P_URAM"));
+      if (module->data_pack_inter == module->data_pack_intra)
+        p = isl_printer_print_str(p, use_memory == 1 ? " core=RAM_1P_LUTRAM" : (use_memory == 2 ? " core=RAM_1P_BRAM" : " core=RAM_1P_URAM"));
+      else
+        p = isl_printer_print_str(p, use_memory == 1 ? " core=RAM_2P_LUTRAM" : (use_memory == 2 ? " core=RAM_2P_BRAM" : " core=RAM_2P_URAM"));
+      //p = isl_printer_print_str(p, use_memory == 1 ? " core=RAM_2P_LUTRAM" : (use_memory == 2 ? " core=RAM_2P_BRAM" : " core=RAM_2P_URAM"));
       p = isl_printer_end_line(p);
     }
   }
@@ -2753,262 +2898,262 @@ static isl_stat print_module_wrapper_headers_xilinx(
 
 /* Print the body for a module that connects to the DRAM with serialized data. 
  */
-static __isl_give isl_printer *print_module_serialize_body(
-    __isl_take isl_printer *p, struct autosa_hw_module *module)
-{
-  isl_pw_qpolynomial *total_bound_pwq = module->io_groups[0]->array->local_array->serialize_bound;
-  long int total_bound = -1;  
-  int ele_size = module->io_groups[0]->array->size; // bytes
-  total_bound = convert_pwqpoly_to_int(total_bound_pwq);
-  int data_pack_in = module->data_pack_serialize;
-  int data_pack_out = module->data_pack_inter;  
-
-  if (data_pack_in == data_pack_out) {    
-    if (module->in) {
-      p = isl_printer_start_line(p);
-      p = isl_printer_print_str(p, "for (int i = 0; i < ");
-      p = isl_printer_print_int(p, total_bound / data_pack_out);
-      p = isl_printer_print_str(p, "; i++) {");
-      p = isl_printer_end_line(p);
-    
-      p = print_str_new_line(p, "#pragma HLS PIPELINE II=1");
-      p = isl_printer_indent(p, 2);
-      p = isl_printer_start_line(p);
-      p = autosa_print_array_type_with_lane(p, module->io_groups[0]->array, data_pack_in);      
-      p = isl_printer_print_str(p, " fifo_data;");
-      p = isl_printer_end_line(p);
-
-      p = isl_printer_start_line(p);
-      p = isl_printer_print_str(p, "fifo_data = ");
-      p = isl_printer_print_str(p, module->io_groups[0]->array->name);
-      p = isl_printer_print_str(p, "[i];");
-      p = isl_printer_end_line(p);
-
-      p = isl_printer_start_line(p);
-      p = autosa_array_ref_group_print_fifo_name(module->io_groups[0], p);
-      p = isl_printer_print_str(p, "_local_out.write(fifo_data);");      
-      p = isl_printer_end_line(p);
-
-      p = isl_printer_indent(p, -2);
-      p = print_str_new_line(p, "}");
-    } else {
-      p = isl_printer_start_line(p);
-      p = isl_printer_print_str(p, "for (int i = 0; i < ");
-      p = isl_printer_print_int(p, total_bound / data_pack_out);
-      p = isl_printer_print_str(p, "; i++) {");
-      p = isl_printer_end_line(p);
-    
-      p = print_str_new_line(p, "#pragma HLS PIPELINE II=1");
-      p = isl_printer_indent(p, 2);
-      p = isl_printer_start_line(p);
-      p = autosa_print_array_type_with_lane(p, module->io_groups[0]->array, data_pack_out);      
-      p = isl_printer_print_str(p, " fifo_data;");
-      p = isl_printer_end_line(p);
-
-      p = isl_printer_start_line(p);
-      p = isl_printer_print_str(p, "fifo_data = ");
-      p = autosa_array_ref_group_print_fifo_name(module->io_groups[0], p);
-      p = isl_printer_print_str(p, "_local_in.read();");
-      //p = isl_printer_print_str(p, "fifo_data = fifo_");
-      //p = isl_printer_print_str(p, module->io_groups[0]->array->name);
-      //if (module->type == DRAIN_MODULE)      
-        //p = isl_printer_print_str(p, "_drain");
-      //p = isl_printer_print_str(p, "_local_in.read();");
-      p = isl_printer_end_line(p);
-
-      p = isl_printer_start_line(p);
-      p = isl_printer_print_str(p, module->io_groups[0]->array->name);
-      p = isl_printer_print_str(p, "[i] = fifo_data;");
-      p = isl_printer_end_line(p);
-
-      p = isl_printer_indent(p, -2);
-      p = print_str_new_line(p, "}");
-    }
-  } else {    
-    if (module->in) {
-      /* [type] fifo_data; */
-      p = isl_printer_start_line(p);
-      p = autosa_print_array_type_with_lane(p, module->io_groups[0]->array, data_pack_out);
-      p = isl_printer_print_str(p, " fifo_data;");
-      p = isl_printer_end_line(p);
-
-      /* [type2] mem_data; */
-      p = isl_printer_start_line(p);
-      p = autosa_print_array_type_with_lane(p, module->io_groups[0]->array, data_pack_in);
-      p = isl_printer_print_str(p, " mem_data;");
-      p = isl_printer_end_line(p);
-      
-      p = isl_printer_start_line(p);
-      if (data_pack_out == 1) {
-        /* union {unsigned int ui; [type] ut;} u; */
-        p = isl_printer_print_str(p, "union {unsigned int ui; ");
-        p = isl_printer_print_str(p, module->io_groups[0]->array->type);
-        p = isl_printer_print_str(p, " ut;} u;");        
-      }
-      p = isl_printer_end_line(p);
-
-      p = isl_printer_start_line(p);
-      p = isl_printer_print_str(p, "for (int i = 0; i < ");
-      p = isl_printer_print_int(p, total_bound / data_pack_in);
-      p = isl_printer_print_str(p, "; i++) {");
-      p = isl_printer_end_line(p);
-    
-      p = print_str_new_line(p, "#pragma HLS PIPELINE II=1");
-      p = isl_printer_indent(p, 2);
-
-      /* mem_data = array[]; */
-      p = isl_printer_start_line(p);
-      p = isl_printer_print_str(p, "mem_data = ");
-      p = isl_printer_print_str(p, module->io_groups[0]->array->name);
-      p = isl_printer_print_str(p, "[i];");
-      p = isl_printer_end_line(p);
-
-      p = isl_printer_start_line(p);
-      p = isl_printer_print_str(p, "for (int p = 0; p < ");
-      p = isl_printer_print_int(p, data_pack_in / data_pack_out);
-      p = isl_printer_print_str(p, "; p++) {");
-      p = isl_printer_end_line(p);
-      p = isl_printer_indent(p, 2);
-
-      /* fifo_data = mem_data(..,..); */
-      p = isl_printer_start_line(p);
-      if (data_pack_out == 1) {
-        p = isl_printer_print_str(p, "u.ui = (unsigned int)mem_data(");
-        p = isl_printer_print_int(p, ele_size * data_pack_out * 8 - 1);
-        p = isl_printer_print_str(p, ", 0);");
-        p = isl_printer_end_line(p);
-
-        p = print_str_new_line(p, "fifo_data = u.ut;");
-      } else {
-        p = isl_printer_print_str(p, "fifo_data = mem_data(");
-        p = isl_printer_print_int(p, ele_size * data_pack_out * 8 - 1);
-        p = isl_printer_print_str(p, ", 0);");
-      }
-      p = isl_printer_end_line(p);
-
-      /* mem_data = mem_data >> .. */
-      p = isl_printer_start_line(p);
-      p = isl_printer_print_str(p, "mem_data = mem_data >> ");
-      p = isl_printer_print_int(p, ele_size * data_pack_out * 8);
-      p = isl_printer_print_str(p, ";");
-      p = isl_printer_end_line(p);
-
-      p = isl_printer_start_line(p);
-      p = autosa_array_ref_group_print_fifo_name(module->io_groups[0], p);
-      p = isl_printer_print_str(p, "_local_out.write(fifo_data);");
-      //p = isl_printer_print_str(p, "fifo_");
-      //p = isl_printer_print_str(p, module->io_groups[0]->array->name);
-      //p = isl_printer_print_str(p, "_local_out.write(fifo_data);");
-      p = isl_printer_end_line(p);
-
-      p = isl_printer_indent(p, -2);
-      p = print_str_new_line(p, "}");
-
-      p = isl_printer_indent(p, -2);
-      p = print_str_new_line(p, "}");
-    } else {
-      p = isl_printer_start_line(p);
-      p = isl_printer_print_str(p, "for (int i = 0; i < ");
-      p = isl_printer_print_int(p, total_bound / data_pack_in);
-      p = isl_printer_print_str(p, "; i++) {");
-      p = isl_printer_end_line(p);
-    
-      p = print_str_new_line(p, "#pragma HLS PIPELINE II=1");
-      p = isl_printer_indent(p, 2);
-
-      /* [type] fifo_data; */
-      p = isl_printer_start_line(p);
-      p = autosa_print_array_type_with_lane(p, module->io_groups[0]->array, data_pack_out);      
-      p = isl_printer_print_str(p, " fifo_data;");
-      p = isl_printer_end_line(p);      
-
-      /* [type2] mem_data; */
-      p = isl_printer_start_line(p);
-      p = autosa_print_array_type_with_lane(p, module->io_groups[0]->array, data_pack_in);      
-      p = isl_printer_print_str(p, " mem_data;");
-      p = isl_printer_end_line(p);      
-
-      if (data_pack_out == 1) {
-        /* union {unsigned int ui; [type] ut;} u; */
-        p = isl_printer_start_line(p);
-        p = isl_printer_print_str(p, "union {unsigned int ui; ");
-        p = isl_printer_print_str(p, module->io_groups[0]->array->type);
-        p = isl_printer_print_str(p, " ut;} u;");        
-        p = isl_printer_end_line(p);
-      }
-
-      p = isl_printer_start_line(p);
-      if (data_pack_out == 1) {
-        p = isl_printer_print_str(p, "ap_uint<");
-        p = isl_printer_print_int(p, module->io_groups[0]->array->size * 8);
-        p = isl_printer_print_str(p, ">");
-      } else {
-        p = autosa_print_array_type_with_lane(p, module->io_groups[0]->array, data_pack_out);
-      }      
-      p = isl_printer_print_str(p, " mem_data_split[");
-      p = isl_printer_print_int(p, data_pack_in / data_pack_out);
-      p = isl_printer_print_str(p, "];");
-      p = isl_printer_end_line(p);
-
-      p = print_str_new_line(p, "#pragma HLS ARRAY_PARTITION variable=mem_data_split complete");
-
-      p = isl_printer_start_line(p);
-      p = isl_printer_print_str(p, "for (int p = 0; p < ");
-      p = isl_printer_print_int(p, data_pack_in / data_pack_out);
-      p = isl_printer_print_str(p, "; p++) {");
-      p = isl_printer_end_line(p);
-      p = isl_printer_indent(p, 2);
-
-      p = isl_printer_start_line(p);
-      p = isl_printer_print_str(p, "fifo_data = ");
-      p = autosa_array_ref_group_print_fifo_name(module->io_groups[0], p);
-      p = isl_printer_print_str(p, "_local_in.read();");
-      //p = isl_printer_print_str(p, "fifo_data = fifo_");
-      //p = isl_printer_print_str(p, module->io_groups[0]->array->name);
-      //if (module->type == DRAIN_MODULE)      
-        //p = isl_printer_print_str(p, "_drain");
-      //p = isl_printer_print_str(p, "_local_in.read();");
-      p = isl_printer_end_line(p);
-
-      if (data_pack_out == 1) {
-        p = print_str_new_line(p, "u.ut = fifo_data;");
-
-        p = isl_printer_start_line(p);
-        p = isl_printer_print_str(p, "mem_data_split[n] = ap_uint<");
-        p = isl_printer_print_int(p, module->io_groups[0]->array->size * 8);
-        p = isl_printer_print_str(p, ">(u.ui);");
-        p = isl_printer_end_line(p);
-      } else {
-        p = print_str_new_line(p, "mem_data_split[p] = fifo_data;");
-      }
-      
-      p = isl_printer_indent(p, -2);
-      p = print_str_new_line(p, "}");
-
-      p = isl_printer_start_line(p);
-      p = isl_printer_print_str(p, "mem_data = (");
-      for (int i = data_pack_in / data_pack_out - 1; i >= 0; i--) {
-        if (i < data_pack_in / data_pack_out - 1)
-          p = isl_printer_print_str(p, ", ");
-        p = isl_printer_print_str(p, "mem_data_split[");
-        p = isl_printer_print_int(p, i);
-        p = isl_printer_print_str(p, "]");
-      }
-      p = isl_printer_print_str(p, ");");
-      p = isl_printer_end_line(p);
-
-      p = isl_printer_start_line(p);
-      p = isl_printer_print_str(p, module->io_groups[0]->array->name);
-      p = isl_printer_print_str(p, "[i] = mem_data;");
-      p = isl_printer_end_line(p);
-
-      p = isl_printer_indent(p, -2);
-      p = print_str_new_line(p, "}");
-    }
-  }
-
-  return p;
-}
+//static __isl_give isl_printer *print_module_serialize_body(
+//    __isl_take isl_printer *p, struct autosa_hw_module *module)
+//{
+//  isl_pw_qpolynomial *total_bound_pwq = module->io_groups[0]->array->local_array->serialize_bound;
+//  long int total_bound = -1;  
+//  int ele_size = module->io_groups[0]->array->size; // bytes
+//  total_bound = convert_pwqpoly_to_int(total_bound_pwq);
+//  int data_pack_in = module->data_pack_serialize;
+//  int data_pack_out = module->data_pack_inter;  
+//
+//  if (data_pack_in == data_pack_out) {    
+//    if (module->in) {
+//      p = isl_printer_start_line(p);
+//      p = isl_printer_print_str(p, "for (int i = 0; i < ");
+//      p = isl_printer_print_int(p, total_bound / data_pack_out);
+//      p = isl_printer_print_str(p, "; i++) {");
+//      p = isl_printer_end_line(p);
+//    
+//      p = print_str_new_line(p, "#pragma HLS PIPELINE II=1");
+//      p = isl_printer_indent(p, 2);
+//      p = isl_printer_start_line(p);
+//      p = autosa_print_array_type_with_lane(p, module->io_groups[0]->array, data_pack_in);      
+//      p = isl_printer_print_str(p, " fifo_data;");
+//      p = isl_printer_end_line(p);
+//
+//      p = isl_printer_start_line(p);
+//      p = isl_printer_print_str(p, "fifo_data = ");
+//      p = isl_printer_print_str(p, module->io_groups[0]->array->name);
+//      p = isl_printer_print_str(p, "[i];");
+//      p = isl_printer_end_line(p);
+//
+//      p = isl_printer_start_line(p);
+//      p = autosa_array_ref_group_print_fifo_name(module->io_groups[0], p);
+//      p = isl_printer_print_str(p, "_local_out.write(fifo_data);");      
+//      p = isl_printer_end_line(p);
+//
+//      p = isl_printer_indent(p, -2);
+//      p = print_str_new_line(p, "}");
+//    } else {
+//      p = isl_printer_start_line(p);
+//      p = isl_printer_print_str(p, "for (int i = 0; i < ");
+//      p = isl_printer_print_int(p, total_bound / data_pack_out);
+//      p = isl_printer_print_str(p, "; i++) {");
+//      p = isl_printer_end_line(p);
+//    
+//      p = print_str_new_line(p, "#pragma HLS PIPELINE II=1");
+//      p = isl_printer_indent(p, 2);
+//      p = isl_printer_start_line(p);
+//      p = autosa_print_array_type_with_lane(p, module->io_groups[0]->array, data_pack_out);      
+//      p = isl_printer_print_str(p, " fifo_data;");
+//      p = isl_printer_end_line(p);
+//
+//      p = isl_printer_start_line(p);
+//      p = isl_printer_print_str(p, "fifo_data = ");
+//      p = autosa_array_ref_group_print_fifo_name(module->io_groups[0], p);
+//      p = isl_printer_print_str(p, "_local_in.read();");
+//      //p = isl_printer_print_str(p, "fifo_data = fifo_");
+//      //p = isl_printer_print_str(p, module->io_groups[0]->array->name);
+//      //if (module->type == DRAIN_MODULE)      
+//        //p = isl_printer_print_str(p, "_drain");
+//      //p = isl_printer_print_str(p, "_local_in.read();");
+//      p = isl_printer_end_line(p);
+//
+//      p = isl_printer_start_line(p);
+//      p = isl_printer_print_str(p, module->io_groups[0]->array->name);
+//      p = isl_printer_print_str(p, "[i] = fifo_data;");
+//      p = isl_printer_end_line(p);
+//
+//      p = isl_printer_indent(p, -2);
+//      p = print_str_new_line(p, "}");
+//    }
+//  } else {    
+//    if (module->in) {
+//      /* [type] fifo_data; */
+//      p = isl_printer_start_line(p);
+//      p = autosa_print_array_type_with_lane(p, module->io_groups[0]->array, data_pack_out);
+//      p = isl_printer_print_str(p, " fifo_data;");
+//      p = isl_printer_end_line(p);
+//
+//      /* [type2] mem_data; */
+//      p = isl_printer_start_line(p);
+//      p = autosa_print_array_type_with_lane(p, module->io_groups[0]->array, data_pack_in);
+//      p = isl_printer_print_str(p, " mem_data;");
+//      p = isl_printer_end_line(p);
+//      
+//      p = isl_printer_start_line(p);
+//      if (data_pack_out == 1) {
+//        /* union {unsigned int ui; [type] ut;} u; */
+//        p = isl_printer_print_str(p, "union {unsigned int ui; ");
+//        p = isl_printer_print_str(p, module->io_groups[0]->array->type);
+//        p = isl_printer_print_str(p, " ut;} u;");        
+//      }
+//      p = isl_printer_end_line(p);
+//
+//      p = isl_printer_start_line(p);
+//      p = isl_printer_print_str(p, "for (int i = 0; i < ");
+//      p = isl_printer_print_int(p, total_bound / data_pack_in);
+//      p = isl_printer_print_str(p, "; i++) {");
+//      p = isl_printer_end_line(p);
+//    
+//      p = print_str_new_line(p, "#pragma HLS PIPELINE II=1");
+//      p = isl_printer_indent(p, 2);
+//
+//      /* mem_data = array[]; */
+//      p = isl_printer_start_line(p);
+//      p = isl_printer_print_str(p, "mem_data = ");
+//      p = isl_printer_print_str(p, module->io_groups[0]->array->name);
+//      p = isl_printer_print_str(p, "[i];");
+//      p = isl_printer_end_line(p);
+//
+//      p = isl_printer_start_line(p);
+//      p = isl_printer_print_str(p, "for (int p = 0; p < ");
+//      p = isl_printer_print_int(p, data_pack_in / data_pack_out);
+//      p = isl_printer_print_str(p, "; p++) {");
+//      p = isl_printer_end_line(p);
+//      p = isl_printer_indent(p, 2);
+//
+//      /* fifo_data = mem_data(..,..); */
+//      p = isl_printer_start_line(p);
+//      if (data_pack_out == 1) {
+//        p = isl_printer_print_str(p, "u.ui = (unsigned int)mem_data(");
+//        p = isl_printer_print_int(p, ele_size * data_pack_out * 8 - 1);
+//        p = isl_printer_print_str(p, ", 0);");
+//        p = isl_printer_end_line(p);
+//
+//        p = print_str_new_line(p, "fifo_data = u.ut;");
+//      } else {
+//        p = isl_printer_print_str(p, "fifo_data = mem_data(");
+//        p = isl_printer_print_int(p, ele_size * data_pack_out * 8 - 1);
+//        p = isl_printer_print_str(p, ", 0);");
+//      }
+//      p = isl_printer_end_line(p);
+//
+//      /* mem_data = mem_data >> .. */
+//      p = isl_printer_start_line(p);
+//      p = isl_printer_print_str(p, "mem_data = mem_data >> ");
+//      p = isl_printer_print_int(p, ele_size * data_pack_out * 8);
+//      p = isl_printer_print_str(p, ";");
+//      p = isl_printer_end_line(p);
+//
+//      p = isl_printer_start_line(p);
+//      p = autosa_array_ref_group_print_fifo_name(module->io_groups[0], p);
+//      p = isl_printer_print_str(p, "_local_out.write(fifo_data);");
+//      //p = isl_printer_print_str(p, "fifo_");
+//      //p = isl_printer_print_str(p, module->io_groups[0]->array->name);
+//      //p = isl_printer_print_str(p, "_local_out.write(fifo_data);");
+//      p = isl_printer_end_line(p);
+//
+//      p = isl_printer_indent(p, -2);
+//      p = print_str_new_line(p, "}");
+//
+//      p = isl_printer_indent(p, -2);
+//      p = print_str_new_line(p, "}");
+//    } else {
+//      p = isl_printer_start_line(p);
+//      p = isl_printer_print_str(p, "for (int i = 0; i < ");
+//      p = isl_printer_print_int(p, total_bound / data_pack_in);
+//      p = isl_printer_print_str(p, "; i++) {");
+//      p = isl_printer_end_line(p);
+//    
+//      p = print_str_new_line(p, "#pragma HLS PIPELINE II=1");
+//      p = isl_printer_indent(p, 2);
+//
+//      /* [type] fifo_data; */
+//      p = isl_printer_start_line(p);
+//      p = autosa_print_array_type_with_lane(p, module->io_groups[0]->array, data_pack_out);      
+//      p = isl_printer_print_str(p, " fifo_data;");
+//      p = isl_printer_end_line(p);      
+//
+//      /* [type2] mem_data; */
+//      p = isl_printer_start_line(p);
+//      p = autosa_print_array_type_with_lane(p, module->io_groups[0]->array, data_pack_in);      
+//      p = isl_printer_print_str(p, " mem_data;");
+//      p = isl_printer_end_line(p);      
+//
+//      if (data_pack_out == 1) {
+//        /* union {unsigned int ui; [type] ut;} u; */
+//        p = isl_printer_start_line(p);
+//        p = isl_printer_print_str(p, "union {unsigned int ui; ");
+//        p = isl_printer_print_str(p, module->io_groups[0]->array->type);
+//        p = isl_printer_print_str(p, " ut;} u;");        
+//        p = isl_printer_end_line(p);
+//      }
+//
+//      p = isl_printer_start_line(p);
+//      if (data_pack_out == 1) {
+//        p = isl_printer_print_str(p, "ap_uint<");
+//        p = isl_printer_print_int(p, module->io_groups[0]->array->size * 8);
+//        p = isl_printer_print_str(p, ">");
+//      } else {
+//        p = autosa_print_array_type_with_lane(p, module->io_groups[0]->array, data_pack_out);
+//      }      
+//      p = isl_printer_print_str(p, " mem_data_split[");
+//      p = isl_printer_print_int(p, data_pack_in / data_pack_out);
+//      p = isl_printer_print_str(p, "];");
+//      p = isl_printer_end_line(p);
+//
+//      p = print_str_new_line(p, "#pragma HLS ARRAY_PARTITION variable=mem_data_split complete");
+//
+//      p = isl_printer_start_line(p);
+//      p = isl_printer_print_str(p, "for (int p = 0; p < ");
+//      p = isl_printer_print_int(p, data_pack_in / data_pack_out);
+//      p = isl_printer_print_str(p, "; p++) {");
+//      p = isl_printer_end_line(p);
+//      p = isl_printer_indent(p, 2);
+//
+//      p = isl_printer_start_line(p);
+//      p = isl_printer_print_str(p, "fifo_data = ");
+//      p = autosa_array_ref_group_print_fifo_name(module->io_groups[0], p);
+//      p = isl_printer_print_str(p, "_local_in.read();");
+//      //p = isl_printer_print_str(p, "fifo_data = fifo_");
+//      //p = isl_printer_print_str(p, module->io_groups[0]->array->name);
+//      //if (module->type == DRAIN_MODULE)      
+//        //p = isl_printer_print_str(p, "_drain");
+//      //p = isl_printer_print_str(p, "_local_in.read();");
+//      p = isl_printer_end_line(p);
+//
+//      if (data_pack_out == 1) {
+//        p = print_str_new_line(p, "u.ut = fifo_data;");
+//
+//        p = isl_printer_start_line(p);
+//        p = isl_printer_print_str(p, "mem_data_split[n] = ap_uint<");
+//        p = isl_printer_print_int(p, module->io_groups[0]->array->size * 8);
+//        p = isl_printer_print_str(p, ">(u.ui);");
+//        p = isl_printer_end_line(p);
+//      } else {
+//        p = print_str_new_line(p, "mem_data_split[p] = fifo_data;");
+//      }
+//      
+//      p = isl_printer_indent(p, -2);
+//      p = print_str_new_line(p, "}");
+//
+//      p = isl_printer_start_line(p);
+//      p = isl_printer_print_str(p, "mem_data = (");
+//      for (int i = data_pack_in / data_pack_out - 1; i >= 0; i--) {
+//        if (i < data_pack_in / data_pack_out - 1)
+//          p = isl_printer_print_str(p, ", ");
+//        p = isl_printer_print_str(p, "mem_data_split[");
+//        p = isl_printer_print_int(p, i);
+//        p = isl_printer_print_str(p, "]");
+//      }
+//      p = isl_printer_print_str(p, ");");
+//      p = isl_printer_end_line(p);
+//
+//      p = isl_printer_start_line(p);
+//      p = isl_printer_print_str(p, module->io_groups[0]->array->name);
+//      p = isl_printer_print_str(p, "[i] = mem_data;");
+//      p = isl_printer_end_line(p);
+//
+//      p = isl_printer_indent(p, -2);
+//      p = print_str_new_line(p, "}");
+//    }
+//  }
+//
+//  return p;
+//}
 
 /* Print the serializaztion module that connects the external memory to the 
  * top-level I/O module. 
@@ -3093,6 +3238,25 @@ static __isl_give isl_printer *autosa_print_default_module(
   p = print_str_new_line(p, "/* Variable Declaration */");
   if (!prog->scop->options->autosa->use_cplusplus_template) {
     print_module_iterators(hls->kernel_c, module);  
+  }
+  if (prog->scop->options->autosa->block_sparse) {
+    for (int i = 0; i < module->n_io_group; i++) {
+      struct autosa_array_ref_group *group = module->io_groups[i];
+      if (group->local_array->array_type == AUTOSA_EXT_ARRAY) {      
+        int n_lane = get_io_group_n_lane(module, NULL, group);
+        p = isl_printer_start_line(p);
+        p = isl_printer_print_str(p, group->array->name);
+        if (group->local_array->is_sparse)
+          p = isl_printer_print_str(p, "_s_t");
+        else
+          p = isl_printer_print_str(p, "_t");      
+        p = isl_printer_print_int(p, n_lane);
+        p = isl_printer_print_str(p, " fifo_data_");
+        p = isl_printer_print_str(p, group->array->name);
+        p = isl_printer_print_str(p, ";");
+        p = isl_printer_end_line(p);
+      }
+    }
   }
   p = print_module_vars_xilinx(p, module, -1);  
   p = print_str_new_line(p, "/* Variable Declaration */");
@@ -3967,6 +4131,11 @@ static __isl_give isl_printer *autosa_print_host_code(__isl_take isl_printer *p,
 
   /* Print the data pack types in the program. */
   print_data_types_xilinx(top, hls);
+
+  /* Print the macros for sparse data structure */
+  if (prog->scop->options->autosa->block_sparse) {
+    print_sparse_macros(top->kernel, hls);
+  }
 
   /* Print the helper functions in the program. */
   print_drain_merge_funcs(top->kernel, drain_merge_funcs, n_drain_merge_funcs, hls);

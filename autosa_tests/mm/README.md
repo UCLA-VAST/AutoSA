@@ -57,7 +57,7 @@ __Tuning__(Alpha):
 We have also provied an auto-tuner in the alpha-version. The auto-tuner builds analytical models for resource usage and latency. Based on these models, the auto-tuner looks for designs with the least latency under the resource constraints.
 To use the auto-tuner, the first step is to train the resource models. Run this command to train the resource model.
 ```bash
-python3 ./autosa_scripts/optimizer.py -c './autosa ./autosa_tests/mm/kernel.c --target=autosa_hls_c --simd-info=./autosa_tests/mm/simd_info.json --host-serialize --hls' --info autosa_config/hw_info.json -s autosa_config/optimizer_settings.json --train -p xilinx
+python3 ./autosa_scripts/optimizer.py -c './autosa ./autosa_tests/large/mm/kernel.c --target=autosa_hls_c --simd-info=./autosa_tests/large/mm/simd_info.json --host-serialize --hls' --info autosa_config/hw_info.json -s autosa_config/optimizer_settings.json --train -p xilinx
 ```
 
 After resource models are trained, run the following command to search for the best design.

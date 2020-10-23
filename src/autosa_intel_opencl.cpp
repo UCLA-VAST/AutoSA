@@ -765,7 +765,7 @@ static __isl_give isl_printer *find_device_intel(__isl_take isl_printer *p,
   //p = print_str_new_line(p, "bool use_emulator = false; // control whether the emulator should be used.");
   p = print_str_new_line(p, "if (argc != 2) {");
   p = isl_printer_indent(p, 2);
-  p = print_str_new_line(p, "std::cout << \"Usage: \" << argv[0] << \"<path/to/bitstream.aocx>\" << std::endl;");
+  p = print_str_new_line(p, "std::cout << \"Usage: \" << argv[0] << \" <path/to/bitstream.aocx>\" << std::endl;");
   p = print_str_new_line(p, "return -1;");
   p = isl_printer_indent(p, -2);
   p = print_str_new_line(p, "}");

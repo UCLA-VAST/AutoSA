@@ -917,6 +917,13 @@ static struct autosa_kernel *autosa_kernel_create_local_arrays(
         kernel->array[i].n_mem_ports = 0;
         kernel->array[i].host_serialize = 0;
         kernel->array[i].serialize_bound = NULL;
+        /* Initiaze the sparse information */
+        kernel->array[i].is_sparse = 0;
+        kernel->array[i].vec_len = 0;
+        kernel->array[i].n_nzero = 0;
+        kernel->array[i].compress_ratio = 0.0f;
+        kernel->array[i].n_meta_data = 0;
+        kernel->array[i].eff_compress_ratio = 0.0f;
     }
 
     return kernel;
@@ -3341,11 +3348,16 @@ static __isl_give isl_schedule_node *compute_and_comm_optimize(
 //#endif
 
     kernel->prog = gen->prog;
-    kernel->options = gen->options;
+    kernel->options = gen->options;    
 
     /* Create local arrays. */
     kernel = autosa_kernel_create_local_arrays(kernel, gen->prog);
     assert(kernel != NULL);
+
+    /* Update the sparse structures */
+    if (gen->options->autosa->block_sparse) {
+        autosa_kernel_extract_sparse_info(kernel, gen);
+    }
 
     /* Apply PE optimization. */
     array_part_json = cJSON_GetObjectItemCaseSensitive(gen->tuning_config, "array_part");

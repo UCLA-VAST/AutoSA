@@ -62,17 +62,17 @@ def print_module_def(
 
     Parameters
     ----------
-    f: 
+    f:
         file handle
-    arg_map: 
+    arg_map:
         maps from module definition args to module call args
-    module_def: 
+    module_def:
         a list storing the module definition texts
-    inline_module_defs: 
+    inline_module_defs:
         a dict containing all the inline module definitions
     def_args:
         a list storing the module definition arguments
-    call_args_type: 
+    call_args_type:
         a list storing the type of each module call arg
     """
     # Print inline module definitions
@@ -285,15 +285,15 @@ def generate_intel_kernel(
 
     Parameters
     ----------
-    kernel: 
+    kernel:
         the output file
-    headers: 
+    headers:
         list containing the headers to be printed
-    module_defs: 
+    module_defs:
         dict containing the module definitions
-    module_calls: 
+    module_calls:
         list containing the module calls
-    fifo_decls: 
+    fifo_decls:
         list containing the fifo declarations
     """
     inline_module_defs = {}
@@ -423,7 +423,7 @@ def insert_xlnx_pragmas(lines):
 
     Parameters
     ----------
-    lines: 
+    lines:
         contains the codelines of the program
     """
     # Handle hls_dependence
@@ -579,7 +579,7 @@ def simplify_expressions(lines):
 
     Parameters
     ----------
-    lines: 
+    lines:
         contains the codelines of the program
     """
     code_len = len(lines)
@@ -608,11 +608,11 @@ def shrink_bit_width(lines, target):
 
     Parameters
     ----------
-    lines: 
+    lines:
         contains the codelines of the program
-    target: 
+    target:
         xilinx|intel
-    """    
+    """
     code_len = len(lines)
     for pos in range(code_len):
         line = lines[pos]
@@ -678,7 +678,7 @@ def lift_split_buffers(lines):
 
     Parameters
     ----------
-    lines: 
+    lines:
         contains the codelines of the program
     """
     code_len = len(lines)
@@ -754,7 +754,7 @@ def build_dummy_module_call(group_name, fifo_name, module_in, PE_ids):
     lines.append(f'  {group_name}_PE_dummy_{dir_str}(\n')
     for id in PE_ids:
         lines.append(f'    /* module id */ {id},\n')
-    lines.append(f'    /* fifo */ {fifo_name}\n')    
+    lines.append(f'    /* fifo */ {fifo_name}\n')
     lines.append(f'  );\n')
     lines.append(f'  /* Module Call */\n')
 
@@ -763,7 +763,7 @@ def build_dummy_module_call(group_name, fifo_name, module_in, PE_ids):
 def insert_dummy_modules(def_lines, call_lines):
     """ Insert the missing dummy modules
 
-    Collect the FIFO information of PEs (fifo_name, fifo_type). 
+    Collect the FIFO information of PEs (fifo_name, fifo_type).
     Delete those FIFOs that are connected to other modules.
     Insert dummy modules for the rest of FIFOs.
 
@@ -778,8 +778,8 @@ def insert_dummy_modules(def_lines, call_lines):
     for line in def_lines:
         if line.find('void PE_wrapper') != -1:
             # Parse the argument list
-            m = re.search(r'\((.+?)\)', line)            
-            args = m.group(1).strip().split(',')            
+            m = re.search(r'\((.+?)\)', line)
+            args = m.group(1).strip().split(',')
             for arg in args:
                 if arg.find('fifo') != -1:
                     m = re.search(r'stream<(.+?)>', arg)
@@ -794,7 +794,7 @@ def insert_dummy_modules(def_lines, call_lines):
         if line.find('void kernel0') != -1:
             kernel_start = 1
         if kernel_start:
-            if line.find('* fifo *') != -1:                                                
+            if line.find('* fifo *') != -1:
                 fifo = line.strip().split('*')[2][2:]
                 if fifo[-1] == ',':
                     fifo = fifo[:-1]
@@ -804,12 +804,12 @@ def insert_dummy_modules(def_lines, call_lines):
                 if fifo not in used_fifos:
                     used_fifos[fifo] = -1
                 else:
-                    del used_fifos[fifo]                    
+                    del used_fifos[fifo]
     #print(used_fifos)
     # Locate the fifo position
     inside_module = False
     inside_PE = False
-    fifo_pos = 0    
+    fifo_pos = 0
     PE_call_start = -1
     PE_call_end = -1
     line_id = 0
@@ -824,7 +824,7 @@ def insert_dummy_modules(def_lines, call_lines):
                 inside_PE = True
                 fifo_pos = 0
                 if PE_call_start == -1:
-                    PE_call_start = line_id - 1                
+                    PE_call_start = line_id - 1
             if inside_PE:
                 if line.find('fifo') != -1:
                     for used_fifo in used_fifos:
@@ -853,7 +853,7 @@ def insert_dummy_modules(def_lines, call_lines):
 
         # Build the dummy module definition
         module_def = build_dummy_module_def(group_name, fifo_info['type'], module_in, PE_ids)
-        #print(module_def)        
+        #print(module_def)
         def_lines += module_def
         def_lines.append('\n')
 
@@ -912,16 +912,16 @@ def reorder_module_calls(lines):
                     output_io = 1
                     # Examine if the module is an boundary module
                     if nxt_line.find("boundary") != -1:
-                        boundary = 1                
+                        boundary = 1
                 # Extract the module name
-                nxt_line = nxt_line.strip()                
+                nxt_line = nxt_line.strip()
                 if nxt_line.find('<') != -1:
                     module_name = nxt_line.split('<')[0]
                 else:
-                    module_name = nxt_line.split('(')[0]    
+                    module_name = nxt_line.split('(')[0]
                 if module_name.find('wrapper'):
                     module_name = module_name[:-8]
-                if boundary:                                            
+                if boundary:
                     module_name = module_name[:-9]
                 if prev_module_name == "":
                     prev_module_name = module_name
@@ -966,9 +966,9 @@ def reorder_module_calls(lines):
                         output_io = 0
                         reset = 1
                     if new_module:
-                        # Pop out the previous module calls except the last one                        
+                        # Pop out the previous module calls except the last one
                         module_calls = module_calls[-1:]
-                        
+
 
         if module_start and output_io:
             module_call.append(line)
@@ -986,11 +986,11 @@ def xilinx_run(
 
     Parameters
     ----------
-    kernel_call: 
+    kernel_call:
         file containing kernel calls
-    kernel_def: 
+    kernel_def:
         file containing kernel definitions
-    kernel: 
+    kernel:
         output kernel file
     """
 
@@ -1055,7 +1055,7 @@ def insert_intel_pragmas(lines):
 
     Parameters
     ----------
-    lines: 
+    lines:
         contains the codelines of the program
     """
     code_len = len(lines)
@@ -1098,11 +1098,11 @@ def intel_run(
 
     Parameters
     ----------
-    kernel_call: 
+    kernel_call:
         file containing kernel calls
-    kernel_def: 
+    kernel_def:
         file containing kernel definitions
-    kernel: 
+    kernel:
         output kernel file
     """
     # Load kernel call file

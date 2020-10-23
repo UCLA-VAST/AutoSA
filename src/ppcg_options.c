@@ -88,7 +88,7 @@ ISL_ARG_BOOL(struct autosa_options, autosa, 0, "autosa", 1,
 			 "generate systolic arrays using AutoSA")
 ISL_ARG_BOOL(struct autosa_options, block_sparse, 0, "block-sparse", 0,
 			 "use block sparsity")
-ISL_ARG_STR(struct autosa_options, block_sparse, 0, "block-sparse-ratio", "ratio",
+ISL_ARG_STR(struct autosa_options, block_sparse_ratio, 0, "block-sparse-ratio", "ratio",
 			NULL, "block sparsity ratio [#non-zero elements, vector length]. [default: 2 4]")
 ISL_ARG_STR(struct autosa_options, config, 0, "config", "config", NULL,
 			"AutoSA configuration file")

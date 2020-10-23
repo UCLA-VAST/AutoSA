@@ -225,6 +225,12 @@ struct autosa_kernel *autosa_kernel_alloc(isl_ctx *ctx, struct ppcg_scop *scop)
   kernel->host_domain = NULL;
   kernel->domain = NULL;
   kernel->single_statement = 0;  
+  kernel->sparse = 0;
+  kernel->vec_len = 0;
+  kernel->n_nzero = 0;
+  kernel->compress_ratio = 0;
+  kernel->n_meta_data = 0;
+  kernel->eff_compress_ratio = 0;
 
   return kernel;
 }
@@ -3074,4 +3080,111 @@ isl_stat sa_extract_design_info(struct autosa_gen *gen)
   free(json_str);
 
   return isl_stat_ok;
+}
+
+/* The sparse info is provided in the format of 
+ * kernel[]->block_sparse[n_non_zero_num, vec_len]
+ * Extract these information and compute the extra meta information.
+ */
+isl_stat autosa_kernel_extract_sparse_info(struct autosa_kernel *kernel, 
+  struct autosa_gen *gen)
+{
+  isl_union_map *sparse_info;
+  isl_set *size;
+  int *ratios;
+  int array_size;
+
+  ratios = isl_alloc_array(kernel->ctx, int, 2);
+  if (!ratios) {
+    return isl_stat_error;
+  }
+
+  sparse_info = extract_sizes_from_str(kernel->ctx, gen->options->autosa->block_sparse_ratio);
+  for (int i = 0; i < kernel->n_array; i++) {
+    struct autosa_local_array_info *local_array = &kernel->array[i];
+    isl_set *tmp_size;
+    //printf("%s\n", local_array->array->name);
+    tmp_size = extract_sa_sizes(sparse_info, local_array->array->name);
+    if (tmp_size) {
+      local_array->is_sparse = 1;
+      size = tmp_size;
+      //DBGSET(stdout, size, gen->ctx);
+      //printf("%s\n", local_array->array->name);
+    } else {
+      isl_set_free(tmp_size);
+    }
+  }
+  isl_union_map_free(sparse_info);
+
+//#ifdef _DEBUG
+//  DBGSET(stdout, size, gen->ctx);
+//#endif
+
+  if (isl_set_dim(size, isl_dim_set) < 2) {
+    isl_set_free(size);
+    free(ratios);    
+    return isl_stat_error;
+  }
+
+  if (read_sa_sizes_from_set(size, ratios, 2) < 0) 
+    goto error;
+
+//#ifdef _DEBUG
+//  DBGUMAP(stdout, sparse_info, gen->ctx);  
+//#endif
+  //printf("%d %d\n", ratios[0], ratios[1]);
+
+  kernel->sparse = 1;
+  kernel->vec_len = ratios[1];
+  kernel->n_nzero = ratios[0];
+  free(ratios);  
+  kernel->compress_ratio = (float)kernel->vec_len / kernel->n_nzero;
+  /* Get the data type, we assume that all arrays are in the same precisions. */
+  array_size = -1; // in bytes
+  for (int i = 0; i < kernel->n_array; i++) {
+    struct autosa_local_array_info *local_array = &kernel->array[i];
+    if (array_size == -1)
+      array_size = local_array->array->size;
+    else {
+      if (array_size != local_array->array->size) {
+        throw std::runtime_error("[AutoSA] Error: Arrays with different data types are not supported for the block sparsity.");
+      }
+    }
+  }
+  /* Currently we only support vec_len no greater than 8. */
+  if (kernel->vec_len > 8) {
+    throw std::runtime_error("[AutoSA] Error: Block size greater than 8 is not supported for the block sparsity.");
+  }
+
+  /* For Xilinx HLS, data needs to be aligned with 32/64/128/256/512-bit boundary. */
+  if (array_size * kernel->n_nzero * 8 + 8 <= 32) {
+    kernel->n_meta_data = (32 / 8 - array_size * kernel->n_nzero) / array_size;
+  } else if (array_size * kernel->n_nzero * 8 + 8 <= 64) {
+    kernel->n_meta_data = (64 / 8 - array_size * kernel->n_nzero) / array_size;
+  } else if (array_size * kernel->n_nzero * 8 + 8 <= 128) {
+    kernel->n_meta_data = (128 / 8 - array_size * kernel->n_nzero) / array_size;
+  } else if (array_size * kernel->n_nzero * 8 + 8 <= 256) {
+    kernel->n_meta_data = (256 / 8 - array_size * kernel->n_nzero) / array_size;
+  } else if (array_size * kernel->n_nzero * 8 + 8 <= 512) {
+    kernel->n_meta_data = (512 / 8 - array_size * kernel->n_nzero) / array_size;
+  } else {
+    throw std::runtime_error("[AutoSA] Error: The requested aligned sparse data is longer than 512-bit.");
+  }
+  kernel->eff_compress_ratio = (float)kernel->vec_len / (kernel->n_nzero + kernel->n_meta_data);    
+  /* Update the local array */
+  for (int i = 0; i < kernel->n_array; i++) {
+    struct autosa_local_array_info *local_array = &kernel->array[i];
+    if (local_array->is_sparse) {
+      local_array->vec_len = kernel->vec_len;
+      local_array->n_nzero = kernel->n_nzero;
+      local_array->compress_ratio = kernel->compress_ratio;
+      local_array->n_meta_data = kernel->n_meta_data;
+      local_array->eff_compress_ratio = kernel->eff_compress_ratio;
+    }
+  }
+
+  return isl_stat_ok;
+error:    
+  free(ratios);
+  return isl_stat_error;
 }
