@@ -3148,7 +3148,7 @@ __isl_give isl_printer *autosa_kernel_print_io(__isl_take isl_printer *p,
 
         p = print_str_new_line(p, "#pragma HLS UNROLL");
         p = isl_printer_indent(p, 2);
-        p = print_str_new_line(p, "if (offset & 1 == 1) {");
+        p = print_str_new_line(p, "if ((offset & 1) == 1) {");
         p = isl_printer_indent(p, 2);
         
         p = isl_printer_start_line(p);
@@ -4019,8 +4019,11 @@ static __isl_give isl_printer *autosa_kernel_print_io_transfer_data_pack(
     if (is_sparse) {
       /* buf_data_split[n] = {buf_data_d(), ...} */
       p = isl_printer_start_line(p);
-      p = isl_printer_print_str(p, "buf_data_split[n] = {");
-      p = isl_printer_print_str(p, "buf_data_d(");
+      p = isl_printer_print_str(p, "buf_data_split[n] = (");
+      p = isl_printer_print_str(p, group->array->name);
+      p = isl_printer_print_str(p, "_s_t");
+      p = isl_printer_print_int(p, nxt_n_lane);
+      p = isl_printer_print_str(p, "){buf_data_d(");
       p = isl_printer_print_int(p, group->array->size * 8 * nxt_n_lane * n_nzero - 1);
       p = isl_printer_print_str(p, ", 0), buf_data_i(");
       p = isl_printer_print_int(p, 8 * nxt_n_lane - 1);
@@ -5213,6 +5216,9 @@ __isl_give isl_printer *print_module_serialize_body(
           p = isl_printer_start_line(p);
           p = isl_printer_print_str(p, "fifo_data.d = (");
           for (int n = data_pack_out - 1; n >= 0; n--) {
+            p = isl_printer_print_str(p, "(ap_uint<");
+            p = isl_printer_print_int(p, ele_size * 8 * n_nzero);
+            p = isl_printer_print_str(p, ">)");
             p = isl_printer_print_str(p, "mem_data_tmp(");
             p = isl_printer_print_int(p, n * ele_size * 8 * (n_nzero + n_meta_data) + ele_size * 8 * n_nzero - 1);
             p = isl_printer_print_str(p, ", ");
@@ -5228,7 +5234,7 @@ __isl_give isl_printer *print_module_serialize_body(
           p = isl_printer_start_line(p);
           p = isl_printer_print_str(p, "fifo_data.i = (");
           for (int n = data_pack_out - 1; n >= 0; n--) {
-            p = isl_printer_print_str(p, "mem_data_tmp(");
+            p = isl_printer_print_str(p, "(ap_uint<8>)mem_data_tmp(");
             p = isl_printer_print_int(p, n * ele_size * 8 * (n_nzero + n_meta_data) + ele_size * 8 * n_nzero + 8 - 1);
             p = isl_printer_print_str(p, ", ");
             p = isl_printer_print_int(p, n * ele_size * 8 * (n_nzero + n_meta_data) + ele_size * 8 * n_nzero);

@@ -4506,7 +4506,7 @@ static __isl_give isl_schedule_node *tile_simd_sparse(
 //      DBGSET(stdout, set, ctx);
 //      //exit(0);
 //#endif
-      set = isl_set_upper_bound_si(set, isl_dim_set, 0, new_ub);
+      set = isl_set_upper_bound_si(set, isl_dim_set, 0, new_ub - 1);
       filter = isl_union_map_range(isl_union_map_intersect_domain(
                   isl_union_map_reverse(umap), isl_union_set_from_set(set)));                  
 //#ifdef _DEBUG

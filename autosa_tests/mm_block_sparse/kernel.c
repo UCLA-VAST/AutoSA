@@ -51,6 +51,7 @@ int main(int argc, char **argv) {
         offset = offset | (1 << pos);
         n++;
       }
+      A_i[i][k] = offset;
 
       int pos = 0;
       int non_zero_pos = 0;
@@ -87,29 +88,29 @@ int main(int argc, char **argv) {
     }
 #pragma endscop
 
-  /* The actual computation */
-  for (int i = 0; i < I; i++)  
-    for (int j = 0; j < J; j++) {
-      C[i][j] = 0;
-      for (int k = 0; k < K / VEC_LEN; k++) {
-        /* Extract the non zero offset */
-        int offset[NON_ZERO_NUM];
-        unsigned char mask = A_i[i][k];
-        int pos = 0;
-        int non_zero_pos = 0;
-        while (pos < VEC_LEN) {
-          unsigned char cur_mask = mask & (1 << pos);
-          if (cur_mask) {
-            offset[non_zero_pos] = pos;
-            non_zero_pos++;
-          }
-          pos++;
-        }
-        for (int n = 0; n < NON_ZERO_NUM; n++) {
-          C[i][j] += A_d[i][k * NON_ZERO_NUM + n] * B[j][k * VEC_LEN + offset[n]];
-        }
-      }
-    }
+//  /* The actual computation */
+//  for (int i = 0; i < I; i++)  
+//    for (int j = 0; j < J; j++) {
+//      C[i][j] = 0;
+//      for (int k = 0; k < K / VEC_LEN; k++) {
+//        /* Extract the non zero offset */
+//        int offset[NON_ZERO_NUM];
+//        unsigned char mask = A_i[i][k];
+//        int pos = 0;
+//        int non_zero_pos = 0;
+//        while (pos < VEC_LEN) {
+//          unsigned char cur_mask = mask & (1 << pos);
+//          if (cur_mask) {
+//            offset[non_zero_pos] = pos;
+//            non_zero_pos++;
+//          }
+//          pos++;
+//        }
+//        for (int n = 0; n < NON_ZERO_NUM; n++) {
+//          C[i][j] += A_d[i][k * NON_ZERO_NUM + n] * B[j][k * VEC_LEN + offset[n]];
+//        }
+//      }
+//    }
 
   for (int i = 0; i < I; i++)  
     for (int j = 0; j < J; j++) {
