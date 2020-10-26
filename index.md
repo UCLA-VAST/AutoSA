@@ -273,5 +273,14 @@ to print out the compilation options.
 
 We have also provided several other design examples. You may find them at the front page of the AutoSA repo [here](https://github.com/UCLA-VAST/AutoSA).
 
+### Detailed explanation of the matrix multiplication systolic array design.
+Here we provide a more detailed explanation of the generated systolic array design for the matrix multiplication example. Below is the detailed architecture description of the generated systolic array.
+
+<p align="center">
+<img src="mm_detailed_arch.png" width="500"/>
+</p>
+
+For this 2D systolic array, we map loops `i` and `j` to the row and column of the systolic array. Data from matrix `A` are reused along the `j`-axis, and data from matrix `B` are reused along the `i`-axis. Each PE computes the elements of matrix `C` locally and will be drained out once finished. To send the data from the external memory (DRAM) to the array, we construct a I/O network to transfer the data. As you may see in this figure, 
+
 ## Any Questions
 If you have any difficulties using AutoSA, please feel free to open an issue in the repo or send an e-mail to me (jiewang@cs.ucla.edu).
