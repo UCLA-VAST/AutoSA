@@ -273,7 +273,7 @@ to print out the compilation options.
 
 We have also provided several other design examples. You may find them at the front page of the AutoSA repo [here](https://github.com/UCLA-VAST/AutoSA).
 
-### Detailed explanation of the matrix multiplication systolic array design.
+### A Detailed Explanation of the Matrix Multiplication Systolic Array Design
 Here we provide a more detailed explanation of the generated systolic array design for the matrix multiplication example. The figure below shows the detailed architecture of the generated systolic array.
 
 <p align="center">
