@@ -1,8 +1,8 @@
 ## Tutorial
 
-This is a tutorial about how to use AutoSA, a polyhedral-based systolic array compiler on FPGA. Throughout this tutorial, we will show you how to compile a systolic array described in Xilinx HLS C. You could use Xilinx synthesis tools to synthesize the generated designs and map onto Xilinx FPGAs.
+This is a tutorial about how to use AutoSA, a polyhedral-based systolic array compiler on FPGA. Throughout this tutorial, we will show you how to generate a systolic array described in Xilinx HLS C. You could use Xilinx synthesis tools to synthesize the generated designs and map them onto Xilinx FPGAs.
 
-Before we start, please make sure you install AutoSA proper following the guidelines on [AutoSA Repo](https://github.com/UCLA-VAST/AutoSA). We have also provided a Docker image that you can use. Use the following command to pull the Docker image and run it directly.
+Before we start, please make sure you install AutoSA properly following the guidelines in [AutoSA repository](https://github.com/UCLA-VAST/AutoSA). We have also provided a Docker image that you can use. Use the following command to pull the Docker image and run it directly.
 ```
 docker pull whbldhwj/autosa:latest
 ```
@@ -10,7 +10,7 @@ docker pull whbldhwj/autosa:latest
 ## Example 1: Matrix Multiplication
 In this example, we will show you the basic features of AutoSA that compiles a matrix multiplication kernel into a systolic array. You could also find the example [here](https://github.com/UCLA-VAST/AutoSA/tree/master/autosa_tests/mm).
 
-Our input source code is [kernel.c](https://github.com/UCLA-VAST/AutoSA/blob/master/autosa_tests/mm/kernel.c). In this code, we use pragmas to annotate the code region to compile to systolic arrays.
+Our input source code is [kernel.c](https://github.com/UCLA-VAST/AutoSA/blob/master/autosa_tests/mm/kernel.c). In this code, we use pragmas to annotate the code region to be compiled to systolic arrays.
 ```C
 #pragma scop
 for (int i = 0; i < I; i++)
@@ -27,7 +27,7 @@ Then, run the following command to compile this code to a systolic array design.
 ./autosa ./autosa_tests/mm/kernel.c --config=./autosa_config/autosa_config.json --target=autosa_hls_c --output-dir=./autosa.tmp/output --sa-sizes="{kernel[]->space_time[3];kernel[]->array_part[16,16,16];kernel[]->latency[8,8];kernel[]->simd[2]}" --simd-info=./autosa_tests/mm/simd_info.json --host-serialize --hls
 ```
 
-You should be able to find the generated files in the directory `autosa.tmp/output/src`. The directory looks like
+You should be able to find the generated files in the directory `autosa.tmp/output/src`. The directory looks like:
 ```
 autosa.tmp
 └───output
@@ -39,7 +39,7 @@ autosa.tmp
         └── kernel_kernel.h
 ```
 
-The files `kernel.c` and `kerne.h` are input files. The file `kernel_host.cpp` is the host file that prepares the data for the kernel, calls the kernel, and verifies the results. The files `kernel_kernel.cpp` and `kernel_kernel.h` contain the Xilinx HLS C code that describes the systolic array.
+The files `kernel.c` and `kerne.h` are input files. The file `kernel_host.cpp` is the host file that prepares the data for the kernel, calls the kernel, and verifies the results. The files `kernel_kernel.cpp` and `kernel_kernel.h` contain the Xilinx HLS C code that describe the systolic array.
 
 Now let's try to run the C simulation to verify the correctness of the generate design. Copy the `hls_script.tcl` from `${AUTOSA_ROOT}/autosa_scripts/hls_scripts` to `${AUTOSA_ROOT}/autosa.tmp/output/`.
 ```bash
@@ -69,7 +69,7 @@ The figure below depicts the overall compilation flow of AutoSA.
 3. **Legality check**: This step checks if the generated schedule is legal to be mapped to systolic arrays.
 4. **Computation management**: This step constructs the PE arrays and optimizes the micro-architecture of PEs to improve the compute efficiency.
    1. **Space-time transformation**: This step applies the space-time transformation to transform programs to systolic arrays.
-   2. **Array partitioning**: This step partitions the array into smaller sub-arrays. In addition, we allow partition the array twice, named as *array_part_L2*.
+   2. **Array partitioning**: This step partitions the array into smaller sub-arrays. In addition, we allow partitioning the array twice.
    3. **Latency hiding**: This step tiles and permutes the parallel loops to the innermost to hide the pipeline latency.
    4. **SIMD vectorization**: This step vectorizes the computation inside PEs.
 5. **Communication management**: This step generates and optimizes the I/O network for data communication between PEs and the external memory.
@@ -110,8 +110,8 @@ The first argument is the input C file that contains the code segment to be mapp
 }
 ```
 
-This configuration file specifies if certain passes in the compilation flow should be enabled and also the mode of this pass. By "manual" mode, user are required to provide the optimization policy to the compiler. By "auto" mode, the compiler will choose the default policy to proceed. To switch between two different modes, modify the knobs in this file.
-For example, modify the content in `autosa_config/autosa_config.json` to:
+This configuration file specifies if certain passes in the compilation flow should be enabled and also the mode of this pass. In "manual" mode, user are required to provide the optimization policy to the compiler. In "auto" mode, the compiler will choose the default policy to proceed. To switch between two different modes, modify the knobs in this file.
+For example, modify the content in `autosa_config.json` to:
 ```json
 "array_part": {
   "enable": 1,
@@ -119,6 +119,7 @@ For example, modify the content in `autosa_config/autosa_config.json` to:
 }
 ```
 to enable the array partitioning and execute it in the auto mode.
+
 Modify the content to:
 ```json
 "array_part": {
@@ -151,7 +152,7 @@ AutoSA will generate a file `autosa.tmp/output/tuning.json` which includes guida
   "n_kernel": 6
 }
 ```
-This tells the user that there are 6 different systolic array candidates that are generated. We may select one of them to proceed. For example, we could select the fourth candidate which is a 2D systolic array with the data from matrix `A` transferred horizontally, and data from matrix `B` transferred vertically. Each PE computes one element of `C[i][j]` locally, which is drained out at last to the external memory. The architecture of this array is depicted below. 
+This tells the user that there are 6 different systolic array candidates generated. We may select one of them to proceed. For example, we could select the fourth candidate which is a 2D systolic array with the data from matrix `A` transferred horizontally, and data from matrix `B` transferred vertically. Each PE computes one element of `C[i][j]` locally, which is drained out at last to the external memory. The architecture of this array is depicted below. 
 
 <p align="center">
 <img src="autosa_mm.png" width="200"/>
@@ -171,7 +172,7 @@ The `tuning.json` contains the content below:
 ```json
 "array_part": {
   "tilable_loops": [64, 64, 64],
-  "n_sa_dim": 2
+   "n_sa_dim": 2
 }
 ```
 The first line tells users there are three candidate loops that can be tiled. The upper bounds of each loop is 64. We may select any tiling factor no greater than 64. Besides, AutoSA only supports tiling factors as sub-multiples of the loop bounds for now. If the user is interested to understand which three loops are selected as the candidate loops, add the option `--AutoSA-verbose` to the command and run again.
@@ -180,9 +181,9 @@ The first line tells users there are three candidate loops that can be tiled. Th
 ```
 Below is the printed information from AutoSA.
 
-<img src="mm_array_part.PNG" width="800"/>
+<img src="mm_array_part.PNG" width="1000"/>
 
-AutoSA prints the schedule tree of the program and mark the candidate loops to be optimized. Please refer to the manual of [isl](http://isl.gforge.inria.fr/) for details of the schedule tree. In this case, all the loops `i`, `j`, and `k` are tilable loops and can be used for array partitioning. Therefore, in the field of `pe_opt`, all three loops are marked `array_part`, indicating they are selected as the candidate loops.
+AutoSA prints the schedule tree of the program and marks the candidate loops to be optimized. Please refer to the manual of [isl](http://isl.gforge.inria.fr/) for details of the schedule tree. In this case, all the loops `i`, `j`, and `k` are tilable loops and can be used for array partitioning. Therefore, in the field of `pe_opt`, all three loops are marked `array_part`, indicating they are selected as the candidate loops.
 
 As an example, we select the tiling factors `[16,16,16]`. Run the command below:
 ```c
@@ -209,7 +210,7 @@ For the reduction loops, AutoSA requires users to annotate the loop manually. Th
   "reduction": ["y"]
 }
 ```
-AutoSA will examine each time loop in the program. For matrix multiplication example, we only have one time loop. This file tells AutoSA that the first non-parallel time loop it encounters is a reduction loop. By supplying this file to AutoSA, AutoSA will take this loop into consideration. Run the command below to proceed:
+AutoSA will examine each time loop in the program. For the matrix multiplication example, we only have one time loop. This file tells AutoSA that the first non-parallel time loop it encounters is a reduction loop. By supplying this file to AutoSA, AutoSA will take this loop into consideration. Run the command below to proceed:
 ```c
 ./autosa ./autosa_tests/mm/kernel.c --config=./autosa_config/autosa_config.json --target=autosa_hls_c --output-dir=./autosa.tmp/output --sa-sizes="{kernel[]->space_time[3];kernel[]->array_part[16,16,16];kernel[]->latency[8,8]}" --simd-info=./autosa_tests/mm/simd_info.json
 ```
@@ -231,7 +232,7 @@ We select the tiling factor `[2]` and proceed. Run the command:
 After this step, you should be able to find the files of the generated arrays in `autosa.tmp/output/src`.
 
 There are two more arguments that we haven't explained yet. 
-`--host-serialize` tells AutoSA to serialize the data required by the kernel on the host CPU before sending to FPGA. This helps increase the burst length and improves the effective DRAM bandwidth. 
+`--host-serialize` tells AutoSA to serialize the data required by the kernel on the host CPU before sending to FPGA. This helps increase the burst length and improve the effective DRAM bandwidth. 
 `--hls` tells AutoSA to generate Xilinx HLS host code. If not specified, AutoSA, by default, will generate Xilinx OpenCL host code used by Xilinx Vitis flow.
 
 A complete list of all the compilation options can be found below.
@@ -274,17 +275,17 @@ to print out the compilation options.
 We have also provided several other design examples. You may find them at the front page of the AutoSA repo [here](https://github.com/UCLA-VAST/AutoSA).
 
 ### A Detailed Explanation of the Matrix Multiplication Systolic Array Design
-Here we provide a more detailed explanation of the generated systolic array design for the matrix multiplication example. The figure below shows the detailed architecture of the generated systolic array.
+Here we provide a more detailed explanation of the generated systolic array design for the matrix multiplication. The figure below shows the detailed architecture of the generated systolic array.
 
 <p align="center">
-<img src="mm_detailed_arch.png" width="500"/>
+<img src="mm_detailed_arch.png" width="800"/>
 </p>
 
-For this 2D systolic array, we map loops `i` and `j` to the row and column of the systolic array. Data from matrix `A` are reused along the `j`-axis, and data from matrix `B` are reused along the `i`-axis. Each PE computes the elements of matrix `C` locally and will be drained out once finished. To send the data from the external memory (DRAM) to the array, we construct a I/O network to transfer the data. 
+For this 2D systolic array, we map loops `i` and `j` to the row and column of the systolic array. Data from matrix `A` are reused along the `j`-axis, and data from matrix `B` are reused along the `i`-axis. Each PE computes the elements of matrix `C` locally, which will be drained out once finished. To send the data from the external memory (DRAM) to the array, we construct a I/O network to transfer the data. 
 
-For matrix `A`, there are four I/O modules generated, `A_IO_L3_in_serialize`, `A_IO_L3_in`, `A_IO_L2_in`, and `A_IO_L2_in_boundary`. You could find the definitions of these modules in the generated `kernel_kernel.cpp` file. The module `A_IO_L3_in_serialize` loads the serialized data from the DRAM and sends them to the following I/O modules. By serialize the data, we could use a much longer burst length and acheive a higher effective DRAM bandwidth. Next, the module `A_IO_L3_in` passes the data to the lower-level I/O modules (This module is redundant when the host serialization is enabled and will be opted out in the future). The modules `A_IO_L2_in` and `A_IO_L2_in_boundary` load the data from upper stream, store the data that belong to the PEs that they are connected to, and pass the rest data to the down stream modules. Then, they feed the PEs by send the data stored in their local buffers. By default, AutoSA implements the double buffering for I/O modules with local buffers. 
+For matrix `A`, there are four I/O modules generated, `A_IO_L3_in_serialize`, `A_IO_L3_in`, `A_IO_L2_in`, and `A_IO_L2_in_boundary`. You could find the definitions of these modules in the generated `kernel_kernel.cpp` file. The module `A_IO_L3_in_serialize` loads the serialized data from the DRAM and sends them to the following I/O modules. By serializing the data, we could use a much longer burst length and acheive a higher effective DRAM bandwidth. Next, the module `A_IO_L3_in` passes the data to the lower-level I/O modules (this module is redundant when the host serialization is enabled and will be opted out in the future). The modules `A_IO_L2_in` and `A_IO_L2_in_boundary` load the data from upstream I/O modules, store the data that belong to the PEs that they are connected to, and pass the rest data to the downstream modules. Then, they feed the PEs by sending the data stored in their local buffers. By default, AutoSA implements the double buffering for I/O modules with local buffers. 
 
 The similar I/O network applies to matrix `B` and `C`. You could look into the definitions in the code to learn about their detailed implementations.
 
 ## Any Questions
-If you have any difficulties using AutoSA, please feel free to open an issue in the repo or send an e-mail to me (jiewang@cs.ucla.edu).
+If you have any difficulties using AutoSA, please feel free to open an issue in the repo or send an e-mail to me <jiewang@cs.ucla.edu>.
