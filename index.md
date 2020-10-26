@@ -50,7 +50,9 @@ vivado_hls -f hls_script.tcl
 
 If everything goes smoothly, you should be able to see the `Passed` message in your terminal. This indicates the C simulation finished successfully without any error.
 
+<p align="center">
 <img src="https://github.com/UCLA-VAST/AutoSA/blob/gh-pages/mm_csim.PNG" width="500"/>
+</p>
 
 To synthesize the kernel using Xilinx HLS, uncomment the line `csynth_design` in the TCL file.
 
@@ -149,7 +151,9 @@ AutoSA will generate a file `autosa.tmp/output/tuning.json` which includes guida
 ```
 This tells the user that there are 6 different systolic array candidates that are generated. We may select one of them to proceed. For example, we could select the fourth candidate which is a 2D systolic array with the data from matrix `A` transferred horizontally, and data from matrix `B` transferred vertically. Each PE computes one element of `C[i][j]` locally, which is drained out at last to the external memory. The architecture of this array is depicted below. 
 
-<img src="https://github.com/UCLA-VAST/AutoSA/blob/gh-pages/autosa_mm.png", width="200"/>
+<p align="center">
+<img src="https://github.com/UCLA-VAST/AutoSA/blob/gh-pages/autosa_mm.png" width="200"/>
+</p>
 
 To guide AutoSA to select this design, we will provide AutoSA with the new argument
 ```
@@ -174,7 +178,7 @@ The first line tells users there are three candidate loops that can be tiled. Th
 ```
 Below is the printed information from AutoSA.
 
-<img src="https://github.com/UCLA-VAST/AutoSA/blob/gh-pages/mm_array_part.PNG", width="800"/>
+<img src="https://github.com/UCLA-VAST/AutoSA/blob/gh-pages/mm_array_part.PNG" width="800"/>
 
 AutoSA prints the schedule tree of the program and mark the candidate loops to be optimized. Please refer to the manual of [isl](http://isl.gforge.inria.fr/) for details of the schedule tree. In this case, all the loops `i`, `j`, and `k` are tilable loops and can be used for array partitioning. Therefore, in the field of `pe_opt`, all three loops are marked `array_part`, indicating they are selected as the candidate loops.
 
