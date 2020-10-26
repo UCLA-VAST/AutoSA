@@ -49,18 +49,15 @@ vivado_hls -f hls_script.tcl
 ```
 
 If everything goes smoothly, you should be able to see the `Passed` message in your terminal. This indicates the C simulation finished successfully without any error.
-<div align="center">
-  <img src="./mm_csim.PNG", width="500">
-</div>
+
+<img src="/mm_csim.PNG" width="500"/>
 
 To synthesize the kernel using Xilinx HLS, uncomment the line `csynth_design` in the TCL file.
 
 Now let's take a closer look at the AutoSA command we just used to compile a systolic array. Before we start, here is a figure that shows the overall compilation flow of AutoSA.
 
 The figure below depicts the overall compilation flow of AutoSA.
-<div align="center">
-  <img src="https://github.com/UCLA-VAST/AutoSA/blob/gh-pages/autosa_flow.png", width="1000">
-</div>
+![Compilation flow of AutoSA](/autosa_flow.png)
 
 1. **Model extraction**: This step extracts the polyhedral model from the input C code.
 2. **Scheduling**: This step leverages the [isl](http://isl.gforge.inria.fr/) scheduler to construct a new schedule using the Pluto algorithm.
