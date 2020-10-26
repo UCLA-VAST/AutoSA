@@ -1,4 +1,4 @@
-## Introduction
+## Tutorial
 
 This is a tutorial about how to use AutoSA, a polyhedral-based systolic array compiler on FPGA. Throughout this tutorial, we will show you how to compile a systolic array described in Xilinx HLS C. You could use Xilinx synthesis tools to synthesize the generated designs and map onto Xilinx FPGAs.
 
@@ -59,7 +59,7 @@ Now let's take a closer look at the AutoSA command we just used to compile a sys
 
 The figure below depicts the overall compilation flow of AutoSA.
 <div align="center">
-  <img src="./autosa_flow.png", width="1000">
+  <img src="https://github.com/UCLA-VAST/AutoSA/blob/gh-pages/autosa_flow.png", width="1000">
 </div>
 
 1. **Model extraction**: This step extracts the polyhedral model from the input C code.
