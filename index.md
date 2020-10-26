@@ -60,7 +60,9 @@ Now let's take a closer look at the AutoSA command we just used to compile a sys
 
 The figure below depicts the overall compilation flow of AutoSA.
 
-![Compilation flow of AutoSA](/autosa_flow.png)
+<p align="center">
+<img src="autosa_flow.png" width="1000"/>  
+</p>  
 
 1. **Model extraction**: This step extracts the polyhedral model from the input C code.
 2. **Scheduling**: This step leverages the [isl](http://isl.gforge.inria.fr/) scheduler to construct a new schedule using the Pluto algorithm.
@@ -228,5 +230,48 @@ We select the tiling factor `[2]` and proceed. Run the command:
 ```
 After this step, you should be able to find the files of the generated arrays in `autosa.tmp/output/src`.
 
-### Any Questions
+There are two more arguments that we haven't explained yet. 
+`--host-serialize` tells AutoSA to serialize the data required by the kernel on the host CPU before sending to FPGA. This helps increase the burst length and improves the effective DRAM bandwidth. 
+`--hls` tells AutoSA to generate Xilinx HLS host code. If not specified, AutoSA, by default, will generate Xilinx OpenCL host code used by Xilinx Vitis flow.
+
+A complete list of all the compilation options can be found below.
+### AutoSA Compilation Options
+* __`--autosa`__: Use AutoSA to generate systolic arrays. Default: yes.
+* __`--config=<config>`__: AutoSA configuration file.
+* __`--data-pack`__: Enable data packing for data transfer. Default: yes.
+* __`--data-pack-sizes=<sizes>`__: Data packing factors for L1/L2/L3 I/O modules. Default: `kernel[]->data_pack[8,32,64]`
+* __`--double-buffer`__: Enable double-buffering for data transfer. Default: yes.
+* __`--double-buffer-style=<id>`__: Choose the double buffer coding style: 0 - while loop 1 - for loop. Default: 1.
+* __`--fifo-depth=<depth>`__: FIFO depth. Default: 2.
+* __`--hbm`__: Use multi-port DRAM/HBM (Alpha). Default: no.
+* __`--hbm-port-num=<num>`__: Default HBM port number. Default: 2.
+* __`--hls`__: Generate Xilinx HLS host, otherwise, OpenCL host is generated. Default: no.
+* __`--host-serialize`__: Serialize the data on the host side to improve the effective DRAM BW (Alpha). Default: no.
+* __`--insert-hls-dependence`__: Insert Xilinx HLS dependence pragma (Alpha). Default: no.
+* __`--int-io-dir=<dir>`__: Set the default interior I/O direction: 0 - [1,x] 1 - [x,1]. Default: 0.
+* __`--loop-infinitize`__: Apply loop inifinitization optimization (Intel OpenCL only). Default: no.
+* __`--local-reduce`__: Generate non-output-stationary array with local reduction (Alpha). Default: no.
+* __`--reduce-op=<op>`__: Reduction operator (must be used with local-reduce together).
+* __`--lower-int-io-L1-buffer`__: Lower the L1 I/O buffer for interior I/O modules. Default: no.
+* __`--max-sa-dim=<dim>`__: Maximal systolic array dimension. Default: 2.
+* __`--output-dir=<dir>`__: AutoSA output directory. Default: `./autosa.tmp/output`
+* __`--sa-sizes=<sizes>`__: Computation management options.
+* __`--sa-tile-size=<size>`__: Default tile size in computation management. Default: 4.
+* __`--sa-type=sync|async`__: Systolic array type. Default: async.
+* __`--simd-info=<info>`__: SIMD information.
+* __`--simd-touch-space`__: Taking space loops into consideration for SIMD vectorization. Default: no.
+* __`--two-level-buffer`__: Enable two-level buffering in I/O modules. Default: No.
+* __`--uram`__: Use Xilinx FPGA URAM. Default: No.
+* __`--use-cplusplus-template`__: Use C++ template in codegen (necessary for irregular PEs). Default: no.
+* __`--AutoSA-verbose`__: Print verbose compilation information. Default: No.
+
+You could run
+```bash
+./autosa --help
+```
+to print out the compilation options.
+
+We have also provided several other design examples. You may find them at the front page of the AutoSA repo [here](https://github.com/UCLA-VAST/AutoSA).
+
+## Any Questions
 If you have any difficulties using AutoSA, please feel free to open an issue in the repo or send an e-mail to me (jiewang@cs.ucla.edu).
