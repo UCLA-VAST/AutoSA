@@ -124,6 +124,12 @@ struct autosa_kernel *autosa_kernel_copy(struct autosa_kernel *kernel)
   kernel_dup->host_domain = isl_set_copy(kernel->host_domain);
   kernel_dup->domain = isl_union_set_copy(kernel->domain);
   kernel_dup->single_statement = kernel->single_statement;
+  kernel_dup->sparse = kernel->sparse;
+  kernel_dup->vec_len = kernel->vec_len;
+  kernel_dup->n_nzero = kernel->n_nzero;
+  kernel_dup->compress_ratio = kernel->compress_ratio;
+  kernel_dup->n_meta_data = kernel->n_meta_data;
+  kernel_dup->eff_compress_ratio = kernel->eff_compress_ratio;
 
   return kernel_dup;
 }
@@ -171,6 +177,12 @@ struct autosa_kernel *autosa_kernel_from_schedule(__isl_take isl_schedule *sched
   kernel->host_domain = NULL;
   kernel->domain = NULL;
   kernel->single_statement = 0;
+  kernel->sparse = 0;
+  kernel->vec_len = 0;
+  kernel->n_nzero = 0;
+  kernel->compress_ratio = 0;
+  kernel->n_meta_data = 0;
+  kernel->eff_compress_ratio = 0;
 
   return kernel;
 }
@@ -401,6 +413,19 @@ void *autosa_acc_free(struct autosa_acc *acc)
   free(acc);
 
   return NULL;
+}
+
+struct autosa_io_buffer *autosa_io_buffer_alloc()
+{
+  struct autosa_io_buffer *io_buffer = (struct autosa_io_buffer *)malloc(sizeof(struct autosa_io_buffer));
+  io_buffer->tile = NULL;
+  io_buffer->level = -1;
+  io_buffer->n_lane = -1;
+  io_buffer->serialize = -1;
+  io_buffer->sparse = -1;
+  io_buffer->vec_len = -1;  
+
+  return io_buffer;
 }
 
 /****************************************************************
@@ -1539,6 +1564,7 @@ struct autosa_hw_module *autosa_hw_module_alloc(struct autosa_gen *gen)
   module->coalesce_bound = -1;
   module->is_serialized = 0;
   module->use_FF = 0;
+  module->in = -1;
 
   return module;
 }
@@ -2537,7 +2563,7 @@ static char *extract_loop_info_from_module(
   char *json_str = NULL;
 
   cJSON_AddStringToObject(loop_struct, "module_name", module_name);
-  cJSON_AddNumberToObject(module_props, "double_buffer", double_buffer);
+  cJSON_AddNumberToObject(module_props, "double_buffer", double_buffer);  
   cJSON_AddNumberToObject(module_props, "in", in);
   cJSON_AddItemToObject(loop_struct, "module_prop", module_props);
   
@@ -2613,12 +2639,6 @@ isl_stat sa_extract_loop_info(struct autosa_gen *gen, struct autosa_hw_module *m
   }
 
   /* Parse the loop structure of the default module */
-//#ifdef _DEBUG
-//  if (!module->device_tree) {
-//    printf("non tree module_name: %s\n", module->name);
-//    exit(0);
-//  }
-//#endif
   json_str = extract_loop_info_from_module(gen, module->device_tree, module->name, module->double_buffer, module->in, 1);
 
   /* Parse the loop structure of the boundary module */

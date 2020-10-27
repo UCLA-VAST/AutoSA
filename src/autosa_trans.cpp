@@ -552,7 +552,7 @@ struct autosa_kernel **sa_space_time_transform(__isl_take isl_schedule *schedule
     {
         if (scop->options->autosa->verbose)
         {
-            printf("AutoSA] Explore 1D systolic array.\n");
+            printf("[AutoSA] Explore 1D systolic array.\n");
         }
         isl_size n_sa_dim = 0;
         struct autosa_kernel **sa_dim_list = sa_space_time_transform_at_dim(
@@ -4081,7 +4081,7 @@ static __isl_give isl_printer *generate(__isl_take isl_printer *p,
         sa_extract_design_info(gen);
 
         /* Code generation */
-        p = ppcg_set_macro_names(p);
+        //p = ppcg_set_macro_names(p);
         p = ppcg_print_exposed_declarations(p, prog->scop);
         p = gen->print(p, gen->prog, gen->tree, gen->hw_modules, gen->n_hw_modules,
                        gen->hw_top_module, gen->drain_merge_funcs, gen->n_drain_merge_funcs,

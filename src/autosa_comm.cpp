@@ -2654,8 +2654,7 @@ static isl_stat compute_io_group_buffer(struct autosa_kernel *kernel,
       (group->n_io_buffer)++;
       group->io_buffers = (struct autosa_io_buffer **)realloc(
           group->io_buffers, sizeof(struct autosa_io_buffer *) * group->n_io_buffer);
-      group->io_buffers[group->n_io_buffer - 1] =
-          (struct autosa_io_buffer *)malloc(sizeof(struct autosa_io_buffer));
+      group->io_buffers[group->n_io_buffer - 1] = autosa_io_buffer_alloc();          
       group->io_buffers[group->n_io_buffer - 1]->level = i;
       group->io_buffers[group->n_io_buffer - 1]->tile = NULL;
 
@@ -4283,7 +4282,16 @@ static isl_stat autosa_io_data_pack(struct autosa_kernel *kernel,
         buf->sparse = 0;
         buf->vec_len = 0;        
         buf->serialize = (gen->options->autosa->host_serialize == 1)? 1 : 0;
-      }
+      }      
+    }
+    if (local->drain_group) {
+      struct autosa_array_ref_group *group = local->drain_group;
+      for (int k = 0; k < group->io_level; k++) {
+        struct autosa_io_buffer *buf = group->io_buffers[k];
+        buf->sparse = 0;
+        buf->vec_len = 0;        
+        buf->serialize = (gen->options->autosa->host_serialize == 1)? 1 : 0;
+      }      
     }
   }
 

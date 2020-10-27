@@ -1167,6 +1167,7 @@ struct autosa_kernel *autosa_kernel_alloc(isl_ctx *ctx, struct ppcg_scop *scop);
 isl_bool access_is_stride_zero(__isl_keep isl_map *access, int pos);
 isl_bool access_is_stride_one(__isl_keep isl_map *access, int pos);
 void *autosa_acc_free(struct autosa_acc *acc);
+struct autosa_io_buffer *autosa_io_buffer_alloc();
 
 /* AutoSA dep */
 void *autosa_dep_free(__isl_take struct autosa_dep *dep);

@@ -2244,7 +2244,7 @@ static __isl_give isl_printer *print_module_var_xilinx(
     p = isl_printer_print_str(p, var->name);
     if (double_buffer)
       p = isl_printer_print_str(p, "_ping");
-    if (module->data_pack_inter == module->data_pack_intra)
+    if (module->type == IO_MODULE && module->data_pack_inter == module->data_pack_intra)
       p = isl_printer_print_str(p, use_memory == 1 ? " core=RAM_1P_LUTRAM" : (use_memory == 2 ? " core=RAM_1P_BRAM" : " core=RAM_1P_URAM"));
     else
       p = isl_printer_print_str(p, use_memory == 1 ? " core=RAM_2P_LUTRAM" : (use_memory == 2 ? " core=RAM_2P_BRAM" : " core=RAM_2P_URAM"));
@@ -2321,7 +2321,7 @@ static __isl_give isl_printer *print_module_var_xilinx(
       p = isl_printer_print_str(p, "#pragma HLS RESOURCE variable=");
       p = isl_printer_print_str(p, var->name);
       p = isl_printer_print_str(p, "_pong");
-      if (module->data_pack_inter == module->data_pack_intra)
+      if (module->type == IO_MODULE && module->data_pack_inter == module->data_pack_intra)
         p = isl_printer_print_str(p, use_memory == 1 ? " core=RAM_1P_LUTRAM" : (use_memory == 2 ? " core=RAM_1P_BRAM" : " core=RAM_1P_URAM"));
       else
         p = isl_printer_print_str(p, use_memory == 1 ? " core=RAM_2P_LUTRAM" : (use_memory == 2 ? " core=RAM_2P_BRAM" : " core=RAM_2P_URAM"));
@@ -2478,6 +2478,9 @@ static isl_stat print_host_serialize_funcs(
       print_options = isl_ast_print_options_alloc(ctx);
       print_options = isl_ast_print_options_set_print_user(print_options,
                                                            &print_module_stmt, &hw_data);
+      //std::cout << module->name << std::endl;                                                           
+      //std::cout << module->serialize_tree << std::endl;                                                            
+      //DBGASTNODE(stdout, module->serialize_tree, isl_printer_get_ctx(p));      
       p = isl_ast_node_print(module->serialize_tree, p, print_options);
 
       p = isl_printer_indent(p, -2);
@@ -4819,15 +4822,12 @@ static __isl_give isl_printer *print_hw(
     struct autosa_types *types, void *user)
 {
   struct hls_info *hls = (struct hls_info *)user;
-  isl_printer *kernel;
+  isl_printer *p_tmp;
 
-  kernel = isl_printer_to_file(isl_printer_get_ctx(p), hls->kernel_c);
-  kernel = isl_printer_set_output_format(kernel, ISL_FORMAT_C);
-  kernel = autosa_print_types(kernel, types, prog);
-  isl_printer_free(kernel);
-
-  if (!kernel)
-    return isl_printer_free(p);
+  p_tmp = isl_printer_to_file(isl_printer_get_ctx(p), hls->kernel_c);
+  p_tmp = isl_printer_set_output_format(p_tmp, ISL_FORMAT_C);
+  p_tmp = autosa_print_types(p_tmp, types, prog);
+  p_tmp = isl_printer_free(p_tmp);  
 
   /* Print OpenCL host and kernel function. */
   p = autosa_print_host_code(p, prog, tree, modules, n_modules, top_module,

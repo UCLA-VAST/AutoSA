@@ -1297,7 +1297,7 @@ static __isl_give isl_printer *print_trans_stmt_coalesce(
   coalesce_depth = isl_schedule_node_get_schedule_depth(node) + buf->tile->n - 1;
   /* If the host serialization is enabled, we extend the coalesce bound to the 
    * entire buffer. Otherwise, only the last dimension is considered.
-   */  
+   */    
   if (buf->serialize) {
     coalesce_bound_val = isl_val_copy(buf->tile->bound[buf->tile->n - 1].size);  
     for (int i = 0; i < buf->tile->n - 1; i++) {
@@ -1308,7 +1308,7 @@ static __isl_give isl_printer *print_trans_stmt_coalesce(
       *coalesce_bound = isl_val_get_num_si(coalesce_bound_val) / (buf->n_lane * buf->vec_len);
     } else {
       *coalesce_bound = isl_val_get_num_si(coalesce_bound_val) / buf->n_lane;
-    }
+    }    
     isl_val_free(coalesce_bound_val);
   } else {
     coalesce_bound_val = buf->tile->bound[buf->tile->n - 1].size;  
@@ -2245,9 +2245,9 @@ static void create_io_module_var(isl_ctx *ctx,
       isl_val *size;
 
       size = isl_val_copy(tile->bound[i].size);
-      if (i == group->array->n_index - 1) {
+      if (i == group->array->n_index - 1) {        
         if (group->local_array->is_sparse) {
-          size = isl_val_div(size, isl_val_int_from_si(ctx, n_lane * group->local_array->vec_len));
+          size = isl_val_div(size, isl_val_int_from_si(ctx, n_lane * group->local_array->vec_len));          
         } else {
           if (n_lane > 1)
             size = isl_val_div(size, isl_val_int_from_si(ctx, n_lane));          
@@ -4675,10 +4675,7 @@ static isl_stat create_pe_module_vars(struct autosa_hw_module *module,
 
       type = autosa_array_ref_group_type(group);
       if (type != AUTOSA_ACCESS_GLOBAL)
-        n++;
-      //if (kernel->sparse && array->array_type == AUTOSA_EXT_ARRAY && array->is_sparse == 0) {
-      //  n++;
-      //}
+        n++;      
     }
   }
 
@@ -4700,9 +4697,7 @@ static isl_stat create_pe_module_vars(struct autosa_hw_module *module,
       type = autosa_array_ref_group_type(group);
       if (type == AUTOSA_ACCESS_GLOBAL)
         continue;
-      if (kernel->sparse && array->array_type == AUTOSA_EXT_ARRAY && array->is_sparse == 0) {
-        //create_pe_module_var(kernel->ctx, kernel, group, &module->var[n], array, "_unselected", 0);
-        //n++;
+      if (kernel->sparse && array->array_type == AUTOSA_EXT_ARRAY && array->is_sparse == 0) {        
         create_pe_module_var(kernel->ctx, kernel, group, &module->var[n], array, NULL, 1);
         n++;
       } else {
@@ -4920,10 +4915,6 @@ static __isl_give struct autosa_hw_module *sa_pe_module_gen(struct autosa_gen *g
       module->io_groups[module->n_io_group - 1] = array->drain_group;
     }
   }
-
-//#ifdef _DEBUG
-//  DBGSCHDNODE(stdout, node, isl_schedule_node_get_ctx(node));
-//#endif
 
   /* Insert "pipeline" mark under the last "latency" mark. */
   node = isl_schedule_node_map_descendant_bottom_up(node,
@@ -9656,12 +9647,6 @@ static __isl_give isl_ast_node *after_mark_module(__isl_take isl_ast_node *node,
     module = data->module;
     if (!module->intra_space)
       module->intra_space = isl_ast_build_get_schedule_space(build);
-
-//#ifdef _DEBUG
-//    printf("%s\n", module->name);
-//    DBGASTNODE(stdout, node, isl_ast_node_get_ctx(node));
-//#endif
-
     module->intra_tree = isl_ast_node_mark_get_node(node);
     isl_ast_node_free(node);
 
@@ -9692,6 +9677,9 @@ static __isl_give isl_ast_node *after_mark_module(__isl_take isl_ast_node *node,
     module = data->module;
     data->module = NULL;
     module->serialize_tree = isl_ast_node_mark_get_node(node);
+    //std::cout << module->name << std::endl;
+    //DBGASTNODE(stdout, module->serialize_tree, isl_ast_node_get_ctx(node));
+    //std::cout << module->serialize_tree << std::endl;
     isl_ast_node_free(node);
 
     expr = isl_ast_expr_from_id(isl_id_copy(id));
