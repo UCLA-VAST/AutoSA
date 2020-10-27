@@ -172,7 +172,7 @@ The `tuning.json` contains the content below:
 ```json
 "array_part": {
   "tilable_loops": [64, 64, 64],
-   "n_sa_dim": 2
+  "n_sa_dim": 2
 }
 ```
 The first line tells users there are three candidate loops that can be tiled. The upper bounds of each loop is 64. We may select any tiling factor no greater than 64. Besides, AutoSA only supports tiling factors as sub-multiples of the loop bounds for now. If the user is interested to understand which three loops are selected as the candidate loops, add the option `--AutoSA-verbose` to the command and run again.
