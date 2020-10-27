@@ -2872,7 +2872,7 @@ __isl_give isl_printer *autosa_kernel_print_io(__isl_take isl_printer *p,
     local_index_packed = isl_ast_expr_set_op_arg(local_index_packed, n_arg - 1, arg);
   }
 
-  if (data_pack == nxt_data_pack)
+  if (data_pack == nxt_data_pack && !group->local_array->is_sparse)
   {
     // TODO: modify the sparse
 

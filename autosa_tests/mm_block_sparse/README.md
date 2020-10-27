@@ -54,25 +54,10 @@ make check
 ```
 
 __Tuning__(Alpha):
-We have also provied an auto-tuner in the alpha-version. The auto-tuner builds analytical models for resource usage and latency. Based on these models, the auto-tuner looks for designs with the least latency under the resource constraints.
-To use the auto-tuner, the first step is to train the resource models. Run this command to train the resource model.
-```bash
-python3 ./autosa_scripts/optimizer.py -c './autosa ./autosa_tests/mm/kernel.c --target=autosa_hls_c --simd-info=./autosa_tests/mm/simd_info.json --host-serialize --hls' --info autosa_config/hw_info.json -s autosa_config/optimizer_settings.json --train -p xilinx
-```
-
-After resource models are trained, run the following command to search for the best design.
-```bash
-python3 ./autosa_scripts/optimizer.py -c './autosa ./autosa_tests/mm/kernel.c --target=autosa_hls_c --simd-info=./autosa_tests/mm/simd_info.json --host-serialize --hls' --info autosa_config/hw_info.json -s autosa_config/optimizer_settings.json --search -p xilinx
-```
 
 __Other Test Cases__:
 Below we provide some other test cases for you to try out.
-1. 1D systolic array
+1. 
 ```bash
-./autosa ./autosa_tests/mm/kernel.c --config=./autosa_config/autosa_config.json --target=autosa_hls_c --output-dir=./autosa.tmp/output --sa-sizes="{kernel[]->space_time[0];kernel[]->array_part[32,32,32];kernel[]->latency[8,8];kernel[]->simd[2]}" --simd-info=./autosa_tests/mm/simd_info.json --host-serialize --hls
-```
-
-2. 2D systolic array
-```bash
-./autosa ./autosa_tests/mm/kernel.c --config=./autosa_config/autosa_config.json --target=autosa_hls_c --output-dir=./autosa.tmp/output --sa-sizes="{kernel[]->space_time[4];kernel[]->array_part[32,4,32];kernel[]->latency[16,16];kernel[]->simd[2]}" --simd-info=./autosa_tests/mm/simd_info.json --host-serialize --hls --local-reduce --reduce-op="+" --simd-touch-space
+./autosa ./autosa_tests/mm_block_sparse/kernel.c --config=./autosa_config/autosa_config.json --target=autosa_hls_c --output-dir=./autosa.tmp/output --sa-sizes="{kernel[]->space_time[3];kernel[]->array_part[16,16,16];kernel[]->latency[8,8];kernel[]->simd[8]}" --simd-info=./autosa_tests/mm_block_sparse/simd_info.json --host-serialize --block-sparse --block-sparse-ratio="{kernel[]->block_sparse[3,8]}"
 ```

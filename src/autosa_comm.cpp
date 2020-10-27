@@ -2945,7 +2945,9 @@ static isl_stat compute_io_group_data_pack_sparse(
           size = isl_val_mul(size, isl_val_copy(buf->tile->bound[n].size));
         }        
       }      
-      size = isl_val_div(size, isl_val_int_from_si(gen->ctx, kernel->n_nzero));
+      size = isl_val_div(size, isl_val_int_from_si(gen->ctx, kernel->vec_len));
+      //DBGVAL(stdout, size, isl_val_get_ctx(size));
+      //std::cout << group->n_lane << std::endl;
 
       while (n_lane <= cur_max_n_lane) {
         /* The lane should be multiples of SIMD lane. */

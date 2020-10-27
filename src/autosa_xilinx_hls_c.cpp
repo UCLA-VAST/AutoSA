@@ -382,7 +382,7 @@ static isl_stat print_data_types_xilinx(
         p = isl_printer_indent(p, 2);
         
         p = isl_printer_start_line(p);
-        if (data_pack_factors[n] == 1) {
+        if (data_pack_factors[n] == 1 && kernel->n_nzero == 1) {
           p = isl_printer_print_str(p, local->array->type);
         } else {
           p = isl_printer_print_str(p, local->array->name);
@@ -393,7 +393,7 @@ static isl_stat print_data_types_xilinx(
         p = isl_printer_end_line(p);
 
         p = isl_printer_start_line(p);
-        if (data_pack_factors[n] == 1) {
+        if (data_pack_factors[n] == 1 && kernel->n_nzero == 1) {
           p = isl_printer_print_str(p, "unsigned char");  
         } else {
           p = isl_printer_print_str(p, "ap_uint<");
