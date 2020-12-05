@@ -1081,8 +1081,7 @@ struct hls_info
   FILE *host_h;    /* OpenCL host header. */
   FILE *kernel_c;  /* Definition of hardware modules. */
   FILE *kernel_h;  /* Declaration of hardware modules. */
-  FILE *top_gen_c; /* Prints out the top module that connects the 
-                            hardware modules. */
+  FILE *top_gen_c; /* Prints out the top module that connects the hardware modules. */
   FILE *top_gen_h;
 
   enum platform target;

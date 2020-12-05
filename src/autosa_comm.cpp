@@ -2948,6 +2948,7 @@ static isl_stat compute_io_group_data_pack_sparse(
       size = isl_val_div(size, isl_val_int_from_si(gen->ctx, kernel->vec_len));
       //DBGVAL(stdout, size, isl_val_get_ctx(size));
       //std::cout << group->n_lane << std::endl;
+      //std::cout << cur_max_n_lane << std::endl;
 
       while (n_lane <= cur_max_n_lane) {
         /* The lane should be multiples of SIMD lane. */
@@ -2960,7 +2961,8 @@ static isl_stat compute_io_group_data_pack_sparse(
           }
           isl_val_free(val);
         }
-        n_lane *= 2;
+        //n_lane *= 2;
+        n_lane += 1;
       }
       if (status) {
         buf->n_lane = cur_n_lane;        
@@ -2973,6 +2975,7 @@ static isl_stat compute_io_group_data_pack_sparse(
     } else {
       buf->n_lane = cur_n_lane;
     }
+    //std::cout << buf->n_lane << std::endl;
     /* Update the sparse information */
     buf->sparse = 1;
     buf->vec_len = kernel->vec_len;

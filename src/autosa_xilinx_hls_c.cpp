@@ -174,8 +174,8 @@ static void hls_open_files(struct hls_info *info, const char *input)
   if (info->hls)
     fprintf(info->host_c, "#include \"%s\"\n\n", name);
 
-  //if (info->hls)
-  fprintf(info->kernel_c, "#include \"%s\"\n", name);
+  if (info->hls)
+    fprintf(info->kernel_c, "#include \"%s\"\n", name);
 
   strcpy(name + len, "_top_gen.cpp");
   strcpy(dir + len_dir, name);
@@ -357,6 +357,10 @@ static isl_stat print_data_types_xilinx(
       }
       for (auto it = tmp_lanes.begin(); it != tmp_lanes.end(); ++it) {
         int f = *it;
+        if (local->array->size * 8 * f > 1024) {
+          printf("[AutoSA] Warning: The data width %d is greater than 1024-bit. The type definition is not generated.\n", local->array->size * 8 * f);
+          continue;
+        }
         if (f > 1) {
           p = isl_printer_start_line(p);
           p = isl_printer_print_str(p, "typedef ap_uint<");
@@ -371,6 +375,8 @@ static isl_stat print_data_types_xilinx(
       }
 
       for (int n = 0; n < n_factor; n++) {
+        if (data_pack_factors[n] * kernel->n_nzero * local->array->size * 8 > 1024)
+          continue;
         p = isl_printer_start_line(p);
         p = isl_printer_print_str(p, "typedef struct ");
         p = isl_printer_print_str(p, local->array->name);
@@ -470,8 +476,39 @@ static isl_stat print_sparse_macros(struct autosa_kernel *kernel, struct hls_inf
   p = print_str_new_line(p, "#define EFF_COMPRESS_RATIO (VEC_LEN/(NON_ZERO_NUM+META_DATA_NUM))");
 
   p = print_str_new_line(p, "/* Sparse Macros */");
-  p = isl_printer_end_line(p);
+  p = isl_printer_end_line(p);  
+
   isl_printer_free(p);
+
+  if (hls->hls == 0) {
+    p = isl_printer_to_file(kernel->ctx, hls->host_h);
+    p = isl_printer_set_output_format(p, ISL_FORMAT_C);
+    p = print_str_new_line(p, "/* Sparse Macros */");
+  
+    p = isl_printer_start_line(p);
+    p = isl_printer_print_str(p, "#define VEC_LEN ");
+    p = isl_printer_print_int(p, kernel->vec_len);
+    p = isl_printer_end_line(p);
+  
+    p = isl_printer_start_line(p);
+    p = isl_printer_print_str(p, "#define NON_ZERO_NUM ");
+    p = isl_printer_print_int(p, kernel->n_nzero);
+    p = isl_printer_end_line(p);
+  
+    p = print_str_new_line(p, "#define COMPRESS_RATIO (VEC_LEN/NON_ZERO_NUM)");
+  
+    p = isl_printer_start_line(p);
+    p = isl_printer_print_str(p, "#define META_DATA_NUM ");
+    p = isl_printer_print_int(p, kernel->n_meta_data);
+    p = isl_printer_end_line(p);
+  
+    p = print_str_new_line(p, "#define EFF_COMPRESS_RATIO (VEC_LEN/(NON_ZERO_NUM+META_DATA_NUM))");
+  
+    p = print_str_new_line(p, "/* Sparse Macros */");
+    p = isl_printer_end_line(p);  
+  
+    isl_printer_free(p);    
+  }
 
   return isl_stat_ok;
 }
@@ -732,6 +769,8 @@ static __isl_give isl_printer *declare_and_allocate_device_arrays_xilinx(
       p = isl_printer_print_str(p, local_array->array->type);
       p = isl_printer_print_str(p, " *>(");
       p = isl_printer_print_str(p, local_array->array->name);
+      if (local_array->is_sparse)
+        p = isl_printer_print_str(p, "_s");
       p = isl_printer_print_str(p, "), reinterpret_cast<");
       p = isl_printer_print_str(p, local_array->array->type);
       p = isl_printer_print_str(p, " *>(");
@@ -758,6 +797,8 @@ static __isl_give isl_printer *declare_and_allocate_device_arrays_xilinx(
       p = isl_printer_print_str(p, local_array->array->type);
       p = isl_printer_print_str(p, " *>(");
       p = isl_printer_print_str(p, local_array->array->name);
+      if (local_array->is_sparse)
+        p = isl_printer_print_str(p, "_s");
       p = isl_printer_print_str(p, "), reinterpret_cast<");
       p = isl_printer_print_str(p, local_array->array->type);
       p = isl_printer_print_str(p, " *>(");
@@ -2249,6 +2290,15 @@ static __isl_give isl_printer *print_module_var_xilinx(
     else
       p = isl_printer_print_str(p, use_memory == 1 ? " core=RAM_2P_LUTRAM" : (use_memory == 2 ? " core=RAM_2P_BRAM" : " core=RAM_2P_URAM"));
     p = isl_printer_end_line(p);
+
+    if (var->array->local_array->is_sparse) {
+      p = isl_printer_start_line(p);
+      p = isl_printer_print_str(p, "#pragma HLS DATA_PACK variable=");
+      p = isl_printer_print_str(p, var->name);
+      if (double_buffer)
+        p = isl_printer_print_str(p, "_ping");
+      p = isl_printer_end_line(p);  
+    }
   }
 
   /* Print pong buffer */
@@ -2327,6 +2377,14 @@ static __isl_give isl_printer *print_module_var_xilinx(
         p = isl_printer_print_str(p, use_memory == 1 ? " core=RAM_2P_LUTRAM" : (use_memory == 2 ? " core=RAM_2P_BRAM" : " core=RAM_2P_URAM"));
       //p = isl_printer_print_str(p, use_memory == 1 ? " core=RAM_2P_LUTRAM" : (use_memory == 2 ? " core=RAM_2P_BRAM" : " core=RAM_2P_URAM"));
       p = isl_printer_end_line(p);
+
+      if (var->array->local_array->is_sparse) {
+        p = isl_printer_start_line(p);
+        p = isl_printer_print_str(p, "#pragma HLS DATA_PACK variable=");
+        p = isl_printer_print_str(p, var->name);
+        p = isl_printer_print_str(p, "_pong");
+        p = isl_printer_end_line(p);
+      }
     }
   }
 
@@ -4573,6 +4631,16 @@ static void print_top_gen_host_code(
       p = isl_printer_end_line(p);
 
       p = print_str_new_line(p, "p = isl_printer_end_line(p);");
+
+      if (group->local_array->is_sparse) {
+        p = print_str_new_line(p, "p = isl_printer_start_line(p);");
+        p = isl_printer_start_line(p);
+        p = isl_printer_print_str(p, "p = isl_printer_print_str(p, \"#pragma HLS DATA_PACK variable=");
+        p = isl_printer_print_str(p, fifo_name);
+        p = isl_printer_print_str(p, "\");");
+        p = isl_printer_end_line(p);
+        p = print_str_new_line(p, "p = isl_printer_end_line(p);");
+      }
 
       /* fifo:fifo_name:fifo_cnt:fifo_width */
       p = isl_printer_start_line(p);

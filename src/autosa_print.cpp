@@ -1,5 +1,6 @@
 /* Helper functions in codegen */
 #include <assert.h>
+#include <cmath>
 
 #include "autosa_print.h"
 #include "autosa_utils.h"
@@ -1172,7 +1173,7 @@ __isl_give isl_printer *print_module_arguments(
       }
       if (types)
       {
-        if (module->data_pack_inter == 1) {
+        if (module->data_pack_inter == 1 && module->io_groups[0]->local_array->is_sparse == 0) {
           p = isl_printer_print_str(p, var->array->type);
         }
         else {
@@ -1898,9 +1899,10 @@ static __isl_give isl_printer *print_fifo_decl_single(
 
     /* If depth * width > 512 bits, HLS will use BRAM to implement FIFOs.
      * Instead, we will insert pragmas to use SRL instead.
+     * Modified: Use SRL anytime.
      */
     /* Print fifo resource pragma. */
-    if (n_lane * group->array->size >= 32)
+    //if (n_lane * group->array->size >= 32)
     {
       p = print_str_new_line(p, "p = isl_printer_start_line(p);");
 
@@ -1941,6 +1943,46 @@ static __isl_give isl_printer *print_fifo_decl_single(
       p = print_str_new_line(p, "p = isl_printer_print_str(p, \" core=FIFO_SRL\");");      
       p = print_str_new_line(p, "p = isl_printer_end_line(p);");
     }
+
+    /* For sparse structure, we will need to perform data pack. */
+    if (group->local_array->is_sparse) {
+      p = print_str_new_line(p, "p = isl_printer_start_line(p);");
+      p = isl_printer_start_line(p);
+      p = isl_printer_print_str(p, "p = isl_printer_print_str(p, \"#pragma HLS DATA_PACK variable=");
+      p = autosa_array_ref_group_print_fifo_name(group, p);
+      p = isl_printer_print_str(p, "_");
+      p = isl_printer_print_str(p, module->name);
+      if (pe_inout)
+      {
+        p = isl_printer_print_str(p, suffix);
+      }
+      p = isl_printer_print_str(p, "\");");
+      p = isl_printer_end_line(p);
+
+      if (module->type == IO_MODULE || module->type == DRAIN_MODULE)
+      {
+        if (boundary)
+        {
+          p = print_inst_ids_inc_suffix(p, n, n - 1, 1);
+        }
+        else
+        {
+          p = print_inst_ids_suffix(p, n, NULL);
+        }
+      }
+      else if (module->type == PE_MODULE)
+      {
+        if (boundary)
+        {
+          p = print_pretrans_inst_ids_suffix(p, n, group->io_L1_pe_expr, group->dir);
+        }
+        else
+        {
+          p = print_pretrans_inst_ids_suffix(p, n, group->io_L1_pe_expr, NULL);
+        }
+      }                  
+      p = print_str_new_line(p, "p = isl_printer_end_line(p);");
+    }    
   }
 
   return p;
@@ -2923,6 +2965,12 @@ __isl_give isl_printer *autosa_kernel_print_io(__isl_take isl_printer *p,
       p = isl_printer_print_int(p, group->n_lane);
       p = isl_printer_print_str(p, "];");
       p = isl_printer_end_line(p);
+
+      p = isl_printer_start_line(p);
+      p = isl_printer_print_str(p, "#pragma HLS ARRAY_PARTITION variable=");
+      p = isl_printer_print_str(p, group->array->name);
+      p = isl_printer_print_str(p, "_tmp dim=0 complete");
+      p = isl_printer_end_line(p);
     }
 
     if (stmt->u.i.in)
@@ -3106,7 +3154,24 @@ __isl_give isl_printer *autosa_kernel_print_io(__isl_take isl_printer *p,
 
       if (kernel->sparse && group->local_array->is_sparse == 0) {
         /* Print the extra data selection code. */        
-        p = print_str_new_line(p, "unsigned char index = 0;");
+        int index_s, index_w;
+        int pos_w;
+
+        p = isl_printer_start_line(p);
+        index_w = (int)log2f((float)group->n_lane);
+        p = isl_printer_print_str(p, "ap_uint<");
+        p = isl_printer_print_int(p, index_w);
+        p = isl_printer_print_str(p, "> index[");
+        index_s = group->n_lane / kernel->vec_len * kernel->n_nzero;
+        p = isl_printer_print_int(p, index_s);
+        p = isl_printer_print_str(p, "];");
+        p = isl_printer_end_line(p);
+
+        p = isl_printer_start_line(p);
+        p = isl_printer_print_str(p, "#pragma HLS ARRAY_PARTITION variable=index dim=0 complete");
+        p = isl_printer_end_line(p);
+
+        //p = print_str_new_line(p, "unsigned char index = 0;");
         
         p = isl_printer_start_line(p);
         struct autosa_local_array_info *sparse_array;
@@ -3124,6 +3189,13 @@ __isl_give isl_printer *autosa_kernel_print_io(__isl_take isl_printer *p,
         p = isl_printer_print_str(p, ";");
         p = isl_printer_end_line(p);
 
+        pos_w = (int)log2f((float)index_s);
+        p = isl_printer_start_line(p);
+        p = isl_printer_print_str(p, "ap_uint<");
+        p = isl_printer_print_int(p, pos_w);
+        p = isl_printer_print_str(p, "> pos = 0;");
+        p = isl_printer_end_line(p);
+
         p = isl_printer_start_line(p);
         p = isl_printer_print_str(p, "for (int n = 0; n < ");
         p = isl_printer_print_int(p, group->n_lane / kernel->vec_len);
@@ -3137,20 +3209,47 @@ __isl_give isl_printer *autosa_kernel_print_io(__isl_take isl_printer *p,
         p = print_str_new_line(p, "s_tmp.i = s_tmp.i >> 8;");
         
         p = isl_printer_start_line(p);
-        p = isl_printer_print_str(p, "for (int m = ");
-        p = isl_printer_print_int(p, kernel->vec_len);
-        p = isl_printer_print_str(p, " * n; m < ");
-        p = isl_printer_print_int(p, kernel->vec_len);
-        p = isl_printer_print_str(p, " * n + ");
+        p = isl_printer_print_str(p, "for (int m = 0; m < ");        
         p = isl_printer_print_int(p, kernel->vec_len);
         p = isl_printer_print_str(p, "; m++) {");
         p = isl_printer_end_line(p);
 
+        //p = isl_printer_print_str(p, " * n; m < ");
+        //p = isl_printer_print_int(p, kernel->vec_len);
+        //p = isl_printer_print_str(p, " * n + ");
+        //p = isl_printer_print_int(p, kernel->vec_len);
+        //p = isl_printer_print_str(p, "; m++) {");
+        
         p = print_str_new_line(p, "#pragma HLS UNROLL");
         p = isl_printer_indent(p, 2);
-        p = print_str_new_line(p, "if ((offset & 1) == 1) {");
+        p = print_str_new_line(p, "if ((ap_uint<1>)(offset & 1) == (ap_uint<1>)1) {");
         p = isl_printer_indent(p, 2);
         
+        p = isl_printer_start_line(p);
+        p = isl_printer_print_str(p, "index[pos] = n * ");
+        p = isl_printer_print_int(p, kernel->vec_len);
+        p = isl_printer_print_str(p, " + m;");        
+        p = isl_printer_end_line(p);
+
+        p = print_str_new_line(p, "pos++;");
+
+        p = isl_printer_indent(p, -2);
+        p = print_str_new_line(p, "}");
+        p = print_str_new_line(p, "offset = offset >> 1;");
+        p = isl_printer_indent(p, -2);
+        p = print_str_new_line(p, "}");
+        p = isl_printer_indent(p, -2);
+        p = print_str_new_line(p, "}");
+
+        p = isl_printer_start_line(p);
+        p = isl_printer_print_str(p, "for (int n = 0; n < ");
+        p = isl_printer_print_int(p, group->n_lane / kernel->vec_len * kernel->n_nzero);
+        p = isl_printer_print_str(p, "; n++) {");
+        p = isl_printer_end_line(p);
+
+        p = print_str_new_line(p, "#pragma HLS UNROLL");
+
+        p = isl_printer_indent(p, 2);
         p = isl_printer_start_line(p);
         isl_ast_expr *op;
         isl_ast_expr *expr = stmt->u.i.local_index;
@@ -3164,9 +3263,9 @@ __isl_give isl_printer *autosa_kernel_print_io(__isl_take isl_printer *p,
           if (i == n_arg - 2) {
             if (stmt->u.i.simd_depth != -1) {
               p = isl_printer_print_ast_expr(p, op);
-              p = isl_printer_print_str(p, " + index");
+              p = isl_printer_print_str(p, " + n");
             } else {
-              p = isl_printer_print_str(p, "index");
+              p = isl_printer_print_str(p, "n");
             }
           } else {
             p = isl_printer_print_ast_expr(p, op);
@@ -3176,15 +3275,9 @@ __isl_give isl_printer *autosa_kernel_print_io(__isl_take isl_printer *p,
         }
         p = isl_printer_print_str(p, " = ");
         p = isl_printer_print_str(p, group->array->name);
-        p = isl_printer_print_str(p, "_tmp[0][m];");
+        p = isl_printer_print_str(p, "_tmp[0][index[n]];");
         p = isl_printer_end_line(p);
-
-        p = print_str_new_line(p, "index++;");
-        p = isl_printer_indent(p, -2);
-        p = print_str_new_line(p, "}");
-        p = print_str_new_line(p, "offset = offset >> 1;");
-        p = isl_printer_indent(p, -2);
-        p = print_str_new_line(p, "}");
+        
         p = isl_printer_indent(p, -2);
         p = print_str_new_line(p, "}");
       }

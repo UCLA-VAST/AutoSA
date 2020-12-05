@@ -537,7 +537,7 @@ def float_to_int(matchobj):
 
 def index_simplify(matchobj):
     str_expr = matchobj.group(0)
-    if str_expr == '[arb]' or str_expr == '[!arb]':
+    if str_expr == '[arb]' or str_expr == '[!arb]' or str_expr == '[index[n]':
         return str_expr
     if '++' in str_expr:
         return str_expr
