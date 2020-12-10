@@ -333,5 +333,17 @@ AutoSA is open source for research purposes, and we would like to continously im
 AutoSA is currently maintained by [Jie Wang](http://cadlab.cs.ucla.edu/~jaywang/).
 Besides, we gratefully acknowledge the authors of PPCG for developing and actively maintaining PPCG as an open-source project.
 
+## Citation
+Please kindly cite our work if you are using AutoSA for your projects.
+```
+@inproceedings{autosa,
+author = {Jie Wang and Licheng Guo and Jason Cong},
+title = {AutoSA: A Polyhedral Compiler for High-Performance Systolic Arrays on FPGA},
+booktitle  = {Proceedings of the 2021 ACM/SIGDA International Symposium on Field Programmable Gate Arrays},
+year = {2021}
+}
+```
+You may find our paper [here](http://cadlab.cs.ucla.edu/~jaywang/papers/fpga21-autosa.pdf).
+
 ## Version History
 + [2020/5/17] Version 0.01 is released.
