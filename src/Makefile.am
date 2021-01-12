@@ -80,7 +80,8 @@ autosa_SOURCES = \
 	autosa_t2s.cpp \
 	autosa_trans.cpp \
 	autosa_utils.cpp \
-	autosa_xilinx_hls_c.cpp 
+	autosa_xilinx_hls_c.cpp  \
+	autosa_catapult_hls_c.cpp
 
 #TESTS = @extra_tests@
 #EXTRA_TESTS = opencl_test.sh polybench_test.sh

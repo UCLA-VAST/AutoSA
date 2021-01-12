@@ -39,6 +39,7 @@ The structure of this repo is as follows:
 7. [Version History](#version-history)
 
 ## Latest Features
++ [2021/1/12] Catapult back-end is added.
 + [2020/9/21] Auto-tuner (alpha) is released.
 + [2020/6/21] Intel back-end is added.
 + [2020/6/8] Docker image is released.
@@ -311,16 +312,17 @@ No. | Design Example | Description    | Board        | Software Version
 ----|----------------|----------------|--------------|------------------
 1   | [autosa_tests/mm](autosa_tests/mm/) | Small-size matrix multiplication | Xilinx Alveo U250 | Xilinx Vitis 2019.2
 2   | [autosa_tests/mm_intel](autosa_tests/mm_intel/) | Small-size matrix multiplication on Intel platform (Alpha) | Stratix 10 | Intel FPGA SDK for OpenCL 2019.4
-3   | [autosa_tests/mm_hbm](autosa_tests/mm_hbm/) | Small-size matrix multiplication using HBM | Xilinx Alveo U280 | Xilinx Vitis 2019.2
-4   | [autosa_tests/mm_int16](autosa_tests/mm_int16/) | Small-size matrix multiplication using int16 datatype | Xilinx Alveo U250 | Xilinx Vitis 2019.2
-5   | [autosa_tests/cnn](autosa_tests/cnn/) | Small-size single layer of convolutional neural network | Xilinx Alveo U250 | Xilinx Vitis 2019.2
-6   | [autosa_tests/lu](autosa_tests/lu/) | Small-size LU decomposition | Xilinx Alveo U250 | Xilinx Vitis 2019.2
-7   | [autosa_tests/large/mm](autosa_tests/large/mm/) | Large-size matrix multiplication | Xilinx Alveo U250 | Xilinx Vitis 2019.2
-8   | [autosa_tests/large/mm_int16](autosa_tests/large/mm_int16/) | Large-size matrix multiplication using int16 datatype| Xilinx Alveo U250 | Xilinx Vitis 2019.2
-9   | [autosa_tests/large/mm_int8](autosa_tests/large/mm_int8/) | Large-size matrix multiplication using int8 datatype | Xilinx Alveo U250 | Xilinx Vitis 2019.2
-10   | [autosa_tests/large/cnn](autosa_tests/large/cnn/) | Large-size single layer of convolutional neural network | Xilinx Alveo U250 | Xilinx Vitis 2019.2
-11  | [autosa_tests/large/ttmc](autosa_tests/large/ttmc/) | Large-size chain of tensor-matrix multiplications (TTMc)| Xilinx Alveo U250 | Xilinx Vitis 2019.2
-12  | [autosa_tests/large/mttkrp](autosa_tests/large/mttkrp/) | Large-size matricized tensor times Khatri-Rao product (MTTKRP)| Xilinx Alveo U250 | Xilinx Vitis 2019.2
+3   | [autosa_tests/mm_catapult](autosa_tests/mm_catapult/) | Small-size matrix multiplication with Catapult HLS | N/A | Mentor Graphics Catapult Ultra 10.5c
+4   | [autosa_tests/mm_hbm](autosa_tests/mm_hbm/) | Small-size matrix multiplication using HBM | Xilinx Alveo U280 | Xilinx Vitis 2019.2
+5   | [autosa_tests/mm_int16](autosa_tests/mm_int16/) | Small-size matrix multiplication using int16 datatype | Xilinx Alveo U250 | Xilinx Vitis 2019.2
+6   | [autosa_tests/cnn](autosa_tests/cnn/) | Small-size single layer of convolutional neural network | Xilinx Alveo U250 | Xilinx Vitis 2019.2
+7   | [autosa_tests/lu](autosa_tests/lu/) | Small-size LU decomposition | Xilinx Alveo U250 | Xilinx Vitis 2019.2
+8   | [autosa_tests/large/mm](autosa_tests/large/mm/) | Large-size matrix multiplication | Xilinx Alveo U250 | Xilinx Vitis 2019.2
+9   | [autosa_tests/large/mm_int16](autosa_tests/large/mm_int16/) | Large-size matrix multiplication using int16 datatype| Xilinx Alveo U250 | Xilinx Vitis 2019.2
+10   | [autosa_tests/large/mm_int8](autosa_tests/large/mm_int8/) | Large-size matrix multiplication using int8 datatype | Xilinx Alveo U250 | Xilinx Vitis 2019.2
+11   | [autosa_tests/large/cnn](autosa_tests/large/cnn/) | Large-size single layer of convolutional neural network | Xilinx Alveo U250 | Xilinx Vitis 2019.2
+12  | [autosa_tests/large/ttmc](autosa_tests/large/ttmc/) | Large-size chain of tensor-matrix multiplications (TTMc)| Xilinx Alveo U250 | Xilinx Vitis 2019.2
+13  | [autosa_tests/large/mttkrp](autosa_tests/large/mttkrp/) | Large-size matricized tensor times Khatri-Rao product (MTTKRP)| Xilinx Alveo U250 | Xilinx Vitis 2019.2
 
 ## Send Us Failure Cases and Feedback!
 AutoSA is open source for research purposes, and we would like to continously improve it! Please let us know if...

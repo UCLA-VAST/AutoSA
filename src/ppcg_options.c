@@ -18,6 +18,7 @@ static struct isl_arg_choice target[] = {
 	{"autosa_hls_c", AUTOSA_TARGET_XILINX_HLS_C},
 	{"autosa_opencl", AUTOSA_TARGET_INTEL_OPENCL},
 	{"autosa_t2s", AUTOSA_TARGET_T2S},
+	{"autosa_catapult_c", AUTOSA_TARGET_CATAPULT_HLS_C},
 	{0}};
 
 static struct isl_arg_choice sa_type[] = {

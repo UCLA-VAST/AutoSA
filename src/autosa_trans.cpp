@@ -3343,10 +3343,6 @@ static __isl_give isl_schedule_node *compute_and_comm_optimize(
         }
     }
 
-//#ifdef _DEBUG
-//    DBGSCHD(stdout, kernel->schedule, isl_schedule_get_ctx(kernel->schedule))    
-//#endif
-
     kernel->prog = gen->prog;
     kernel->options = gen->options;    
 

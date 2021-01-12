@@ -40,6 +40,7 @@
 #include "cpu.h"
 #include "autosa_xilinx_hls_c.h"
 #include "autosa_intel_opencl.h"
+#include "autosa_catapult_hls_c.h"
 
 //#define _DEBUG
 
@@ -1487,6 +1488,8 @@ int autosa_main_wrap(int argc, char **argv)
 	  r = generate_autosa_xilinx_hls_c(ctx, options->ppcg, options->input);
 	else if (options->ppcg->target == AUTOSA_TARGET_INTEL_OPENCL)
 	  r = generate_autosa_intel_opencl(ctx, options->ppcg, options->input);
+	else if (options->ppcg->target == AUTOSA_TARGET_CATAPULT_HLS_C)
+		r = generate_autosa_catapult_hls_c(ctx, options->ppcg, options->input);
 //	else if (options->ppcg->target == AUTOSA_TARGET_T2S)
 //	  r = generate_autosa_t2s(ctx, options->ppcg, options->input, 
 //				options->output); // TODO: To fix

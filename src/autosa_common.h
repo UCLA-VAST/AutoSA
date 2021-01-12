@@ -124,7 +124,8 @@ enum autosa_array_type
 enum platform
 {
   INTEL_HW,
-  XILINX_HW
+  XILINX_HW,
+  CATAPULT_HW
 };
 
 struct autosa_dep
@@ -833,6 +834,24 @@ struct autosa_hw_module
   int use_FF;
 
   struct autosa_kernel *kernel;
+
+  /* For Catapult HLS */
+  /* Pipeline the whole function. */
+  int pipeline_at_default_func;
+  int pipeline_at_filter_func[3]; // outer, intra, inter  
+  /* Fifo guards information. */
+  int n_fifo_serialize;
+  char** fifo_names_serialize;
+  isl_pw_qpolynomial **fifo_bounds_serialize;
+  int n_fifo_default;
+  char **fifo_names_default;
+  isl_pw_qpolynomial **fifo_bounds_default;  
+  int n_fifo_inter;
+  char **fifo_names_inter;
+  isl_pw_qpolynomial **fifo_bounds_inter;  
+  int n_fifo_intra;
+  char **fifo_names_intra;
+  isl_pw_qpolynomial **fifo_bounds_intra;  
 };
 
 struct autosa_gen
@@ -1022,10 +1041,21 @@ struct autosa_ast_node_userinfo
   int is_outermost_for;
   int is_infinitize_legal;
   int is_first_infinitizable_loop;
-  int is_dep_free;
+  int is_dep_free;  
   int n_coalesce_loop;
   /* Temporary variable used in AST traversal. */
   bool visited;
+  /* Variables for Catapult codegen. */
+  int is_guard_start;
+  int is_guard_end;
+  int n_fifo;
+  char **fifo_names;
+  isl_pw_qpolynomial **bounds;
+  int double_buffer;
+  int inter;
+  int read;
+  char *module_name;
+  char *buf_name;
 };
 
 /* The current index is such that if you add "shift",
@@ -1083,10 +1113,12 @@ struct hls_info
   FILE *kernel_h;  /* Declaration of hardware modules. */
   FILE *top_gen_c; /* Prints out the top module that connects the hardware modules. */
   FILE *top_gen_h;
+  FILE *tcl;       /* Catapult TCL. */
 
   enum platform target;
   int hls;          /* Generate HLS host instead of OpenCL host */
   char *output_dir; /* Output directory */
+  char *kernel_prefix; /* Kernel file prefix */
   isl_ctx *ctx;
 };
 

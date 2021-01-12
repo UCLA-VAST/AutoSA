@@ -331,6 +331,18 @@ static isl_stat print_data_types_xilinx(
   p = isl_printer_to_file(kernel->ctx, hls->kernel_h);
   p = isl_printer_set_output_format(p, ISL_FORMAT_C);
   p = print_str_new_line(p, "/* Data Type */");
+
+  /* Print the primitive data type. */
+  for (int i = 0; i < kernel->n_array; i++) {
+    struct autosa_local_array_info *local = &kernel->array[i];
+    p = isl_printer_start_line(p);
+    p = isl_printer_print_str(p, "typedef ");
+    p = isl_printer_print_str(p, local->array->type);
+    p = isl_printer_print_str(p, " ");
+    p = isl_printer_print_str(p, local->array->name);
+    p = isl_printer_print_str(p, "_t1;");
+  }
+
   for (int i = 0; i < kernel->n_array; i++)
   {
     struct autosa_local_array_info *local = &kernel->array[i];
@@ -442,73 +454,6 @@ static isl_stat print_data_types_xilinx(
   p = print_str_new_line(p, "/* Data Type */");
   p = isl_printer_end_line(p);
   isl_printer_free(p);
-
-  return isl_stat_ok;
-}
-
-/* Print the macros for the sparse data structure. 
- */
-static isl_stat print_sparse_macros(struct autosa_kernel *kernel, struct hls_info *hls)
-{
-  isl_printer *p;
-
-  p = isl_printer_to_file(kernel->ctx, hls->kernel_h);
-  p = isl_printer_set_output_format(p, ISL_FORMAT_C);
-  p = print_str_new_line(p, "/* Sparse Macros */");
-
-  p = isl_printer_start_line(p);
-  p = isl_printer_print_str(p, "#define VEC_LEN ");
-  p = isl_printer_print_int(p, kernel->vec_len);
-  p = isl_printer_end_line(p);
-
-  p = isl_printer_start_line(p);
-  p = isl_printer_print_str(p, "#define NON_ZERO_NUM ");
-  p = isl_printer_print_int(p, kernel->n_nzero);
-  p = isl_printer_end_line(p);
-
-  p = print_str_new_line(p, "#define COMPRESS_RATIO (VEC_LEN/NON_ZERO_NUM)");
-
-  p = isl_printer_start_line(p);
-  p = isl_printer_print_str(p, "#define META_DATA_NUM ");
-  p = isl_printer_print_int(p, kernel->n_meta_data);
-  p = isl_printer_end_line(p);
-
-  p = print_str_new_line(p, "#define EFF_COMPRESS_RATIO (VEC_LEN/(NON_ZERO_NUM+META_DATA_NUM))");
-
-  p = print_str_new_line(p, "/* Sparse Macros */");
-  p = isl_printer_end_line(p);  
-
-  isl_printer_free(p);
-
-  if (hls->hls == 0) {
-    p = isl_printer_to_file(kernel->ctx, hls->host_h);
-    p = isl_printer_set_output_format(p, ISL_FORMAT_C);
-    p = print_str_new_line(p, "/* Sparse Macros */");
-  
-    p = isl_printer_start_line(p);
-    p = isl_printer_print_str(p, "#define VEC_LEN ");
-    p = isl_printer_print_int(p, kernel->vec_len);
-    p = isl_printer_end_line(p);
-  
-    p = isl_printer_start_line(p);
-    p = isl_printer_print_str(p, "#define NON_ZERO_NUM ");
-    p = isl_printer_print_int(p, kernel->n_nzero);
-    p = isl_printer_end_line(p);
-  
-    p = print_str_new_line(p, "#define COMPRESS_RATIO (VEC_LEN/NON_ZERO_NUM)");
-  
-    p = isl_printer_start_line(p);
-    p = isl_printer_print_str(p, "#define META_DATA_NUM ");
-    p = isl_printer_print_int(p, kernel->n_meta_data);
-    p = isl_printer_end_line(p);
-  
-    p = print_str_new_line(p, "#define EFF_COMPRESS_RATIO (VEC_LEN/(NON_ZERO_NUM+META_DATA_NUM))");
-  
-    p = print_str_new_line(p, "/* Sparse Macros */");
-    p = isl_printer_end_line(p);  
-  
-    isl_printer_free(p);    
-  }
 
   return isl_stat_ok;
 }
@@ -1507,147 +1452,6 @@ static __isl_give isl_printer *clear_device_xilinx(__isl_take isl_printer *p,
   return p;
 }
 
-/* Print the arguments to a drain merge function declaration or call.
- * If "types" is set, then print a declaration (including the types of the arguments).
- * 
- * The arguments are printed in the following order:
- * - the module identifiers
- * - the parameters
- * - the host loop iterators
- * - the arrays accssed by the module
- */
-static __isl_give isl_printer *print_drain_merge_arguments_xilinx(
-    __isl_take isl_printer *p,
-    struct autosa_kernel *kernel,
-    struct autosa_array_ref_group *group,
-    struct autosa_drain_merge_func *func,
-    int types,
-    int hls)
-{
-  int first = 1;
-  int nparam;
-  int n;
-  isl_space *space;
-  const char *type;
-  struct autosa_local_array_info *local_array;
-
-  type = isl_options_get_ast_iterator_type(kernel->ctx);
-  /* module identifiers */
-  const char *dims[] = {"idx", "idy", "idz"};
-  n = isl_id_list_n_id(func->inst_ids);
-  for (int i = 0; i < n; ++i)
-  {
-    if (!first)
-      p = isl_printer_print_str(p, ", ");
-    if (types)
-    {
-      p = isl_printer_print_str(p, type);
-      p = isl_printer_print_str(p, " ");
-    }
-    p = isl_printer_print_str(p, dims[i]);
-
-    first = 0;
-  }
-
-  /* params */
-  space = isl_union_set_get_space(kernel->arrays);
-  nparam = isl_space_dim(space, isl_dim_param);
-  for (int i = 0; i < nparam; ++i)
-  {
-    const char *name;
-
-    name = isl_space_get_dim_name(space, isl_dim_param, i);
-
-    if (!first)
-      p = isl_printer_print_str(p, ", ");
-    if (types)
-      p = isl_printer_print_str(p, "int ");
-    p = isl_printer_print_str(p, name);
-
-    first = 0;
-  }
-  isl_space_free(space);
-
-  /* Host iters */
-  n = isl_space_dim(kernel->space, isl_dim_set);
-  for (int i = 0; i < n; ++i)
-  {
-    const char *name;
-
-    if (!first)
-      p = isl_printer_print_str(p, ", ");
-    name = isl_space_get_dim_name(kernel->space, isl_dim_set, i);
-    if (types)
-    {
-      p = isl_printer_print_str(p, type);
-      p = isl_printer_print_str(p, " ");
-    }
-    p = isl_printer_print_str(p, name);
-
-    first = 0;
-  }
-
-  /* Arrays */
-  local_array = group->local_array;
-  if (!first)
-    p = isl_printer_print_str(p, ", ");
-  if (types)
-  {
-    if (hls)
-    {
-      p = isl_printer_print_str(p, local_array->array->type);
-      p = isl_printer_print_str(p, " *");
-    }
-    else
-    {
-      p = isl_printer_print_str(p, "std::vector<");
-      p = isl_printer_print_str(p, local_array->array->type);
-      p = isl_printer_print_str(p, ", aligned_allocator<");
-      p = isl_printer_print_str(p, local_array->array->type);
-      p = isl_printer_print_str(p, ">> &");
-    }
-    p = isl_printer_print_str(p, local_array->array->name);
-    p = isl_printer_print_str(p, "_to");
-  }
-  else
-  {
-    p = isl_printer_print_str(p, "dev_");
-    p = isl_printer_print_str(p, local_array->array->name);
-    p = isl_printer_print_str(p, "[0]");
-  }
-  first = 0;
-
-  if (!first)
-    p = isl_printer_print_str(p, ", ");
-  if (types)
-  {
-    if (hls)
-    {
-      p = isl_printer_print_str(p, local_array->array->type);
-      p = isl_printer_print_str(p, " *");
-    }
-    else
-    {
-      p = isl_printer_print_str(p, "std::vector<");
-      p = isl_printer_print_str(p, local_array->array->type);
-      p = isl_printer_print_str(p, ", aligned_allocator<");
-      p = isl_printer_print_str(p, local_array->array->type);
-      p = isl_printer_print_str(p, ">> &");
-    }
-    p = isl_printer_print_str(p, local_array->array->name);
-    p = isl_printer_print_str(p, "_from");
-  }
-  else
-  {
-    p = isl_printer_print_str(p, "dev_");
-    p = isl_printer_print_str(p, local_array->array->name);
-    p = isl_printer_print_str(p, "[idx]");
-  }
-  first = 0;
-
-  return p;
-}
-
 static __isl_give isl_printer *drain_merge_xilinx(
     __isl_take isl_printer *p, struct autosa_prog *prog,
     struct autosa_drain_merge_func *func,
@@ -1667,7 +1471,7 @@ static __isl_give isl_printer *drain_merge_xilinx(
   p = isl_printer_start_line(p);
   p = autosa_array_ref_group_print_prefix(group, p);
   p = isl_printer_print_str(p, "_drain_merge(");
-  p = print_drain_merge_arguments_xilinx(p, func->kernel, group, func, 0, hls);
+  p = print_drain_merge_arguments(p, func->kernel, group, func, 0, hls);
   p = isl_printer_print_str(p, ");");
   p = isl_printer_end_line(p);
 
@@ -2221,13 +2025,13 @@ static __isl_give isl_printer *print_module_var_xilinx(
     p = isl_printer_print_str(p, "_s_t");
     p = isl_printer_print_int(p, var->n_lane);
   } else {
-    if (var->n_lane == 1)
-      p = isl_printer_print_str(p, var->array->type);
-    else {
+    //if (var->n_lane == 1)
+    //  p = isl_printer_print_str(p, var->array->type);
+    //else {
       p = isl_printer_print_str(p, var->array->name);    
       p = isl_printer_print_str(p, "_t");
       p = isl_printer_print_int(p, var->n_lane);
-    }
+    //}
   }
   p = isl_printer_print_str(p, " ");
   p = isl_printer_print_str(p, var->name);
@@ -2439,118 +2243,55 @@ static __isl_give isl_printer *print_module_vars_xilinx(__isl_take isl_printer *
   return p;
 }
 
-static __isl_give isl_printer *print_module_stmt(__isl_take isl_printer *p,
-                                                 __isl_take isl_ast_print_options *print_options,
-                                                 __isl_keep isl_ast_node *node, void *user)
-{
-  isl_id *id;
-  struct autosa_kernel_stmt *stmt;
-  struct print_hw_module_data *hw_data = (struct print_hw_module_data *)(user);
-  struct autosa_hw_module *module = hw_data->module;
-
-  id = isl_ast_node_get_annotation(node);
-  stmt = (struct autosa_kernel_stmt *)isl_id_get_user(id);
-  isl_id_free(id);
-
-  isl_ast_print_options_free(print_options);
-
-  switch (stmt->type)
-  {
-    //    case POLYSA_KERNEL_STMT_COPY:
-    //      return autosa_kernel_print_copy(p, stmt);
-    //    case POLYSA_KERNEL_STMT_SYNC:
-    //      return print_sync(p, stmt);
-  case AUTOSA_KERNEL_STMT_DOMAIN:
-    return autosa_kernel_print_domain(p, stmt);
-  case AUTOSA_KERNEL_STMT_IO:
-    return autosa_kernel_print_io(p, stmt, hw_data->hls);
-  case AUTOSA_KERNEL_STMT_IO_TRANSFER:
-    return autosa_kernel_print_io_transfer(p, stmt, hw_data->hls, 
-              module->options->autosa->double_buffer_style == 0?
-                hw_data->iterator_prefix : NULL);
-  case AUTOSA_KERNEL_STMT_IO_DRAM:
-    return autosa_kernel_print_io_dram(p, stmt, hw_data->hls);
-  case AUTOSA_KERNEL_STMT_IO_MODULE_CALL_INTER_TRANS:
-    return autosa_kernel_print_inter_trans(p, stmt, hw_data->hls);
-  case AUTOSA_KERNEL_STMT_IO_MODULE_CALL_INTRA_TRANS:
-    return autosa_kernel_print_intra_trans(p, stmt, hw_data->hls);
-  case AUTOSA_KERNEL_STMT_IO_MODULE_CALL_INTER_INTRA:
-    return autosa_kernel_print_inter_intra(p, stmt, hw_data->hls);
-  case AUTOSA_KERNEL_STMT_IO_MODULE_CALL_INTRA_INTER:
-    return autosa_kernel_print_intra_inter(p, stmt, hw_data->hls);
-  case AUTOSA_KERNEL_STMT_IO_MODULE_CALL_STATE_HANDLE:
-    return autosa_kernel_print_state_handle(p, stmt, hw_data->hls);
-  case AUTOSA_KERNEL_STMT_DRAIN_MERGE:
-    return autosa_kernel_print_drain_merge(p, stmt, hw_data->hls);
-  case AUTOSA_KERNEL_STMT_HOST_SERIALIZE:
-    return autosa_kernel_print_host_serialize(p, stmt, hw_data->hls);
-  }
-
-  return p;
-}
-
-/* Print the host serialization functions.
- */
-static isl_stat print_host_serialize_funcs(
-    struct autosa_kernel *kernel,
-    struct autosa_hw_module **modules,
-    int n_modules, struct hls_info *hls)
-{
-  isl_printer *p;
-  isl_ctx *ctx;
-
-  ctx = kernel->ctx;
-  if (!hls->hls)
-    p = isl_printer_to_file(ctx, hls->host_h);
-  else
-    p = isl_printer_to_file(ctx, hls->kernel_h);
-  p = isl_printer_set_output_format(p, ISL_FORMAT_C);
-  for (int i = 0; i < n_modules; i++) {
-    struct autosa_hw_module *module = modules[i];
-    isl_ast_print_options *print_options;
-    struct print_hw_module_data hw_data = {hls, NULL, NULL, NULL};
-
-    if (module->serialize_tree) {
-      p = print_str_new_line(p, "/* Helper Function */");
-      p = isl_printer_start_line(p);
-      if (hls->hls)
-        p = isl_printer_print_str(p, "inline ");
-      p = isl_printer_print_str(p, "void ");
-      if (module->in) {
-        p = isl_printer_print_str(p, "host_serialize_");
-      } else {
-        p = isl_printer_print_str(p, "host_deserialize_");
-      }      
-      p = isl_printer_print_str(p, module->io_groups[0]->array->name);
-      p = isl_printer_print_str(p, "(");      
-      p = print_host_serialize_arguments(p, kernel, module->io_groups[0], module, 1, hls->hls);
-      p = isl_printer_print_str(p, "){");
-      p = isl_printer_end_line(p);
-      p = isl_printer_indent(p, 2);
-
-      p = print_str_new_line(p, "/* Variable Declaration */");
-      p = print_str_new_line(p, "unsigned int cnt = 0;");      
-      p = print_str_new_line(p, "/* Variable Declaration */");
-      p = isl_printer_end_line(p);
-
-      print_options = isl_ast_print_options_alloc(ctx);
-      print_options = isl_ast_print_options_set_print_user(print_options,
-                                                           &print_module_stmt, &hw_data);
-      //std::cout << module->name << std::endl;                                                           
-      //std::cout << module->serialize_tree << std::endl;                                                            
-      //DBGASTNODE(stdout, module->serialize_tree, isl_printer_get_ctx(p));      
-      p = isl_ast_node_print(module->serialize_tree, p, print_options);
-
-      p = isl_printer_indent(p, -2);
-      p = print_str_new_line(p, "}");
-      p = print_str_new_line(p, "/* Helper Function */");
-      p = isl_printer_end_line(p);
-    }    
-  }
-  isl_printer_free(p);
-
-  return isl_stat_ok;
-}
+//static __isl_give isl_printer *print_module_stmt(__isl_take isl_printer *p,
+//                                                 __isl_take isl_ast_print_options *print_options,
+//                                                 __isl_keep isl_ast_node *node, void *user)
+//{
+//  isl_id *id;
+//  struct autosa_kernel_stmt *stmt;
+//  struct print_hw_module_data *hw_data = (struct print_hw_module_data *)(user);
+//  struct autosa_hw_module *module = hw_data->module;
+//
+//  id = isl_ast_node_get_annotation(node);
+//  stmt = (struct autosa_kernel_stmt *)isl_id_get_user(id);
+//  isl_id_free(id);
+//
+//  isl_ast_print_options_free(print_options);
+//
+//  switch (stmt->type)
+//  {
+//    //    case POLYSA_KERNEL_STMT_COPY:
+//    //      return autosa_kernel_print_copy(p, stmt);
+//    //    case POLYSA_KERNEL_STMT_SYNC:
+//    //      return print_sync(p, stmt);
+//  case AUTOSA_KERNEL_STMT_DOMAIN:
+//    return autosa_kernel_print_domain(p, stmt);
+//  case AUTOSA_KERNEL_STMT_IO:
+//    return autosa_kernel_print_io(p, stmt, hw_data->hls);
+//  case AUTOSA_KERNEL_STMT_IO_TRANSFER:
+//    return autosa_kernel_print_io_transfer(p, stmt, hw_data->hls, 
+//              module->options->autosa->double_buffer_style == 0?
+//                hw_data->iterator_prefix : NULL);
+//  case AUTOSA_KERNEL_STMT_IO_DRAM:
+//    return autosa_kernel_print_io_dram(p, stmt, hw_data->hls);
+//  case AUTOSA_KERNEL_STMT_IO_MODULE_CALL_INTER_TRANS:
+//    return autosa_kernel_print_inter_trans(p, stmt, hw_data->hls);
+//  case AUTOSA_KERNEL_STMT_IO_MODULE_CALL_INTRA_TRANS:
+//    return autosa_kernel_print_intra_trans(p, stmt, hw_data->hls);
+//  case AUTOSA_KERNEL_STMT_IO_MODULE_CALL_INTER_INTRA:
+//    return autosa_kernel_print_inter_intra(p, stmt, hw_data->hls);
+//  case AUTOSA_KERNEL_STMT_IO_MODULE_CALL_INTRA_INTER:
+//    return autosa_kernel_print_intra_inter(p, stmt, hw_data->hls);
+//  case AUTOSA_KERNEL_STMT_IO_MODULE_CALL_STATE_HANDLE:
+//    return autosa_kernel_print_state_handle(p, stmt, hw_data->hls);
+//  case AUTOSA_KERNEL_STMT_DRAIN_MERGE:
+//    return autosa_kernel_print_drain_merge(p, stmt, hw_data->hls);
+//  case AUTOSA_KERNEL_STMT_HOST_SERIALIZE:
+//    return autosa_kernel_print_host_serialize(p, stmt, hw_data->hls);
+//  }
+//
+//  return p;
+//}
 
 static __isl_give isl_printer *print_for_with_pipeline(
     __isl_keep isl_ast_node *node, __isl_take isl_printer *p,
@@ -2640,7 +2381,7 @@ static __isl_give isl_printer *autosa_print_intra_trans_module(
   p = isl_printer_end_line(p);
 
   print_module_headers_xilinx(prog, module, hls, 0, boundary);
-  fprintf(hls->kernel_c, "{\n");
+  fprintf(hls->kernel_c, " {\n");
   if (hls->target == XILINX_HW) {
     /* If double buffer is disabled, the module is then inlined to reduce the 
      * overheads.
@@ -2655,7 +2396,7 @@ static __isl_give isl_printer *autosa_print_intra_trans_module(
   p = isl_printer_indent(p, 2);
   p = print_str_new_line(p, "/* Variable Declaration */");
   if (!prog->scop->options->autosa->use_cplusplus_template) {
-    print_module_iterators(hls->kernel_c, module);
+    p = print_module_iterators(p, hls->kernel_c, module);
   }
   p = print_module_vars_xilinx(p, module, 0);
   p = print_str_new_line(p, "/* Variable Declaration */");
@@ -2671,7 +2412,7 @@ static __isl_give isl_printer *autosa_print_intra_trans_module(
   /* For local reduce, print the buffer initialization. */
   for (int i = 0; i < module->n_var; i++) {
     if (module->var[i].init_required) {
-      p = autosa_print_var_initialization(p, &module->var[i]);
+      p = autosa_print_var_initialization(p, &module->var[i], hls->target);
     }
   }
   p = isl_printer_end_line(p);
@@ -2723,7 +2464,7 @@ static __isl_give isl_printer *autosa_print_inter_trans_module(
 
   if (hls->target == XILINX_HW)
     print_module_headers_xilinx(prog, module, hls, 1, boundary);
-  fprintf(hls->kernel_c, "{\n");
+  fprintf(hls->kernel_c, " {\n");
   if (hls->target == XILINX_HW) {
     if (module->double_buffer)
       fprintf(hls->kernel_c, "#pragma HLS INLINE OFF\n");
@@ -2733,7 +2474,7 @@ static __isl_give isl_printer *autosa_print_inter_trans_module(
   p = isl_printer_indent(p, 2);
   p = print_str_new_line(p, "/* Variable Declaration */");
   if (!prog->scop->options->autosa->use_cplusplus_template) {
-    print_module_iterators(hls->kernel_c, module);
+    p = print_module_iterators(p, hls->kernel_c, module);
   }
   if (hls->target == XILINX_HW)
     p = print_module_vars_xilinx(p, module, 1);
@@ -2770,65 +2511,65 @@ static __isl_give isl_printer *autosa_print_inter_trans_module(
   return p;
 }
 
-/* Print the drained data merge functions. 
- */
-static isl_stat print_drain_merge_funcs(
-    struct autosa_kernel *kernel,
-    struct autosa_drain_merge_func **funcs, int n_funcs,
-    struct hls_info *hls)
-{
-  isl_printer *p;
-  isl_ctx *ctx;
-
-  if (n_funcs == 0)
-    return isl_stat_ok;
-
-  ctx = kernel->ctx;
-  if (!hls->hls)
-    p = isl_printer_to_file(kernel->ctx, hls->host_h);
-  else
-    p = isl_printer_to_file(kernel->ctx, hls->kernel_h);
-  p = isl_printer_set_output_format(p, ISL_FORMAT_C);
-  for (int i = 0; i < n_funcs; i++)
-  {
-    struct autosa_array_ref_group *group = funcs[i]->group;
-    isl_ast_print_options *print_options;
-    struct print_hw_module_data hw_data = {hls, NULL, NULL, NULL};
-
-    p = print_str_new_line(p, "/* Helper Function */");
-    p = isl_printer_start_line(p);
-    if (hls->hls)
-      p = isl_printer_print_str(p, "inline ");
-    p = isl_printer_print_str(p, "void ");
-    p = autosa_array_ref_group_print_prefix(group, p);
-    p = isl_printer_print_str(p, "_drain_merge(");
-    p = print_drain_merge_arguments_xilinx(p, kernel, group, funcs[i], 1, hls->hls);
-    p = isl_printer_print_str(p, "){");
-    p = isl_printer_end_line(p);
-    p = isl_printer_indent(p, 2);
-
-    p = print_str_new_line(p, "/* Variable Declaration */");
-    if (!hls->hls)
-      print_func_iterators(hls->host_h, funcs[i]);
-    else
-      print_func_iterators(hls->kernel_h, funcs[i]);
-    p = print_str_new_line(p, "/* Variable Declaration */");
-    p = isl_printer_end_line(p);
-
-    print_options = isl_ast_print_options_alloc(ctx);
-    print_options = isl_ast_print_options_set_print_user(print_options,
-                                                         &print_module_stmt, &hw_data);
-    p = isl_ast_node_print(funcs[i]->device_tree, p, print_options);
-
-    p = isl_printer_indent(p, -2);
-    p = print_str_new_line(p, "}");
-    p = print_str_new_line(p, "/* Helper Function */");
-  }
-  p = isl_printer_end_line(p);
-  isl_printer_free(p);
-
-  return isl_stat_ok;
-}
+///* Print the drained data merge functions. 
+// */
+//static isl_stat print_drain_merge_funcs(
+//    struct autosa_kernel *kernel,
+//    struct autosa_drain_merge_func **funcs, int n_funcs,
+//    struct hls_info *hls)
+//{
+//  isl_printer *p;
+//  isl_ctx *ctx;
+//
+//  if (n_funcs == 0)
+//    return isl_stat_ok;
+//
+//  ctx = kernel->ctx;
+//  if (!hls->hls)
+//    p = isl_printer_to_file(kernel->ctx, hls->host_h);
+//  else
+//    p = isl_printer_to_file(kernel->ctx, hls->kernel_h);
+//  p = isl_printer_set_output_format(p, ISL_FORMAT_C);
+//  for (int i = 0; i < n_funcs; i++)
+//  {
+//    struct autosa_array_ref_group *group = funcs[i]->group;
+//    isl_ast_print_options *print_options;
+//    struct print_hw_module_data hw_data = {hls, NULL, NULL, NULL};
+//
+//    p = print_str_new_line(p, "/* Helper Function */");
+//    p = isl_printer_start_line(p);
+//    if (hls->hls)
+//      p = isl_printer_print_str(p, "inline ");
+//    p = isl_printer_print_str(p, "void ");
+//    p = autosa_array_ref_group_print_prefix(group, p);
+//    p = isl_printer_print_str(p, "_drain_merge(");
+//    p = print_drain_merge_arguments(p, kernel, group, funcs[i], 1, hls->hls);
+//    p = isl_printer_print_str(p, "){");
+//    p = isl_printer_end_line(p);
+//    p = isl_printer_indent(p, 2);
+//
+//    p = print_str_new_line(p, "/* Variable Declaration */");
+//    if (!hls->hls)
+//      print_func_iterators(hls->host_h, funcs[i]);
+//    else
+//      print_func_iterators(hls->kernel_h, funcs[i]);
+//    p = print_str_new_line(p, "/* Variable Declaration */");
+//    p = isl_printer_end_line(p);
+//
+//    print_options = isl_ast_print_options_alloc(ctx);
+//    print_options = isl_ast_print_options_set_print_user(print_options,
+//                                                         &print_module_stmt, &hw_data);
+//    p = isl_ast_node_print(funcs[i]->device_tree, p, print_options);
+//
+//    p = isl_printer_indent(p, -2);
+//    p = print_str_new_line(p, "}");
+//    p = print_str_new_line(p, "/* Helper Function */");
+//  }
+//  p = isl_printer_end_line(p);
+//  isl_printer_free(p);
+//
+//  return isl_stat_ok;
+//}
 
 static __isl_give isl_printer *print_module_core_header_xilinx(
     __isl_take isl_printer *p,
@@ -3235,12 +2976,12 @@ static __isl_give isl_printer *autosa_print_serialize_module(
 
   if (hls->target == XILINX_HW)
     p = print_module_core_headers_xilinx(p, prog, module, hls, -1, boundary, 1, 1); // TODO
-  fprintf(hls->kernel_c, "{\n");  
+  fprintf(hls->kernel_c, " {\n");  
   fprintf(hls->kernel_c, "#pragma HLS INLINE OFF\n");  
   p = isl_printer_indent(p, 2);
   p = print_str_new_line(p, "/* Variable Declaration */");
   if (!prog->scop->options->autosa->use_cplusplus_template) {
-    print_module_iterators(hls->kernel_c, module);    
+    p = print_module_iterators(p, hls->kernel_c, module);    
   }
   p = print_str_new_line(p, "/* Variable Declaration */");
   p = isl_printer_end_line(p);
@@ -3290,7 +3031,7 @@ static __isl_give isl_printer *autosa_print_default_module(
 
   //if (hls->target == XILINX_HW)
   p = print_module_core_headers_xilinx(p, prog, module, hls, -1, boundary, 0, 1);
-  fprintf(hls->kernel_c, "{\n");
+  fprintf(hls->kernel_c, " {\n");
   if (!boundary || !wrapper)
     fprintf(hls->kernel_c, "#pragma HLS INLINE OFF\n");
   else
@@ -3298,7 +3039,7 @@ static __isl_give isl_printer *autosa_print_default_module(
   p = isl_printer_indent(p, 2);
   p = print_str_new_line(p, "/* Variable Declaration */");
   if (!prog->scop->options->autosa->use_cplusplus_template) {
-    print_module_iterators(hls->kernel_c, module);  
+    p = print_module_iterators(p, hls->kernel_c, module);  
   }
   if (prog->scop->options->autosa->block_sparse) {
     for (int i = 0; i < module->n_io_group; i++) {
@@ -3376,7 +3117,7 @@ static __isl_give isl_printer *autosa_print_default_module(
 
       print_module_wrapper_headers_xilinx(prog, module, hls, -1, boundary);
 
-      fprintf(hls->kernel_c, "{\n");
+      fprintf(hls->kernel_c, " {\n");
       p = isl_printer_indent(p, 2);
 
       p = print_module_core_headers_xilinx(p, prog, module, hls, -1, boundary, 0, 0);
@@ -3524,14 +3265,14 @@ static __isl_give isl_printer *autosa_print_default_pe_dummy_module(
     p = print_pe_dummy_module_core_headers_xilinx(p, prog,
                                                   pe_dummy_module, hls, 1);
 
-  fprintf(hls->kernel_c, "{\n");
+  fprintf(hls->kernel_c, " {\n");
   if (wrapper)
     fprintf(hls->kernel_c, "#pragma HLS INLINE\n");
 
   p = isl_printer_indent(p, 2);
   p = print_str_new_line(p, "/* Variable Declaration */"); 
   if (!prog->scop->options->autosa->use_cplusplus_template) {   
-    print_module_iterators(hls->kernel_c, module);
+    p = print_module_iterators(p, hls->kernel_c, module);
   }
   p = print_str_new_line(p, "/* Variable Declaration */");
 
@@ -3567,7 +3308,7 @@ static __isl_give isl_printer *autosa_print_default_pe_dummy_module(
   
       print_pe_dummy_module_wrapper_headers_xilinx(prog, pe_dummy_module, hls);
   
-      fprintf(hls->kernel_c, "{\n");
+      fprintf(hls->kernel_c, " {\n");
       p = isl_printer_indent(p, 2);
       p = print_pe_dummy_module_core_headers_xilinx(p, prog, pe_dummy_module, hls, 0);
       p = isl_printer_print_str(p, ";");
@@ -3616,7 +3357,7 @@ static __isl_give isl_printer *print_double_buffer_module_vars_while(
 {
   /* Inst ids */
   if (!module->options->autosa->use_cplusplus_template) {
-    print_module_iterators(hls->kernel_c, module);
+    p = print_module_iterators(p, hls->kernel_c, module);
   }
   /* Local buffer */
   for (int i = 0; i < module->n_var; i++) {
@@ -4545,7 +4286,7 @@ static void print_top_gen_host_code(
   p = isl_printer_set_output_format(p, ISL_FORMAT_C);
 
   print_top_gen_headers(prog, top, hls);
-  fprintf(hls->top_gen_c, "{\n");
+  fprintf(hls->top_gen_c, " {\n");
   p = isl_printer_indent(p, 2);
 
   p = isl_printer_start_line(p);

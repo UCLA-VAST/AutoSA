@@ -526,6 +526,38 @@ def insert_xlnx_pragmas(lines):
 
     return lines
 
+def insert_catapult_pragmas(lines):
+    """ Insert Catapult HLS pragmas for Catapult program
+
+    Replace the comments of "// hls_unroll" with HLS pragmas    
+    For "// hls unroll", find the next for loop right below the mark.
+    Insert "#pragma unroll yes" before the for loop.    
+
+    Parameters
+    ----------
+    lines:
+        contains the codelines of the program
+    """
+    # Handle hls_dependence
+    handle_dep_pragma = 1
+
+    code_len = len(lines)
+    pos = 0
+    while pos < code_len:
+        line = lines[pos]    
+        if line.find("// hls_unroll") != -1:
+            # Find the for loop below
+            next_pos = pos + 1
+            find_for = 0
+            if lines[next_pos].find('for') != -1:                            
+                # insert the pragma right before the for loop
+                indent = lines[next_pos].find('for')
+                new_line = ' ' * indent + "#pragma unroll yes\n"
+                lines.insert(next_pos, new_line)
+                del lines[pos]
+        pos = pos + 1
+
+    return lines
 
 def float_to_int(matchobj):
     str_expr = matchobj.group(0)
@@ -628,6 +660,8 @@ def shrink_bit_width(lines, target):
                         new_iter_t = 'ap_uint<' + str(bitwidth) + '>'
                     elif target == 'intel':
                         new_iter_t = 'uint' + str(bitwidth) + '_t'
+                    elif target == 'catapult':
+                        new_iter_t = 'ac_int<' + str(bitwidth) + ', false>'
                     line = re.sub('int', new_iter_t, line)
                     lines[pos] = line
             m = re.search('<(.+?);', line)
@@ -635,12 +669,14 @@ def shrink_bit_width(lines, target):
                 ub = m.group(1).strip()
                 if ub.isnumeric():
                     #print(pos)
-                    # Replace it with shallow bit width
+                    # Replace it with shallow bit width                    
                     bitwidth = int(np.ceil(np.log2(float(ub)))) + 1
                     if target == 'xilinx':
                         new_iter_t = 'ap_uint<' + str(bitwidth) + '>'
                     elif target == 'intel':
                         new_iter_t = 'uint' + str(bitwidth) + '_t'
+                    elif target == 'catapult':
+                        new_iter_t = 'ac_int<' + str(bitwidth) + ', false>'
                     line = re.sub('int', new_iter_t, line)
                     lines[pos] = line
 
@@ -656,6 +692,8 @@ def shrink_bit_width(lines, target):
                     new_iter_t = 'ap_uint<' + str(bitwidth) + '>'
                 elif target == 'intel':
                     new_iter_t = 'uint' + str(bitwidth) + '_t'
+                elif target == 'catapult':
+                    new_iter_t = 'ac_int<' + str(bitwidth) + ', false>'
                 #line = re.sub('int', new_iter_t, line)
                 line = re.sub(
                     r'(int)' +
@@ -871,7 +909,24 @@ def insert_dummy_modules(def_lines, call_lines):
 
     return def_lines, call_lines
 
-def reorder_module_calls(lines):
+def modify_tb(lines):
+    """ Modify the test bench for Catapult HLS
+    
+    Replace the int main with CCS_MAIN.
+
+    Paramters
+    ---------
+    lines: list
+        contains the codelines of the test bench
+    """
+    for pos in range(len(lines)):
+        line = lines[pos]
+        if line.find('int main') != -1:
+            line = line.replace('int main', 'CCS_MAIN')
+        lines[pos] = line
+    return lines
+
+def reorder_module_calls(lines, target):
     """ Reorder the module calls in the program
 
     For I/O module calls, we will reverse the sequence of calls for output modules.
@@ -883,6 +938,8 @@ def reorder_module_calls(lines):
     ----------
     lines: list
         contains the codelines of the program
+    target: string
+        xilinx|intel|catapult
     """
 
     code_len = len(lines)
@@ -919,6 +976,9 @@ def reorder_module_calls(lines):
                     module_name = nxt_line.split('<')[0]
                 else:
                     module_name = nxt_line.split('(')[0]
+                if target == 'catapult':                    
+                    module_name = module_name[:module_name.find('_inst')]
+
                 if module_name.find('wrapper'):
                     module_name = module_name[:-8]
                 if boundary:
@@ -1034,7 +1094,7 @@ def xilinx_run(
         f.writelines(lines)
 
         # Reorder module calls
-        call_lines = reorder_module_calls(call_lines)
+        call_lines = reorder_module_calls(call_lines, 'xilinx')
         f.writelines(call_lines)
 
         ## Load kernel call file
@@ -1044,6 +1104,76 @@ def xilinx_run(
         #    lines = reorder_module_calls(lines)
         #    f.writelines(lines)
 
+
+def catapult_run(
+        kernel_call,
+        kernel_def,
+        tb,
+        kernel='autosa.tmp/output/src/kernel_kernel_hw.h',
+        host='opencl'):
+    """ Generate the kernel file for Catapult HLS platform
+
+    We will copy the content of kernel definitions before the kernel calls.
+
+    Parameters
+    ----------
+    kernel_call:
+        file containing kernel calls
+    kernel_def:
+        file containing kernel definitions
+    tb: 
+        file containing test bench
+    kernel:
+        output kernel file
+    """
+
+    # Load kernel definition file
+    lines = []
+    with open(kernel_def, 'r') as f:
+        lines = f.readlines()
+    call_lines = []
+    with open(kernel_call, 'r') as f:
+        call_lines = f.readlines()
+
+    # Simplify the expressions
+    lines = simplify_expressions(lines)
+
+    # Change the loop iterator type
+    lines = shrink_bit_width(lines, 'catapult')
+
+    # Insert the HLS pragmas
+    lines = insert_catapult_pragmas(lines)
+
+    # Lift the split_buffers
+    lines = lift_split_buffers(lines)    
+
+    kernel = str(kernel)
+    print("Please find the generated file: " + kernel)
+
+    with open(kernel, 'w') as f:
+        #if host == 'opencl':
+        #    # Merge kernel header file
+        #    kernel_header = kernel.split('.')
+        #    kernel_header[-1] = 'h'
+        #    kernel_header = ".".join(kernel_header)
+        #    with open(kernel_header, 'r') as f2:
+        #        header_lines = f2.readlines()
+        #        f.writelines(header_lines)
+        #    f.write('\n')
+
+        f.writelines(lines)
+
+        # Reorder module calls
+        call_lines = reorder_module_calls(call_lines, 'catapult')
+
+        f.writelines(call_lines)      
+
+     # Modify the test bench
+    with open(tb, 'r') as f:
+        tb_lines = f.readlines()    
+    tb_lines = modify_tb(tb_lines)
+    with open(tb, 'w') as f:
+        f.writelines(tb_lines)
 
 def insert_intel_pragmas(lines):
     """ Insert Intel OpenCL pragmas for Intel program
@@ -1210,11 +1340,16 @@ if __name__ == "__main__":
         required=True,
         help='kernel function definition')
     parser.add_argument(
+        '--tb',
+        metavar='TB',
+        required=False,
+        help='test bench')    
+    parser.add_argument(
         '-t',
         '--target',
         metavar='TARGET',
         required=True,
-        help='hardware target: autosa_hls_c|autosa_opencl')
+        help='hardware target: autosa_hls_c|autosa_opencl|autosa_catapult_c')
     parser.add_argument(
         '-o',
         '--output',
@@ -1234,3 +1369,5 @@ if __name__ == "__main__":
         intel_run(args.kernel_call, args.kernel_def, args.output)
     elif args.target == 'autosa_hls_c':
         xilinx_run(args.kernel_call, args.kernel_def, args.output, args.host)
+    elif args.target == 'autosa_catapult_c':
+        catapult_run(args.kernel_call, args.kernel_def, args.tb, args.output, args.host)

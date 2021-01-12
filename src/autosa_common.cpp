@@ -1565,6 +1565,23 @@ struct autosa_hw_module *autosa_hw_module_alloc(struct autosa_gen *gen)
   module->is_serialized = 0;
   module->use_FF = 0;
   module->in = -1;
+  module->pipeline_at_default_func = 0;
+  module->pipeline_at_filter_func[0] = 0;
+  module->pipeline_at_filter_func[1] = 0;
+  module->pipeline_at_filter_func[2] = 0;
+
+  module->n_fifo_serialize = 0;
+  module->fifo_bounds_serialize = NULL;
+  module->fifo_names_serialize = NULL;
+  module->n_fifo_default = 0;
+  module->fifo_names_default = NULL;
+  module->fifo_bounds_default = NULL;
+  module->n_fifo_inter = 0;
+  module->fifo_names_inter = NULL;
+  module->fifo_bounds_inter = NULL;
+  module->n_fifo_intra = 0;
+  module->fifo_names_intra = NULL;
+  module->fifo_bounds_intra = NULL;
 
   return module;
 }
@@ -1602,6 +1619,39 @@ void *autosa_hw_module_free(struct autosa_hw_module *module)
     autosa_pe_dummy_module_free(module->pe_dummy_modules[i]);
   }
   free(module->pe_dummy_modules);
+
+  if (module->n_fifo_serialize > 0) {
+    for (int i = 0; i < module->n_fifo_serialize; i++) {
+      free(module->fifo_names_serialize[i]);
+      isl_pw_qpolynomial_free(module->fifo_bounds_serialize[i]);
+    }
+    free(module->fifo_bounds_serialize);
+    free(module->fifo_names_serialize);
+  }
+  if (module->n_fifo_default > 0) {
+    for (int i = 0; i < module->n_fifo_default; i++) {
+      free(module->fifo_names_default[i]);
+      isl_pw_qpolynomial_free(module->fifo_bounds_default[i]);
+    }
+    free(module->fifo_bounds_default);
+    free(module->fifo_names_default);
+  }
+  if (module->n_fifo_inter > 0) {
+    for (int i = 0; i < module->n_fifo_inter; i++) {
+      free(module->fifo_names_inter[i]);
+      isl_pw_qpolynomial_free(module->fifo_bounds_inter[i]);
+    }
+    free(module->fifo_bounds_inter);
+    free(module->fifo_names_inter);
+  }
+  if (module->n_fifo_intra > 0) {
+    for (int i = 0; i < module->n_fifo_intra; i++) {
+      free(module->fifo_names_intra[i]);
+      isl_pw_qpolynomial_free(module->fifo_bounds_intra[i]);
+    }
+    free(module->fifo_bounds_intra);
+    free(module->fifo_names_intra);
+  }
 
   free(module);
 
@@ -1777,12 +1827,30 @@ struct autosa_ast_node_userinfo *alloc_ast_node_userinfo()
   info->n_coalesce_loop = 0;
   info->visited = 0;
 
+  info->is_guard_start = 0;
+  info->is_guard_end = 0;
+  info->n_fifo = 0;
+  info->fifo_names = NULL;
+  info->bounds = NULL;
+  info->module_name = NULL;
+
   return info;
 }
 
 void free_ast_node_userinfo(void *ptr)
 {
   struct autosa_ast_node_userinfo *info = (struct autosa_ast_node_userinfo *)ptr;
+  //if (info->n_fifo > 0) {
+  //  for (int i = 0; i < info->n_fifo; i++) {
+  //    free(info->fifo_names[i]);
+  //    isl_pw_qpolynomial_free(info->bounds[i]);
+  //  }   
+  //  free(info->fifo_names);
+  //  free(info->bounds);
+  //}
+  //if (info->module_name)
+  //  free(info->module_name);
+
   free(info);
 }
 
