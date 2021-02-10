@@ -545,8 +545,17 @@ struct autosa_kernel **sa_space_time_transform(__isl_take isl_schedule *schedule
     struct autosa_kernel **sa_list = NULL;
     isl_size n_sa = 0;
 
+//#ifdef _DEBUG
+//    DBGSCHD(stdout, schedule, isl_schedule_get_ctx(schedule));
+//#endif
     isl_schedule_node *band = get_outermost_permutable_node(schedule);
     isl_size band_w = isl_schedule_node_band_n_member(band);
+    if (band_w <= 0) {
+        isl_schedule_free(schedule);
+        *num_sa = 0;
+        return NULL;
+    }
+
     /* Explore 1D systolic array */
     if (scop->options->autosa->max_sa_dim >= 1 && band_w >= 1)
     {
@@ -1069,7 +1078,6 @@ static isl_stat sa_io_update(struct autosa_kernel *sa)
                 local_array->array_type = AUTOSA_EXT_ARRAY;
                 opt_data.is_update = isl_bool_false;
             }
-
             opt_data.dep_type = AUTOSA_DEP_RAW;
             isl_union_map_every_map(dep_flow, &data_transfer_update_wrap, &opt_data);
             if (opt_data.is_update == isl_bool_true)
@@ -1077,7 +1085,6 @@ static isl_stat sa_io_update(struct autosa_kernel *sa)
                 local_array->array_type = AUTOSA_INT_ARRAY;
                 opt_data.is_update = isl_bool_false;
             }
-
             opt_data.dep_type = AUTOSA_DEP_WAW;
             isl_union_map_every_map(dep_waw, &data_transfer_update_wrap, &opt_data);
         }
@@ -2059,6 +2066,7 @@ struct simd_vectorization_data
     char *buffer;
     int buffer_offset;
     int has_space_candidate;
+    int n_legal_loops;
 };
 
 /* Internal struct used in is_stride_coalesced. */
@@ -2456,6 +2464,8 @@ static isl_schedule_node *detect_simd_vectorization_loop(
                         data->scores[data->n_loops - 1] = score;
                         data->legal = (int *)realloc(data->legal, sizeof(int) * data->n_loops);
                         data->legal[data->n_loops - 1] = !layout_transform;
+                        if (!layout_transform) 
+                            data->n_legal_loops++;
 
                         /* Extract the loop upper bounds */
                         int *ubs = extract_band_upper_bounds(node);
@@ -2783,6 +2793,7 @@ isl_stat sa_simd_vectorization_optimize(struct autosa_kernel *sa, char *mode)
     data.buffer = NULL;
     data.buffer_offset = 0;
     data.n_loops = n_loops;
+    data.n_legal_loops = 0;
     data.has_space_candidate = 0;
     /* Load the SIMD information. */
     data.buffer = load_simd_info(sa);
@@ -2809,9 +2820,12 @@ isl_stat sa_simd_vectorization_optimize(struct autosa_kernel *sa, char *mode)
     }
     isl_schedule_free(schedule);
 
-    if (data.layout_trans)
-    {
-        printf("[AutoSA] Warning: Layout transformation is required to proceed. SIMD vectorization is skipped.\n");
+    //if (data.layout_trans)
+    //{
+    //    printf("[AutoSA] Warning: Layout transformation is required to proceed. SIMD vectorization is skipped.\n");
+    //}
+    if (data.n_legal_loops == 0) {
+        printf("[AutoSA] No legal SIMD loop is fonud. SIMD vectorization is skipped.\n");
     }
     else
     {
@@ -3290,6 +3304,12 @@ static __isl_give isl_schedule_node *compute_and_comm_optimize(
     sa_candidates = sa_space_time_transform(schedule, gen->prog->scop, &num_sa);
     if (num_sa > 0)
         printf("[AutoSA] %d systolic arrays generated.\n", num_sa);
+    else
+    {
+        printf("[AutoSA] No systolic array generated. Exit now.\n");
+        exit(0);
+    }
+    
     space_time_json = cJSON_GetObjectItemCaseSensitive(gen->tuning_config, "space_time");
     space_time_mode_json = cJSON_GetObjectItemCaseSensitive(space_time_json, "mode");
     space_time_mode = space_time_mode_json->valuestring;    
@@ -4008,12 +4028,14 @@ static __isl_give isl_printer *generate(__isl_take isl_printer *p,
 //    DBGSCHD(stdout, schedule, gen->ctx);
 //#endif
 
-    /* Hack: If we disable reschedule, we will try another time
-     * here to merge some of the schedule bands. 
+    /* The current ISL scheduler is limited and sometimes can't find the 
+     * fully permutable loop band correctly.
+     * As a temporary hack, here we will try a second time and to merge the 
+     * outer band as much as possible.
      */
-    if (!gen->options->reschedule) {
-        schedule = merge_outer_bands(schedule, gen);
-    }
+    //if (!gen->options->reschedule) {
+    schedule = merge_outer_bands(schedule, gen);
+    //}
 
 //#ifdef _DEBUG
 //    DBGSCHD(stdout, schedule, gen->ctx);

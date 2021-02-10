@@ -710,7 +710,7 @@ def shrink_bit_width(lines, target):
 def lift_split_buffers(lines):
     """ Lift the split buffers in the program
 
-    For each module, if we find any split buffers with the name "buf_data_split",
+    For each module, if we find any split buffers with the name "data_split",
     we will lift them out of the for loops and put them in the variable declaration
     section at the beginning of the module.
 
@@ -722,7 +722,7 @@ def lift_split_buffers(lines):
     code_len = len(lines)
     for pos in range(code_len):
         line = lines[pos]
-        if line.find('variable=buf_data_split') != -1:
+        if line.find('variable=data_split') != -1:
             # Search for the variable declaration section
             decl_pos = -1
             prev_pos = pos - 1
@@ -1039,7 +1039,8 @@ def xilinx_run(
         kernel_call,
         kernel_def,
         kernel='autosa.tmp/output/src/kernel_kernel.cpp',
-        host='opencl'):
+        host='opencl',
+        hcl=False):
     """ Generate the kernel file for Xilinx platform
 
     We will copy the content of kernel definitions before the kernel calls.
@@ -1052,6 +1053,8 @@ def xilinx_run(
         file containing kernel definitions
     kernel:
         output kernel file
+    hcl:
+        integrated with HeteroCL
     """
 
     # Load kernel definition file
@@ -1081,7 +1084,7 @@ def xilinx_run(
     print("Please find the generated file: " + kernel)
 
     with open(kernel, 'w') as f:
-        if host == 'opencl':
+        if host == 'opencl' or hcl == True:
             # Merge kernel header file
             kernel_header = kernel.split('.')
             kernel_header[-1] = 'h'
@@ -1362,12 +1365,17 @@ if __name__ == "__main__":
         required=False,
         help='Xilinx host target: hls|opencl',
         default='opencl')
+    parser.add_argument(
+        '--hcl',        
+        action='store_true',
+        default=False,
+        help='HeteroCL integration')
 
     args = parser.parse_args()
 
     if args.target == 'autosa_opencl':
         intel_run(args.kernel_call, args.kernel_def, args.output)
     elif args.target == 'autosa_hls_c':
-        xilinx_run(args.kernel_call, args.kernel_def, args.output, args.host)
+        xilinx_run(args.kernel_call, args.kernel_def, args.output, args.host, args.hcl)
     elif args.target == 'autosa_catapult_c':
         catapult_run(args.kernel_call, args.kernel_def, args.tb, args.output, args.host)

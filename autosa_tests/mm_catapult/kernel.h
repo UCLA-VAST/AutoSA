@@ -4,6 +4,6 @@
 
 //typedef float data_t;
 typedef unsigned int data_t;
-#define I 64
-#define J 64
-#define K 64
+#define I_P 64
+#define J_P 64
+#define K_P 64

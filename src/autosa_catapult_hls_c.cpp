@@ -2961,7 +2961,8 @@ static void print_tcl_code(
         p = isl_printer_print_str(p, "_boundary");
         p = isl_printer_print_str(p, "/");
         p = isl_printer_print_str(p, modules[i]->name);
-        p = isl_printer_print_str(p, "_boundary_");
+        //p = isl_printer_print_str(p, "_boundary_");
+        p = isl_printer_print_str(p, "_");
         p = isl_printer_print_str(p, var->name);
         p = isl_printer_print_str(p, "_inst:cns -MAP_TO_MODULE Xilinx_RAMS.BLOCK_1R1W_RBW_DUAL");
         p = isl_printer_end_line(p);
@@ -2972,7 +2973,8 @@ static void print_tcl_code(
         p = isl_printer_print_str(p, "_boundary");
         p = isl_printer_print_str(p, "/");
         p = isl_printer_print_str(p, modules[i]->name);
-        p = isl_printer_print_str(p, "_boundary_");
+        //p = isl_printer_print_str(p, "_boundary_");
+        p = isl_printer_print_str(p, "_");
         p = isl_printer_print_str(p, var->name);
         if (modules[i]->double_buffer)
           p = isl_printer_print_str(p, "_inst:cns -STAGE_REPLICATION 2");
@@ -2987,7 +2989,8 @@ static void print_tcl_code(
         p = isl_printer_print_str(p, "_boundary");
         p = isl_printer_print_str(p, "/");
         p = isl_printer_print_str(p, modules[i]->name);
-        p = isl_printer_print_str(p, "_boundary_");
+        //p = isl_printer_print_str(p, "_boundary_");
+        p = isl_printer_print_str(p, "_");
         p = isl_printer_print_str(p, var->name);
         p = isl_printer_print_str(p, "_inst -WORD_WIDTH ");
         p = isl_printer_print_int(p, var->array->size * 8 * var->n_lane);
@@ -3048,11 +3051,11 @@ int generate_autosa_catapult_hls_c(isl_ctx *ctx, struct ppcg_options *options,
   struct hls_info hls;
   int r;
 
-  hls.target = CATAPULT_HW;
-  //hls.hls = options->autosa->hls;
+  hls.target = CATAPULT_HW;  
   hls.hls = 1;
   hls.ctx = ctx;
   hls.output_dir = options->autosa->output_dir;
+  hls.hcl = options->autosa->hcl;
   hls_open_files(&hls, input);
 
   r = generate_sa(ctx, input, hls.host_c, options, &print_hw, &hls);

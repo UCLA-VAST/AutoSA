@@ -4043,6 +4043,7 @@ int generate_autosa_intel_opencl(isl_ctx *ctx, struct ppcg_options *options,
   hls.hls = 0;
   hls.ctx = ctx;
   hls.output_dir = options->autosa->output_dir;
+  hls.hcl = options->autosa->hcl;
   opencl_open_files(&hls, input);
 
   r = generate_sa(ctx, input, hls.host_c, options, &print_hw, &hls);

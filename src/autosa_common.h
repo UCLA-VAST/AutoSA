@@ -1119,7 +1119,9 @@ struct hls_info
   int hls;          /* Generate HLS host instead of OpenCL host */
   char *output_dir; /* Output directory */
   char *kernel_prefix; /* Kernel file prefix */
-  isl_ctx *ctx;
+  isl_ctx *ctx;  
+  bool hcl; /* Sets to true if the generated code is integrated with HeteroCL. */
+  FILE *hcl_decl;
 };
 
 /* Band node */
@@ -1258,6 +1260,7 @@ int read_space_time_kernel_id(__isl_keep isl_union_map *sizes);
 int *read_array_part_L2_tile_sizes(struct autosa_kernel *kernel, int tile_len);
 int *read_default_array_part_L2_tile_sizes(struct autosa_kernel *kernel, int tile_len);
 int *read_data_pack_sizes(__isl_keep isl_union_map *sizes, int tile_len);
+int *read_data_pack_sizes_array(__isl_keep isl_union_map *sizes, char *name);
 int read_mem_port_map(__isl_keep isl_union_map *port_map, char *name);
 
 /* AutoSA latency and resource estimation */

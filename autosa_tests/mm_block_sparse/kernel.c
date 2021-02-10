@@ -1,32 +1,38 @@
-/* This example uses the block sparsity to compute a matrix multiplication.
- * C = A * B
+/* This example uses the block sparsity to compute the matrix multiplication C = A * B.
  * The matrix A is with block sparsity and the matrix B is dense.
  * For matrix A, every VEC_LEN elements are grouped into a vector.
- * Inside each vector, there are NUM_NZERO non-zero elements.
- * The sparsity of the matrix A is computed as 1 - NUM_NZERO / VEC_LEN.
- * To store the sparse matrix A, we use two data structs,
- * A_d for storing the non-zero elements and A_i for storing the offset of non-zero elements in each vector.
- * As an example, for matrix A of size I * K, where I = K = 8,
- * suppose that we have VEC_LEN = 4 and NUM_NZERO = 2, we denote the compression ratio
- * COMPRESS_RATIO = VEC_LEN / NUM_NZERO
- * then, we will have A_d[I][K / COMPRESS_RATIO],
- * for A_i, we use a char to store the mask of non-zero elements.
- * For example, if the vector is 0 1 0 2, we will have a mask 0101_0000 to store the 
- * offsets of non-zero elements.
- * Currently, we assume the vector length is a power of two and is no greater than 8.
- * If it is grater than 8, we could use a larger-width data type to store the offset accordingly.
- * Based on the analysis above, we will have the index matrix A_i as
- * char A_i[I][K / VEC_LEN].
- * In summary, we use A_d[I][K / COMPRESS_RATIO] and A_i[I][K / VEC_LEN] to represent the sparse matrix.
+ * Inside each vector, there are NON_ZERO_NUM non-zero elements.
+ * The sparsity of the matrix A is computed as 1 - NON_ZERO_NUM / VEC_LEN.
+ * We use the matrix A_s to store both the data and index of the sparse matrix A.
+ * 
+ * For each vector group, we use an unsigned char to record the relative position
+ * of the non-zero element in the group.
+ * At present, we assume the vector group size to be a power of two and is no greater than 8.
+ * Then every NON_ZERO_NUM non-zero elements and their index are grouped together and 
+ * store in the A_s. 
+ * However, to make the data structure aligned, we will also pad this group if necessary.
+ * For example, if the group size VEC_LEN is 8, and NON_ZERO_NUM is 4, we will concatenate the 
+ * index right after the first 4 data elements, resulting in 5 elements. 
+ * Furthermore, we will pad this group and extend it to 8 elements. 
+ * In this case, the effective storage for matrix A is the same with the unsparsified one.
+ * If the group size VEC_LEN is 8, and NON_ZERO_NUM is 3, we will concatenate the 
+ * index after the first 3 elements, resulting in 4 elements. No further padding is needed.
+ * The effective storage compression ratio for matrix A is 8/4 = 2x for this example.
+ * In summary, we denote the number of elements other than the data elements as META_DATA_NUM.
+ * And it can be computed as:
+ * META_DATA_NUM = 2^{ceil(log2(NON_ZERO_NUM + 1))} - NON_ZERO_NUM
  */
 #include "kernel.h"
 
 int main(int argc, char **argv) {
   data_t A[I][K], B[J][K], C[I][J], C_golden[I][J];
+
   data_t A_d[I][K / COMPRESS_RATIO];
   unsigned char A_i[I][K / VEC_LEN];
+
   data_t A_s[I][K / EFF_COMPRESS_RATIO];
 
+  /* Initialize the matrix */
   for (int i = 0; i < I; i++) 
     for (int k = 0; k < K; k++) {
       A[i][k] = (data_t)rand() / RAND_MAX;
@@ -37,6 +43,7 @@ int main(int argc, char **argv) {
       B[j][k] = (data_t)rand() / RAND_MAX;
     }
 
+  /* Generate the random sparse matrix */
   for (int i = 0; i < I; i++)
     for (int k = 0; k < K / VEC_LEN; k++) {
       unsigned char offset = 0;
@@ -65,6 +72,7 @@ int main(int argc, char **argv) {
       }      
     }
 
+  /* Generate the matrix to store both the sparse data and index */
   for (int i = 0; i < I; i++)
     for (int k = 0; k < K / VEC_LEN; k++) {
       int n;
@@ -88,7 +96,7 @@ int main(int argc, char **argv) {
     }
 #pragma endscop
 
-//  /* The actual computation */
+  /* The actual computation */
 //  for (int i = 0; i < I; i++)  
 //    for (int j = 0; j < J; j++) {
 //      C[i][j] = 0;
@@ -112,6 +120,7 @@ int main(int argc, char **argv) {
 //      }
 //    }
 
+  /* Compute the golden reference */
   for (int i = 0; i < I; i++)  
     for (int j = 0; j < J; j++) {
       C_golden[i][j] = 0;
@@ -135,6 +144,7 @@ int main(int argc, char **argv) {
       }
     }  
 
+  /* Compare the results */
   int err = 0;
   for (int i = 0; i < I; i++)
     for (int j = 0; j < J; j++) {

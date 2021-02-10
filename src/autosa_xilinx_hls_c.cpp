@@ -174,8 +174,18 @@ static void hls_open_files(struct hls_info *info, const char *input)
   if (info->hls)
     fprintf(info->host_c, "#include \"%s\"\n\n", name);
 
-  if (info->hls)
+  if (info->hls && !info->hcl)
     fprintf(info->kernel_c, "#include \"%s\"\n", name);
+
+  if (info->hcl) {
+    strcpy(name + len, "_hcl_decl.h");
+    strcpy(dir + len_dir, name);
+    info->hcl_decl = fopen(dir, "w");
+    if (!info->hcl_decl) {
+      printf("[AutoSA] Error: Can't open the file: %s\n", dir);
+      exit(1);
+    }
+  }
 
   strcpy(name + len, "_top_gen.cpp");
   strcpy(dir + len_dir, name);
@@ -187,14 +197,16 @@ static void hls_open_files(struct hls_info *info, const char *input)
 
   fprintf(info->top_gen_c, "#include <isl/printer.h>\n");
   fprintf(info->top_gen_c, "#include \"%s\"\n", name);
-
-  fprintf(info->kernel_h, "#include <ap_int.h>\n");
-  fprintf(info->kernel_h, "#include <hls_stream.h>\n");
-  fprintf(info->kernel_h, "\n");
+  
+  //if (!info->hcl) {
+    fprintf(info->kernel_h, "#include <ap_int.h>\n");
+    fprintf(info->kernel_h, "#include <hls_stream.h>\n");
+    fprintf(info->kernel_h, "\n");
+  //}    
 
   fprintf(info->kernel_h, "#define min(x,y) ((x < y) ? x : y)\n");
   fprintf(info->kernel_h, "#define max(x,y) ((x > y) ? x : y)\n");
-  fprintf(info->kernel_h, "\n");
+  fprintf(info->kernel_h, "\n");  
 
   free(file_path);
 }
@@ -216,6 +228,8 @@ static void hls_close_files(struct hls_info *info)
   }
   fclose(info->top_gen_c);
   fclose(info->top_gen_h);
+  if (info->hcl)
+    fclose(info->hcl_decl);
 
   p_str = isl_printer_to_str(info->ctx);
   p_str = isl_printer_print_str(p_str, info->output_dir);
@@ -341,6 +355,7 @@ static isl_stat print_data_types_xilinx(
     p = isl_printer_print_str(p, " ");
     p = isl_printer_print_str(p, local->array->name);
     p = isl_printer_print_str(p, "_t1;");
+    p = isl_printer_end_line(p);
   }
 
   for (int i = 0; i < kernel->n_array; i++)
@@ -1820,14 +1835,24 @@ static void print_kernel_headers_xilinx(struct autosa_prog *prog,
   {
     p = print_str_new_line(p, "extern \"C\" {");
   }
-  p = print_kernel_header(p, prog, kernel, hls);
+  p = print_kernel_header(p, prog, kernel, hls, 1);
   p = isl_printer_print_str(p, ";");
   p = isl_printer_end_line(p);
   if (!hls->hls)
   {
     p = print_str_new_line(p, "}");
   }
+
   isl_printer_free(p);
+
+  if (hls->hcl) {
+    /* Print the kernel declaration to a seperate file. */
+    p = isl_printer_to_file(prog->ctx, hls->hcl_decl);
+    p = isl_printer_set_output_format(p, ISL_FORMAT_C);
+    p = print_kernel_header(p, prog, kernel, hls, 0);
+    p = isl_printer_end_line(p);
+    isl_printer_free(p);
+  }  
 }
 
 /* Print the user statement of the host code to "p".
@@ -1921,9 +1946,11 @@ static __isl_give isl_printer *print_host_user_xilinx(__isl_take isl_printer *p,
 
     p = print_str_new_line(p, "// Launch the kernel");
     p = isl_printer_start_line(p);
-    p = isl_printer_print_str(p, "kernel");
-    //p = isl_printer_print_int(p, kernel->id);
-    p = isl_printer_print_int(p, 0);
+    if (data->prog->scop->options->autosa->hcl) {
+      p = isl_printer_print_str(p, "autosa_func"); 
+    } else {
+      p = isl_printer_print_str(p, "kernel0");
+    }
     p = isl_printer_print_str(p, "(");
     p = print_kernel_arguments(p, data->prog, kernel, 0, hls);
     p = isl_printer_print_str(p, ");");
@@ -4140,9 +4167,13 @@ static __isl_give isl_printer *print_top_module_headers_xilinx(
   p = print_str_new_line(p, "p = isl_printer_start_line(p);");
 
   p = isl_printer_start_line(p);
-  p = isl_printer_print_str(p, "p = isl_printer_print_str(p, \"void kernel");
-  //p = isl_printer_print_int(p, top->kernel->id);
-  p = isl_printer_print_int(p, 0);
+  if (prog->scop->options->autosa->hcl) {
+    p = isl_printer_print_str(p, "p = isl_printer_print_str(p, \"void autosa_func");
+  } else {
+    p = isl_printer_print_str(p, "p = isl_printer_print_str(p, \"void kernel");
+    //p = isl_printer_print_int(p, top->kernel->id);
+    p = isl_printer_print_int(p, 0);
+  }
   p = isl_printer_print_str(p, "(");
   p = print_kernel_arguments(p, prog, top->kernel, 1, hls);
   p = isl_printer_print_str(p, ")\");");
@@ -4154,10 +4185,12 @@ static __isl_give isl_printer *print_top_module_headers_xilinx(
   p = print_str_new_line(p, "p = isl_printer_end_line(p);");
 
   /* Print out the interface pragmas. */
-  p = print_top_module_interface_xilinx(p, prog, kernel);
+  if (!prog->scop->options->autosa->hcl) {
+    p = print_top_module_interface_xilinx(p, prog, kernel);
+    p = print_str_new_line(p, "p = isl_printer_end_line(p);");
+  }
 
-  /* Print out the dataflow pragma. */
-  p = print_str_new_line(p, "p = isl_printer_end_line(p);");
+  /* Print out the dataflow pragma. */  
   p = print_str_new_line(p, "p = isl_printer_start_line(p);");
   p = print_str_new_line(p, "p = isl_printer_print_str(p, \"#pragma HLS DATAFLOW\");");
   p = print_str_new_line(p, "p = isl_printer_end_line(p);");
@@ -4659,6 +4692,7 @@ int generate_autosa_xilinx_hls_c(isl_ctx *ctx, struct ppcg_options *options,
   hls.hls = options->autosa->hls;
   hls.ctx = ctx;
   hls.output_dir = options->autosa->output_dir;
+  hls.hcl = options->autosa->hcl;
   hls_open_files(&hls, input);
 
   r = generate_sa(ctx, input, hls.host_c, options, &print_hw, &hls);

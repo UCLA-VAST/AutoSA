@@ -7,7 +7,7 @@
 
 /* Arrays */
 __isl_give isl_printer *autosa_array_info_print_call_argument(
-    __isl_take isl_printer *p, struct autosa_array_info *array);
+    __isl_take isl_printer *p, struct autosa_array_info *array, int n_ref, const char *prefix);
 __isl_give isl_printer *autosa_array_ref_group_print_prefix(
     struct autosa_array_ref_group *group, __isl_take isl_printer *p);
 __isl_give isl_printer *autosa_array_ref_group_print_fifo_name(
@@ -49,8 +49,9 @@ __isl_give isl_printer *autosa_print_macros(__isl_take isl_printer *p,
 __isl_give isl_printer *print_kernel_arguments(__isl_take isl_printer *p,
                                                struct autosa_prog *prog, struct autosa_kernel *kernel,
                                                int types, struct hls_info *hls);
-__isl_give isl_printer *print_kernel_header(__isl_take isl_printer *p,
-                                            struct autosa_prog *prog, struct autosa_kernel *kernel, struct hls_info *hls);
+__isl_give isl_printer *print_kernel_header(
+    __isl_take isl_printer *p, struct autosa_prog *prog, 
+    struct autosa_kernel *kernel, struct hls_info *hls, int types);
 
 /* HW modules */
 __isl_give isl_printer *print_module_iterators(

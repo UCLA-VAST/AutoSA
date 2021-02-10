@@ -687,7 +687,8 @@ static isl_stat extract_array_info(struct autosa_prog *prog,
   if (!bounds)
     return isl_stat_error;
   if (!isl_multi_pw_aff_is_cst(bounds))
-    info->linearize = 1;
+    info->linearize = prog->scop->options->linearize_device_arrays;
+    //info->linearize = 1;
   info->bound = bounds;
 
   if (collect_references(prog, info) < 0)
@@ -2103,6 +2104,27 @@ int *read_default_hbm_tile_sizes(struct autosa_kernel *sa, int tile_len)
     tile_size[n] = sa->scop->options->autosa->n_hbm_port;
 
   return tile_size;
+}
+
+/* Extract user specified data pack sizes for array "name".
+ */
+int *read_data_pack_sizes_array(__isl_keep isl_union_map *sizes, char *name)
+{
+  isl_set *size;
+  int *data_pack_sizes;
+
+  data_pack_sizes = (int *)malloc(3 * sizeof(int));
+  size = extract_sa_sizes(sizes, name);
+  if (isl_set_dim(size, isl_dim_set) != 3) {
+    isl_set_free(size);
+    return NULL;
+  }
+  if (read_sa_sizes_from_set(size, data_pack_sizes, 3) < 0)
+    goto error;
+
+  return data_pack_sizes;
+error:
+  return NULL;
 }
 
 /* Extract user specified data pack sizes from the "data_pack_sizes" command line

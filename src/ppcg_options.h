@@ -98,7 +98,9 @@ extern "C"
 		int block_sparse;
 		/* Block sparse ratio [nonzero, vec_len] */
 		char* block_sparse_ratio;
-	};
+		/* Generate code for HeteroCL integration. */
+		int hcl;
+	};	
 
 	struct ppcg_options
 	{
@@ -180,6 +182,7 @@ extern "C"
 
 	ISL_ARG_DECL(ppcg_debug_options, struct ppcg_debug_options,
 				 ppcg_debug_options_args)
+	ISL_ARG_DECL(autosa_options, struct autosa_options, autosa_options_args)
 	ISL_ARG_DECL(ppcg_options, struct ppcg_options, ppcg_options_args)
 
 #define PPCG_TARGET_C 0

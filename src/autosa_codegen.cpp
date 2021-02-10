@@ -1011,71 +1011,6 @@ static __isl_give isl_schedule_node *add_io_copies_stmt_tile(
     map = isl_map_intersect_domain(map, set);
     domain = isl_union_set_from_set(isl_map_wrap(map));
   }
-  ///* Update the fifo bounds if needed. */
-  //if (kernel->options->target == AUTOSA_TARGET_CATAPULT_HLS_C) {
-  //  //if (read) {
-  //    char *fifo_name;
-  //    isl_printer *p_tmp;
-  //    p_tmp = isl_printer_to_str(ctx);
-  //    p_tmp = autosa_array_ref_group_print_fifo_name(group, p_tmp);
-  //    if (read) {
-  //      if (module->is_serialized) {
-  //        p_tmp = isl_printer_print_str(p_tmp, "_serialize");
-  //      } else {
-  //        p_tmp = isl_printer_print_str(p_tmp, "_local_in");
-  //      }
-  //    }
-//
-  //    fifo_name = isl_printer_get_str(p_tmp);
-  //    isl_printer_free(p_tmp);
-//
-  //    if (module_type == 0) {    
-  //      module->n_fifo_default++;
-  //      module->fifo_bounds_default = (isl_pw_qpolynomial **)realloc(module->fifo_bounds_default,
-  //            sizeof(isl_pw_qpolynomial *) * module->n_fifo_default);
-  //      module->fifo_names_default = (char **)realloc(module->fifo_names_default,
-  //            sizeof(char *) * module->n_fifo_default);
-  //      module->fifo_bounds_default[module->n_fifo_default - 1] =
-  //            isl_set_card(isl_set_from_union_set(isl_union_set_copy(domain)));
-  //      if (n_lane > 1) {
-  //        module->fifo_bounds_default[module->n_fifo_default - 1] = 
-  //          isl_pw_qpolynomial_scale_down_val(
-  //            module->fifo_bounds_default[module->n_fifo_default - 1], isl_val_int_from_si(ctx, n_lane));
-  //      }
-  //      module->fifo_names_default[module->n_fifo_default - 1] = fifo_name;
-  //    } else if (module_type == 1) {
-  //      /* intra */
-  //      module->n_fifo_intra++;
-  //      module->fifo_bounds_intra = (isl_pw_qpolynomial **)realloc(module->fifo_bounds_intra,
-  //            sizeof(isl_pw_qpolynomial *) * module->n_fifo_intra);
-  //      module->fifo_names_intra = (char **)realloc(module->fifo_names_intra,
-  //            sizeof(char *) * module->n_fifo_intra);
-  //      module->fifo_bounds_intra[module->n_fifo_intra - 1] =
-  //            isl_set_card(isl_set_from_union_set(isl_union_set_copy(domain)));
-  //      if (n_lane > 1) {
-  //        module->fifo_bounds_intra[module->n_fifo_intra - 1] = 
-  //          isl_pw_qpolynomial_scale_down_val(
-  //            module->fifo_bounds_intra[module->n_fifo_intra - 1], isl_val_int_from_si(ctx, n_lane));
-  //      }
-  //      module->fifo_names_intra[module->n_fifo_intra - 1] = fifo_name;        
-  //    } else if (module_type == 2) {
-  //      /* inter */
-  //      module->n_fifo_inter++;
-  //      module->fifo_bounds_inter = (isl_pw_qpolynomial **)realloc(module->fifo_bounds_inter,
-  //            sizeof(isl_pw_qpolynomial *) * module->n_fifo_inter);
-  //      module->fifo_names_inter = (char **)realloc(module->fifo_names_inter,
-  //            sizeof(char *) * module->n_fifo_inter);
-  //      module->fifo_bounds_inter[module->n_fifo_inter - 1] =
-  //            isl_set_card(isl_set_from_union_set(isl_union_set_copy(domain)));
-  //      if (n_lane > 1) {
-  //        module->fifo_bounds_inter[module->n_fifo_inter - 1] = 
-  //          isl_pw_qpolynomial_scale_down_val(
-  //            module->fifo_bounds_inter[module->n_fifo_inter - 1], isl_val_int_from_si(ctx, n_lane));
-  //      }
-  //      module->fifo_names_inter[module->n_fifo_inter - 1] = fifo_name;
-  //    }
-  //  //} 
-  //}
 
   domain = isl_union_set_preimage_multi_aff(domain, from_access);
   access = isl_union_set_wrapped_domain_map(domain);
@@ -1394,7 +1329,8 @@ static __isl_give isl_printer *print_trans_stmt_coalesce(
     __isl_take isl_printer *p,
     __isl_keep isl_schedule_node *node,
     struct autosa_io_buffer *buf,
-    int *coalesce_bound
+    int *coalesce_bound,
+    int n_lane
     ) 
 {
   int coalesce_depth;
@@ -1411,14 +1347,17 @@ static __isl_give isl_printer *print_trans_stmt_coalesce(
                                        coalesce_bound_val);    
     }    
     if (buf->sparse) {
-      *coalesce_bound = isl_val_get_num_si(coalesce_bound_val) / (buf->n_lane * buf->vec_len);
+      *coalesce_bound = isl_val_get_num_si(coalesce_bound_val) / (n_lane * buf->vec_len);
+      //*coalesce_bound = isl_val_get_num_si(coalesce_bound_val) / (buf->n_lane * buf->vec_len);
     } else {
-      *coalesce_bound = isl_val_get_num_si(coalesce_bound_val) / buf->n_lane;
+      *coalesce_bound = isl_val_get_num_si(coalesce_bound_val) / n_lane;
+      //*coalesce_bound = isl_val_get_num_si(coalesce_bound_val) / buf->n_lane;
     }    
     isl_val_free(coalesce_bound_val);
   } else {
     coalesce_bound_val = buf->tile->bound[buf->tile->n - 1].size;  
-    *coalesce_bound = isl_val_get_num_si(coalesce_bound_val) / buf->n_lane;    
+    *coalesce_bound = isl_val_get_num_si(coalesce_bound_val) / n_lane;    
+    //*coalesce_bound = isl_val_get_num_si(coalesce_bound_val) / buf->n_lane;    
   }
   if (*coalesce_bound <= 1)
     coalesce_depth = -1;
@@ -1744,7 +1683,7 @@ static __isl_give isl_schedule_node *insert_io_stmts_acc(
 }
 
 static __isl_give isl_schedule_node *insert_io_stmts_tile(
-    __isl_take isl_schedule_node *node,
+    __isl_take isl_schedule_node *node,    
     int nxt_data_pack,
     __isl_take isl_printer *p,
     struct autosa_kernel *kernel, 
@@ -1764,7 +1703,8 @@ static __isl_give isl_schedule_node *insert_io_stmts_tile(
   p = isl_printer_print_str(p, ".");
   p = isl_printer_print_int(p, nxt_data_pack);  
 
-  p = print_trans_stmt_coalesce(p, node, copy_buffer, &coalesce_bound);   
+  //p = print_trans_stmt_coalesce(p, node, copy_buffer, &coalesce_bound, local_buffer? local_buffer->n_lane : nxt_data_pack);   
+  p = print_trans_stmt_coalesce(p, node, copy_buffer, &coalesce_bound, nxt_data_pack);   
   module->coalesce_bound = coalesce_bound;
   
   stmt_name = isl_printer_get_str(p);
@@ -1775,8 +1715,11 @@ static __isl_give isl_schedule_node *insert_io_stmts_tile(
                        kernel->options->autosa->insert_hls_dependence;
 
   node = add_io_copies_stmt_tile(kernel, group, node,
-                                 local_buffer? local_buffer->tile : NULL, copy_buffer->tile, 
-                                 nxt_data_pack, read, stmt_name, read ? 1 : 0,
+                                 local_buffer->tile? local_buffer->tile : NULL, copy_buffer->tile, 
+                                 nxt_data_pack,
+                                 //local_buffer? local_buffer->n_lane : nxt_data_pack,
+                                 read, stmt_name, read ? 1 : 0,
+                                 //nxt_data_pack, read, stmt_name, read ? 1 : 0,
                                  is_buffer & 0,
                                  insert_hls_dep,
                                  module->is_serialized,
@@ -3418,16 +3361,17 @@ static isl_stat generate_default_io_module_schedule(
        * downstream I/O modules.
        */
       if (buf->tile) {
-        module->data_pack_inter = buf->n_lane;
+        //module->data_pack_inter = buf->n_lane;
+        module->data_pack_inter = group->io_buffers[io_level - 1]->n_lane;
         module->data_pack_intra = buf->n_lane;
 
         node = autosa_tree_move_down_to_depth(node, buf->tile->depth, kernel->core);
         p = isl_printer_to_str(ctx);
         p = print_io_trans_stmt_prefix(
               p, read, module->to_mem, gen->options->autosa->host_serialize, boundary, 0, NULL,
-              !read, read, is_buffer, fifo_suffix, buf->n_lane);
-        node = insert_io_stmts_tile(node, buf->n_lane, p, kernel, group, 
-                  NULL, buf, read, is_buffer, module, 1, 0);
+              !read, read, is_buffer, fifo_suffix, module->data_pack_inter);
+        node = insert_io_stmts_tile(node, module->data_pack_intra, p, kernel, group, 
+                  group->io_buffers[io_level - 1], buf, read, is_buffer, module, 1, 0);
       } else {
         module->data_pack_inter = group->n_lane;
         module->data_pack_intra = group->n_lane;
@@ -3559,7 +3503,8 @@ static int update_serialize_data_pack(struct autosa_gen *gen, struct autosa_hw_m
   int host_pack = -1;
 
   sizes = extract_sizes_from_str(gen->ctx, module->options->autosa->data_pack_sizes);
-  data_pack_ubs = read_data_pack_sizes(sizes, 3);
+  //data_pack_ubs = read_data_pack_sizes(sizes, 3);
+  data_pack_ubs = read_data_pack_sizes_array(sizes, module->io_groups[0]->array->name);
   if (data_pack_ubs) 
     dram_limit = data_pack_ubs[2];
   free(data_pack_ubs);
@@ -8912,17 +8857,19 @@ static __isl_give isl_ast_node *create_io_leaf(struct autosa_kernel *kernel,
     is_dummy_reduce = !prefixcmp(type, "in_dummy_reduce") || !prefixcmp(type, "out_dummy_reduce");
   } else {
     is_dummy_reduce = 0;
-  }
+  }  
   if (is_trans_dram)
-  {
-    is_serialize = !prefixcmp(type, "in_trans_dram_serialize") || !prefixcmp(type, "out_trans_dram_serialize");
+  {    
+    is_serialize = !prefixcmp(type, "in_trans_dram_serialize") || !prefixcmp(type, "out_trans_dram_serialize");    
+  } else {
+    is_serialize = 0;
   }
   
   stmt->u.i.simd_depth = pair->simd_depth;
   stmt->u.i.dummy = is_dummy;
   stmt->u.i.in = type && !prefixcmp(type, "in");
-  stmt->u.i.buf = is_trans_buf;  
-  stmt->u.i.serialize = is_serialize;
+  stmt->u.i.buf = is_trans_buf;    
+  stmt->u.i.serialize = is_serialize;  
   if (is_trans) {
     stmt->u.i.data_pack = extract_autosa_stmt_int_field(ctx, type, 4);
     stmt->u.i.nxt_data_pack = extract_autosa_stmt_int_field(ctx, type, 5);

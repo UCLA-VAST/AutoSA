@@ -2919,7 +2919,8 @@ static isl_stat compute_io_group_data_pack_sparse(
   int status = false;
   /* Parse the data pack settings. */
   sizes = extract_sizes_from_str(gen->ctx, gen->options->autosa->data_pack_sizes);
-  data_pack_ubs = read_data_pack_sizes(sizes, 3);
+  //data_pack_ubs = read_data_pack_sizes(sizes, 3);
+  data_pack_ubs = read_data_pack_sizes_array(sizes, group->array->name);
   if (!data_pack_ubs) {
     /* Use the default numbers. */
     data_pack_ubs = isl_alloc_array(gen->ctx, int, 3);
@@ -2997,6 +2998,7 @@ static isl_stat compute_io_group_data_pack(struct autosa_kernel *kernel,
 {
   isl_schedule_node *node;
   isl_union_map *sizes;
+  isl_val *size;
   int *data_pack_ubs = NULL;
   struct update_group_simd_data data;
   int ele_size = group->array->size; // bytes
@@ -3051,7 +3053,10 @@ static isl_stat compute_io_group_data_pack(struct autosa_kernel *kernel,
    */
   /* Parse the data pack settings. */
   sizes = extract_sizes_from_str(gen->ctx, gen->options->autosa->data_pack_sizes);
-  data_pack_ubs = read_data_pack_sizes(sizes, 3);
+  //data_pack_ubs = read_data_pack_sizes(sizes, 3);
+  data_pack_ubs = read_data_pack_sizes_array(sizes, group->array->name);
+  //std::cout << group->array->name << std::endl;
+  //std::cout << data_pack_ubs[2] << std::endl;
   if (!data_pack_ubs)
   {
     /* Use the default numbers. */
@@ -3071,10 +3076,11 @@ static isl_stat compute_io_group_data_pack(struct autosa_kernel *kernel,
       cur_max_n_lane = max(group->n_lane, data_pack_ubs[1] / ele_size);
     else
       cur_max_n_lane = max(group->n_lane, data_pack_ubs[2] / ele_size);
-    if (buf->tile)
-    {
+    if (buf->tile && group->array->n_index > 0)
+    {      
+      size = isl_val_copy(buf->tile->bound[group->array->n_index - 1].size);
+compute_data_pack:      
       int n_lane = cur_n_lane;
-      isl_val *size = isl_val_copy(buf->tile->bound[group->array->n_index - 1].size);
       while (n_lane <= cur_max_n_lane)
       {
         /* The lane should be multiples of SIMD lane. */
@@ -3101,9 +3107,24 @@ static isl_stat compute_io_group_data_pack(struct autosa_kernel *kernel,
         printf("[AutoSA] Please try to use different tiling factors.\n");
         exit(1);
       }
-      isl_val_free(size);
-    }
-    else
+      isl_val_free(size);      
+    } else if (i == group->io_level - 1 && !gen->options->autosa->host_serialize) {
+      /* If it is the outermost loop, try to extend the data packing factor again. 
+       * If the host serialization is enabled, as there is a re-packing later.
+       * We won't do anything here. 
+       */
+      /* Locate the next buffer. */            
+      struct autosa_io_buffer *nxt_buf;
+      for (int j = i; j >= 0; j--) {
+        nxt_buf = group->io_buffers[j];
+        if (nxt_buf->tile) 
+          break;                  
+      }
+      if (nxt_buf->tile) {        
+        size = isl_val_copy(nxt_buf->tile->bound[group->array->n_index - 1].size);
+        goto compute_data_pack;
+      }        
+    } else
     {
       buf->n_lane = cur_n_lane;
     }
@@ -4234,31 +4255,33 @@ static isl_stat autosa_io_buffer_allocate(struct autosa_kernel *kernel,
     struct autosa_local_array_info *local = &kernel->array[i];
     for (int j = 0; j < local->n_io_group; j++)
     {
-      compute_io_group_buffer(kernel, local->io_groups[j], gen);      
-      if (gen->options->autosa->two_level_buffer)
-      {
-        /* Seek the opportunity to hoist up the L2 I/O buffers. */
-        hoist_L2_io_buffer(kernel, local->io_groups[j], gen, data);
-      }      
-      if (gen->options->autosa->local_reduce && local->io_groups[j]->attached_drain_group)
-      {
-        if (gen->options->autosa->two_level_buffer) {
-          /* At present, two-level buffer and local reduce can be enabled at the same time.
-           */
-          throw std::runtime_error("[AutoSA] Error: Two-level buffer and local reduce can't be used at the same time.");
-        }        
-      }
-      if (gen->options->autosa->lower_int_io_L1_buffer) {
-        /* Lower the L1 buffer for interior I/O module if possible. */
-        lower_int_io_L1_buffer(kernel, local->io_groups[j], gen);
-        /* Enable the second-level buffer for this array */
-        insert_L2_io_buffer(kernel, local->io_groups[j], gen);
-        /* Seek the opportunity to hoist up the L2 I/O buffers. */
-        //hoist_L2_io_buffer(kernel, local->io_groups[j], gen, data);
-      }
+      //if (local->io_groups[j]->copy_in || local->io_groups[j]->copy_out) {
+        compute_io_group_buffer(kernel, local->io_groups[j], gen);      
+        if (gen->options->autosa->two_level_buffer)
+        {
+          /* Seek the opportunity to hoist up the L2 I/O buffers. */
+          hoist_L2_io_buffer(kernel, local->io_groups[j], gen, data);
+        }      
+        if (gen->options->autosa->local_reduce && local->io_groups[j]->attached_drain_group)
+        {
+          if (gen->options->autosa->two_level_buffer) {
+            /* At present, two-level buffer and local reduce can be enabled at the same time.
+             */
+            throw std::runtime_error("[AutoSA] Error: Two-level buffer and local reduce can't be used at the same time.");
+          }        
+        }
+        if (gen->options->autosa->lower_int_io_L1_buffer) {
+          /* Lower the L1 buffer for interior I/O module if possible. */
+          lower_int_io_L1_buffer(kernel, local->io_groups[j], gen);
+          /* Enable the second-level buffer for this array */
+          insert_L2_io_buffer(kernel, local->io_groups[j], gen);
+          /* Seek the opportunity to hoist up the L2 I/O buffers. */
+          //hoist_L2_io_buffer(kernel, local->io_groups[j], gen, data);
+        }
+      //}
     }
     if (local->drain_group)
-    {
+    {      
       compute_io_group_buffer(kernel, local->drain_group, gen);
       if (gen->options->autosa->two_level_buffer)
       {
@@ -4278,12 +4301,14 @@ static isl_stat autosa_io_data_pack(struct autosa_kernel *kernel,
     struct autosa_local_array_info *local = &kernel->array[i];
     for (int j = 0; j < local->n_io_group; j++) {
       struct autosa_array_ref_group *group = local->io_groups[j];
-      for (int k = 0; k < group->io_level; k++) {
-        struct autosa_io_buffer *buf = group->io_buffers[k];
-        buf->sparse = 0;
-        buf->vec_len = 0;        
-        buf->serialize = (gen->options->autosa->host_serialize == 1)? 1 : 0;
-      }      
+      //if (group->copy_in || group->copy_out) {
+        for (int k = 0; k < group->io_level; k++) {
+          struct autosa_io_buffer *buf = group->io_buffers[k];
+          buf->sparse = 0;
+          buf->vec_len = 0;        
+          buf->serialize = (gen->options->autosa->host_serialize == 1)? 1 : 0;
+        }      
+      //}
     }
     if (local->drain_group) {
       struct autosa_array_ref_group *group = local->drain_group;
@@ -4299,10 +4324,12 @@ static isl_stat autosa_io_data_pack(struct autosa_kernel *kernel,
   for (int i = 0; i < kernel->n_array; i++) {
     struct autosa_local_array_info *local = &kernel->array[i];
     for (int j = 0; j < local->n_io_group; j++) {
-      if (local->is_sparse)
-        compute_io_group_data_pack_sparse(kernel, local->io_groups[j], gen, -1);
-      else
-        compute_io_group_data_pack(kernel, local->io_groups[j], gen, -1);
+      //if (local->io_groups[j]->copy_in || local->io_groups[j]->copy_out) {
+        if (local->is_sparse)
+          compute_io_group_data_pack_sparse(kernel, local->io_groups[j], gen, -1);
+        else
+          compute_io_group_data_pack(kernel, local->io_groups[j], gen, -1);
+      //}
     }
     if (local->drain_group) {
       if (local->is_sparse)
