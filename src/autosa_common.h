@@ -124,7 +124,8 @@ enum autosa_array_type
 enum platform
 {
   INTEL_HW,
-  XILINX_HW
+  XILINX_HW,
+  CATAPULT_HW
 };
 
 struct autosa_dep
@@ -287,6 +288,26 @@ struct autosa_kernel
 
   isl_set *host_domain;
   int single_statement;  
+
+  /* Data structures for block sparsity.
+   * vec_len is the vector length of each sparse block.
+   * n_nzero is the number of non-zero elements in the block.
+   * compress_ratio is calculated as vec_len / n_nzero.
+   * Each sparse block is stored as [data, data, offset]
+   * The offset is a 8-bit long unsigned char that stores a mask that 
+   * indicating the the position of non-zero elements.
+   * This block is also padded to align with 32/128/256/512-bit boundary 
+   * as required by Xilinx HLS.
+   * n_meta_data stores the size of the padded elements plus the offset together 
+   * counted in terms of the size of the data elements. 
+   * effective_compress_ratio is calculated as vec_len / (n_nzero + n_meta_data).
+   */
+  int sparse;
+  int vec_len;
+  int n_nzero;
+  float compress_ratio;
+  int n_meta_data;
+  float eff_compress_ratio;
 };
 
 struct autosa_io_info
@@ -452,6 +473,11 @@ struct autosa_io_buffer
   int level;
   /* The data packing factor */
   int n_lane;
+  /* Is the buffer data serialzied at the host size. */
+  int serialize;
+  /* Is the buffer data sparse */
+  int sparse;
+  int vec_len;
 };
 
 /* A group of array references in a kernel that should be handled together. 
@@ -610,6 +636,14 @@ struct autosa_local_array_info
   unsigned n_index;
   isl_multi_pw_aff *bound;
   isl_ast_expr *bound_expr;
+
+  /* Is this the sparse matrix in the block sparsity */
+  int is_sparse;
+  int vec_len;
+  int n_nzero;
+  float compress_ratio;
+  int n_meta_data;
+  float eff_compress_ratio;
 };
 
 /* "read" and "write" contain the original access relations, possibly 
@@ -800,6 +834,24 @@ struct autosa_hw_module
   int use_FF;
 
   struct autosa_kernel *kernel;
+
+  /* For Catapult HLS */
+  /* Pipeline the whole function. */
+  int pipeline_at_default_func;
+  int pipeline_at_filter_func[3]; // outer, intra, inter  
+  /* Fifo guards information. */
+  int n_fifo_serialize;
+  char** fifo_names_serialize;
+  isl_pw_qpolynomial **fifo_bounds_serialize;
+  int n_fifo_default;
+  char **fifo_names_default;
+  isl_pw_qpolynomial **fifo_bounds_default;  
+  int n_fifo_inter;
+  char **fifo_names_inter;
+  isl_pw_qpolynomial **fifo_bounds_inter;  
+  int n_fifo_intra;
+  char **fifo_names_intra;
+  isl_pw_qpolynomial **fifo_bounds_intra;  
 };
 
 struct autosa_gen
@@ -989,8 +1041,21 @@ struct autosa_ast_node_userinfo
   int is_outermost_for;
   int is_infinitize_legal;
   int is_first_infinitizable_loop;
+  int is_dep_free;  
+  int n_coalesce_loop;
   /* Temporary variable used in AST traversal. */
   bool visited;
+  /* Variables for Catapult codegen. */
+  int is_guard_start;
+  int is_guard_end;
+  int n_fifo;
+  char **fifo_names;
+  isl_pw_qpolynomial **bounds;
+  int double_buffer;
+  int inter;
+  int read;
+  char *module_name;
+  char *buf_name;
 };
 
 /* The current index is such that if you add "shift",
@@ -1046,14 +1111,17 @@ struct hls_info
   FILE *host_h;    /* OpenCL host header. */
   FILE *kernel_c;  /* Definition of hardware modules. */
   FILE *kernel_h;  /* Declaration of hardware modules. */
-  FILE *top_gen_c; /* Prints out the top module that connects the 
-                            hardware modules. */
+  FILE *top_gen_c; /* Prints out the top module that connects the hardware modules. */
   FILE *top_gen_h;
+  FILE *tcl;       /* Catapult TCL. */
 
   enum platform target;
   int hls;          /* Generate HLS host instead of OpenCL host */
   char *output_dir; /* Output directory */
-  isl_ctx *ctx;
+  char *kernel_prefix; /* Kernel file prefix */
+  isl_ctx *ctx;  
+  bool hcl; /* Sets to true if the generated code is integrated with HeteroCL. */
+  FILE *hcl_decl;
 };
 
 /* Band node */
@@ -1132,6 +1200,7 @@ struct autosa_kernel *autosa_kernel_alloc(isl_ctx *ctx, struct ppcg_scop *scop);
 isl_bool access_is_stride_zero(__isl_keep isl_map *access, int pos);
 isl_bool access_is_stride_one(__isl_keep isl_map *access, int pos);
 void *autosa_acc_free(struct autosa_acc *acc);
+struct autosa_io_buffer *autosa_io_buffer_alloc();
 
 /* AutoSA dep */
 void *autosa_dep_free(__isl_take struct autosa_dep *dep);
@@ -1191,6 +1260,8 @@ int read_space_time_kernel_id(__isl_keep isl_union_map *sizes);
 int *read_array_part_L2_tile_sizes(struct autosa_kernel *kernel, int tile_len);
 int *read_default_array_part_L2_tile_sizes(struct autosa_kernel *kernel, int tile_len);
 int *read_data_pack_sizes(__isl_keep isl_union_map *sizes, int tile_len);
+int *read_data_pack_sizes_array(__isl_keep isl_union_map *sizes, char *name);
+int read_mem_port_map(__isl_keep isl_union_map *port_map, char *name);
 
 /* AutoSA latency and resource estimation */
 isl_stat sa_extract_loop_info(struct autosa_gen *gen, struct autosa_hw_module *module);
@@ -1198,4 +1269,9 @@ isl_stat sa_extract_array_info(struct autosa_kernel *kernel);
 int extract_memory_type(struct autosa_hw_module *module,
                         struct autosa_kernel_var *var, int uram);
 isl_stat sa_extract_design_info(struct autosa_gen *gen);
+
+/* AutoSA block sparsity */
+isl_stat autosa_kernel_extract_sparse_info(struct autosa_kernel *kernel, 
+  struct autosa_gen *gen);
+
 #endif

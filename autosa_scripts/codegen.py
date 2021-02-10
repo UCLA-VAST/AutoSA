@@ -62,17 +62,17 @@ def print_module_def(
 
     Parameters
     ----------
-    f: 
+    f:
         file handle
-    arg_map: 
+    arg_map:
         maps from module definition args to module call args
-    module_def: 
+    module_def:
         a list storing the module definition texts
-    inline_module_defs: 
+    inline_module_defs:
         a dict containing all the inline module definitions
     def_args:
         a list storing the module definition arguments
-    call_args_type: 
+    call_args_type:
         a list storing the type of each module call arg
     """
     # Print inline module definitions
@@ -187,9 +187,12 @@ def print_module_def(
             m = re.search(r'(.+?)\(', line)
             if m:
                 prefix = m.group(1)
-            m = re.search(r'\((.+?)\)', line)
-            if m:
-                def_args = m.group(1)
+            arg_start_pos = line.find('(')
+            arg_end_pos = line.rfind(')')
+            def_args = line[arg_start_pos + 1 : arg_end_pos]
+            #m = re.search(r'\((.+?)\)', line)
+            #if m:
+            #    def_args = m.group(1)
             def_args = def_args.split(', ')
             new_def_args = []
             for i in range(len(def_args)):
@@ -282,15 +285,15 @@ def generate_intel_kernel(
 
     Parameters
     ----------
-    kernel: 
+    kernel:
         the output file
-    headers: 
+    headers:
         list containing the headers to be printed
-    module_defs: 
+    module_defs:
         dict containing the module definitions
-    module_calls: 
+    module_calls:
         list containing the module calls
-    fifo_decls: 
+    fifo_decls:
         list containing the fifo declarations
     """
     inline_module_defs = {}
@@ -340,9 +343,12 @@ def generate_intel_kernel(
             # extract the arg list in module definition
             for line in module_def:
                 if line.find('void') != -1:
-                    m = re.search(r'\((.+?)\)', line)
-                    if m:
-                        def_args_old = m.group(1)
+                    arg_start_pos = line.find('(')
+                    arg_end_pos = line.rfind(')')
+                    def_args_old = line[arg_start_pos + 1 : arg_end_pos]
+                    #m = re.search(r'\((.+?)\)', line)
+                    #if m:
+                    #    def_args_old = m.group(1)
             def_args_old = def_args_old.split(', ')
             for arg in def_args_old:
                 arg = arg.split()[-1]
@@ -417,7 +423,7 @@ def insert_xlnx_pragmas(lines):
 
     Parameters
     ----------
-    lines: 
+    lines:
         contains the codelines of the program
     """
     # Handle hls_dependence
@@ -520,6 +526,38 @@ def insert_xlnx_pragmas(lines):
 
     return lines
 
+def insert_catapult_pragmas(lines):
+    """ Insert Catapult HLS pragmas for Catapult program
+
+    Replace the comments of "// hls_unroll" with HLS pragmas    
+    For "// hls unroll", find the next for loop right below the mark.
+    Insert "#pragma unroll yes" before the for loop.    
+
+    Parameters
+    ----------
+    lines:
+        contains the codelines of the program
+    """
+    # Handle hls_dependence
+    handle_dep_pragma = 1
+
+    code_len = len(lines)
+    pos = 0
+    while pos < code_len:
+        line = lines[pos]    
+        if line.find("// hls_unroll") != -1:
+            # Find the for loop below
+            next_pos = pos + 1
+            find_for = 0
+            if lines[next_pos].find('for') != -1:                            
+                # insert the pragma right before the for loop
+                indent = lines[next_pos].find('for')
+                new_line = ' ' * indent + "#pragma unroll yes\n"
+                lines.insert(next_pos, new_line)
+                del lines[pos]
+        pos = pos + 1
+
+    return lines
 
 def float_to_int(matchobj):
     str_expr = matchobj.group(0)
@@ -531,7 +569,7 @@ def float_to_int(matchobj):
 
 def index_simplify(matchobj):
     str_expr = matchobj.group(0)
-    if str_expr == '[arb]' or str_expr == '[!arb]':
+    if str_expr == '[arb]' or str_expr == '[!arb]' or str_expr == '[index[n]':
         return str_expr
     if '++' in str_expr:
         return str_expr
@@ -573,7 +611,7 @@ def simplify_expressions(lines):
 
     Parameters
     ----------
-    lines: 
+    lines:
         contains the codelines of the program
     """
     code_len = len(lines)
@@ -602,12 +640,11 @@ def shrink_bit_width(lines, target):
 
     Parameters
     ----------
-    lines: 
+    lines:
         contains the codelines of the program
-    target: 
+    target:
         xilinx|intel
     """
-
     code_len = len(lines)
     for pos in range(code_len):
         line = lines[pos]
@@ -623,6 +660,8 @@ def shrink_bit_width(lines, target):
                         new_iter_t = 'ap_uint<' + str(bitwidth) + '>'
                     elif target == 'intel':
                         new_iter_t = 'uint' + str(bitwidth) + '_t'
+                    elif target == 'catapult':
+                        new_iter_t = 'ac_int<' + str(bitwidth) + ', false>'
                     line = re.sub('int', new_iter_t, line)
                     lines[pos] = line
             m = re.search('<(.+?);', line)
@@ -630,9 +669,14 @@ def shrink_bit_width(lines, target):
                 ub = m.group(1).strip()
                 if ub.isnumeric():
                     #print(pos)
-                    # Replace it with shallow bit width
+                    # Replace it with shallow bit width                    
                     bitwidth = int(np.ceil(np.log2(float(ub)))) + 1
-                    new_iter_t = 'ap_uint<' + str(bitwidth) + '>'
+                    if target == 'xilinx':
+                        new_iter_t = 'ap_uint<' + str(bitwidth) + '>'
+                    elif target == 'intel':
+                        new_iter_t = 'uint' + str(bitwidth) + '_t'
+                    elif target == 'catapult':
+                        new_iter_t = 'ac_int<' + str(bitwidth) + ', false>'
                     line = re.sub('int', new_iter_t, line)
                     lines[pos] = line
 
@@ -648,6 +692,8 @@ def shrink_bit_width(lines, target):
                     new_iter_t = 'ap_uint<' + str(bitwidth) + '>'
                 elif target == 'intel':
                     new_iter_t = 'uint' + str(bitwidth) + '_t'
+                elif target == 'catapult':
+                    new_iter_t = 'ac_int<' + str(bitwidth) + ', false>'
                 #line = re.sub('int', new_iter_t, line)
                 line = re.sub(
                     r'(int)' +
@@ -664,19 +710,19 @@ def shrink_bit_width(lines, target):
 def lift_split_buffers(lines):
     """ Lift the split buffers in the program
 
-    For each module, if we find any split buffers with the name "buf_data_split",
+    For each module, if we find any split buffers with the name "data_split",
     we will lift them out of the for loops and put them in the variable declaration
     section at the beginning of the module.
 
     Parameters
     ----------
-    lines: 
+    lines:
         contains the codelines of the program
     """
     code_len = len(lines)
     for pos in range(code_len):
         line = lines[pos]
-        if line.find('variable=buf_data_split') != -1:
+        if line.find('variable=data_split') != -1:
             # Search for the variable declaration section
             decl_pos = -1
             prev_pos = pos - 1
@@ -746,7 +792,7 @@ def build_dummy_module_call(group_name, fifo_name, module_in, PE_ids):
     lines.append(f'  {group_name}_PE_dummy_{dir_str}(\n')
     for id in PE_ids:
         lines.append(f'    /* module id */ {id},\n')
-    lines.append(f'    /* fifo */ {fifo_name}\n')    
+    lines.append(f'    /* fifo */ {fifo_name}\n')
     lines.append(f'  );\n')
     lines.append(f'  /* Module Call */\n')
 
@@ -755,7 +801,7 @@ def build_dummy_module_call(group_name, fifo_name, module_in, PE_ids):
 def insert_dummy_modules(def_lines, call_lines):
     """ Insert the missing dummy modules
 
-    Collect the FIFO information of PEs (fifo_name, fifo_type). 
+    Collect the FIFO information of PEs (fifo_name, fifo_type).
     Delete those FIFOs that are connected to other modules.
     Insert dummy modules for the rest of FIFOs.
 
@@ -770,8 +816,8 @@ def insert_dummy_modules(def_lines, call_lines):
     for line in def_lines:
         if line.find('void PE_wrapper') != -1:
             # Parse the argument list
-            m = re.search(r'\((.+?)\)', line)            
-            args = m.group(1).strip().split(',')            
+            m = re.search(r'\((.+?)\)', line)
+            args = m.group(1).strip().split(',')
             for arg in args:
                 if arg.find('fifo') != -1:
                     m = re.search(r'stream<(.+?)>', arg)
@@ -786,7 +832,7 @@ def insert_dummy_modules(def_lines, call_lines):
         if line.find('void kernel0') != -1:
             kernel_start = 1
         if kernel_start:
-            if line.find('* fifo *') != -1:                                                
+            if line.find('* fifo *') != -1:
                 fifo = line.strip().split('*')[2][2:]
                 if fifo[-1] == ',':
                     fifo = fifo[:-1]
@@ -796,12 +842,12 @@ def insert_dummy_modules(def_lines, call_lines):
                 if fifo not in used_fifos:
                     used_fifos[fifo] = -1
                 else:
-                    del used_fifos[fifo]                    
+                    del used_fifos[fifo]
     #print(used_fifos)
     # Locate the fifo position
     inside_module = False
     inside_PE = False
-    fifo_pos = 0    
+    fifo_pos = 0
     PE_call_start = -1
     PE_call_end = -1
     line_id = 0
@@ -816,7 +862,7 @@ def insert_dummy_modules(def_lines, call_lines):
                 inside_PE = True
                 fifo_pos = 0
                 if PE_call_start == -1:
-                    PE_call_start = line_id - 1                
+                    PE_call_start = line_id - 1
             if inside_PE:
                 if line.find('fifo') != -1:
                     for used_fifo in used_fifos:
@@ -845,7 +891,7 @@ def insert_dummy_modules(def_lines, call_lines):
 
         # Build the dummy module definition
         module_def = build_dummy_module_def(group_name, fifo_info['type'], module_in, PE_ids)
-        #print(module_def)        
+        #print(module_def)
         def_lines += module_def
         def_lines.append('\n')
 
@@ -863,7 +909,24 @@ def insert_dummy_modules(def_lines, call_lines):
 
     return def_lines, call_lines
 
-def reorder_module_calls(lines):
+def modify_tb(lines):
+    """ Modify the test bench for Catapult HLS
+    
+    Replace the int main with CCS_MAIN.
+
+    Paramters
+    ---------
+    lines: list
+        contains the codelines of the test bench
+    """
+    for pos in range(len(lines)):
+        line = lines[pos]
+        if line.find('int main') != -1:
+            line = line.replace('int main', 'CCS_MAIN')
+        lines[pos] = line
+    return lines
+
+def reorder_module_calls(lines, target):
     """ Reorder the module calls in the program
 
     For I/O module calls, we will reverse the sequence of calls for output modules.
@@ -875,6 +938,8 @@ def reorder_module_calls(lines):
     ----------
     lines: list
         contains the codelines of the program
+    target: string
+        xilinx|intel|catapult
     """
 
     code_len = len(lines)
@@ -904,16 +969,19 @@ def reorder_module_calls(lines):
                     output_io = 1
                     # Examine if the module is an boundary module
                     if nxt_line.find("boundary") != -1:
-                        boundary = 1                
+                        boundary = 1
                 # Extract the module name
-                nxt_line = nxt_line.strip()                
+                nxt_line = nxt_line.strip()
                 if nxt_line.find('<') != -1:
                     module_name = nxt_line.split('<')[0]
                 else:
-                    module_name = nxt_line.split('(')[0]    
+                    module_name = nxt_line.split('(')[0]
+                if target == 'catapult':                    
+                    module_name = module_name[:module_name.find('_inst')]
+
                 if module_name.find('wrapper'):
                     module_name = module_name[:-8]
-                if boundary:                                            
+                if boundary:
                     module_name = module_name[:-9]
                 if prev_module_name == "":
                     prev_module_name = module_name
@@ -958,9 +1026,9 @@ def reorder_module_calls(lines):
                         output_io = 0
                         reset = 1
                     if new_module:
-                        # Pop out the previous module calls except the last one                        
+                        # Pop out the previous module calls except the last one
                         module_calls = module_calls[-1:]
-                        
+
 
         if module_start and output_io:
             module_call.append(line)
@@ -971,19 +1039,22 @@ def xilinx_run(
         kernel_call,
         kernel_def,
         kernel='autosa.tmp/output/src/kernel_kernel.cpp',
-        host='opencl'):
+        host='opencl',
+        hcl=False):
     """ Generate the kernel file for Xilinx platform
 
     We will copy the content of kernel definitions before the kernel calls.
 
     Parameters
     ----------
-    kernel_call: 
+    kernel_call:
         file containing kernel calls
-    kernel_def: 
+    kernel_def:
         file containing kernel definitions
-    kernel: 
+    kernel:
         output kernel file
+    hcl:
+        integrated with HeteroCL
     """
 
     # Load kernel definition file
@@ -1013,7 +1084,7 @@ def xilinx_run(
     print("Please find the generated file: " + kernel)
 
     with open(kernel, 'w') as f:
-        if host == 'opencl':
+        if host == 'opencl' or hcl == True:
             # Merge kernel header file
             kernel_header = kernel.split('.')
             kernel_header[-1] = 'h'
@@ -1026,7 +1097,7 @@ def xilinx_run(
         f.writelines(lines)
 
         # Reorder module calls
-        call_lines = reorder_module_calls(call_lines)
+        call_lines = reorder_module_calls(call_lines, 'xilinx')
         f.writelines(call_lines)
 
         ## Load kernel call file
@@ -1036,6 +1107,76 @@ def xilinx_run(
         #    lines = reorder_module_calls(lines)
         #    f.writelines(lines)
 
+
+def catapult_run(
+        kernel_call,
+        kernel_def,
+        tb,
+        kernel='autosa.tmp/output/src/kernel_kernel_hw.h',
+        host='opencl'):
+    """ Generate the kernel file for Catapult HLS platform
+
+    We will copy the content of kernel definitions before the kernel calls.
+
+    Parameters
+    ----------
+    kernel_call:
+        file containing kernel calls
+    kernel_def:
+        file containing kernel definitions
+    tb: 
+        file containing test bench
+    kernel:
+        output kernel file
+    """
+
+    # Load kernel definition file
+    lines = []
+    with open(kernel_def, 'r') as f:
+        lines = f.readlines()
+    call_lines = []
+    with open(kernel_call, 'r') as f:
+        call_lines = f.readlines()
+
+    # Simplify the expressions
+    lines = simplify_expressions(lines)
+
+    # Change the loop iterator type
+    lines = shrink_bit_width(lines, 'catapult')
+
+    # Insert the HLS pragmas
+    lines = insert_catapult_pragmas(lines)
+
+    # Lift the split_buffers
+    lines = lift_split_buffers(lines)    
+
+    kernel = str(kernel)
+    print("Please find the generated file: " + kernel)
+
+    with open(kernel, 'w') as f:
+        #if host == 'opencl':
+        #    # Merge kernel header file
+        #    kernel_header = kernel.split('.')
+        #    kernel_header[-1] = 'h'
+        #    kernel_header = ".".join(kernel_header)
+        #    with open(kernel_header, 'r') as f2:
+        #        header_lines = f2.readlines()
+        #        f.writelines(header_lines)
+        #    f.write('\n')
+
+        f.writelines(lines)
+
+        # Reorder module calls
+        call_lines = reorder_module_calls(call_lines, 'catapult')
+
+        f.writelines(call_lines)      
+
+     # Modify the test bench
+    with open(tb, 'r') as f:
+        tb_lines = f.readlines()    
+    tb_lines = modify_tb(tb_lines)
+    with open(tb, 'w') as f:
+        f.writelines(tb_lines)
 
 def insert_intel_pragmas(lines):
     """ Insert Intel OpenCL pragmas for Intel program
@@ -1047,7 +1188,7 @@ def insert_intel_pragmas(lines):
 
     Parameters
     ----------
-    lines: 
+    lines:
         contains the codelines of the program
     """
     code_len = len(lines)
@@ -1090,11 +1231,11 @@ def intel_run(
 
     Parameters
     ----------
-    kernel_call: 
+    kernel_call:
         file containing kernel calls
-    kernel_def: 
+    kernel_def:
         file containing kernel definitions
-    kernel: 
+    kernel:
         output kernel file
     """
     # Load kernel call file
@@ -1159,6 +1300,7 @@ def intel_run(
                     m = re.search(r'void (.+?)\(', line)
                     if m:
                         module_name = m.group(1)
+                        #print(module_name)
             if line.find('/* Module Definition */') != -1:
                 if add:
                     module_def.pop(len(module_def) - 1)
@@ -1201,11 +1343,16 @@ if __name__ == "__main__":
         required=True,
         help='kernel function definition')
     parser.add_argument(
+        '--tb',
+        metavar='TB',
+        required=False,
+        help='test bench')    
+    parser.add_argument(
         '-t',
         '--target',
         metavar='TARGET',
         required=True,
-        help='hardware target: autosa_hls_c|autosa_opencl')
+        help='hardware target: autosa_hls_c|autosa_opencl|autosa_catapult_c')
     parser.add_argument(
         '-o',
         '--output',
@@ -1218,10 +1365,17 @@ if __name__ == "__main__":
         required=False,
         help='Xilinx host target: hls|opencl',
         default='opencl')
+    parser.add_argument(
+        '--hcl',        
+        action='store_true',
+        default=False,
+        help='HeteroCL integration')
 
     args = parser.parse_args()
 
     if args.target == 'autosa_opencl':
         intel_run(args.kernel_call, args.kernel_def, args.output)
     elif args.target == 'autosa_hls_c':
-        xilinx_run(args.kernel_call, args.kernel_def, args.output, args.host)
+        xilinx_run(args.kernel_call, args.kernel_def, args.output, args.host, args.hcl)
+    elif args.target == 'autosa_catapult_c':
+        catapult_run(args.kernel_call, args.kernel_def, args.tb, args.output, args.host)

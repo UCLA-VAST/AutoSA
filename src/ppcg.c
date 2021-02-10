@@ -40,6 +40,7 @@
 #include "cpu.h"
 #include "autosa_xilinx_hls_c.h"
 #include "autosa_intel_opencl.h"
+#include "autosa_catapult_hls_c.h"
 
 //#define _DEBUG
 
@@ -1012,6 +1013,9 @@ static void compute_tagged_rar_dep_only(struct ppcg_scop *ps)
    */
   isl_union_map *tagged_reads = ps->tagged_reads;
   isl_union_map_foreach_map(tagged_reads, &build_rar_dep, ps);
+//#ifdef _DEBUG
+//	DBGUMAP(stdout, ps->tagged_dep_rar, isl_union_map_get_ctx(tagged_reads));
+//#endif
 }
 
 /* Compute the RAR dependence for each externel read access.
@@ -1111,13 +1115,16 @@ static void compute_dependences(struct ppcg_scop *scop)
 		compute_tagged_flow_dep(scop);
 	else
 		compute_flow_dep(scop);
-
+	
 	may_source = isl_union_map_union(isl_union_map_copy(scop->may_writes),
 					isl_union_map_copy(scop->reads));
 	access = isl_union_access_info_from_sink(
 				isl_union_map_copy(scop->may_writes));
 	access = isl_union_access_info_set_kill(access,
 				isl_union_map_copy(scop->must_writes));
+	//access = isl_union_access_info_set_kill(access,
+	//				isl_union_map_union(isl_union_map_copy(scop->must_writes), 
+	//				                    isl_union_map_copy(scop->must_kills)));
 	access = isl_union_access_info_set_may_source(access, may_source);
 	access = isl_union_access_info_set_schedule(access,
 				isl_schedule_copy(scop->schedule));
@@ -1487,6 +1494,8 @@ int autosa_main_wrap(int argc, char **argv)
 	  r = generate_autosa_xilinx_hls_c(ctx, options->ppcg, options->input);
 	else if (options->ppcg->target == AUTOSA_TARGET_INTEL_OPENCL)
 	  r = generate_autosa_intel_opencl(ctx, options->ppcg, options->input);
+	else if (options->ppcg->target == AUTOSA_TARGET_CATAPULT_HLS_C)
+		r = generate_autosa_catapult_hls_c(ctx, options->ppcg, options->input);
 //	else if (options->ppcg->target == AUTOSA_TARGET_T2S)
 //	  r = generate_autosa_t2s(ctx, options->ppcg, options->input, 
 //				options->output); // TODO: To fix

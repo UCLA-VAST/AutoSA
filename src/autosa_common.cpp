@@ -124,6 +124,12 @@ struct autosa_kernel *autosa_kernel_copy(struct autosa_kernel *kernel)
   kernel_dup->host_domain = isl_set_copy(kernel->host_domain);
   kernel_dup->domain = isl_union_set_copy(kernel->domain);
   kernel_dup->single_statement = kernel->single_statement;
+  kernel_dup->sparse = kernel->sparse;
+  kernel_dup->vec_len = kernel->vec_len;
+  kernel_dup->n_nzero = kernel->n_nzero;
+  kernel_dup->compress_ratio = kernel->compress_ratio;
+  kernel_dup->n_meta_data = kernel->n_meta_data;
+  kernel_dup->eff_compress_ratio = kernel->eff_compress_ratio;
 
   return kernel_dup;
 }
@@ -171,6 +177,12 @@ struct autosa_kernel *autosa_kernel_from_schedule(__isl_take isl_schedule *sched
   kernel->host_domain = NULL;
   kernel->domain = NULL;
   kernel->single_statement = 0;
+  kernel->sparse = 0;
+  kernel->vec_len = 0;
+  kernel->n_nzero = 0;
+  kernel->compress_ratio = 0;
+  kernel->n_meta_data = 0;
+  kernel->eff_compress_ratio = 0;
 
   return kernel;
 }
@@ -225,6 +237,12 @@ struct autosa_kernel *autosa_kernel_alloc(isl_ctx *ctx, struct ppcg_scop *scop)
   kernel->host_domain = NULL;
   kernel->domain = NULL;
   kernel->single_statement = 0;  
+  kernel->sparse = 0;
+  kernel->vec_len = 0;
+  kernel->n_nzero = 0;
+  kernel->compress_ratio = 0;
+  kernel->n_meta_data = 0;
+  kernel->eff_compress_ratio = 0;
 
   return kernel;
 }
@@ -395,6 +413,19 @@ void *autosa_acc_free(struct autosa_acc *acc)
   free(acc);
 
   return NULL;
+}
+
+struct autosa_io_buffer *autosa_io_buffer_alloc()
+{
+  struct autosa_io_buffer *io_buffer = (struct autosa_io_buffer *)malloc(sizeof(struct autosa_io_buffer));
+  io_buffer->tile = NULL;
+  io_buffer->level = -1;
+  io_buffer->n_lane = -1;
+  io_buffer->serialize = -1;
+  io_buffer->sparse = -1;
+  io_buffer->vec_len = -1;  
+
+  return io_buffer;
 }
 
 /****************************************************************
@@ -656,7 +687,8 @@ static isl_stat extract_array_info(struct autosa_prog *prog,
   if (!bounds)
     return isl_stat_error;
   if (!isl_multi_pw_aff_is_cst(bounds))
-    info->linearize = 1;
+    info->linearize = prog->scop->options->linearize_device_arrays;
+    //info->linearize = 1;
   info->bound = bounds;
 
   if (collect_references(prog, info) < 0)
@@ -1533,6 +1565,24 @@ struct autosa_hw_module *autosa_hw_module_alloc(struct autosa_gen *gen)
   module->coalesce_bound = -1;
   module->is_serialized = 0;
   module->use_FF = 0;
+  module->in = -1;
+  module->pipeline_at_default_func = 0;
+  module->pipeline_at_filter_func[0] = 0;
+  module->pipeline_at_filter_func[1] = 0;
+  module->pipeline_at_filter_func[2] = 0;
+
+  module->n_fifo_serialize = 0;
+  module->fifo_bounds_serialize = NULL;
+  module->fifo_names_serialize = NULL;
+  module->n_fifo_default = 0;
+  module->fifo_names_default = NULL;
+  module->fifo_bounds_default = NULL;
+  module->n_fifo_inter = 0;
+  module->fifo_names_inter = NULL;
+  module->fifo_bounds_inter = NULL;
+  module->n_fifo_intra = 0;
+  module->fifo_names_intra = NULL;
+  module->fifo_bounds_intra = NULL;
 
   return module;
 }
@@ -1570,6 +1620,39 @@ void *autosa_hw_module_free(struct autosa_hw_module *module)
     autosa_pe_dummy_module_free(module->pe_dummy_modules[i]);
   }
   free(module->pe_dummy_modules);
+
+  if (module->n_fifo_serialize > 0) {
+    for (int i = 0; i < module->n_fifo_serialize; i++) {
+      free(module->fifo_names_serialize[i]);
+      isl_pw_qpolynomial_free(module->fifo_bounds_serialize[i]);
+    }
+    free(module->fifo_bounds_serialize);
+    free(module->fifo_names_serialize);
+  }
+  if (module->n_fifo_default > 0) {
+    for (int i = 0; i < module->n_fifo_default; i++) {
+      free(module->fifo_names_default[i]);
+      isl_pw_qpolynomial_free(module->fifo_bounds_default[i]);
+    }
+    free(module->fifo_bounds_default);
+    free(module->fifo_names_default);
+  }
+  if (module->n_fifo_inter > 0) {
+    for (int i = 0; i < module->n_fifo_inter; i++) {
+      free(module->fifo_names_inter[i]);
+      isl_pw_qpolynomial_free(module->fifo_bounds_inter[i]);
+    }
+    free(module->fifo_bounds_inter);
+    free(module->fifo_names_inter);
+  }
+  if (module->n_fifo_intra > 0) {
+    for (int i = 0; i < module->n_fifo_intra; i++) {
+      free(module->fifo_names_intra[i]);
+      isl_pw_qpolynomial_free(module->fifo_bounds_intra[i]);
+    }
+    free(module->fifo_bounds_intra);
+    free(module->fifo_names_intra);
+  }
 
   free(module);
 
@@ -1741,7 +1824,16 @@ struct autosa_ast_node_userinfo *alloc_ast_node_userinfo()
   info->is_outermost_for = 0;
   info->is_infinitize_legal = 0;
   info->is_first_infinitizable_loop = 0;  
+  info->is_dep_free = 0;
+  info->n_coalesce_loop = 0;
   info->visited = 0;
+
+  info->is_guard_start = 0;
+  info->is_guard_end = 0;
+  info->n_fifo = 0;
+  info->fifo_names = NULL;
+  info->bounds = NULL;
+  info->module_name = NULL;
 
   return info;
 }
@@ -1749,6 +1841,17 @@ struct autosa_ast_node_userinfo *alloc_ast_node_userinfo()
 void free_ast_node_userinfo(void *ptr)
 {
   struct autosa_ast_node_userinfo *info = (struct autosa_ast_node_userinfo *)ptr;
+  //if (info->n_fifo > 0) {
+  //  for (int i = 0; i < info->n_fifo; i++) {
+  //    free(info->fifo_names[i]);
+  //    isl_pw_qpolynomial_free(info->bounds[i]);
+  //  }   
+  //  free(info->fifo_names);
+  //  free(info->bounds);
+  //}
+  //if (info->module_name)
+  //  free(info->module_name);
+
   free(info);
 }
 
@@ -1971,6 +2074,24 @@ error:
   return NULL;
 }
 
+int read_mem_port_map(__isl_keep isl_union_map *port_map, char *name)
+{
+  isl_set *size;
+  int port;
+
+  size = extract_sa_sizes(port_map, name);
+  if (isl_set_dim(size, isl_dim_set) != 1) {
+    isl_set_free(size);
+    return -1;
+  }
+  if (read_sa_sizes_from_set(size, &port, 1) < 0)
+    goto error;
+  
+  return port;
+error:
+  return -1;
+}
+
 int *read_default_hbm_tile_sizes(struct autosa_kernel *sa, int tile_len)
 {
   int n;
@@ -1983,6 +2104,27 @@ int *read_default_hbm_tile_sizes(struct autosa_kernel *sa, int tile_len)
     tile_size[n] = sa->scop->options->autosa->n_hbm_port;
 
   return tile_size;
+}
+
+/* Extract user specified data pack sizes for array "name".
+ */
+int *read_data_pack_sizes_array(__isl_keep isl_union_map *sizes, char *name)
+{
+  isl_set *size;
+  int *data_pack_sizes;
+
+  data_pack_sizes = (int *)malloc(3 * sizeof(int));
+  size = extract_sa_sizes(sizes, name);
+  if (isl_set_dim(size, isl_dim_set) != 3) {
+    isl_set_free(size);
+    return NULL;
+  }
+  if (read_sa_sizes_from_set(size, data_pack_sizes, 3) < 0)
+    goto error;
+
+  return data_pack_sizes;
+error:
+  return NULL;
 }
 
 /* Extract user specified data pack sizes from the "data_pack_sizes" command line
@@ -2511,7 +2653,7 @@ static char *extract_loop_info_from_module(
   char *json_str = NULL;
 
   cJSON_AddStringToObject(loop_struct, "module_name", module_name);
-  cJSON_AddNumberToObject(module_props, "double_buffer", double_buffer);
+  cJSON_AddNumberToObject(module_props, "double_buffer", double_buffer);  
   cJSON_AddNumberToObject(module_props, "in", in);
   cJSON_AddItemToObject(loop_struct, "module_prop", module_props);
   
@@ -2587,12 +2729,6 @@ isl_stat sa_extract_loop_info(struct autosa_gen *gen, struct autosa_hw_module *m
   }
 
   /* Parse the loop structure of the default module */
-//#ifdef _DEBUG
-//  if (!module->device_tree) {
-//    printf("non tree module_name: %s\n", module->name);
-//    exit(0);
-//  }
-//#endif
   json_str = extract_loop_info_from_module(gen, module->device_tree, module->name, module->double_buffer, module->in, 1);
 
   /* Parse the loop structure of the boundary module */
@@ -3054,4 +3190,111 @@ isl_stat sa_extract_design_info(struct autosa_gen *gen)
   free(json_str);
 
   return isl_stat_ok;
+}
+
+/* The sparse info is provided in the format of 
+ * kernel[]->block_sparse[n_non_zero_num, vec_len]
+ * Extract these information and compute the extra meta information.
+ */
+isl_stat autosa_kernel_extract_sparse_info(struct autosa_kernel *kernel, 
+  struct autosa_gen *gen)
+{
+  isl_union_map *sparse_info;
+  isl_set *size;
+  int *ratios;
+  int array_size;
+
+  ratios = isl_alloc_array(kernel->ctx, int, 2);
+  if (!ratios) {
+    return isl_stat_error;
+  }
+
+  sparse_info = extract_sizes_from_str(kernel->ctx, gen->options->autosa->block_sparse_ratio);
+  for (int i = 0; i < kernel->n_array; i++) {
+    struct autosa_local_array_info *local_array = &kernel->array[i];
+    isl_set *tmp_size;
+    //printf("%s\n", local_array->array->name);
+    tmp_size = extract_sa_sizes(sparse_info, local_array->array->name);
+    if (tmp_size) {
+      local_array->is_sparse = 1;
+      size = tmp_size;
+      //DBGSET(stdout, size, gen->ctx);
+      //printf("%s\n", local_array->array->name);
+    } else {
+      isl_set_free(tmp_size);
+    }
+  }
+  isl_union_map_free(sparse_info);
+
+//#ifdef _DEBUG
+//  DBGSET(stdout, size, gen->ctx);
+//#endif
+
+  if (isl_set_dim(size, isl_dim_set) < 2) {
+    isl_set_free(size);
+    free(ratios);    
+    return isl_stat_error;
+  }
+
+  if (read_sa_sizes_from_set(size, ratios, 2) < 0) 
+    goto error;
+
+//#ifdef _DEBUG
+//  DBGUMAP(stdout, sparse_info, gen->ctx);  
+//#endif
+  //printf("%d %d\n", ratios[0], ratios[1]);
+
+  kernel->sparse = 1;
+  kernel->vec_len = ratios[1];
+  kernel->n_nzero = ratios[0];
+  free(ratios);  
+  kernel->compress_ratio = (float)kernel->vec_len / kernel->n_nzero;
+  /* Get the data type, we assume that all arrays are in the same precisions. */
+  array_size = -1; // in bytes
+  for (int i = 0; i < kernel->n_array; i++) {
+    struct autosa_local_array_info *local_array = &kernel->array[i];
+    if (array_size == -1)
+      array_size = local_array->array->size;
+    else {
+      if (array_size != local_array->array->size) {
+        throw std::runtime_error("[AutoSA] Error: Arrays with different data types are not supported for the block sparsity.");
+      }
+    }
+  }
+  /* Currently we only support vec_len no greater than 8. */
+  if (kernel->vec_len > 8) {
+    throw std::runtime_error("[AutoSA] Error: Block size greater than 8 is not supported for the block sparsity.");
+  }
+
+  /* For Xilinx HLS, data needs to be aligned with 32/64/128/256/512-bit boundary. */
+  if (array_size * kernel->n_nzero * 8 + 8 <= 32) {
+    kernel->n_meta_data = (32 / 8 - array_size * kernel->n_nzero) / array_size;
+  } else if (array_size * kernel->n_nzero * 8 + 8 <= 64) {
+    kernel->n_meta_data = (64 / 8 - array_size * kernel->n_nzero) / array_size;
+  } else if (array_size * kernel->n_nzero * 8 + 8 <= 128) {
+    kernel->n_meta_data = (128 / 8 - array_size * kernel->n_nzero) / array_size;
+  } else if (array_size * kernel->n_nzero * 8 + 8 <= 256) {
+    kernel->n_meta_data = (256 / 8 - array_size * kernel->n_nzero) / array_size;
+  } else if (array_size * kernel->n_nzero * 8 + 8 <= 512) {
+    kernel->n_meta_data = (512 / 8 - array_size * kernel->n_nzero) / array_size;
+  } else {
+    throw std::runtime_error("[AutoSA] Error: The requested aligned sparse data is longer than 512-bit.");
+  }
+  kernel->eff_compress_ratio = (float)kernel->vec_len / (kernel->n_nzero + kernel->n_meta_data);    
+  /* Update the local array */
+  for (int i = 0; i < kernel->n_array; i++) {
+    struct autosa_local_array_info *local_array = &kernel->array[i];
+    if (local_array->is_sparse) {
+      local_array->vec_len = kernel->vec_len;
+      local_array->n_nzero = kernel->n_nzero;
+      local_array->compress_ratio = kernel->compress_ratio;
+      local_array->n_meta_data = kernel->n_meta_data;
+      local_array->eff_compress_ratio = kernel->eff_compress_ratio;
+    }
+  }
+
+  return isl_stat_ok;
+error:    
+  free(ratios);
+  return isl_stat_error;
 }

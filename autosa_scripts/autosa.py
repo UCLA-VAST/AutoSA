@@ -17,6 +17,7 @@ if __name__ == "__main__":
     xilinx_host = 'opencl'
     tuning = False
     isl_flag = '--isl-schedule-whole-component' # This flag forces ISL to perform loop fusion as much as possible
+    hcl = False
 
     # Parse and update the arguments
     n_arg = len(sys.argv)
@@ -43,6 +44,8 @@ if __name__ == "__main__":
         for arg in argv:
             if '--hls' in arg:
                 xilinx_host = 'hls'
+            if '--hcl' in arg:
+                hcl = True
     if tuning:
         del argv[tuning_idx]
     if insert_isl_flag:
@@ -92,14 +95,23 @@ if __name__ == "__main__":
                   '/src/top.cpp -d ' + output_dir + '/src/' + src_file_prefix + \
                   '_kernel_modules.cpp -t ' + target + ' -o ' + output_dir + '/src/' + \
                   src_file_prefix + '_kernel.cpp'
+            if hcl:
+                cmd += ' --hcl'
         elif target == 'autosa_opencl':
             cmd = './autosa_scripts/codegen.py -c ' + output_dir + \
                   '/src/top.cpp -d ' + output_dir + '/src/' + src_file_prefix + \
                   '_kernel_modules.cl -t ' + target + ' -o ' + output_dir + '/src/' + \
                   src_file_prefix + '_kernel.cl'
+        elif target == 'autosa_catapult_c':
+            cmd = './autosa_scripts/codegen.py -c ' + output_dir + \
+                  '/src/top.cpp -d ' + output_dir + '/src/' + src_file_prefix + \
+                  '_kernel_modules.cpp -t ' + target + ' -o ' + output_dir + '/src/' + \
+                  src_file_prefix + '_kernel_hw.h' + ' --tb ' + output_dir + '/src/' + \
+                  src_file_prefix + '_host.cpp'
         if target == 'autosa_hls_c':
             cmd += ' --host '
             cmd += xilinx_host
+                    
         exec_sys_cmd(cmd)            
 
         # Copy the input code to the output directory           
@@ -117,7 +129,7 @@ if __name__ == "__main__":
         exec_sys_cmd(f'rm {output_dir}/src/top.cpp')
         exec_sys_cmd(f'rm {output_dir}/src/{src_file_prefix}_top_gen.cpp')    
         exec_sys_cmd(f'rm {output_dir}/src/{src_file_prefix}_top_gen.h')    
-        if target == 'autosa_hls_c':
+        if target == 'autosa_hls_c' or target == 'autosa_catapult_c':
             exec_sys_cmd(f'rm {output_dir}/src/{src_file_prefix}_kernel_modules.cpp')
         elif target == 'autosa_opencl':
-            exec_sys_cmd(f'rm {output_dir}/src/{src_file_prefix}_kernel_modules.cl')    
+            exec_sys_cmd(f'rm {output_dir}/src/{src_file_prefix}_kernel_modules.cl')        

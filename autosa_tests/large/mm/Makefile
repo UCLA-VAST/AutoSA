@@ -18,7 +18,7 @@ EMCONFIG_FILE := emconfig.json
 # Linker options to map kernel ports to DDR banks
 VPP_LINK_OPTS := --config connectivity.cfg
 
-VPP_COMMON_OPTS := -s -t $(MODE) --platform $(PLATFORM) -R2 -O3 --kernel_frequency 250 --vivado.prop=run.impl_1.STRATEGY=Performance_EarlyBlockPlacement
+VPP_COMMON_OPTS := -s -t $(MODE) --platform $(PLATFORM) -R2 -O3 --kernel_frequency 300 --vivado.prop=run.impl_1.STRATEGY=Performance_EarlyBlockPlacement
 CFLAGS := -g -std=c++11 -I$(XILINX_XRT)/include
 LFLAGS := -L$(XILINX_XRT)/lib -lxilinxopencl -lpthread -lrt
 NUMDEVICES := 1

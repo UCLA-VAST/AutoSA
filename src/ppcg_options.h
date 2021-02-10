@@ -43,6 +43,8 @@ extern "C"
 		int use_local_memory;
 		/* Maximal amount of local memory. */
 		int max_local_memory;
+		/* Memory port mapping (for Intel OpenCL). */
+		char *mem_port_map;
 		/* Enable data pack for transferring data. */
 		int data_pack;
 		/* Data pack factors at different I/O levels. */
@@ -92,7 +94,13 @@ extern "C"
 		int fifo_depth;
 		/* Touch space loops in the SIMD vectorization */
 		int simd_touch_space;
-	};
+		/* Use block sparsity */
+		int block_sparse;
+		/* Block sparse ratio [nonzero, vec_len] */
+		char* block_sparse_ratio;
+		/* Generate code for HeteroCL integration. */
+		int hcl;
+	};	
 
 	struct ppcg_options
 	{
@@ -174,6 +182,7 @@ extern "C"
 
 	ISL_ARG_DECL(ppcg_debug_options, struct ppcg_debug_options,
 				 ppcg_debug_options_args)
+	ISL_ARG_DECL(autosa_options, struct autosa_options, autosa_options_args)
 	ISL_ARG_DECL(ppcg_options, struct ppcg_options, ppcg_options_args)
 
 #define PPCG_TARGET_C 0
@@ -183,6 +192,7 @@ extern "C"
 #define AUTOSA_TARGET_INTEL_OPENCL 4
 #define AUTOSA_TARGET_T2S 5
 #define AUTOSA_TARGET_C 6
+#define AUTOSA_TARGET_CATAPULT_HLS_C 7
 
 #define AUTOSA_SA_TYPE_SYNC 0
 #define AUTOSA_SA_TYPE_ASYNC 1

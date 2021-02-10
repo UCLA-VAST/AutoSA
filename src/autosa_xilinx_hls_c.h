@@ -10,7 +10,7 @@ extern "C"
 {
 #endif
 
-	int generate_autosa_xilinx_hls_c(isl_ctx *ctx, struct ppcg_options *options,
+int generate_autosa_xilinx_hls_c(isl_ctx *ctx, struct ppcg_options *options,
 																	 const char *input);
 
 #ifdef __cplusplus

@@ -1920,6 +1920,12 @@ static __isl_give isl_schedule_constraints *construct_schedule_constraints(
   }
   else
   {
+//#ifdef _DEBUG
+//    std::cout << "FLOW DEPs" << std::endl;
+//    DBGUMAP(stdout, prog->scop->dep_flow, isl_union_map_get_ctx(prog->scop->dep_flow));    
+//    std::cout << "FALSE DEPs" << std::endl;
+//    DBGUMAP(stdout, prog->scop->dep_false, isl_union_map_get_ctx(prog->scop->dep_false));
+//#endif
     dep_raw = isl_union_map_copy(prog->scop->dep_flow);
     dep = isl_union_map_copy(prog->scop->dep_false);
     dep = isl_union_map_union(dep, dep_raw);
@@ -2208,6 +2214,9 @@ __isl_give isl_schedule *merge_outer_bands(__isl_take isl_schedule *schedule, st
 
   node = isl_schedule_node_child(node, 0); // points to the first band band
   while (isl_schedule_node_get_type(node) == isl_schedule_node_band) {
+//#ifdef _DEBUG
+//    std::cout << isl_schedule_node_band_member_get_coincident(node, 0) << std::endl;
+//#endif
     /* Examine if all dependence distances at this band are non-negative */    
     isl_bool nneg = is_dep_non_neg_at_node(node, sc);
     if (nneg) {

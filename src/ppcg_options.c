@@ -18,6 +18,7 @@ static struct isl_arg_choice target[] = {
 	{"autosa_hls_c", AUTOSA_TARGET_XILINX_HLS_C},
 	{"autosa_opencl", AUTOSA_TARGET_INTEL_OPENCL},
 	{"autosa_t2s", AUTOSA_TARGET_T2S},
+	{"autosa_catapult_c", AUTOSA_TARGET_CATAPULT_HLS_C},
 	{0}};
 
 static struct isl_arg_choice sa_type[] = {
@@ -85,82 +86,89 @@ ISL_ARGS_END
 
 ISL_ARGS_START(struct autosa_options, autosa_options_args)
 ISL_ARG_BOOL(struct autosa_options, autosa, 0, "autosa", 1,
-			 "generate systolic arrays using AutoSA")
+				"generate systolic arrays using AutoSA")
+ISL_ARG_BOOL(struct autosa_options, block_sparse, 0, "block-sparse", 0,
+				"use block sparsity")
+ISL_ARG_STR(struct autosa_options, block_sparse_ratio, 0, "block-sparse-ratio", "ratio",
+				NULL, "block sparsity ratio (e.g., kernel[]->A[2,4])")
 ISL_ARG_STR(struct autosa_options, config, 0, "config", "config", NULL,
-			"AutoSA configuration file")
+				"AutoSA configuration file")
 ISL_ARG_BOOL(struct autosa_options, credit_control, 0, "credit-control", 0,
-			 "enable credit control between different array partitions")
+			 	"enable credit control between different array partitions")
 ISL_ARG_BOOL(struct autosa_options, data_pack, 0, "data-pack", 1,
-			 "enable data packing for data transfer")
+			 	"enable data packing")
 ISL_ARG_STR(struct autosa_options, data_pack_sizes, 0, "data-pack-sizes", "sizes",
-			NULL, "data pack sizes upper bound at innermost, in-between, outermost I/O level. [default: 8 32 64]")
+				NULL, "data pack sizes upper bound (bytes) at innermost, intermediate, outermost I/O level [default: kernel[]->data_pack[8,32,64]]")
 ISL_ARG_BOOL(struct autosa_options, double_buffer, 0, "double-buffer", 1,
-			 "enable double-buffering for data transfer")
+			 	"enable double-buffering for data transfer")
 ISL_ARG_INT(struct autosa_options, double_buffer_style, 0, "double-buffer-style", "id", 1,
-			"change double-buffering logic coding style. 0: while loop 1: for loop")
+				"change double-buffering logic coding style (0: while loop 1: for loop)")
 ISL_ARG_INT(struct autosa_options, fifo_depth, 0, "fifo-depth", "depth", 2, "default FIFO depth")
 ISL_ARG_BOOL(struct autosa_options, hbm, 0, "hbm", 0,
-			 "use multi-port DRAM/HBM")
+			 	"use multi-port DRAM/HBM")
 ISL_ARG_INT(struct autosa_options, n_hbm_port, 0, "hbm-port-num", "num", 2,
-			"default HBM port number")
+				"default HBM port number per array")
 ISL_ARG_BOOL(struct autosa_options, hls, 0, "hls", 0,
-			 "generate Xilinx HLS host")
+			 	"generate Xilinx HLS host")
 ISL_ARG_BOOL(struct autosa_options, host_serialize, 0, "host-serialize", 0,
-			 "serialize/deserialize the host data")
+			 	"serialize/deserialize the host data")
 ISL_ARG_BOOL(struct autosa_options, insert_hls_dependence, 0, "insert-hls-dependence", 0,
-			 "insert Xilinx HLS dependence pragma (alpha version)")
+			 	"insert Xilinx HLS dependence pragma (alpha version)")
 ISL_ARG_INT(struct autosa_options, int_io_dir, 0, "int-io-dir", "dir", 0,
-			 "set the default interior I/O direction. 0: [1,x] 1: [x,1]")
+			 	"set the default interior I/O direction (0: [1,x] 1: [x,1])")
 ISL_ARG_BOOL(struct autosa_options, io_module_embedding, 0, "io-module-embedding", 0,
-			 "embed the I/O modules inside PEs if possible")
+			 	"embed the I/O modules inside PEs if possible")
 ISL_ARG_BOOL(struct autosa_options, loop_infinitize, 0, "loop-infinitize", 0,
-			 "apply loop infinitization optimization (Intel OpenCL only)")
+			 	"apply loop infinitization optimization (Intel OpenCL only)")
 ISL_ARG_BOOL(struct autosa_options, local_reduce, 0, "local-reduce", 0,
-			 "generate non-output-stationary array with local reduction")
+			 	"generate non-output-stationary array with local reduction")
 ISL_ARG_STR(struct autosa_options, reduce_op, 0, "reduce-op", "op",
-			NULL, "reduction operator (must be used with local-reduce together)")			 
+				NULL, "reduction operator (must be used with local-reduce together)")			 
 ISL_ARG_BOOL(struct autosa_options, lower_int_io_L1_buffer, 0, "lower-int-io-L1-buffer", 0,
-			 "lower the L1 buffer for interior I/O modules")
+			 	"lower the L1 buffer for interior I/O modules")
 ISL_ARG_INT(struct autosa_options, max_local_memory, 0,
-			"max-local-memory", "size", 8192, "maximal amount of local memory")
+				"max-local-memory", "size", 8192, "maximal amount of local memory")
 ISL_ARG_INT(struct autosa_options, max_sa_dim, 0,
-			"max-sa-dim", "dim", 2, "maximal systolic array dimension")			 
+				"max-sa-dim", "dim", 2, "maximal systolic array dimension")			 
+ISL_ARG_STR(struct autosa_options, mem_port_map, 0, "mem-port-map", "map", NULL,
+				"memory port mapping")
 ISL_ARG_BOOL(struct autosa_options, non_block_fifo, 0, "non-blocking-fifo", 0,
-			 "use non-blocking fifo interface")
+			 	"use non-blocking fifo interface")
 ISL_ARG_STR(struct autosa_options, output_dir, 0, "output-dir", "dir", "./autosa.tmp/output",
-			"AutoSA Output directory")
+				"AutoSA Output directory")
 ISL_ARG_STR(struct autosa_options, sa_sizes, 0, "sa-sizes", "sizes", NULL,
-			"per kernel PE optimization tile sizes")
+				"per kernel PE optimization tile sizes")
 ISL_ARG_INT(struct autosa_options, sa_tile_size, 0, "sa-tile-size", "size", 4,
-			"default tile size in PE optmization")
+				"default tile size in PE optmization")
 ISL_ARG_USER_OPT_CHOICE(struct autosa_options, sa_type, 0, "sa-type", sa_type,
-						NULL, AUTOSA_SA_TYPE_ASYNC, AUTOSA_SA_TYPE_ASYNC,
-						"systolic array type")
+				NULL, AUTOSA_SA_TYPE_ASYNC, AUTOSA_SA_TYPE_ASYNC, "systolic array type")
 ISL_ARG_STR(struct autosa_options, simd_info, 0, "simd-info", "info", NULL,
-			"per kernel SIMD information")
+				"per kernel SIMD information")
 ISL_ARG_BOOL(struct autosa_options, simd_touch_space, 0, "simd-touch-space", 0,
-			"use space loops as SIMD vectorization loops")
+				"use space loops as SIMD vectorization loops")
 ISL_ARG_BOOL(struct autosa_options, two_level_buffer, 0, "two-level-buffer", 0,
-			 "enable two-level buffering in I/O modules")
+			 	"enable two-level buffering in I/O modules")
 ISL_ARG_BOOL(struct autosa_options, t2s_tile, 0, "t2s-tile", 0,
-			 "generate T2S code from tiled code")
+			 	"generate T2S code from tiled code")
 ISL_ARG_INT(struct autosa_options, t2s_tile_phase, 0,
-			"t2s-tile-phase", "phase", 0, "T2S tiled URE codegen phase")
+				"t2s-tile-phase", "phase", 0, "T2S tiled URE codegen phase")
 ISL_ARG_BOOL(struct autosa_options, uram, 0, "uram", 0,
-			 "use Xilinx FPGA URAM")
+			 	"use Xilinx FPGA URAM")
 ISL_ARG_BOOL(struct autosa_options, use_local_memory, 0, "local-memory", 1,
-			 "use local memory in kernel code")
+			 	"use local memory in kernel code")
 ISL_ARG_BOOL(struct autosa_options, use_cplusplus_template, 0, "use-cplusplus-template", 0,
-			 "use C++ template in codegen (necessary for irregular PEs)")			 
+			 	"use C++ template in codegen (necessary for irregular PEs)")			 
 ISL_ARG_BOOL(struct autosa_options, verbose, 'v', "verbose", 0,
-			 "print verbose compilation information")
+			 	"print verbose compilation information")
+ISL_ARG_BOOL(struct autosa_options, hcl, 0, "hcl", 0,
+			 	"generate code for integrating with HeteroCL")			 
 ISL_ARGS_END
 
 ISL_ARGS_START(struct ppcg_options, ppcg_options_args)
 ISL_ARG_CHILD(struct ppcg_options, isl, "isl", &isl_options_args, "isl options")
 ISL_ARG_CHILD(struct ppcg_options, debug, NULL, &ppcg_debug_options_args,
 			  "debugging options")
-ISL_ARG_CHILD(struct ppcg_options, autosa, "AutoSA", &autosa_options_args,
+ISL_ARG_CHILD(struct ppcg_options, autosa, "autosa", &autosa_options_args,
 			  "AutoSA options")
 ISL_ARG_BOOL(struct ppcg_options, group_chains, 0, "group-chains", 1,
 			 "group chains of interdependent statements that are executed "
@@ -200,7 +208,7 @@ ISL_ARG_BOOL(struct ppcg_options, allow_gnu_extensions, 0,
 			 "allow-gnu-extensions", 1,
 			 "allow the use of GNU extensions in generated code")
 ISL_ARG_BOOL(struct ppcg_options, live_range_reordering, 0,
-			 "live-range-reordering", 1,
+			 "live-range-reordering", 0,
 			 "allow successive live ranges on the same memory element "
 			 "to be reordered")
 ISL_ARG_BOOL(struct ppcg_options, hybrid, 0, "hybrid", 0,
