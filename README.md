@@ -113,9 +113,9 @@ Besides, we gratefully acknowledge the authors of [PPCG](https://github.com/Mein
 ## Papers
 More implementation details of AutoSA are covered in [our paper](https://github.com/Meinersbur/ppcg). If you find this project useful in your research, please consider citing:
 
-@inproceedings{wang2021autosa,
-  title={AutoSA: A Polyhedral Compiler for High-Performance Systolic Arrays on FPGA},
-  author={Wang, Jie and Guo, Licheng and Cong, Jason},
-  booktitle={Proceedings of the 2021 ACM/SIGDA international symposium on Field-programmable gate arrays},
-  year={2021}
-}
+    @inproceedings{wang2021autosa,
+      title={AutoSA: A Polyhedral Compiler for High-Performance Systolic Arrays on     FPGA},
+      author={Wang, Jie and Guo, Licheng and Cong, Jason},
+      booktitle={Proceedings of the 2021 ACM/SIGDA international symposium on     Field-programmable gate arrays},
+      year={2021}
+    }
