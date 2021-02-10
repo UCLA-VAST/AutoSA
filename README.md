@@ -6,7 +6,7 @@
 
 # AutoSA: Polyhedral-Based Systolic Array Auto-Compilation
 
-This repository includes the code for AutoSA. **AutoSA** is an end-to-end systolic array compiler based on the polyhedral model. It takes algorithms in high-level programming languages (C) as inputs, performs polyhedral transformation and other architecture optimizations to map algorithms to systolic array architecture. The generated designs are in HLS C.
+This repository includes the code for AutoSA. AutoSA is an end-to-end systolic array compiler based on the polyhedral model. It takes algorithms in high-level programming languages (C) as inputs, performs polyhedral transformation and other architecture optimizations to map algorithms to systolic array architecture. The generated designs are in HLS C.
 
 [Documentation]() |
 [Installation]() |
@@ -114,8 +114,8 @@ Besides, we gratefully acknowledge the authors of [PPCG](https://github.com/Mein
 More implementation details of AutoSA are covered in [our paper](https://github.com/Meinersbur/ppcg). If you find this project useful in your research, please consider citing:
 
     @inproceedings{wang2021autosa,
-      title={AutoSA: A Polyhedral Compiler for High-Performance Systolic Arrays on     FPGA},
+      title={AutoSA: A Polyhedral Compiler for High-Performance Systolic Arrays on FPGA},
       author={Wang, Jie and Guo, Licheng and Cong, Jason},
-      booktitle={Proceedings of the 2021 ACM/SIGDA international symposium on     Field-programmable gate arrays},
+      booktitle={Proceedings of the 2021 ACM/SIGDA International Symposium on Field-Programmable Gate Arrays},
       year={2021}
     }
