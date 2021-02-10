@@ -40,9 +40,9 @@ You may notice here that we didn't use SIMD vectorization. The reason is that by
 However, with the default layout `A[i][k]`, `B[k][j]`, and `C[i][j]`, as k is not the last-varying dimension of matrix B, it can't be used for vectorization.
 
 To enable vectorization, we could enable AutoSA to use space loops as candidates as well. In this example, loop j can be used for vectorization.
-Note that loop j is invariant to `A[i][k]` and leads to stride-one access for `B[k][j]`. However, before using this loop as vectorization loop, we have to 
+Note that loop j is invariant to `A[i][k]` and leads to stride-one access for `B[k][j]`. However, before using this loop as the vectorization loop, we have to 
 turn off the latency hiding optimization on loop j. The reason is that 
-one loop j is tiled for latency hiding before vectorization, the remaining tiling loop is no longer consecutive as it is now mapped to hyper tiles. And therefore, the array access `B[k][j]` is no longer coalesced under this loop and 
+the loop j is tiled for latency hiding before vectorization, the remaining tiled loop is no longer consecutive as it is now mapped to hyper tiles. And therefore, the array access `B[k][j]` is no longer coalesced under this loop and 
 SIMD vectorization opportunity is lost. 
 
 To make use of SIMD vectorization, use the following command.
@@ -123,7 +123,7 @@ Run the following command first.
 An unvectorized design is generated.
 Array accesses in the current layout are `A[k][i]`, `B[j][k]`, and `C[i][j]`. In this case, none of the loops can be used for vectorization.
 
-In conclusion, when matrix A and B are supplied to AutoSA with different layout, there are different rules to consider to enable full optimization (specifically, SIMD vectorization). We summarize these rules below.
+In conclusion, when matrix A and B are supplied to AutoSA with different layouts, there are different rules to consider to enable full optimization (specifically, SIMD vectorization). We summarize these rules below.
 
 | Layout |     Latency Hiding     |         SIMD        |  Compilation Flag  |
 |:------:|:----------------------:|:-------------------:|:------------------:|
@@ -162,9 +162,9 @@ Use the following command to compile the design.
 ```
 
 Now let's take a look at the generated code.
-At the top-level function `void autosa_func(A_t16 *A, B_t16 *B, C_t8 *C)`, we have array A be packed with 16 elements (512 bits), array B be packed with 16 elements (512 bits), and array C packed with 8 elements (256 bits). Although we have specified the maximal outermost packing factor to be 512 bits for each array, only array A and B achieved the maximal packing factor.
+At the top-level function `void autosa_func(A_t16 *A, B_t16 *B, C_t8 *C)`, we have array A packed with 16 elements (512 bits), array B packed with 16 elements (512 bits), and array C packed with 8 elements (256 bits). Although we have specified the maximal outermost packing factor to be 512 bits for each array, only array A and B achieved the maximal packing factor.
 
-For array `C[I][J]`, as we partitoned the whole systolic array with factors `[16,16,16]`, each time the systolic array computes a tile of `C[16][16]`. Furthermore, as this tile is partitioned to be computed in a `2x2` array, each PE generates a sub-tile of `C[8][8]`. Therefore, when draining out the results, we transfer out the data in the size of sub-tile `C[8][8]`. The maximal data packing factors that we can achieve is 8.
+For array `C[I][J]`, as we partitoned the whole systolic array with factors `[16,16,16]`, each time the systolic array computes a tile of `C[16][16]`. Furthermore, as this tile is partitioned to be computed in a `2x2` array, each PE generates a sub-tile of `C[8][8]`. Therefore, when draining out the results, we transfer out the data in the size of sub-tile `C[8][8]`. The maximal data packing factor that we can achieve is 8.
 
 If programmers hope to have a larger data packing factor for array C as well, there are two options to consider:
 
@@ -181,7 +181,7 @@ The command below shows an example of using a larger latency hiding factor to al
 
 You can check the generated the source code and find that we have successuflly packed all arrays to 16 elements each.
 
-Last thing to mention is that in the current flow we prioritize SIMD vectorization factors to user-specified data packing factors. In this example, as we specify the SIMD factor to be 8, array A and B will be packed with 8 elements at least. As an example, if running the following commmand which tries to restrain the data packing factors of A and B to 4 elements (16 bytes), AutoSA will ignore this constraint and pack A and B with 8 elements, only array C will be packed with 4 elements.
+The last thing to mention is that in the current flow we prioritize SIMD vectorization factors to user-specified data packing factors. In this example, as we specify the SIMD factor to be 8, array A and B will be packed with 8 elements at least. As an example, if running the following commmand which tries to restrain the data packing factors of A and B to 4 elements (16 bytes), AutoSA will ignore this constraint and pack A and B with 8 elements, only array C will be packed with 4 elements.
 
 ```bash
 ./autosa ./autosa_tests/mm_hcl/kernel.c --config=./autosa_config/autosa_config.json --target=autosa_hls_c --output-dir=./autosa.tmp/output --sa-sizes="{kernel[]->space_time[3];kernel[]->array_part[16,32,16];kernel[]->latency[8,16];kernel[]->simd[8]}" --simd-info=./autosa_tests/mm_hcl/simd_info.json --hls --hcl --data-pack-sizes="{kernel[]->A[8,16,16];kernel[]->B[8,16,16];kernel[]->C[8,16,16]}"

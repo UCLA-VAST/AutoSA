@@ -12,6 +12,7 @@ architectures and the compilation process of AutoSA.
     getting_started    
     matrix_multiplication
     auto_tuning
+    auto_bridge
     structural_sparsity    
     intel_backend
     catapult_backend

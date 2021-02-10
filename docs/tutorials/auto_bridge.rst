@@ -73,13 +73,25 @@ Run the following command to synthesize the design into bitstream.
 
 .. note::
 
-    As the example design is rather large, it takes approximately ... hours to finish the synthesis on our workstation.
+    As the example design is rather large, it takes approximately 40 hours to finish the synthesis on our workstation.
     
-After the synthesis is completed, you can check the design resource and frequency under the directory ...
+After the synthesis is completed, you can check the design resource and frequency.
 Below is the resource and frequency information we collected for this design.
 
-You could also test the generated design on board. Below is the performance results we collected for this design.
++-----+-----------------+------------------+--------------+---------------+
+| MHz | LUT             | REG              | BRAM         | DSP           |
++-----+-----------------+------------------+--------------+---------------+
+| 146 | 804517 (52.69%) | 1360681 (43.17%) | 953 (40.80%) | 8320 (67.78%) |
++-----+-----------------+------------------+--------------+---------------+
 
+You could also test the generated design on board. We have listed the performance of the design 
+in the table below.
+
++-----------------+---------------+---------+
+| Kernel Time (s) | Host Time (s) | GFLOPs  |
++-----------------+---------------+---------+
+| 0.00548694      | 0.0113009     | 397.496 |
++-----------------+---------------+---------+
 
 Step 1: Compiling the Design Using Vivado HLS
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -271,7 +283,7 @@ partitioned regions for both Xilinx Alveo U250 and U280 boards.
     :align: center
 
 As we can see from the figure, the on-chip logic is physically scattered by die boundaries, DDR/HBM controllers,
-non-programmable logic, and other peripheral IPs. AutoBridge partitioned the on-chip logic based on 
+non-programmable logic, and other peripheral IPs. AutoBridge partitions the on-chip logic based on 
 these modules. 
 The partitioned regions and indices are shown in the figure on the right.
 
@@ -298,15 +310,16 @@ As an example, we set the variable ``max_usage_ratio_2d`` as:
 
 .. code:: Python
 
-    max_usage_ratio_2d = [ [0.85, 0.6], [0.85, 0.6], [0.85, 0.85], [0.85, 0.6] ]
+    max_usage_ratio_2d = [ [0.8, 0.7], [0.85, 0.75], [0.85, 0.85], [0.85, 0.75] ]
 
-which means that at most of 85% of the logic of the left regions can be used. 
-As for the right regions, we set the region with DDR enabled as 60%, and the region with DDR disabled as 85%.
 Please feel free to adjust these ratios according to the resource usage of your design.
 Setting the upper bound of resource usage for each region helps guide AutoBridge to scatter 
 the logic across chip which helps improve the timing. AutoBridge might fail in the case where we 
 set the upper bounds lower than the required resource of the design. In that case, try to increase the 
 ratio until AutoBridge can successfully place the design.
+Besides, as AutoBridge uses the estimated resource from HLS reports which might 
+be inconsistant with the syntheized resource usage. You may need to re-adjust these values 
+if the design fails routing in the later stages.
 
 Until now, you have a modified AutoBridge script customized for our design.
 We also provide an example script at ``${AUTOSA_ROOT}/autosa_tests/large/mm/autobridge.py``.
@@ -321,11 +334,11 @@ Now, execute the Python script to run AutoBridge.
 
 After it finishes, you should see a folder named ``autobridge`` in the same directory.
 It contains the modified RTL code and the floorplanning constraint ``constraint.tcl``.
-The AutoBridge generated information is printed to ``autobridge.log``.
+The AutoBridge-generated information is printed to ``autobridge.log``.
 
 .. note:: 
 
-    If AutoBridge fails to schedule, modify the ``max_usage_ratio_2d`` accordingly to make sure 
+    If AutoBridge fails, modify the ``max_usage_ratio_2d`` accordingly to make sure 
     there is enough area allocated for the design.
 
 Step 3: Packing the Design
@@ -369,7 +382,7 @@ to
 
     We also provide an example TCL file ``pack_xo.tcl`` under the design example directory ``${AUTOSA_ROOT}/autosa_tests/large/mm/pack_xo.tcl``.
 
-Before running the TCL script, we will need to also copy the original HLS source files to the working directory.
+Before running the TCL script, we will need to copy the original HLS source files to the working directory.
 
 .. code:: bash
 
@@ -382,7 +395,7 @@ Now, run the TCL script.
     cd ${AUTOBRIDGE_ROOT}/reference-scripts/autobridge
     vivado_hls -f step3-pack-xo.tcl
 
-After Vivado HLS finished the packing process, you will find a file named ``kernel0.xo`` under the working directory.
+After Vivado HLS finishes the packing process, you will find a file named ``kernel0.xo`` under the working directory.
 
 Step 4: Synthesizing the Design
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -471,3 +484,18 @@ Results Comparsion
 We could now compare the designs unoptimized and optimized by AutoBridge.
 The table below shows the detailed comparison results.
 
++-------------+-----+-----------------+------------------+--------------+---------------+
+| Designs     | MHz | LUT             | REG              | BRAM         | DSP           |
++-------------+-----+-----------------+------------------+--------------+---------------+
+| Unoptimized | 146 | 804517 (52.69%) | 1360681 (43.17%) | 953 (40.80%) | 8320 (67.78%) |
++-------------+-----+-----------------+------------------+--------------+---------------+
+| Optimized   | 300 | 803752 (52.64%) | 1325480 (42.05%) | 952 (40.75%) | 8320 (67.78%) |
++-------------+-----+-----------------+------------------+--------------+---------------+
+
++-------------+-----------------+---------------+---------+
+| Designs     | Kernel Time (s) | Host Time (s) | GFLOPs  |
++-------------+-----------------+---------------+---------+
+| Unoptimized | 0.00548694      | 0.0113009     | 397.496 |
++-------------+-----------------+---------------+---------+
+| Optimized   | 0.0023194       | 0.0536697     | 940.346 |
++-------------+-----------------+---------------+---------+

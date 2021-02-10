@@ -58,6 +58,6 @@ v++ \
   --connectivity.sp ${TOP}_1.${ARG_FOR_DDR_1}:DDR[0] \
   --connectivity.sp ${TOP}_1.${ARG_FOR_DDR_2}:DDR[1] \
   --connectivity.sp ${TOP}_1.${ARG_FOR_DDR_4}:DDR[3] \
-  --kernel_frequency 330 \
+  --kernel_frequency 300 \
   --vivado.prop run.impl_1.STEPS.PLACE_DESIGN.ARGS.DIRECTIVE=$STRATEGY \
   --vivado.prop run.impl_1.STEPS.OPT_DESIGN.TCL.PRE=$CONSTRAINT
