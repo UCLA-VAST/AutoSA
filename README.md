@@ -4,12 +4,12 @@
 
 # AutoSA: Polyhedral-Based Systolic Array Auto-Compilation
 
-This repository includes the code for AutoSA. AutoSA is an end-to-end systolic array compiler based on the polyhedral model. It takes algorithms in high-level programming languages (C) as inputs, performs polyhedral transformation and other architecture optimizations to map algorithms to systolic array architecture. The generated designs are in HLS C.
+[Documentation](https://autosa.readthedocs.io/en/latest/) |
+[Installation](https://autosa.readthedocs.io/en/latest/installation.html) |
+[Tutorials](https://autosa.readthedocs.io/en/latest/tutorials/index.html) |
+[Examples](https://autosa.readthedocs.io/en/latest/examples/index.html)
 
-[Documentation]() |
-[Installation]() |
-[Tutorials]() |
-[Examples]()
+This repository includes the code for AutoSA. AutoSA is an end-to-end systolic array compiler based on the polyhedral model. It takes algorithms in high-level programming languages (C) as inputs, performs polyhedral transformation and other architecture optimizations to map algorithms to systolic array architecture. The generated designs are in HLS C.
 
 ## Quick Start
 We offer a Docker image for quick start.
@@ -17,18 +17,7 @@ We offer a Docker image for quick start.
 docker pull whbldhwj/autosa:latest
 ```
 
-Let's try one small example. The input code can be found at `${AUTOSA_ROOT}/autosa_tests/mm/kernel.c`. The code region to be transformed to systolic array 
-is annotated using a pair of pragmas.
-
-Insert a line containing 
-```c
-#pragma scop
-```
-before the fragment and add a line containing
-```c
-#pragma endscop
-```
-after the fragment.
+Let's try one small example. The input code can be found at `${AUTOSA_ROOT}/autosa_tests/mm/kernel.c`. The code region to be transformed to systolic array is annotated using a pair of pragmas `scop` and `endscop`.
 
 1. Generating HLS C Code.
 
@@ -47,7 +36,7 @@ For detailed explaination of each AutoSA compilation option, please run
 ```c
 ./autosa --help
 ```
-or refer to [AutoSA Documentation]().
+or refer to [AutoSA Compilation Options](https://autosa.readthedocs.io/en/latest/tutorials/getting_started.html#autosa-compilation-options).
 
 2. Generating FPGA Bitstream
 
@@ -94,7 +83,7 @@ cd ${AUTOSA_ROOT}/autosa.tmp/output
 vivado_hls -f hls_script.tcl
 ```
 
-For more detailed instructions on using AutoSA, please refer to the [AutoSA Documentation]().
+For more detailed instructions on using AutoSA, please refer to the [AutoSA Documentation](https://autosa.readthedocs.io/en/latest/).
 
 ## Send Us Failure Cases and Feedback!
 AutoSA is open source for research purposes, and we would like to continously improve it! Please let us know if...
