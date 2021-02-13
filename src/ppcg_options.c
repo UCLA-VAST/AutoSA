@@ -87,6 +87,8 @@ ISL_ARGS_END
 ISL_ARGS_START(struct autosa_options, autosa_options_args)
 ISL_ARG_BOOL(struct autosa_options, autosa, 0, "autosa", 1,
 				"generate systolic arrays using AutoSA")
+ISL_ARG_BOOL(struct autosa_options, array_contraction, 0, "array-contraction", 1,
+				"apply array contraction")
 ISL_ARG_BOOL(struct autosa_options, block_sparse, 0, "block-sparse", 0,
 				"use block sparsity")
 ISL_ARG_STR(struct autosa_options, block_sparse_ratio, 0, "block-sparse-ratio", "ratio",
@@ -118,6 +120,8 @@ ISL_ARG_INT(struct autosa_options, int_io_dir, 0, "int-io-dir", "dir", 0,
 			 	"set the default interior I/O direction (0: [1,x] 1: [x,1])")
 ISL_ARG_BOOL(struct autosa_options, io_module_embedding, 0, "io-module-embedding", 0,
 			 	"embed the I/O modules inside PEs if possible")
+ISL_ARG_BOOL(struct autosa_options, isl_sink, 0, "isl-sink", 0,
+			 	"sink time loops using ISL default APIs")
 ISL_ARG_BOOL(struct autosa_options, loop_infinitize, 0, "loop-infinitize", 0,
 			 	"apply loop infinitization optimization (Intel OpenCL only)")
 ISL_ARG_BOOL(struct autosa_options, local_reduce, 0, "local-reduce", 0,

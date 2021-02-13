@@ -2,11 +2,11 @@
 
 #include <isl/ilp.h>
 
-#include "autosa_comm.h"
 #include "autosa_schedule_tree.h"
 #include "autosa_utils.h"
 #include "autosa_print.h"
 #include "autosa_codegen.h"
+#include "autosa_comm.h"
 
 /* Internal data structure for autosa_group_references.
  */
@@ -478,7 +478,180 @@ isl_bool can_tile(__isl_keep isl_map *access,
   return valid;
 }
 
+struct check_contraction_data {
+  bool legal;
+  struct autosa_array_ref_group *group;
+  struct autosa_kernel *kernel;
+  isl_union_map *prefix;
+  isl_union_pw_multi_aff *prefix_upma;
+  int depth;
+};
+
+struct check_stmt_contain_acc_data {
+  struct autosa_kernel *kernel;
+  struct autosa_array_ref_group *group;
+};
+
+/* Test if the current statement with the domain "set" contains the array access
+ * in the current array group. 
+ */
+static isl_bool check_stmt_contain_acc(__isl_keep isl_set *set, void *user)
+{
+  isl_space *space;
+  isl_id *id;
+  struct autosa_stmt *stmt;
+  struct check_stmt_contain_acc_data *data = (struct check_stmt_contain_acc_data *)user;
+  struct autosa_stmt_access *accesses, *access;
+
+  space = isl_set_get_space(set);
+  id = isl_space_get_tuple_id(space, isl_dim_set);
+  isl_space_free(space);
+  stmt = find_stmt(data->kernel->prog, id);
+  isl_id_free(id);
+  accesses = stmt->accesses;
+
+  for (access = accesses; access; access = access->next)
+  {
+    //if (access == data->group->refs[0])
+    //{
+    //  return isl_bool_false;
+    //}
+    for (int i = 0; i < data->group->n_ref; i++) {
+      if (access == data->group->refs[i])
+        return isl_bool_false;
+    }
+  }
+
+  return isl_bool_true;
+}
+
+/* Check if the pe_group is mapped to a single register.
+ * Specifically, check for each array access in the current pe_group, 
+ * if all the loops above the array access and below the PE mark are
+ * parallel loops.
+ */
+static __isl_give isl_schedule_node *check_contraction(
+  __isl_take isl_schedule_node *node, void *user)
+{
+  struct check_contraction_data *data = (struct check_contraction_data *)user;
+  isl_union_set *domain;
+  isl_bool not_contain_acc;
+  struct check_stmt_contain_acc_data check_data;
+  isl_schedule_node *tmp_node;
+  isl_ctx *ctx = isl_schedule_node_get_ctx(node);
+
+  //DBGSCHDNODE(stdout, node, isl_schedule_node_get_ctx(node));
+
+  if (isl_schedule_node_get_type(node) != isl_schedule_node_leaf)
+    return node;
+
+  if (!data->legal)
+    return node;
+
+  /* Test if the statement contains the access from the group. */
+  domain = isl_schedule_node_get_domain(node);
+  check_data.kernel = data->kernel;
+  check_data.group = data->group;
+  not_contain_acc = isl_union_set_every_set(domain, &check_stmt_contain_acc, &check_data);
+  isl_union_set_free(domain);  
+
+  /* Then check if all the loops above the statement until the PE mark are parallel loops. */
+  tmp_node = isl_schedule_node_copy(node);
+  if (!not_contain_acc) {    
+    isl_schedule_node *tmp_node2;
+
+    /* If the node is under SIMD, we will move up to the "SIMD" mark, and 
+     * compute the tiling at this level.
+     */
+    int is_simd;
+    is_simd = is_node_under_simd(tmp_node);
+    if (is_simd) {
+      tmp_node = autosa_tree_move_up_to_mark(tmp_node, "simd");      
+    }
+
+    tmp_node2 = isl_schedule_node_copy(tmp_node);
+
+    /* Check if all band nodes above are parallel loops. */    
+    while (!(autosa_tree_node_is_mark(tmp_node, "pe"))) {    
+      if (isl_schedule_node_get_type(tmp_node) == isl_schedule_node_band) {
+        int dim = isl_schedule_node_band_n_member(tmp_node);
+        for (int i = 0; i < dim; i++) {
+          if (!isl_schedule_node_band_member_get_coincident(tmp_node, i)) {
+            data->legal = false;
+            break;
+          }
+        }
+      }
+      tmp_node = isl_schedule_node_parent(tmp_node);
+    }
+
+    if (data->prefix == NULL) {
+      data->prefix = isl_schedule_node_get_prefix_schedule_union_map(tmp_node2);
+      data->prefix_upma = isl_schedule_node_get_prefix_schedule_union_pw_multi_aff(tmp_node2);
+      data->depth = isl_schedule_node_get_schedule_depth(tmp_node2);
+    } else {
+      /* Find the depth that shares the same prefix schedule with the current one. */
+      /* Lift the node until it reaches a scheduling depth no greater than data->depth. */
+      while (isl_schedule_node_get_schedule_depth(tmp_node2) > data->depth)
+        tmp_node2 = isl_schedule_node_parent(tmp_node2);
+      if (isl_schedule_node_get_schedule_depth(tmp_node2) < data->depth) {
+        /* Lower the node until the scheduling depth equals to the data->depth */                  
+        tmp_node2 = isl_schedule_node_band_split(tmp_node2, 
+                      data->depth - isl_schedule_node_get_schedule_depth(tmp_node2));
+        tmp_node2 = isl_schedule_node_child(tmp_node2, 0);
+      }
+
+      /* Lift the node until it achieves the same prefix schedule with the data->prefix. */
+      isl_union_map *tmp_prefix = isl_schedule_node_get_prefix_schedule_union_map(tmp_node2);
+      int tmp_depth = isl_schedule_node_get_schedule_depth(tmp_node2);      
+      isl_set *tmp_prefix_range = isl_set_from_union_set(isl_union_map_range(tmp_prefix));
+      isl_set *prefix_range = isl_set_from_union_set(isl_union_map_range(isl_union_map_copy(data->prefix)));
+      
+      //DBGUSET(stdout, prefix_range, ctx);
+
+      int common_depth = 0;
+      for (common_depth = 0; common_depth < tmp_depth; common_depth++) {
+        isl_set *tmp_range = isl_set_project_out(isl_set_copy(tmp_prefix_range), isl_dim_set, common_depth, tmp_depth - common_depth);
+        isl_set *range = isl_set_project_out(isl_set_copy(prefix_range), isl_dim_set, common_depth, tmp_depth - common_depth);
+        isl_set *diff = isl_set_subtract(tmp_range, range);
+        if (!isl_set_is_empty(diff)) {
+          common_depth--;
+          isl_set_free(diff);
+          break;
+        }
+        isl_set_free(diff);
+      }
+      isl_set_free(tmp_prefix_range);
+      isl_set_free(prefix_range);
+
+      /* Lift the node until if reaches common_depth */
+      while (isl_schedule_node_get_schedule_depth(tmp_node2) > common_depth) {
+        tmp_node2 = isl_schedule_node_parent(tmp_node2);
+      }
+      if (isl_schedule_node_get_schedule_depth(tmp_node2) < common_depth) {
+        tmp_node2 = isl_schedule_node_band_split(tmp_node2, 
+                      common_depth - isl_schedule_node_get_schedule_depth(tmp_node2));
+        tmp_node2 = isl_schedule_node_child(tmp_node2, 0);
+      }
+ 
+      /* Update the scheduling information */      
+      isl_union_map_free(data->prefix);
+      isl_union_pw_multi_aff_free(data->prefix_upma);
+      data->prefix = isl_schedule_node_get_prefix_schedule_union_map(tmp_node2);
+      data->prefix_upma = isl_schedule_node_get_prefix_schedule_union_pw_multi_aff(tmp_node2);
+      data->depth = isl_schedule_node_get_schedule_depth(tmp_node2);
+    }    
+    isl_schedule_node_free(tmp_node2);
+  }
+  isl_schedule_node_free(tmp_node);
+
+  return node;
+}
+
 /* Compute the tiling of the group at the PE level.
+ * If array_contraction is enabled, check if all loops under the PE mark
+ * and before the SIMD marks are parallel loops. 
+ * If so, contract the local tile to a single register.
  */
 static isl_stat compute_group_bounds_core_pe(struct autosa_kernel *kernel,
                                              struct autosa_array_ref_group *group, struct autosa_group_data *data)
@@ -504,11 +677,43 @@ static isl_stat compute_group_bounds_core_pe(struct autosa_kernel *kernel,
   /* Create local tile */
   if (use_local)
   {
+    struct check_contraction_data contract_data;
+    isl_schedule_node *node;        
+    contract_data.legal = false;
+
     /* Create a tile. */
     group->local_tile = autosa_array_tile_create(ctx,
                                                  group->array->n_index);
-    /* Map the domain to the outer scheduling dimensions */
-    acc = local_access_pe(group, access, data);
+
+    /* Check if array contraction is possible. */
+    if (kernel->options->autosa->local_reduce && kernel->options->autosa->array_contraction) {      
+      contract_data.group = group;
+      contract_data.kernel = kernel;
+      contract_data.legal = true;
+      contract_data.prefix = NULL;
+      contract_data.prefix_upma = NULL;
+      contract_data.depth = -1;      
+      node = isl_schedule_get_root(kernel->schedule);
+      node = autosa_tree_move_down_to_pe(node, kernel->core);
+      node = isl_schedule_node_map_descendant_bottom_up(node, &check_contraction, &contract_data);
+      isl_schedule_node_free(node);      
+    }
+    
+    if (contract_data.legal) {
+      /* We are able to create a register tiling. */
+      acc = isl_map_from_union_map(isl_union_map_apply_domain(isl_union_map_copy(access), 
+                                                              isl_union_map_copy(contract_data.prefix)));
+      group->copy_schedule_dim = contract_data.depth;
+      group->copy_schedule = contract_data.prefix_upma;
+      group->copy_schedule = isl_union_pw_multi_aff_pullback_union_pw_multi_aff(group->copy_schedule,
+                                                                                isl_union_pw_multi_aff_copy(kernel->contraction));
+    } else {
+      /* Map the domain to the outer scheduling dimensions */
+      acc = local_access_pe(group, access, data);
+    }
+    if (contract_data.prefix) 
+      isl_union_map_free(contract_data.prefix);
+
     /* Collect the shift and scale factors of the tile. */
     ok = can_tile(acc, group->local_tile);
     if (ok < 0)
@@ -540,35 +745,6 @@ struct compute_local_tile_acc_data
   int status;
 };
 
-/* Test if the current statement with the domain "set" contains the array access
- * in the current array group. 
- */
-static isl_bool compute_local_tile_acc_single(__isl_keep isl_set *set, void *user)
-{
-  isl_space *space;
-  isl_id *id;
-  struct autosa_stmt *stmt;
-  struct compute_local_tile_acc_data *data = (struct compute_local_tile_acc_data *)user;
-  struct autosa_stmt_access *accesses, *access;
-
-  space = isl_set_get_space(set);
-  id = isl_space_get_tuple_id(space, isl_dim_set);
-  isl_space_free(space);
-  stmt = find_stmt(data->kernel->prog, id);
-  isl_id_free(id);
-  accesses = stmt->accesses;
-
-  for (access = accesses; access; access = access->next)
-  {
-    if (access == data->group->refs[0])
-    {
-      return isl_bool_false;
-    }
-  }
-
-  return isl_bool_true;
-}
-
 /* Examine the schedule depth and prefix schedule used to calculated the 
  * register tiling. Specifically, if the access is under the SIMD loop,
  * we will move up to the "SIMD" mark and compute tiling at this level.
@@ -587,13 +763,16 @@ static __isl_give isl_schedule_node *compute_local_tile_acc(
   isl_union_pw_multi_aff *prefix_upma;
   isl_bool not_contain_acc;
   int depth;
+  struct check_stmt_contain_acc_data check_data;
 
   if (isl_schedule_node_get_type(node) != isl_schedule_node_leaf)
     return node;
 
   /* Test if the statement contains the access. */
   domain = isl_schedule_node_get_domain(node);
-  not_contain_acc = isl_union_set_every_set(domain, &compute_local_tile_acc_single, data);
+  check_data.kernel = data->kernel;
+  check_data.group = data->group;
+  not_contain_acc = isl_union_set_every_set(domain, &check_stmt_contain_acc, &check_data);
   isl_union_set_free(domain);
 
   if (!not_contain_acc)
@@ -817,7 +996,7 @@ static int group_array_references_pe(struct autosa_kernel *kernel,
         }
       }
     }
-  }
+  }  
 
   if (merge_all)
   {
@@ -844,16 +1023,18 @@ static int group_array_references_pe(struct autosa_kernel *kernel,
         return -1;
       }
 
-      /* Update the copy schedule at the PE level */
-      node = isl_schedule_get_root(kernel->schedule);
-      node = autosa_tree_move_down_to_pe(node, kernel->core);
-      groups[i]->copy_schedule_dim = isl_schedule_node_get_schedule_depth(node);
-      groups[i]->copy_schedule =
-          isl_schedule_node_get_prefix_schedule_union_pw_multi_aff(node);
-      groups[i]->copy_schedule =
-          isl_union_pw_multi_aff_pullback_union_pw_multi_aff(groups[i]->copy_schedule,
-                                                             isl_union_pw_multi_aff_copy(kernel->contraction));
-      isl_schedule_node_free(node);
+      if (groups[i]->copy_schedule_dim == 0) {
+        /* Update the copy schedule at the PE level */
+        node = isl_schedule_get_root(kernel->schedule);
+        node = autosa_tree_move_down_to_pe(node, kernel->core);
+        groups[i]->copy_schedule_dim = isl_schedule_node_get_schedule_depth(node);
+        groups[i]->copy_schedule =
+            isl_schedule_node_get_prefix_schedule_union_pw_multi_aff(node);
+        groups[i]->copy_schedule =
+            isl_union_pw_multi_aff_pullback_union_pw_multi_aff(groups[i]->copy_schedule,
+                                                               isl_union_pw_multi_aff_copy(kernel->contraction));
+        isl_schedule_node_free(node);
+      }
     }
   }
   else

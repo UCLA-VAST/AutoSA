@@ -1,3 +1,5 @@
+.. _auto-tuning-label:
+
 Auto-Tuning
 ===============================================================
 
@@ -339,7 +341,12 @@ command to train the resource models.
 
 .. code:: bash
 
-    python3 ./autosa_scripts/optimizer.py -c './autosa ./autosa_tests/mm/kernel.c --target=autosa_hls_c --simd-info=./autosa_tests/mm/simd_info.json --host-serialize --hls --sa-sizes="{kernel[]->space_time[3]}"' --info autosa_config/hw_info.json -s autosa_config/optimizer_settings.json --train -p xilinx
+    python3 ./autosa_scripts/optimizer.py \
+    -c './autosa ./autosa_tests/mm/kernel.c --target=autosa_hls_c --simd-info=./autosa_tests/mm/simd_info.json --host-serialize --hls --sa-sizes="{kernel[]->space_time[3]}"' \
+    --info autosa_config/hw_info.json \
+    -s autosa_config/optimizer_settings.json \-
+    -train \
+    -p xilinx
 
 The table below explains each argument of the command.
 
@@ -375,4 +382,9 @@ After resource models are trained, run the following command to search for the b
 
 .. code:: bash
 
-    python3 ./autosa_scripts/optimizer.py -c './autosa ./autosa_tests/mm/kernel.c --target=autosa_hls_c --simd-info=./autosa_tests/mm/simd_info.json --host-serialize --hls --sa-sizes="{kernel[]->space_time[3]}' --info autosa_config/hw_info.json -s autosa_config/optimizer_settings.json --search -p xilinx    
+    python3 ./autosa_scripts/optimizer.py \
+    -c './autosa ./autosa_tests/mm/kernel.c --target=autosa_hls_c --simd-info=./autosa_tests/mm/simd_info.json --host-serialize --hls --sa-sizes="{kernel[]->space_time[3]}' \
+    --info autosa_config/hw_info.json \
+    -s autosa_config/optimizer_settings.json \
+    --search \
+    -p xilinx    

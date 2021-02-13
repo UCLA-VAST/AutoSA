@@ -497,5 +497,10 @@ The table below shows the detailed comparison results.
 +-------------+-----------------+---------------+---------+
 | Unoptimized | 0.00548694      | 0.0113009     | 397.496 |
 +-------------+-----------------+---------------+---------+
-| Optimized   | 0.0023194       | 0.0536697     | 940.346 |
+| Optimized   | 0.00232357      | 0.0371066     | 938.658 |
 +-------------+-----------------+---------------+---------+
+
+.. image:: images/autobridge.jpg
+    :align: center
+    
+Credit: Young-kyu Choi (ykchoi@cs.ucla.edu)

@@ -812,29 +812,31 @@ static __isl_give isl_schedule_node *add_io_copies_stmt_acc_single(
    * to only transfer the data at one loop since we will later insert a 
    * statement to handle the data transfer of the entire SIMD loop.
    */
-#ifdef ISL_SINK  
-  if (n_lane >= 1 && is_simd)
-  {
-    /* The loop above is the SIMD loop.
-     * Check the node is below the simd mark. 
-     */
-    int n_index;
-    int tile_size[1];
-    isl_id *id;
-    isl_printer *p_str;
-    isl_union_map *umap;
-    isl_union_set *filter;
-    /* Create a filter. */    
-    node = isl_schedule_node_parent(node);
-    if (data->read)
-      filter = schedule_eq_lb(node);
-    else
-      filter = schedule_eq_ub(node);
-    node = isl_schedule_node_insert_filter(node, filter);
-    node = isl_schedule_node_child(node, 0);
-    node = isl_schedule_node_child(node, 0);
+//#ifdef ISL_SINK    
+  if (data->kernel->options->autosa->isl_sink) {
+    if (n_lane >= 1 && is_simd)
+    {
+      /* The loop above is the SIMD loop.
+       * Check the node is below the simd mark. 
+       */
+      int n_index;
+      int tile_size[1];
+      isl_id *id;
+      isl_printer *p_str;
+      isl_union_map *umap;
+      isl_union_set *filter;
+      /* Create a filter. */    
+      node = isl_schedule_node_parent(node);
+      if (data->read)
+        filter = schedule_eq_lb(node);
+      else
+        filter = schedule_eq_ub(node);
+      node = isl_schedule_node_insert_filter(node, filter);
+      node = isl_schedule_node_child(node, 0);
+      node = isl_schedule_node_child(node, 0);
+    }
   }
-#endif
+//#endif
 
   /* Insert a "pipeline" mark under the band node. */
   hls_id = isl_id_alloc(ctx, "hls_pipeline", NULL);
@@ -7631,23 +7633,19 @@ static __isl_give isl_multi_pw_aff *transform_index(
     return index;
 
   /* recompute the sched2copy for each index. */
-  if (group->group_type == AUTOSA_PE_GROUP)
-  {
-    sched2copy = compute_sched_to_copy_group(isl_pw_multi_aff_copy(
-                                                 data->iterator_map),
-                                             group);
+  if (group->group_type == AUTOSA_PE_GROUP) {
+    std::cout << "guard begin" << std::endl;
+    sched2copy = compute_sched_to_copy_group(isl_pw_multi_aff_copy(data->iterator_map), group);
+    std::cout << "guard end" << std::endl;
   }
 
   space = isl_space_domain(isl_multi_aff_get_space(tile->tiling));
   space = isl_space_range(isl_space_unwrap(space));
   space = isl_space_map_from_set(space);
   pma = isl_pw_multi_aff_identity(space);
-  if (group->group_type == AUTOSA_PE_GROUP)
-  {
+  if (group->group_type == AUTOSA_PE_GROUP) {
     sched2depth = sched2copy;
-  }
-  else
-  {
+  } else {
     sched2depth = isl_pw_multi_aff_copy(data->sched2copy);
   }
   dim = isl_pw_multi_aff_dim(sched2depth, isl_dim_out);
@@ -8414,9 +8412,9 @@ static __isl_give isl_multi_pw_aff *transform_index_module(
 
   /* recompute the sched2copy for each index. */
   if (group->group_type == AUTOSA_PE_GROUP)
-  {
+  {    
     sched2copy = compute_sched_to_copy_group(
-        isl_pw_multi_aff_copy(data->iterator_map), group);
+        isl_pw_multi_aff_copy(data->iterator_map), group);    
   }
 
   space = isl_space_domain(isl_multi_aff_get_space(tile->tiling));

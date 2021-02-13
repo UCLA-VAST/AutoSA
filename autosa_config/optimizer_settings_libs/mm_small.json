@@ -88,12 +88,12 @@
                         0.75
                     ],
                     "DSP": [
-                        0.6,
-                        0.75
+                        0.0,
+                        0.5
                     ],
                     "BRAM18K": [
-                        0.3,
-                        0.7
+                        0.0,
+                        0.5
                     ],
                     "URAM": [
                         0,
@@ -104,8 +104,8 @@
             "array_part": {
                 "enable": 1,
                 "PE_num": [
-                    190,
-                    210
+                    32,
+                    128
                 ]
             },
             "array_part_L2": {
@@ -114,15 +114,15 @@
             "latency_hiding": {
                 "enable": 1,
                 "reg_size": [
-                    64,
-                    1280
+                    32,
+                    512
                 ]
             },
             "SIMD_vectorization": {
                 "enable": 1,
                 "PE_num": [
-                    190,
-                    210
+                    32,
+                    128
                 ],
                 "PE_ratio": 3
             }

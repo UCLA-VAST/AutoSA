@@ -100,6 +100,10 @@ extern "C"
 		char* block_sparse_ratio;
 		/* Generate code for HeteroCL integration. */
 		int hcl;
+		/* Apply array contraction. */
+		int array_contraction;
+		/* Sinking time loops using ISL default APIs. */
+		int isl_sink;
 	};	
 
 	struct ppcg_options

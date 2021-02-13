@@ -495,54 +495,11 @@ static __isl_give isl_printer *find_device_xilinx(__isl_take isl_printer *p)
   p = print_str_new_line(p, "xclbin_file_name = argv[1];");
   p = print_str_new_line(p, "cl::Program::Binaries kernel_bins = import_binary_file();");
   p = print_str_new_line(p, "// Create Program and Kernel");
+  p = print_str_new_line(p, "//devices.erase(devices.begin());");
   p = print_str_new_line(p, "devices.resize(1);");
   p = print_str_new_line(p, "cl::Program program(context, devices, kernel_bins);");
   p = print_str_new_line(p, "cl::Kernel krnl(program, \"kernel0\");");
 
-  //  p = print_str_new_line(p, "std::string binaryFile = argv[1];");
-  //  p = print_str_new_line(p, "cl_int err;");
-  //  p = print_str_new_line(p, "cl::Context context;");
-  //  p = print_str_new_line(p, "cl::Kernel krnl;");
-  //  p = print_str_new_line(p, "cl::CommandQueue q;");
-  //  p = print_str_new_line(p, "// get_xil_devices() is a utility API which will find the xilinx");
-  //  p = print_str_new_line(p, "// platforms and will return list of devices connected to Xilinx platform");
-  //  p = print_str_new_line(p, "auto devices = xcl::get_xil_devices();");
-  //  p = print_str_new_line(p, "// read_binary_file() is a utility API which will load the binaryFile");
-  //  p = print_str_new_line(p, "// and will return the pointer to file buffer");
-  //  p = print_str_new_line(p, "auto fileBuf = xcl::read_binary_file(binaryFile);");
-  //  p = print_str_new_line(p, "cl::Program::Binaries bins{{fileBuf.data(), fileBuf.size()}};");
-  //  p = print_str_new_line(p, "int valid_device = 0;");
-  //  p = print_str_new_line(p, "for (unsigned int i = 0; i < devices.size(); i++) {");
-  //  p = isl_printer_indent(p, 2);
-  //  p = print_str_new_line(p, "auto device = devices[i];");
-  //  p = print_str_new_line(p, "// Creating Context and Command Queue for selected Device");
-  //  p = print_str_new_line(p, "OCL_CHECK(err, context = cl::Context({device}, NULL, NULL, NULL, &err));");
-  //  p = print_str_new_line(p, "OCL_CHECK(err, q = cl::CommandQueue(context, {device}, CL_QUEUE_PROFILING_ENABLE, &err));");
-  //  p = print_str_new_line(p, "std::cout << \"Trying to program device[\" << i");
-  //  p = isl_printer_indent(p, 2);
-  //  p = print_str_new_line(p, "<< \"]: \" << device.getInfo<CL_DEVICE_NAME>() << std::endl;");
-  //  p = isl_printer_indent(p, -2);
-  //  p = print_str_new_line(p, "OCL_CHECK(err, cl::Program program(context, {device}, bins, NULL, \%err));");
-  //  p = print_str_new_line(p, "if (err != CL_SUCCESS) {");
-  //  p = isl_printer_indent(p, 2);
-  //  p = print_str_new_line(p, "std::cout << \"Failed to program device[\" << i << \"] with xclbin file!\\n\";");
-  //  p = isl_printer_indent(p, -2);
-  //  p = print_str_new_line(p, "} else {");
-  //  p = isl_printer_indent(p, 2);
-  //  p = print_str_new_line(p, "std::cout << \"Device[\" << i << \"]: program successful!\\n\";");
-  //  p = print_str_new_line(p, "OCL_CHECK(err, krnl = cl::Kernel(program, \"kernel0\", &err));");
-  //  p = print_str_new_line(p, "valid_device++");
-  //  p = print_str_new_line(p, "break; // we break because we found a valid device");
-  //  p = isl_printer_indent(p, -2);
-  //  p = print_str_new_line(p, "}");
-  //  p = isl_printer_indent(p, -2);
-  //  p = print_str_new_line(p, "}");
-  //  p = print_str_new_line(p, "if (valid_device == 0) {");
-  //  p = isl_printer_indent(p, 2);
-  //  p = print_str_new_line(p, "std::cout << \"Failed to program any device found, exit!\\n\";");
-  //  p = print_str_new_line(p, "exit(EXIT_FAILURE);");
-  //  p = isl_printer_indent(p, -2);
-  //  p = print_str_new_line(p, "}");
   p = isl_printer_end_line(p);
 
   return p;
@@ -1368,7 +1325,7 @@ static __isl_give isl_printer *clear_device_xilinx(__isl_take isl_printer *p,
     p = isl_printer_end_line(p);
     p = print_str_new_line(p, "// Calculate time");
     p = print_str_new_line(p, "std::chrono::duration<double> fpga_duration = fpga_end - fpga_begin;");
-    p = print_str_new_line(p, "std::cout << \"FPGA Time: \" << fpga_duration.count() << \" s\" << std::endl;");
+    p = print_str_new_line(p, "std::cout << \"FPGA Time: \" << fpga_duration.count() / 10 << \" s\" << std::endl;");
     p = print_str_new_line(p, "std::chrono::duration<double> host_duration = host_end - host_begin;");
     p = print_str_new_line(p, "std::cout << \"Host Time: \" << host_duration.count() << \" s\" << std::endl;");
     p = isl_printer_end_line(p);
@@ -1907,34 +1864,22 @@ static __isl_give isl_printer *print_host_user_xilinx(__isl_take isl_printer *p,
 
     p = print_set_kernel_arguments_xilinx(p, data->prog, kernel);
     p = print_str_new_line(p, "q.finish();");
+    p = isl_printer_end_line(p);
+
+    p = print_str_new_line(p, "// Warm up");
+    p = print_str_new_line(p, "OCL_CHECK(err, err = q.enqueueTask(krnl));");
+    p = print_str_new_line(p, "q.finish();");
+    p = isl_printer_end_line(p);
+
     p = print_str_new_line(p, "fpga_begin = std::chrono::high_resolution_clock::now();");
     p = isl_printer_end_line(p);
+
     p = print_str_new_line(p, "// Launch the kernel");
-    p = print_str_new_line(p, "OCL_CHECK(err, err = q.enqueueTask(krnl));");
+    p = print_str_new_line(p, "for (int i = 0; i < 10; i++)");
+    p = print_str_new_line(p, "  OCL_CHECK(err, err = q.enqueueTask(krnl));");
     p = isl_printer_end_line(p);
     p = print_str_new_line(p, "q.finish();");
     p = print_str_new_line(p, "fpga_end = std::chrono::high_resolution_clock::now();");
-
-    /* Print the top kernel generation function */
-    /* Disabled by default */
-    //    p = isl_printer_start_line(p);
-    //    p = isl_printer_print_str(p, "/* Top Function Generation */");
-    //    p = isl_printer_end_line(p);
-    //
-    //    p = isl_printer_start_line(p);
-    //    p = isl_printer_print_str(p, "FILE *f = fopen(\"top.cpp\", \"w\");");
-    //    p = isl_printer_end_line(p);
-    //    p = isl_printer_start_line(p);
-    //    p = isl_printer_print_str(p, "top_generate(");
-    //    p = print_top_gen_arguments(p, data->prog, kernel, 0);
-    //    p = isl_printer_print_str(p, ");");
-    //    p = isl_printer_end_line(p);
-    //    p = isl_printer_start_line(p);
-    //    p = isl_printer_print_str(p, "fclose(f);");
-    //    p = isl_printer_end_line(p);
-    //    p = isl_printer_start_line(p);
-    //    p = isl_printer_print_str(p, "/* Top Function Generation */");
-    //    p = isl_printer_end_line(p);
 
     p = ppcg_end_block(p);
     p = isl_printer_end_line(p);
