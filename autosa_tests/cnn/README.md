@@ -15,7 +15,7 @@ autosa_tests/cnn/connectivity.cfg
 
 __Command__:
 ```c
-./autosa ./autosa_tests/cnn/kernel.c --config=./autosa_config/autosa_config.json --target=autosa_hls_c --output-dir=./autosa.tmp/output --sa-sizes="{kernel[]->space_time[4];kernel[]->array_part[8,8,4,8];kernel[]->latency[4,2,4];kernel[]->simd[1,1,1,2]}" --AutoSA-simd-info=./autosa_tests/cnn/simd_info.json --host-serialize
+./autosa ./autosa_tests/cnn/kernel.c --config=./autosa_config/autosa_config.json --target=autosa_hls_c --output-dir=./autosa.tmp/output --sa-sizes="{kernel[]->space_time[4];kernel[]->array_part[8,8,4,8];kernel[]->latency[4,2,4];kernel[]->simd[1,1,1,2]}" --simd-info=./autosa_tests/cnn/simd_info.json --host-serialize
 ```
 
 After compilation, you will find all generated files under the directory `autosa.tmp/output/src`. Copy the `Makefile` and `connectivity.cfg` to the directory `autosa.tmp/output`.

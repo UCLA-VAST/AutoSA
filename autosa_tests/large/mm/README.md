@@ -31,8 +31,3 @@ Execute the makefile to build the design.
 cd autosa.tmp/output
 make all
 ```
-
-__Other Test Cases__:
-1. 
-Problem size:  I 1024 J 1024 K 1024
-

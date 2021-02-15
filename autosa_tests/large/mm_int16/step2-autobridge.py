@@ -118,11 +118,11 @@ DDR_enable = [1, 1, 0, 1]
    -----------
      0    1
 """
-max_usage_ratio_2d = [ [0.8, 0.7], [0.85, 0.75], [0.85, 0.85], [0.85, 0.75] ]
+max_usage_ratio_2d = [ [0.85, 0.7], [0.85, 0.7], [0.85, 0.85], [0.85, 0.7] ]
 
 
 ##################### DON'T TOUCH THE SECTION BELOW #################################
-target_dir = 'autobridge_v3'
+target_dir = 'autobridge_prj'
 
 formator = FormatHLS(
   rpt_path = f'{solution_path}/syn/report/',

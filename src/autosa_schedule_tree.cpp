@@ -1370,15 +1370,23 @@ static __isl_give isl_schedule_node *sink_node_to_mark(
   isl_id *id;
   isl_schedule_node *node_tmp;  
 
-  if (isl_schedule_node_get_type(node) != isl_schedule_node_band)
-    return node;
+  //if (isl_schedule_node_get_type(node) != isl_schedule_node_band)
+  //  return node;
   
   /* Examine the subtree contains the "inserted" mark node */
   if (!isl_schedule_node_every_descendant(node, &has_inserted_mark, NULL)) {    
     return node;
   }
 
-  node = isl_schedule_node_child(node, 0);
+  if (isl_schedule_node_get_type(node) == isl_schedule_node_band) {
+    node = isl_schedule_node_child(node, 0);
+  } else if (isl_schedule_node_get_type(node) == isl_schedule_node_leaf) {
+    
+  } else {
+    return node;
+  }
+
+  //node = isl_schedule_node_child(node, 0);
   /* Check if the node is under any exisiting "name" node.
    * If true, move the node to the mark node.
    */
@@ -1925,10 +1933,12 @@ static __isl_give isl_schedule_constraints *construct_schedule_constraints(
 //    DBGUMAP(stdout, prog->scop->dep_flow, isl_union_map_get_ctx(prog->scop->dep_flow));    
 //    std::cout << "FALSE DEPs" << std::endl;
 //    DBGUMAP(stdout, prog->scop->dep_false, isl_union_map_get_ctx(prog->scop->dep_false));
+//    std::cout << "RAR DEPs" << std::endl;
+//    DBGUMAP(stdout, prog->scop->dep_rar, isl_union_map_get_ctx(prog->scop->dep_rar));
 //#endif
     dep_raw = isl_union_map_copy(prog->scop->dep_flow);
     dep = isl_union_map_copy(prog->scop->dep_false);
-    dep = isl_union_map_union(dep, dep_raw);
+    dep = isl_union_map_union(dep, dep_raw);    
     dep = isl_union_map_coalesce(dep);
     proximity = isl_union_map_copy(dep);
     coincidence = isl_union_map_copy(dep);
@@ -2214,9 +2224,6 @@ __isl_give isl_schedule *merge_outer_bands(__isl_take isl_schedule *schedule, st
 
   node = isl_schedule_node_child(node, 0); // points to the first band band
   while (isl_schedule_node_get_type(node) == isl_schedule_node_band) {
-//#ifdef _DEBUG
-//    std::cout << isl_schedule_node_band_member_get_coincident(node, 0) << std::endl;
-//#endif
     /* Examine if all dependence distances at this band are non-negative */    
     isl_bool nneg = is_dep_non_neg_at_node(node, sc);
     if (nneg) {

@@ -1681,7 +1681,9 @@ __isl_give isl_schedule_node *autosa_latency_node_band_sink_time(
         } 
 //#else   
         else {
+            //DBGSCHDNODE(stdout, node, isl_schedule_node_get_ctx(node));
             node = autosa_node_sink_to_mark(node, "latency");
+            //DBGSCHDNODE(stdout, node, isl_schedule_node_get_ctx(node));
         }
 //#endif
     }
@@ -2050,7 +2052,7 @@ isl_stat sa_latency_hiding_optimize(struct autosa_kernel *sa, bool en, char *mod
     schedule = isl_schedule_map_schedule_node_bottom_up(
         schedule, &clear_pe_opt_prop, NULL);
 
-    sa->schedule = schedule;
+    sa->schedule = schedule;    
 
     return isl_stat_ok;
 }
@@ -4041,10 +4043,8 @@ static __isl_give isl_printer *generate(__isl_take isl_printer *p,
      * fully permutable loop band correctly.
      * As a temporary hack, here we will try a second time and to merge the 
      * outer band as much as possible.
-     */
-    //if (!gen->options->reschedule) {
-    schedule = merge_outer_bands(schedule, gen);
-    //}
+     */    
+    schedule = merge_outer_bands(schedule, gen);    
 
 //#ifdef _DEBUG
 //    DBGSCHD(stdout, schedule, gen->ctx);

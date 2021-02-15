@@ -15,7 +15,7 @@ autosa_tests/large/mm_int8/connectivity.cfg
 
 __Command__:
 ```c
-./autosa ./autosa_tests/large/mm_int8/kernel.c --config=./autosa_config/autosa_config.json --target=autosa_hls_c --output-dir=./autosa.tmp/output --sa-sizes="{kernel[]->space_time[3];kernel[]->array_part[264,256,64];kernel[]->latency[11,32];kernel[]->simd[64]}" --simd-info=./autosa_tests/large/mm_int8/simd_info.json --host-serialize --data-pack-sizes="{kernel[]->data_pack[32,32,64]}"
+./autosa ./autosa_tests/large/mm_int8/kernel.c --config=./autosa_config/autosa_config.json --target=autosa_hls_c --output-dir=./autosa.tmp/output --sa-sizes="{kernel[]->space_time[3];kernel[]->array_part[264,256,64];kernel[]->latency[11,32];kernel[]->simd[64]}" --simd-info=./autosa_tests/large/mm_int8/simd_info.json --host-serialize --data-pack-sizes="{kernel[]->A[32,32,64];kernel[]->B[32,32,64];kernel[]->C[32,32,64]}"
 ```
 
 After compilation, you will find all generated files under the directory `autosa.tmp/output/src`. Copy the `Makefile` and `connectivity.cfg` to the directory `autosa.tmp/output`.

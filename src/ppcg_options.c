@@ -212,7 +212,7 @@ ISL_ARG_BOOL(struct ppcg_options, allow_gnu_extensions, 0,
 			 "allow-gnu-extensions", 1,
 			 "allow the use of GNU extensions in generated code")
 ISL_ARG_BOOL(struct ppcg_options, live_range_reordering, 0,
-			 "live-range-reordering", 0,
+			 "live-range-reordering", 1,
 			 "allow successive live ranges on the same memory element "
 			 "to be reordered")
 ISL_ARG_BOOL(struct ppcg_options, hybrid, 0, "hybrid", 0,

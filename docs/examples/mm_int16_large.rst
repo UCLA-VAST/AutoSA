@@ -1,10 +1,10 @@
-Matrix Multiplication (Large)
-=============================
+Matrix Multiplication in int16 (Large)
+======================================
 
 **Author**: Jie Wang (jiewang@cs.ucla.edu)
 
-This is an example of large-size matrix multiplication.
-The design files can be found at ``${AUTOSA_ROOT}/autosa_tests/large/mm``.
+This is an example of large-size matrix multiplication in int16.
+The design files can be found at ``${AUTOSA_ROOT}/autosa_tests/large/mm_int16``.
 The testing environment is summarized in the table below.
 
 +--------------------------+-----------------------------------------------+
@@ -22,13 +22,14 @@ Run the following example command to generate one design with HLS host code.
 
 .. code:: bash
 
-    ./autosa ./autosa_tests/large/mm/kernel.c \
+    ./autosa ./autosa_tests/large/mm_int16/kernel.c \
     --config=./autosa_config/autosa_config.json \
     --target=autosa_hls_c \
     --output-dir=./autosa.tmp/output \
-    --sa-sizes="{kernel[]->space_time[3];kernel[]->array_part[260,256,512];kernel[]->latency[20,16];kernel[]->simd[8]}" \
-    --simd-info=./autosa_tests/large/mm/simd_info.json \
+    --sa-sizes="{kernel[]->space_time[3];kernel[]->array_part[256,256,32];kernel[]->latency[16,16];kernel[]->simd[32]}" \
+    --simd-info=./autosa_tests/large/mm_int16/simd_info.json \
     --host-serialize \
+    --data-pack-sizes="{kernel[]->A[32,32,64];kernel[]->B[32,32,64];kernel[]->C[32,32,64]}" \
     --hls
 
 After compilation, you will find all generated files under the directory 
@@ -37,7 +38,7 @@ Copy the ``hls_script.tcl`` to the directory ``autosa.tmp/output``.
 
 .. code:: bash
 
-    cp ${AUTOSA_ROOT}/autosa_tests/large/mm/hls_script.tcl ${AUTOSA_ROOT}/autosa.tmp/output/
+    cp ${AUTOSA_ROOT}/autosa_tests/large/mm_int16/hls_script.tcl ${AUTOSA_ROOT}/autosa.tmp/output/
 
 Run the TCL script to perform C simulation.
 
@@ -57,13 +58,14 @@ flag from the previous AutoSA command.
 
 .. code:: bash
 
-    ./autosa ./autosa_tests/large/mm/kernel.c \
+    ./autosa ./autosa_tests/large/mm_int16/kernel.c \
     --config=./autosa_config/autosa_config.json \
     --target=autosa_hls_c \
     --output-dir=./autosa.tmp/output \
-    --sa-sizes="{kernel[]->space_time[3];kernel[]->array_part[260,256,512];kernel[]->latency[20,16];kernel[]->simd[8]}" \
-    --simd-info=./autosa_tests/large/mm/simd_info.json \
-    --host-serialize
+    --sa-sizes="{kernel[]->space_time[3];kernel[]->array_part[256,256,32];kernel[]->latency[16,16];kernel[]->simd[32]}" \
+    --simd-info=./autosa_tests/large/mm_int16/simd_info.json \
+    --host-serialize \
+    --data-pack-sizes="{kernel[]->A[32,32,64];kernel[]->B[32,32,64];kernel[]->C[32,32,64]}"
 
 Now instead of HLS host code, an OpenCL host code is generated.   
 
@@ -71,8 +73,8 @@ We have prepared a template Makefile for Xilinx Vitis tools.
 
 .. code:: bash
 
-    cp ${AUTOSA_ROOT}/autosa_tests/large/mm/Makefile ${AUTOSA_ROOT}/autosa.tmp/output/
-    cp ${AUTOSA_ROOT}/autosa_tests/large/mm/connectivity.cfg ${AUTOSA_ROOT}/autosa.tmp/output/
+    cp ${AUTOSA_ROOT}/autosa_tests/large/mm_int16/Makefile ${AUTOSA_ROOT}/autosa.tmp/output/
+    cp ${AUTOSA_ROOT}/autosa_tests/large/mm_int16/connectivity.cfg ${AUTOSA_ROOT}/autosa.tmp/output/
 
 Set the proper ``PLATFORM`` in the Makefile. 
 By default, we set it to ``xilinx_u250_xdma_201830_2``.
@@ -106,16 +108,12 @@ use the following command to run it on-board.
 
     make check
 
-.. note:: 
-
-    As the example design is rather large, it takes approximately 40 hours to finish the synthesis on our workstation.
-
 Below is the resource and frequency information we collected for this design.
 
 +-----+-----------------+------------------+--------------+---------------+
 | MHz | LUT             | REG              | BRAM         | DSP           |
 +-----+-----------------+------------------+--------------+---------------+
-| 146 | 804517 (52.69%) | 1360681 (43.17%) | 953 (40.80%) | 8320 (67.78%) |
+|     |                 |                  |              |               |
 +-----+-----------------+------------------+--------------+---------------+
 
 You could also test the generated design on board. We have listed the performance of the design 
@@ -124,7 +122,7 @@ in the table below.
 +-----------------+---------------+---------+
 | Kernel Time (s) | Host Time (s) | GFLOPs  |
 +-----------------+---------------+---------+
-| 0.00548694      | 0.0113009     | 397.496 |
+|                 |               |         |
 +-----------------+---------------+---------+   
 
 Using AutoBridge to Boost Frequency
@@ -140,15 +138,15 @@ The tables below show the detailed comparison results between the original desig
 +-------------+-----+-----------------+------------------+--------------+---------------+
 | Designs     | MHz | LUT             | REG              | BRAM         | DSP           |
 +-------------+-----+-----------------+------------------+--------------+---------------+
-| Unoptimized | 146 | 804517 (52.69%) | 1360681 (43.17%) | 953 (40.80%) | 8320 (67.78%) |
+| Unoptimized |     |                 |                  |              |               |
 +-------------+-----+-----------------+------------------+--------------+---------------+
-| Optimized   | 300 | 803752 (52.64%) | 1325480 (42.05%) | 952 (40.75%) | 8320 (67.78%) |
+| Optimized   |     |                 |                  |              |               |
 +-------------+-----+-----------------+------------------+--------------+---------------+
 
 +-------------+-----------------+---------------+---------+
 | Designs     | Kernel Time (s) | Host Time (s) | GFLOPs  |
 +-------------+-----------------+---------------+---------+
-| Unoptimized | 0.00548694      | 0.0113009     | 397.496 |
+| Unoptimized |                 |               |         |
 +-------------+-----------------+---------------+---------+
-| Optimized   | 0.00232357      | 0.0371066     | 938.658 |
+| Optimized   |                 |               |         |
 +-------------+-----------------+---------------+---------+

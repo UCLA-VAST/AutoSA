@@ -16,6 +16,10 @@ Small Designs
     :maxdepth: 1
 
     mm
+    cnn
+    lu
+    mm_int16
+    mm_hbm
 
 Large Designs 
 -------------
@@ -24,3 +28,6 @@ Large Designs
     :maxdepth: 1
 
     mm_large
+    cnn_large
+    mm_int16_large
+    mm_int8_large

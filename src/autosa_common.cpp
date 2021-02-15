@@ -2882,7 +2882,7 @@ int extract_memory_type(struct autosa_hw_module *module,
     if (module->type == IO_MODULE && module->level == 1) {          
       use_memory = 1;      
     } else {
-      if (var->n_lane == 1 && var_size <= 8)
+      if (var->n_lane == 1 && var_size <= 64)
         use_memory = 0;
       else
         use_memory = 2;

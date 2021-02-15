@@ -1,10 +1,10 @@
-Matrix Multiplication (Large)
-=============================
+Convolutional Neural Network (Single Layer, Large)
+==================================================
 
 **Author**: Jie Wang (jiewang@cs.ucla.edu)
 
 This is an example of large-size matrix multiplication.
-The design files can be found at ``${AUTOSA_ROOT}/autosa_tests/large/mm``.
+The design files can be found at ``${AUTOSA_ROOT}/autosa_tests/large/cnn``.
 The testing environment is summarized in the table below.
 
 +--------------------------+-----------------------------------------------+
@@ -22,12 +22,12 @@ Run the following example command to generate one design with HLS host code.
 
 .. code:: bash
 
-    ./autosa ./autosa_tests/large/mm/kernel.c \
+    ./autosa ./autosa_tests/large/cnn/kernel.c \
     --config=./autosa_config/autosa_config.json \
     --target=autosa_hls_c \
     --output-dir=./autosa.tmp/output \
-    --sa-sizes="{kernel[]->space_time[3];kernel[]->array_part[260,256,512];kernel[]->latency[20,16];kernel[]->simd[8]}" \
-    --simd-info=./autosa_tests/large/mm/simd_info.json \
+    --sa-sizes="{kernel[]->space_time[4];kernel[]->array_part[64,56,14,64];kernel[]->latency[4,4,7];kernel[]->simd[1,1,8]}" \
+    --simd-info=./autosa_tests/large/cnn/simd_info.json \
     --host-serialize \
     --hls
 
@@ -37,7 +37,7 @@ Copy the ``hls_script.tcl`` to the directory ``autosa.tmp/output``.
 
 .. code:: bash
 
-    cp ${AUTOSA_ROOT}/autosa_tests/large/mm/hls_script.tcl ${AUTOSA_ROOT}/autosa.tmp/output/
+    cp ${AUTOSA_ROOT}/autosa_tests/large/cnn/hls_script.tcl ${AUTOSA_ROOT}/autosa.tmp/output/
 
 Run the TCL script to perform C simulation.
 
@@ -57,12 +57,12 @@ flag from the previous AutoSA command.
 
 .. code:: bash
 
-    ./autosa ./autosa_tests/large/mm/kernel.c \
+    ./autosa ./autosa_tests/large/cnn/kernel.c \
     --config=./autosa_config/autosa_config.json \
     --target=autosa_hls_c \
     --output-dir=./autosa.tmp/output \
-    --sa-sizes="{kernel[]->space_time[3];kernel[]->array_part[260,256,512];kernel[]->latency[20,16];kernel[]->simd[8]}" \
-    --simd-info=./autosa_tests/large/mm/simd_info.json \
+    --sa-sizes="{kernel[]->space_time[4];kernel[]->array_part[64,56,14,64];kernel[]->latency[4,4,7];kernel[]->simd[1,1,8]}" \
+    --simd-info=./autosa_tests/large/cnn/simd_info.json \
     --host-serialize
 
 Now instead of HLS host code, an OpenCL host code is generated.   
@@ -71,29 +71,10 @@ We have prepared a template Makefile for Xilinx Vitis tools.
 
 .. code:: bash
 
-    cp ${AUTOSA_ROOT}/autosa_tests/large/mm/Makefile ${AUTOSA_ROOT}/autosa.tmp/output/
-    cp ${AUTOSA_ROOT}/autosa_tests/large/mm/connectivity.cfg ${AUTOSA_ROOT}/autosa.tmp/output/
+    cp ${AUTOSA_ROOT}/autosa_tests/large/cnn/Makefile ${AUTOSA_ROOT}/autosa.tmp/output/
+    cp ${AUTOSA_ROOT}/autosa_tests/large/cnn/connectivity.cfg ${AUTOSA_ROOT}/autosa.tmp/output/
 
-Set the proper ``PLATFORM`` in the Makefile. 
-By default, we set it to ``xilinx_u250_xdma_201830_2``.
-You may notice that we also copy a file ``connectivity.cfg`` here.
-This file assigns the DDR bank mapping for the design. 
-By default, we map pointers A, B, C to DDR bank 0, 1, 3.
-Lastly, modify the ``MODE`` in the Makefile for performing different tasks.
-
-* ``sw_emu``: C simulation
-* ``hw_emu``: RTL simulation
-* ``hw``: Bitstream generation
-
-.. note:: 
-
-    When using Vitis flow to perform RTL simulation, nothing needs to change in the source code.
-    You may directly set the ``MODE`` to ``hw_emu`` and perform RTL simulation.
-    However, by default, we will run the kernel 10 times to collect the average runtime.
-    This may significantly prolong the simulation time. Consider reducing the kernel
-    launching times to 1 before using RTL simulation.
-
-To generate the bitstream, set the ``MODE`` to ``hw`` and use the command below.
+To generate the bitstream, use the following command.
 
 .. code:: bash
 
@@ -106,26 +87,11 @@ use the following command to run it on-board.
 
     make check
 
-.. note:: 
-
-    As the example design is rather large, it takes approximately 40 hours to finish the synthesis on our workstation.
-
-Below is the resource and frequency information we collected for this design.
-
-+-----+-----------------+------------------+--------------+---------------+
-| MHz | LUT             | REG              | BRAM         | DSP           |
-+-----+-----------------+------------------+--------------+---------------+
-| 146 | 804517 (52.69%) | 1360681 (43.17%) | 953 (40.80%) | 8320 (67.78%) |
-+-----+-----------------+------------------+--------------+---------------+
-
-You could also test the generated design on board. We have listed the performance of the design 
-in the table below.
-
-+-----------------+---------------+---------+
-| Kernel Time (s) | Host Time (s) | GFLOPs  |
-+-----------------+---------------+---------+
-| 0.00548694      | 0.0113009     | 397.496 |
-+-----------------+---------------+---------+   
+.. note::
+    
+    As this design is rather large, Vitis fails to successfully route the design on-board
+    in our experiment.
+    We will rely on AutoBridge to route this design.
 
 Using AutoBridge to Boost Frequency
 -----------------------------------
@@ -134,21 +100,23 @@ You may also try to use `AutoBridge <https://github.com/Licheng-Guo/AutoBridge>`
 to boost the design frequency.
 We cover how to use AutoBridge to improve the frequency in :ref:`use-autobridge-label`.
 
+The reference AutoBridge scripts used for this example can be found at ``${AUTOSA_ROOT}/autosa_tests/large/cnn``.
+
 The tables below show the detailed comparison results between the original design 
 (unoptimized) and the design optimized with AutoBridge (optimized).
 
 +-------------+-----+-----------------+------------------+--------------+---------------+
 | Designs     | MHz | LUT             | REG              | BRAM         | DSP           |
 +-------------+-----+-----------------+------------------+--------------+---------------+
-| Unoptimized | 146 | 804517 (52.69%) | 1360681 (43.17%) | 953 (40.80%) | 8320 (67.78%) |
+| Unoptimized | N/A | N/A             | N/A              | N/A          | N/A           |
 +-------------+-----+-----------------+------------------+--------------+---------------+
-| Optimized   | 300 | 803752 (52.64%) | 1325480 (42.05%) | 952 (40.75%) | 8320 (67.78%) |
+| Optimized   |     |                 |                  |              |               |
 +-------------+-----+-----------------+------------------+--------------+---------------+
 
 +-------------+-----------------+---------------+---------+
 | Designs     | Kernel Time (s) | Host Time (s) | GFLOPs  |
 +-------------+-----------------+---------------+---------+
-| Unoptimized | 0.00548694      | 0.0113009     | 397.496 |
+| Unoptimized | N/A             | N/A           | N/A     |
 +-------------+-----------------+---------------+---------+
-| Optimized   | 0.00232357      | 0.0371066     | 938.658 |
+| Optimized   |                 |               |         |
 +-------------+-----------------+---------------+---------+

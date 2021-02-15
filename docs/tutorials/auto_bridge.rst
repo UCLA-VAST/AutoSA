@@ -1,3 +1,5 @@
+.. _use-autobridge-label:
+
 Leveraging AutoBridge to Boost the Design Frequency
 ===================================================
 
@@ -322,15 +324,15 @@ be inconsistant with the syntheized resource usage. You may need to re-adjust th
 if the design fails routing in the later stages.
 
 Until now, you have a modified AutoBridge script customized for our design.
-We also provide an example script at ``${AUTOSA_ROOT}/autosa_tests/large/mm/autobridge.py``.
+We also provide an example script at ``${AUTOSA_ROOT}/autosa_tests/large/mm/step2-autobridge.py``.
 
 Now, execute the Python script to run AutoBridge.
 
 .. code:: bash
 
-    cp ${AUTOSA_ROOT}/autosa_tests/large/mm/autobridge.py ${AUTOBRIDGE_ROOT}/reference-scripts/
+    cp ${AUTOSA_ROOT}/autosa_tests/large/mm/step2-autobridge.py ${AUTOBRIDGE_ROOT}/reference-scripts/
     cd ${AUTOBRIDGE_ROOT}/reference-scripts
-    ./autobridge.py | tee autobridge.log
+    ./step2-autobridge.py | tee autobridge.log
 
 After it finishes, you should see a folder named ``autobridge`` in the same directory.
 It contains the modified RTL code and the floorplanning constraint ``constraint.tcl``.
@@ -380,7 +382,7 @@ to
 
 .. note::
 
-    We also provide an example TCL file ``pack_xo.tcl`` under the design example directory ``${AUTOSA_ROOT}/autosa_tests/large/mm/pack_xo.tcl``.
+    We also provide an example TCL file ``step3-pack-xo.tcl`` under the design example directory ``${AUTOSA_ROOT}/autosa_tests/large/mm/pack_xo.tcl``.
 
 Before running the TCL script, we will need to copy the original HLS source files to the working directory.
 
@@ -467,7 +469,7 @@ to
     --connectivity.sp ${TOP}_1.${ARG_FOR_DDR_2}:DDR[1] \    
     --connectivity.sp ${TOP}_1.${ARG_FOR_DDR_4}:DDR[3] \
 
-An example script of this project can be also found at ``${AUTOSA_ROOT}/autosa_tests/large/mm/run_vitis.tcl``.
+An example script of this project can be also found at ``${AUTOSA_ROOT}/autosa_tests/large/mm/step4-run-vitis.tcl``.
 
 Now set up the Xilinx Vitis environment and run the script.
 
@@ -482,7 +484,7 @@ Results Comparsion
 ^^^^^^^^^^^^^^^^^^
 
 We could now compare the designs unoptimized and optimized by AutoBridge.
-The table below shows the detailed comparison results.
+The tables below show the detailed comparison results.
 
 +-------------+-----+-----------------+------------------+--------------+---------------+
 | Designs     | MHz | LUT             | REG              | BRAM         | DSP           |

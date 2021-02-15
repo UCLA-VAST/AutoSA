@@ -1,6 +1,6 @@
 # Matrix Multiplication (HBM)
 
-This is an example of small-size matrix multiplication using High Bandwidth Memory (HBM).
+This is an example of small-size matrix multiplication using high-bandwidth memory (HBM).
 
 Board        | Software Version
 -------------|-----------------

@@ -1354,8 +1354,8 @@ __isl_give isl_printer *print_module_arguments(
     for (int i = 0; i < module->n_io_group; i++)
     {
       struct autosa_array_ref_group *group = module->io_groups[i];
-      if (!(group->copy_in || group->copy_out))
-        continue;
+      //if (!(group->copy_in || group->copy_out))
+      //  continue;
       int n_lane = get_io_group_n_lane(module, NULL, group);
       if (module->io_groups[i]->pe_io_dir == IO_IN ||
           module->io_groups[i]->pe_io_dir == IO_INOUT)

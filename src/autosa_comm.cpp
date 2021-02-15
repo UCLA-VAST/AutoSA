@@ -680,6 +680,7 @@ static isl_stat compute_group_bounds_core_pe(struct autosa_kernel *kernel,
     struct check_contraction_data contract_data;
     isl_schedule_node *node;        
     contract_data.legal = false;
+    contract_data.prefix = NULL;
 
     /* Create a tile. */
     group->local_tile = autosa_array_tile_create(ctx,

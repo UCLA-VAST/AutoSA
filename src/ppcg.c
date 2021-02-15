@@ -1120,11 +1120,11 @@ static void compute_dependences(struct ppcg_scop *scop)
 					isl_union_map_copy(scop->reads));
 	access = isl_union_access_info_from_sink(
 				isl_union_map_copy(scop->may_writes));
-	access = isl_union_access_info_set_kill(access,
-				isl_union_map_copy(scop->must_writes));
 	//access = isl_union_access_info_set_kill(access,
-	//				isl_union_map_union(isl_union_map_copy(scop->must_writes), 
-	//				                    isl_union_map_copy(scop->must_kills)));
+	//			isl_union_map_copy(scop->must_writes));
+	access = isl_union_access_info_set_kill(access,
+					isl_union_map_union(isl_union_map_copy(scop->must_writes), 
+					                    isl_union_map_copy(scop->must_kills)));
 	access = isl_union_access_info_set_may_source(access, may_source);
 	access = isl_union_access_info_set_schedule(access,
 				isl_schedule_copy(scop->schedule));

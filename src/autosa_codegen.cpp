@@ -386,7 +386,12 @@ static __isl_give isl_union_set *schedule_eq_lb(
   child = isl_schedule_node_child(isl_schedule_node_copy(node), 0);
   depth2 = isl_schedule_node_get_schedule_depth(child);
   prefix = isl_schedule_node_get_prefix_schedule_relation(child);
-  isl_schedule_node_free(child);
+  //DBGSCHDNODE(stdout, child, isl_schedule_node_get_ctx(child));
+  //DBGUMAP(stdout, prefix, isl_schedule_node_get_ctx(child));
+  isl_schedule_node_free(child);  
+  //isl_union_set *tmp_uset = isl_union_map_range(isl_union_map_copy(prefix));
+  //DBGUSET(stdout, tmp_uset, isl_union_set_get_ctx(tmp_uset));
+  //prefix_range = isl_set_from_union_set(tmp_uset);
   prefix_range = isl_set_from_union_set(isl_union_map_range(isl_union_map_copy(prefix)));
   ge = isl_map_lex_ge(isl_set_get_space(prefix_range));
   /* Set the outer dims equal */
@@ -886,8 +891,18 @@ static __isl_give isl_schedule_node *modify_simd_loop(
     isl_printer *p_str;
     isl_union_map *umap;
     isl_union_set *filter;
+    isl_union_set *domain;
 
     node = isl_schedule_node_child(node, 0);
+    /* Test if the domain is empty. */
+    domain = isl_schedule_node_get_domain(node);
+    if (isl_union_set_is_empty(domain)) {
+      isl_union_set_free(domain);
+      node = isl_schedule_node_parent(node);
+      return node;  
+    }
+    isl_union_set_free(domain);
+
     if (data->read)
       filter = schedule_eq_lb(node);
     else
@@ -933,14 +948,16 @@ __isl_give isl_schedule_node *add_io_copies_stmt_acc(
           node, &add_io_copies_stmt_acc_single, &data);
     }
   }
-#ifndef ISL_SINK  
+//#ifndef ISL_SINK  
   /* Modify the SIMD loop.
    * If the current statement is under the SIMD loop, we will add a filter 
    * to only transfer the data at one loop since we will later insert a 
    * statement to handle the data transfer of the entire SIMD loop.   
    */
-  node = isl_schedule_node_map_descendant_bottom_up(node, &modify_simd_loop, &data);
-#endif  
+  if (!kernel->options->autosa->isl_sink) {
+    node = isl_schedule_node_map_descendant_bottom_up(node, &modify_simd_loop, &data);
+  }
+//#endif  
 
   return node;
 }
