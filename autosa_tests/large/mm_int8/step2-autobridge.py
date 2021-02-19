@@ -30,7 +30,7 @@ For more details pls refer to the paper
 ################### Modify Accordingly ###############################
 
 # (1) fill basic information
-project_path = '/home/jaywang/doc_examples/mm_int16_ab/kernel0' # path to your hls project
+project_path = '/home/jaywang/doc_examples/mm_int8_ab/kernel0' # path to your hls project
 #project_path = '/home/jaywang/doc_examples/mm_ab/kernel0' # path to your hls project
 top_name = 'kernel0' # name of the top function in your hls design
 solution_path = f'{project_path}/solution/'
@@ -121,11 +121,11 @@ DDR_enable = [1, 1, 0, 1]
    -----------
      0    1
 """
-max_usage_ratio_2d = [ [0.85, 0.7], [0.85, 0.7], [0.85, 0.85], [0.85, 0.7] ]
+max_usage_ratio_2d = [ [0.85, 0.6], [0.85, 0.6], [0.85, 0.85], [0.85, 0.6] ]
 
 
 ##################### DON'T TOUCH THE SECTION BELOW #################################
-target_dir = '/home/jaywang/doc_examples/mm_int16_ab/autobridge'
+target_dir = '/home/jaywang/doc_examples/mm_int8_ab/autobridge'
 
 formator = FormatHLS(
   rpt_path = f'{solution_path}/syn/report/',

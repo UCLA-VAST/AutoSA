@@ -1683,7 +1683,7 @@ __isl_give isl_schedule_node *autosa_latency_node_band_sink_time(
         else {
             //DBGSCHDNODE(stdout, node, isl_schedule_node_get_ctx(node));
             node = autosa_node_sink_to_mark(node, "latency");
-            //DBGSCHDNODE(stdout, node, isl_schedule_node_get_ctx(node));
+            DBGSCHDNODE(stdout, node, isl_schedule_node_get_ctx(node));            
         }
 //#endif
     }
@@ -1748,20 +1748,35 @@ static __isl_give isl_schedule_node *autosa_latency_tile_band_loop(
     int n;
     isl_id *id;
     n = isl_schedule_node_band_n_member(node);
+    int i;
+    int reverse_visit = 0;
 
-#ifndef REVERSE_ORDER    
-    for (int i = 0; i < n; i++)
-#else    
-    for (int i = n - 1; i >= 0; i--)
-#endif    
-    {
+//#ifndef REVERSE_ORDER    
+//    for (int i = 0; i < n; i++)
+//#else    
+//    for (int i = n - 1; i >= 0; i--)
+//#endif    
+    if ((data->sa->options->autosa->reverse_order && !data->sa->options->autosa->isl_sink) ||
+       (!data->sa->options->autosa->reverse_order && data->sa->options->autosa->isl_sink)) {
+        i = 0;
+        reverse_visit = 0;
+    } else {
+        i = n - 1;
+        reverse_visit = 1;
+    }
+    while (1)
+    {        
         if (isl_schedule_node_band_member_get_pe_opt(node, i) == autosa_loop_latency)
         {
-#ifdef REVERSE_ORDER
-            int loop_tile_size = data->tile_size[data->tile_len - data->n_touched_loop - 1];            
-#else
-            int loop_tile_size = data->tile_size[data->n_touched_loop];
-#endif            
+            int loop_tile_size;
+//#ifdef REVERSE_ORDER
+            if (reverse_visit) {
+                loop_tile_size = data->tile_size[data->tile_len - data->n_touched_loop - 1];            
+//#else
+            } else {
+                loop_tile_size = data->tile_size[data->n_touched_loop];
+            }
+//#endif            
             (data->n_touched_loop)++;
             /* If latency hiding is applied on the space loops, we need to update
              * the SA dimensions. 
@@ -1806,6 +1821,15 @@ static __isl_give isl_schedule_node *autosa_latency_tile_band_loop(
                 /* Reset the pe_opt property */
                 node = isl_schedule_node_band_member_set_pe_opt(node, i, autosa_loop_default);
             }
+        }
+        if (reverse_visit) {
+            if (i == 0)
+                break;
+            i--;
+        } else {
+            if (i == n - 1)
+                break;
+            i++;
         }
     }
 

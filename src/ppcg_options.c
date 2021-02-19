@@ -120,7 +120,7 @@ ISL_ARG_INT(struct autosa_options, int_io_dir, 0, "int-io-dir", "dir", 0,
 			 	"set the default interior I/O direction (0: [1,x] 1: [x,1])")
 ISL_ARG_BOOL(struct autosa_options, io_module_embedding, 0, "io-module-embedding", 0,
 			 	"embed the I/O modules inside PEs if possible")
-ISL_ARG_BOOL(struct autosa_options, isl_sink, 0, "isl-sink", 0,
+ISL_ARG_BOOL(struct autosa_options, isl_sink, 0, "isl-sink", 1,
 			 	"sink time loops using ISL default APIs")
 ISL_ARG_BOOL(struct autosa_options, loop_infinitize, 0, "loop-infinitize", 0,
 			 	"apply loop infinitization optimization (Intel OpenCL only)")
@@ -140,6 +140,8 @@ ISL_ARG_BOOL(struct autosa_options, non_block_fifo, 0, "non-blocking-fifo", 0,
 			 	"use non-blocking fifo interface")
 ISL_ARG_STR(struct autosa_options, output_dir, 0, "output-dir", "dir", "./autosa.tmp/output",
 				"AutoSA Output directory")
+ISL_ARG_BOOL(struct autosa_options, reverse_order, 0, "reverse-order", 1,
+			 	"reverse loop tiling order")				
 ISL_ARG_STR(struct autosa_options, sa_sizes, 0, "sa-sizes", "sizes", NULL,
 				"per kernel PE optimization tile sizes")
 ISL_ARG_INT(struct autosa_options, sa_tile_size, 0, "sa-tile-size", "size", 4,

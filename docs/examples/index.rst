@@ -31,3 +31,5 @@ Large Designs
     cnn_large
     mm_int16_large
     mm_int8_large
+    mttkrp_large
+    ttmc_large

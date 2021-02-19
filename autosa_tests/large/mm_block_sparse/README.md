@@ -52,12 +52,3 @@ cd autosa.tmp/output
 make all
 make check
 ```
-
-__Tuning__(Alpha):
-
-__Other Test Cases__:
-Below we provide some other test cases for you to try out.
-1. 
-```bash
-./autosa ./autosa_tests/mm_block_sparse/kernel.c --config=./autosa_config/autosa_config.json --target=autosa_hls_c --output-dir=./autosa.tmp/output --sa-sizes="{kernel[]->space_time[3];kernel[]->array_part[16,16,16];kernel[]->latency[8,8];kernel[]->simd[8]}" --simd-info=./autosa_tests/mm_block_sparse/simd_info.json --host-serialize --block-sparse --block-sparse-ratio="{kernel[]->block_sparse[3,8]}"
-```

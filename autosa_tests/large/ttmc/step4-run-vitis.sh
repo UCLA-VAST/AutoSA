@@ -10,8 +10,8 @@ PLATFORM=xilinx_u250_xdma_201830_2
 XO="$(pwd)/kernel0.xo"
 
 # For different approaches see UG904-vivado-implementation
-#STRATEGY="Default" 
-STRATEGY="EarlyBlockPlacement" 
+STRATEGY="Default" 
+#STRATEGY="EarlyBlockPlacement" 
 
 # remove the unused '--connectivity.sp' option for v++ if some DDRs are not used 
 # Example: if we map p1 to DDR 3 and p2 to DDR 0
@@ -29,10 +29,10 @@ STRATEGY="EarlyBlockPlacement"
 # ARG_FOR_DDR_3=p1
 # Should remove '--connectivity.sp' for DDR1 and DDR2
 
-ARG_FOR_DDR_1=cin
-ARG_FOR_DDR_2=w
-#ARG_FOR_DDR_3="YOUR_HLS_ARGUMENT_NAME_FOR_DDR_3"
-ARG_FOR_DDR_4=cout
+ARG_FOR_DDR_1=A
+ARG_FOR_DDR_2=B
+ARG_FOR_DDR_3=C
+ARG_FOR_DDR_4=D
 
 # the constraint file containing the floorplan results
 # WARNING: must use absolute address
@@ -57,6 +57,7 @@ v++ \
   ${XO} \
   --connectivity.sp ${TOP}_1.${ARG_FOR_DDR_1}:DDR[0] \
   --connectivity.sp ${TOP}_1.${ARG_FOR_DDR_2}:DDR[1] \
+  --connectivity.sp ${TOP}_1.${ARG_FOR_DDR_3}:DDR[2] \
   --connectivity.sp ${TOP}_1.${ARG_FOR_DDR_4}:DDR[3] \
   --kernel_frequency 300 \
   --vivado.prop run.impl_1.STEPS.PLACE_DESIGN.ARGS.DIRECTIVE=$STRATEGY \

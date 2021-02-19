@@ -97,6 +97,8 @@ DDR_loc_2d_x['C_drain_IO_L3_out_serialize_U0'] = 0
 DDR_loc_2d_y['kernel0_gmem_C_m_axi_U'] = 3
 DDR_loc_2d_x['kernel0_gmem_C_m_axi_U'] = 0
 
+DDR_loc_2d_y['kernel0_control_s_axi_U'] = 0
+
 # (3) specify DDR information
 # If you instantiate a DDR controller, it will consume non-trivial amount of resource
 # to make the floorplanning better, you need to specify which DDRs have been enabled
@@ -118,7 +120,7 @@ DDR_enable = [1, 1, 0, 1]
    -----------
      0    1
 """
-max_usage_ratio_2d = [ [0.8, 0.7], [0.85, 0.75], [0.85, 0.85], [0.85, 0.75] ]
+max_usage_ratio_2d = [ [0.8, 0.7], [0.85, 0.75], [0.85, 0.85], [0.85, 0.7] ]
 
 
 ##################### DON'T TOUCH THE SECTION BELOW #################################

@@ -30,8 +30,7 @@ For more details pls refer to the paper
 ################### Modify Accordingly ###############################
 
 # (1) fill basic information
-project_path = '/home/jaywang/doc_examples/mm_int16_ab/kernel0' # path to your hls project
-#project_path = '/home/jaywang/doc_examples/mm_ab/kernel0' # path to your hls project
+project_path = '/home/jaywang/doc_examples/mttkrp_ab/kernel0' # path to your hls project
 top_name = 'kernel0' # name of the top function in your hls design
 solution_path = f'{project_path}/solution/'
 project_name = 'kernel0'
@@ -93,19 +92,27 @@ DDR_loc_2d_x['B_IO_L3_in_serialize_U0'] = 0
 DDR_loc_2d_y['kernel0_gmem_B_m_axi_U'] = 1
 DDR_loc_2d_x['kernel0_gmem_B_m_axi_U'] = 0
 
-DDR_loc_2d_y['C_drain_IO_L3_out_serialize_U0'] = 3
-DDR_loc_2d_x['C_drain_IO_L3_out_serialize_U0'] = 0
-DDR_loc_2d_y['kernel0_gmem_C_m_axi_U'] = 3
+DDR_loc_2d_y['C_IO_L3_in_serialize_U0'] = 2
+DDR_loc_2d_x['C_IO_L3_in_serialize_U0'] = 0
+DDR_loc_2d_y['kernel0_gmem_C_m_axi_U'] = 2
 DDR_loc_2d_x['kernel0_gmem_C_m_axi_U'] = 0
 
-DDR_loc_2d_y['kernel0_control_s_axi_U'] = 0
+DDR_loc_2d_y['D_drain_IO_L3_out_serialize_U0'] = 3
+DDR_loc_2d_x['D_drain_IO_L3_out_serialize_U0'] = 0
+DDR_loc_2d_y['kernel0_gmem_D_m_axi_U'] = 3
+DDR_loc_2d_x['kernel0_gmem_D_m_axi_U'] = 0
+
+DDR_loc_2d_y['kernel0_control_s_axi_U'] = 1
+DDR_loc_2d_y['kernel0_entry16_U0'] = 1
+DDR_loc_2d_x['kernel0_control_s_axi_U'] = 1
+DDR_loc_2d_x['kernel0_entry16_U0'] = 1
 
 # (3) specify DDR information
 # If you instantiate a DDR controller, it will consume non-trivial amount of resource
 # to make the floorplanning better, you need to specify which DDRs have been enabled
 # In this example, you connect p1 to DDR-2 in SLR-2 and p2 to DDR-1 in SLR-1
 # If you want to use all DDRs, for example, you need to set it as [1, 1, 1, 1]
-DDR_enable = [1, 1, 0, 1]
+DDR_enable = [1, 1, 1, 1]
 
 # (4) specify how much resource can be used in each slot
 # In this way you could force the design to be placed evenly across the device and avoid local congestion
@@ -121,11 +128,11 @@ DDR_enable = [1, 1, 0, 1]
    -----------
      0    1
 """
-max_usage_ratio_2d = [ [0.85, 0.7], [0.85, 0.7], [0.85, 0.85], [0.85, 0.7] ]
+max_usage_ratio_2d = [ [0.8, 0.75], [0.8, 0.75], [0.8, 0.75], [0.8, 0.75] ]
 
 
 ##################### DON'T TOUCH THE SECTION BELOW #################################
-target_dir = '/home/jaywang/doc_examples/mm_int16_ab/autobridge'
+target_dir = '/home/jaywang/doc_examples/mttkrp_ab/autobridge_v2'
 
 formator = FormatHLS(
   rpt_path = f'{solution_path}/syn/report/',

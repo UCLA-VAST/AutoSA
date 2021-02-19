@@ -267,6 +267,8 @@ Modify the lines 84-111 of ``step2-autobridge.py`` as follows:
     DDR_loc_2d_y['kernel0_gmem_C_m_axi_U'] = 3
     DDR_loc_2d_x['kernel0_gmem_C_m_axi_U'] = 0
 
+    DDR_loc_2d_y['kernel0_control_s_axi_U'] = 0
+
     DDR_enable = [1, 1, 0, 1]
 
 For each AXI bus, HLS generates two modules that are associated with it.
@@ -300,6 +302,14 @@ As the ``gmem_A`` is connected to ``DDR0``, we assign the locations for these mo
 
 Similarly, we add the locations for other AXI buses as shown in the code above.
 
+For each kernel, there is a controller with S_AXI interface.
+By the recommendation of AutoBridge, we will assign it to the bottom SLR as it 
+talks to the PCIe IP.
+
+.. code:: Python
+    
+    DDR_loc_2d_y['kernel0_control_s_axi_U'] = 0
+
 Lastly, we will also need to update the variable ``DDR_enable`` to reflect the DDR controllers in use.
 In our example, since we only use the first, second, and fourth DDR channel, we set it as:
 
@@ -312,7 +322,7 @@ As an example, we set the variable ``max_usage_ratio_2d`` as:
 
 .. code:: Python
 
-    max_usage_ratio_2d = [ [0.8, 0.7], [0.85, 0.75], [0.85, 0.85], [0.85, 0.75] ]
+    max_usage_ratio_2d = [ [0.8, 0.7], [0.85, 0.75], [0.85, 0.85], [0.85, 0.7] ]
 
 Please feel free to adjust these ratios according to the resource usage of your design.
 Setting the upper bound of resource usage for each region helps guide AutoBridge to scatter 

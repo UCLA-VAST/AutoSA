@@ -44,7 +44,7 @@
 /* If enabled, the loop tiling factors should be reversed as well. 
  * The tiled point loops will have a reverse order compared to the original loops.
  */
-#define REVERSE_ORDER
+//#define REVERSE_ORDER
 
 enum autosa_group_access_type
 {

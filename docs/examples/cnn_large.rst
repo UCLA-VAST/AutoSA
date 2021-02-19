@@ -29,6 +29,7 @@ Run the following example command to generate one design with HLS host code.
     --sa-sizes="{kernel[]->space_time[4];kernel[]->array_part[64,56,14,64];kernel[]->latency[4,4,7];kernel[]->simd[1,1,8]}" \
     --simd-info=./autosa_tests/large/cnn/simd_info.json \
     --host-serialize \
+    --no-reverse-order \
     --hls
 
 After compilation, you will find all generated files under the directory 
@@ -63,6 +64,7 @@ flag from the previous AutoSA command.
     --output-dir=./autosa.tmp/output \
     --sa-sizes="{kernel[]->space_time[4];kernel[]->array_part[64,56,14,64];kernel[]->latency[4,4,7];kernel[]->simd[1,1,8]}" \
     --simd-info=./autosa_tests/large/cnn/simd_info.json \
+    --no-reverse-order \
     --host-serialize
 
 Now instead of HLS host code, an OpenCL host code is generated.   
@@ -110,7 +112,7 @@ The tables below show the detailed comparison results between the original desig
 +-------------+-----+-----------------+------------------+--------------+---------------+
 | Unoptimized | N/A | N/A             | N/A              | N/A          | N/A           |
 +-------------+-----+-----------------+------------------+--------------+---------------+
-| Optimized   |     |                 |                  |              |               |
+| Optimized   | 261 | 607442 (39.78%) | 836031 (26.53%)  | 1655 (70.85%)| 8192 (66.75%) |
 +-------------+-----+-----------------+------------------+--------------+---------------+
 
 +-------------+-----------------+---------------+---------+
@@ -118,5 +120,5 @@ The tables below show the detailed comparison results between the original desig
 +-------------+-----------------+---------------+---------+
 | Unoptimized | N/A             | N/A           | N/A     |
 +-------------+-----------------+---------------+---------+
-| Optimized   |                 |               |         |
+| Optimized   | 0.000625233     | 0.0095829     | 3.435   |
 +-------------+-----------------+---------------+---------+

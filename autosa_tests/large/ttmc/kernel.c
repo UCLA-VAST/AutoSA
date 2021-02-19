@@ -7,7 +7,7 @@
 
 #include "kernel.h"
 
-int main(){
+int main(int argc, char **argv){
   // declarations
   static data_t A[I][L][M];
   static data_t B[L][J];

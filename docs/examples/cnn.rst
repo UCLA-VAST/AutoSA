@@ -29,6 +29,7 @@ Run the following example command to generate one design with HLS host code.
     --sa-sizes="{kernel[]->space_time[4];kernel[]->array_part[8,8,4,8];kernel[]->latency[4,2,4];kernel[]->simd[1,1,1,2]}" \
     --simd-info=./autosa_tests/cnn/simd_info.json \
     --host-serialize \
+    --no-reverse-order \
     --hls
 
 After compilation, you will find all generated files under the directory 
@@ -63,7 +64,8 @@ flag from the previous AutoSA command.
     --output-dir=./autosa.tmp/output \
     --sa-sizes="{kernel[]->space_time[4];kernel[]->array_part[8,8,4,8];kernel[]->latency[4,2,4];kernel[]->simd[1,1,1,2]}" \
     --simd-info=./autosa_tests/cnn/simd_info.json \
-    --host-serialize
+    --host-serialize \
+    --no-reverse-order
 
 Now instead of HLS host code, an OpenCL host code is generated.    
 

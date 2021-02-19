@@ -30,7 +30,8 @@ Run the following example command to generate one design with HLS host code.
     --simd-info=./autosa_tests/large/mm_int8/simd_info.json \
     --host-serialize \
     --data-pack-sizes="{kernel[]->A[32,32,64];kernel[]->B[32,32,64];kernel[]->C[32,32,64]}" \
-    --hls    
+    --no-isl-sink \
+    --hls
 
 After compilation, you will find all generated files under the directory 
 ``${AUTOSA_ROOT}/autosa.tmp/output/src``. 
@@ -65,10 +66,56 @@ flag from the previous AutoSA command.
     --sa-sizes="{kernel[]->space_time[3];kernel[]->array_part[264,256,64];kernel[]->latency[11,32];kernel[]->simd[64]}" \
     --simd-info=./autosa_tests/large/mm_int8/simd_info.json \
     --host-serialize \
-    --data-pack-sizes="{kernel[]->A[32,32,64];kernel[]->B[32,32,64];kernel[]->C[32,32,64]}"
+    --data-pack-sizes="{kernel[]->A[32,32,64];kernel[]->B[32,32,64];kernel[]->C[32,32,64]}" \
+    --no-isl-sink
 
 Now instead of HLS host code, an OpenCL host code is generated.   
 
+As for int8, we notice that the default coding style for reduction trees in Xilinx HLS C 
+will lead to inferior performance.
+The default coding style is as below:
+
+.. code:: c
+
+    for (ap_uint<7> c8 = 0; c8 <= 63; c8 += 1) {
+    #pragma HLS UNROLL
+      local_C[c7][c6] = (local_C[c7][c6] + (local_A[0][c8] * local_B[0][c8]));
+    }
+
+If we synthesize the default PE using Vitis, each MAC is maped to one DSP and we get 64 DSPs for this 
+reduction tree.
+
+Alternatively, if we manually unroll the reduction tree, using the following coding style,
+only 32 DSPs are generated.
+
+.. code:: c
+
+    data_t mul_4_0_0 = local_A[0][0] * local_B[0][0];
+    data_t add_4_0 = mul_4_0_0 + local_A[0][1] * local_B[0][1];
+    data_t mul_4_1_0 = local_A[0][2] * local_B[0][2];
+    data_t add_4_1 = mul_4_1_0 + local_A[0][3] * local_B[0][3];
+    ...
+    local_C[c7][c6] += add_0_0;
+
+We notice that the current Xilinx HLS is less efficient to handle a direct reduction loop
+compared to the manually unrolled loop. Therefore, to save the resource,
+we will need to replace the original code with the manually unrolled code.
+
+This part can't be done automatically at present, we provide a simple Python script 
+to generate this code, and the user will have to replace the code manually in the design code.
+
+As an example, find the script at ``${AUTOSA_ROOT}/autosa_tests/large/mm_int8/unroll.py``.
+Modify the parameter ``UNROLL_FACTOR`` and ``DATA_T`` according to your current design.
+Then, run:
+
+.. code:: bash
+
+    python3 unroll.py | tee code.c
+
+Now copy the code in ``code.c`` to replace the original reduction loop in ``kernel_kernel.c``.
+We have also provided an example file at ``${AUTOSA_ROOT}/autosa_tests/large/mm_int8/kernel_kernel_opt.cpp``.
+
+Now you may follow the normal flow to compile the design.
 We have prepared a template Makefile for Xilinx Vitis tools.
 
 .. code:: bash
@@ -113,16 +160,16 @@ Below is the resource and frequency information we collected for this design.
 +-----+-----------------+------------------+--------------+---------------+
 | MHz | LUT             | REG              | BRAM         | DSP           |
 +-----+-----------------+------------------+--------------+---------------+
-|     |                 |                  |              |               |
+| 136 | 653369 (42.80%) | 704056 (22.34%)  | 1364 (58.39%)| 6144 (50.05%) |
 +-----+-----------------+------------------+--------------+---------------+
 
 You could also test the generated design on board. We have listed the performance of the design 
 in the table below.
 
 +-----------------+---------------+---------+
-| Kernel Time (s) | Host Time (s) | GFLOPs  |
+| Kernel Time (s) | Host Time (s) | TOPs    |
 +-----------------+---------------+---------+
-|                 |               |         |
+| 0.000811317     | 0.0112891     | 2.730   |
 +-----------------+---------------+---------+   
 
 Using AutoBridge to Boost Frequency
@@ -138,15 +185,15 @@ The tables below show the detailed comparison results between the original desig
 +-------------+-----+-----------------+------------------+--------------+---------------+
 | Designs     | MHz | LUT             | REG              | BRAM         | DSP           |
 +-------------+-----+-----------------+------------------+--------------+---------------+
-| Unoptimized |     |                 |                  |              |               |
+| Unoptimized | 136 | 653369 (42.80%) | 704056 (22.34%)  | 1364 (58.39%)| 6144 (50.05%) |
 +-------------+-----+-----------------+------------------+--------------+---------------+
-| Optimized   |     |                 |                  |              |               |
+| Optimized   | 300 | 704411 (46.15%) | 719628 (22.83%)  | 1364 (58.39%)| 6144 (50.05%) |
 +-------------+-----+-----------------+------------------+--------------+---------------+
 
 +-------------+-----------------+---------------+---------+
-| Designs     | Kernel Time (s) | Host Time (s) | GFLOPs  |
+| Designs     | Kernel Time (s) | Host Time (s) | TOPs    |
 +-------------+-----------------+---------------+---------+
-| Unoptimized |                 |               |         |
+| Unoptimized | 0.000811317     | 0.0112891     | 2.730   |
 +-------------+-----------------+---------------+---------+
-| Optimized   |                 |               |         |
+| Optimized   | 0.000308881     | 0.00869287    | 6.952   |
 +-------------+-----------------+---------------+---------+

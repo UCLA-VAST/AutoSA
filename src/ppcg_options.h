@@ -104,6 +104,8 @@ extern "C"
 		int array_contraction;
 		/* Sinking time loops using ISL default APIs. */
 		int isl_sink;
+		/* Reverse the loop tiling order. */
+		int reverse_order;
 	};	
 
 	struct ppcg_options
