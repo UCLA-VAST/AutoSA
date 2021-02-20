@@ -1683,7 +1683,7 @@ __isl_give isl_schedule_node *autosa_latency_node_band_sink_time(
         else {
             //DBGSCHDNODE(stdout, node, isl_schedule_node_get_ctx(node));
             node = autosa_node_sink_to_mark(node, "latency");
-            DBGSCHDNODE(stdout, node, isl_schedule_node_get_ctx(node));            
+            //DBGSCHDNODE(stdout, node, isl_schedule_node_get_ctx(node));            
         }
 //#endif
     }
