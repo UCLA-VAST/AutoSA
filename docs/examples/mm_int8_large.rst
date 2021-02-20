@@ -83,23 +83,26 @@ The default coding style is as below:
     }
 
 If we synthesize the default PE using Vitis, each MAC is maped to one DSP and we get 64 DSPs for this 
-reduction tree.
+reduction tree. 
 
 Alternatively, if we manually unroll the reduction tree, using the following coding style,
 only 32 DSPs are generated.
 
 .. code:: c
 
-    data_t mul_4_0_0 = local_A[0][0] * local_B[0][0];
-    data_t add_4_0 = mul_4_0_0 + local_A[0][1] * local_B[0][1];
-    data_t mul_4_1_0 = local_A[0][2] * local_B[0][2];
-    data_t add_4_1 = mul_4_1_0 + local_A[0][3] * local_B[0][3];
+    data_t mul_5_0_0 = local_A[0][0] * local_B[0][0];
+    data_t add_5_0 = mul_5_0_0 + local_A[0][1] * local_B[0][1];
+    data_t mul_5_1_0 = local_A[0][2] * local_B[0][2];
+    data_t add_5_1 = mul_5_1_0 + local_A[0][3] * local_B[0][3];
+    ...
+    #pragma HLS RESOURCE variable=mul_5_0_0 core=Mul_LUT
+    #pragma HLS RESOURCE variable=mul_5_1_0 core=Mul_LUT
     ...
     local_C[c7][c6] += add_0_0;
 
-We notice that the current Xilinx HLS is less efficient to handle a direct reduction loop
-compared to the manually unrolled loop. Therefore, to save the resource,
-we will need to replace the original code with the manually unrolled code.
+As you may notice, we map half the multipliers to LUTs instead. 
+This helps to balance the resource usage of this design and enables us to place more 
+PEs on-chip.
 
 This part can't be done automatically at present, we provide a simple Python script 
 to generate this code, and the user will have to replace the code manually in the design code.
@@ -169,7 +172,7 @@ in the table below.
 +-----------------+---------------+---------+
 | Kernel Time (s) | Host Time (s) | TOPs    |
 +-----------------+---------------+---------+
-| 0.000811317     | 0.0112891     | 2.730   |
+| 0.000759123     | 0.0103696     | 2.917   |
 +-----------------+---------------+---------+   
 
 Using AutoBridge to Boost Frequency
@@ -187,13 +190,13 @@ The tables below show the detailed comparison results between the original desig
 +-------------+-----+-----------------+------------------+--------------+---------------+
 | Unoptimized | 136 | 653369 (42.80%) | 704056 (22.34%)  | 1364 (58.39%)| 6144 (50.05%) |
 +-------------+-----+-----------------+------------------+--------------+---------------+
-| Optimized   | 300 | 704411 (46.15%) | 719628 (22.83%)  | 1364 (58.39%)| 6144 (50.05%) |
+| Optimized   | 300 | 730647 (47.87%) | 786680 (24.96%)  | 1364 (58.39%)| 6144 (50.05%) |
 +-------------+-----+-----------------+------------------+--------------+---------------+
 
 +-------------+-----------------+---------------+---------+
 | Designs     | Kernel Time (s) | Host Time (s) | TOPs    |
 +-------------+-----------------+---------------+---------+
-| Unoptimized | 0.000811317     | 0.0112891     | 2.730   |
+| Unoptimized | 0.000759123     | 0.0103696     | 2.917   |
 +-------------+-----------------+---------------+---------+
-| Optimized   | 0.000308881     | 0.00869287    | 6.952   |
+| Optimized   | 0.000302619     | 0.00532768    | 7.318   |
 +-------------+-----------------+---------------+---------+

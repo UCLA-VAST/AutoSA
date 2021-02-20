@@ -6,12 +6,12 @@ int main(int argc, char **argv) {
 
   for (int i = 0; i < I; i++) 
     for (int k = 0; k < K; k++) {
-      A[i][k] = rand() % 100;
+      A[i][k] = 1;
     }
 
   for (int j = 0; j < J; j++)
     for (int k = 0; k < K; k++) {
-      B[j][k] = rand() % 100;
+      B[j][k] = 1;
     }
 
 #pragma scop

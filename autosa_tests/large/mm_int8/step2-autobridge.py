@@ -30,7 +30,7 @@ For more details pls refer to the paper
 ################### Modify Accordingly ###############################
 
 # (1) fill basic information
-project_path = '/home/jaywang/doc_examples/mm_int8_ab/kernel0' # path to your hls project
+project_path = '/home/jaywang/doc_examples/mm_int8_ab_pe/kernel0' # path to your hls project
 #project_path = '/home/jaywang/doc_examples/mm_ab/kernel0' # path to your hls project
 top_name = 'kernel0' # name of the top function in your hls design
 solution_path = f'{project_path}/solution/'
@@ -98,7 +98,10 @@ DDR_loc_2d_x['C_drain_IO_L3_out_serialize_U0'] = 0
 DDR_loc_2d_y['kernel0_gmem_C_m_axi_U'] = 3
 DDR_loc_2d_x['kernel0_gmem_C_m_axi_U'] = 0
 
-DDR_loc_2d_y['kernel0_control_s_axi_U'] = 0
+DDR_loc_2d_y['kernel0_control_s_axi_U'] = 1
+DDR_loc_2d_x['kernel0_control_s_axi_U'] = 1
+DDR_loc_2d_y['kernel0_entry12_U0'] = 1
+DDR_loc_2d_x['kernel0_entry12_U0'] = 1
 
 # (3) specify DDR information
 # If you instantiate a DDR controller, it will consume non-trivial amount of resource
@@ -121,11 +124,11 @@ DDR_enable = [1, 1, 0, 1]
    -----------
      0    1
 """
-max_usage_ratio_2d = [ [0.85, 0.6], [0.85, 0.6], [0.85, 0.85], [0.85, 0.6] ]
+max_usage_ratio_2d = [ [0.8, 0.6], [0.8, 0.6], [0.8, 0.8], [0.8, 0.6] ]
 
 
 ##################### DON'T TOUCH THE SECTION BELOW #################################
-target_dir = '/home/jaywang/doc_examples/mm_int8_ab/autobridge'
+target_dir = '/home/jaywang/doc_examples/mm_int8_ab_pe/autobridge'
 
 formator = FormatHLS(
   rpt_path = f'{solution_path}/syn/report/',

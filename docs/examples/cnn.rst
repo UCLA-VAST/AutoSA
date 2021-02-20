@@ -73,8 +73,8 @@ We have prepared a template Makefile for Xilinx Vitis tools.
 
 .. code:: bash
 
-    cp ${AUTOSA_ROOT}/autosa_tests/mm/Makefile ${AUTOSA_ROOT}/autosa.tmp/output/
-    cp ${AUTOSA_ROOT}/autosa_tests/mm/connectivity.cfg ${AUTOSA_ROOT}/autosa.tmp/output/
+    cp ${AUTOSA_ROOT}/autosa_tests/cnn/Makefile ${AUTOSA_ROOT}/autosa.tmp/output/
+    cp ${AUTOSA_ROOT}/autosa_tests/cnn/connectivity.cfg ${AUTOSA_ROOT}/autosa.tmp/output/
 
 Set the proper ``PLATFORM`` in the Makefile. 
 By default, we set it to ``xilinx_u250_xdma_201830_2``.
