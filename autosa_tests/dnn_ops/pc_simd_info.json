@@ -1,0 +1,8 @@
+{
+  "kernel4": {
+    "reduction": ["y", "y", "y"]
+  },
+  "kernel5": {
+    "reduction": ["y", "y", "y"]
+  } 
+}

@@ -31,8 +31,8 @@ int main(){
       for (int c = 0; c < C; c++) {
         cout[r][c][o] = 0;
         for (int i = 0; i < I; i++)
-          for (int p = 0; p < 3; p++)
-            for (int q = 0; q < 3; q++) {
+          for (int p = 0; p < K; p++)
+            for (int q = 0; q < K; q++) {
               cout[r][c][o] = cout[r][c][o] + cin[r + p][c + q][i] * w[o][p][q][i];
             }
       }
@@ -43,8 +43,8 @@ int main(){
       for (int c = 0; c < C; c++) {
         cout_golden[r][c][o] = 0;
         for (int i = 0; i < I; i++)
-          for (int p = 0; p < 3; p++)
-            for (int q = 0; q < 3; q++) {
+          for (int p = 0; p < K; p++)
+            for (int q = 0; q < K; q++) {
               cout_golden[r][c][o] = cout_golden[r][c][o] + cin[r + p][c + q][i] * w[o][p][q][i];
             }
       }

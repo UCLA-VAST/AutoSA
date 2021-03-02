@@ -818,6 +818,9 @@ static __isl_give isl_mat *get_acc_mat_from_tagged_acc(__isl_keep isl_map *map)
  * the coefficients  at space loop dimensions should be no less than zero.
  * For now, we will set any dependence vector with negative coefficient with a negative
  * score -1.
+ * 
+ * Temporary: We only allow one non-zero component in the reuse vector to simplify
+ * the generation of hardware. We may relax it in the future.
  */
 static int rar_sol_smart_pick(__isl_keep isl_mat *mat, struct ppcg_scop *ps) {
   int score[isl_mat_cols(mat)];
@@ -843,6 +846,13 @@ static int rar_sol_smart_pick(__isl_keep isl_mat *mat, struct ppcg_scop *ps) {
       if (non_zero_cnt < min_non_zero_cnt)
         min_non_zero_cnt = non_zero_cnt;
     }
+  }
+
+  /* Temporary: We only allow one non-zero component in the reuse vector to simplify
+   * the generation of hardware. We may relax it in the future.
+   */
+  if (min_non_zero_cnt > 1) {
+	return pick_idx;
   }
 
   for (int c = 0; c < isl_mat_cols(mat); c++) {
@@ -941,6 +951,7 @@ static __isl_give isl_map *construct_dep_rar(__isl_keep isl_vec *sol,
  */
 static isl_stat build_rar_dep(__isl_take isl_map *map, void *user) {
   struct ppcg_scop *ps = (struct ppcg_scop *)(user);
+  isl_map *tagged_dep_rar;
   /* Examine if the read access is an external access. */
   isl_union_map *tagged_dep_flow = ps->tagged_dep_flow;
   isl_bool is_external = isl_union_map_every_map(tagged_dep_flow, &is_external_access, map);
@@ -963,32 +974,36 @@ static isl_stat build_rar_dep(__isl_take isl_map *map, void *user) {
      * using one independent solution based on hueristics.
      */
     int col = rar_sol_smart_pick(acc_null_mat, ps);
-    assert(col >= 0);    
-    isl_vec *sol = isl_vec_alloc(isl_map_get_ctx(map), isl_mat_rows(acc_null_mat));
-    for (int row = 0; row < isl_mat_rows(acc_null_mat); row++) {
-      sol = isl_vec_set_element_val(sol, row, isl_mat_get_element_val(acc_null_mat, row, col));
-    }
-    isl_map *tagged_dep_rar = construct_dep_rar(sol, map);
-    isl_vec_free(sol);
-    isl_mat_free(acc_null_mat);
+    //assert(col >= 0);    
+	if (col >= 0) {
+      isl_vec *sol = isl_vec_alloc(isl_map_get_ctx(map), isl_mat_rows(acc_null_mat));
+      for (int row = 0; row < isl_mat_rows(acc_null_mat); row++) {
+        sol = isl_vec_set_element_val(sol, row, isl_mat_get_element_val(acc_null_mat, row, col));
+      }
+      tagged_dep_rar = construct_dep_rar(sol, map);
+      isl_vec_free(sol);      
 
-//#ifdef _DEBUG
-//		DBGMAP(stdout, tagged_dep_rar, isl_map_get_ctx(tagged_dep_rar));
-//#endif
-
-	/* Test if the dependence is empty. In such case, we will build a identity map 
-	 * serving as a pseudo-dependence. 
-	 */
-	if (isl_map_is_empty(tagged_dep_rar)) {
+	  /* Test if the dependence is empty. In such case, we will build an identity map 
+	   * serving as a pseudo-dependence. 
+	   */
+	  if (isl_map_is_empty(tagged_dep_rar)) {
 		isl_map_free(tagged_dep_rar);
-		tagged_dep_rar = construct_pseudo_dep_rar(map);
+		col = -1;
+	  } 
+	}
+
+	if (col < 0) {
+	  tagged_dep_rar = construct_pseudo_dep_rar(map);
 	}
 
     ps->tagged_dep_rar = isl_union_map_union(ps->tagged_dep_rar, isl_union_map_from_map(tagged_dep_rar));
-  } else {
-    isl_mat_free(acc_null_mat);
+  } else {	
+	/* Since there is no data reuse opportunity, we will build an identity map here. */
+	tagged_dep_rar = construct_pseudo_dep_rar(map);
+	ps->tagged_dep_rar = isl_union_map_union(ps->tagged_dep_rar, isl_union_map_from_map(tagged_dep_rar));
   }
 
+  isl_mat_free(acc_null_mat);
   isl_map_free(map);
   return isl_stat_ok;
 }

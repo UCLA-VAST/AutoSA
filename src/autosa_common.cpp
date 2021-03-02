@@ -2112,18 +2112,19 @@ int *read_data_pack_sizes_array(__isl_keep isl_union_map *sizes, char *name)
 {
   isl_set *size;
   int *data_pack_sizes;
-
-  data_pack_sizes = (int *)malloc(3 * sizeof(int));
+  
   size = extract_sa_sizes(sizes, name);
   if (isl_set_dim(size, isl_dim_set) != 3) {
     isl_set_free(size);
     return NULL;
   }
+  data_pack_sizes = (int *)malloc(3 * sizeof(int));
   if (read_sa_sizes_from_set(size, data_pack_sizes, 3) < 0)
     goto error;
 
   return data_pack_sizes;
 error:
+  free(data_pack_sizes);
   return NULL;
 }
 

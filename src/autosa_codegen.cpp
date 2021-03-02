@@ -1733,6 +1733,8 @@ static __isl_give isl_schedule_node *insert_io_stmts_tile(
                        copy_buffer->n_lane != nxt_data_pack && 
                        kernel->options->autosa->insert_hls_dependence;
 
+  //DBGSCHDNODE(stdout, node, isl_schedule_node_get_ctx(node));
+
   node = add_io_copies_stmt_tile(kernel, group, node,
                                  local_buffer->tile? local_buffer->tile : NULL, copy_buffer->tile, 
                                  nxt_data_pack,
@@ -1751,6 +1753,8 @@ static __isl_give isl_schedule_node *insert_io_stmts_tile(
           isl_set_get_space(kernel->context)));
     node = isl_schedule_node_insert_filter(node, empty_filter);
   }  
+
+  //DBGSCHDNODE(stdout, node, isl_schedule_node_get_ctx(node));
 
   return node;
 }
@@ -3380,11 +3384,21 @@ static isl_stat generate_default_io_module_schedule(
        * downstream I/O modules.
        */
       if (buf->tile) {
-        //module->data_pack_inter = buf->n_lane;
+        int pe_depth;        
+        isl_schedule_node *node_tmp;
+
         module->data_pack_inter = group->io_buffers[io_level - 1]->n_lane;
         module->data_pack_intra = buf->n_lane;
 
-        node = autosa_tree_move_down_to_depth(node, buf->tile->depth, kernel->core);
+        node_tmp = isl_schedule_node_copy(node);
+        node_tmp = autosa_tree_move_down_to_pe(node_tmp, kernel->core);
+        pe_depth = isl_schedule_node_get_schedule_depth(node_tmp);
+        isl_schedule_node_free(node_tmp);
+        if (pe_depth == buf->tile->depth) {
+          node = autosa_tree_move_down_to_pe(node, kernel->core);
+        } else {
+          node = autosa_tree_move_down_to_depth(node, buf->tile->depth, kernel->core);
+        }
         p = isl_printer_to_str(ctx);
         p = print_io_trans_stmt_prefix(
               p, read, module->to_mem, gen->options->autosa->host_serialize, boundary, 0, NULL,
@@ -3406,6 +3420,9 @@ static isl_stat generate_default_io_module_schedule(
   free(fifo_suffix);
   free(buf_suffix);
   isl_union_set_free(group_core);
+
+  //DBGSCHDNODE(stdout, node, isl_schedule_node_get_ctx(node));
+  //exit(0);
 
   /* Add the module mark. */
   id = isl_id_alloc(ctx, "module", module);

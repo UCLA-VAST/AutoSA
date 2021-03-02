@@ -379,6 +379,8 @@ isl_bool is_dep_uniform_wrap(__isl_keep isl_map *map, void *user)
 isl_bool uniform_dep_check(__isl_keep isl_schedule *schedule, struct ppcg_scop *scop)
 {
   isl_union_map *dep_rar = scop->dep_rar;
+  //DBGUMAP(stdout, dep_rar, isl_schedule_get_ctx(schedule));
+
   isl_union_map *dep_flow = scop->dep_flow;
 
   isl_bool all_flow_dep_uniform = isl_union_map_every_map(dep_flow, &is_dep_uniform_wrap, schedule);

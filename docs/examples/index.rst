@@ -20,6 +20,7 @@ Small Designs
     lu
     mm_int16
     mm_hbm
+    dnn_ops
 
 Large Designs 
 -------------
