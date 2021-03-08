@@ -379,7 +379,8 @@ add space loops into consideration in the previous command.
     --hls \
     --local-reduce \
     --reduce-op="+" \
-    --simd-touch-space
+    --simd-touch-space \
+    --no-isl-sink
 
 This leads to a 1x2 1D array.
 
@@ -452,7 +453,8 @@ Note that we use ``kernel[]->space_time[4]`` to select the fifth design.
     --hls \
     --local-reduce \
     --reduce-op="+" \
-    --simd-touch-space
+    --simd-touch-space \
+    --no-isl-sink
 
 This command leads to a 2x2 2D array.
 Similar as array 3, we add additional information about reduction properties of the application
@@ -489,6 +491,7 @@ Note that we use ``kernel[]->space_time[5]`` to select the fifth design.
     --hls \
     --local-reduce \
     --reduce-op="+" \
-    --simd-touch-space
+    --simd-touch-space \
+    --no-isl-sink
 
 This command leads to a 2x2 2D array.

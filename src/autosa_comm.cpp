@@ -696,8 +696,11 @@ static isl_stat compute_group_bounds_core_pe(struct autosa_kernel *kernel,
       contract_data.depth = -1;      
       node = isl_schedule_get_root(kernel->schedule);
       node = autosa_tree_move_down_to_pe(node, kernel->core);
+      //DBGSCHDNODE(stdout, node, isl_schedule_node_get_ctx(node));
       node = isl_schedule_node_map_descendant_bottom_up(node, &check_contraction, &contract_data);
       isl_schedule_node_free(node);      
+      //std::cout << contract_data.legal << std::endl;
+      //std::cout << contract_data.depth << std::endl;
     }
     
     if (contract_data.legal) {
