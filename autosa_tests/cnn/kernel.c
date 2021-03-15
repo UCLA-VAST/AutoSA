@@ -1,6 +1,6 @@
 #include "kernel.h"
 
-int main(){
+int main(int argc, char **argv){
   // declarations
 //  data_t cin[I][R + K - 1][C + K - 1];
 //  data_t w[O][I][K][K];

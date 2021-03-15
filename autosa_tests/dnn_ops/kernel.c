@@ -3,7 +3,7 @@
 
 #include "kernel.h"
 
-int main(){
+int main(int argc, char **argv){
 #ifdef PC	
   // Point-wise CONV
   data_t pc_cin[PC_R + PC_K - 1][PC_C + PC_K - 1][PC_I];
