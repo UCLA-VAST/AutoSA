@@ -4579,7 +4579,7 @@ static __isl_give isl_printer *io_transfer_pack_out_data(
     p = isl_printer_print_str(p, ");");
   } else if (hls->target == INTEL_HW) {
     if (nxt_n_lane == 1) {
-      p = isl_printer_print_str(p, "out_data.data[split_idx] = fifo_data;");
+      p = isl_printer_print_str(p, "out_data.data[split_idx] = in_data;");
     } else {
       int first = 1;
       p = isl_printer_print_str(p, "out_data.data = ");

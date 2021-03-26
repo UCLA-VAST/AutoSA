@@ -36,5 +36,6 @@ autosa
 autosa.tmp
 .nfs*
 .vscode
+.libs
 autosa_scripts/__pycache__
 docs/_build
