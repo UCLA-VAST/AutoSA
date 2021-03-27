@@ -106,6 +106,8 @@ extern "C"
 		int isl_sink;
 		/* Reverse the loop tiling order. */
 		int reverse_order;
+		/* Use AXI Stream Interface. */
+		int axi_stream;
 	};	
 
 	struct ppcg_options

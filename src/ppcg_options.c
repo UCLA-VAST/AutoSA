@@ -89,6 +89,8 @@ ISL_ARG_BOOL(struct autosa_options, autosa, 0, "autosa", 1,
 				"generate systolic arrays using AutoSA")
 ISL_ARG_BOOL(struct autosa_options, array_contraction, 0, "array-contraction", 1,
 				"apply array contraction")
+ISL_ARG_BOOL(struct autosa_options, axi_stream, 0, "axi-stream", 0,
+				"generate AXI stream interface, must be used together with host serialization.")
 ISL_ARG_BOOL(struct autosa_options, block_sparse, 0, "block-sparse", 0,
 				"use block sparsity")
 ISL_ARG_STR(struct autosa_options, block_sparse_ratio, 0, "block-sparse-ratio", "ratio",

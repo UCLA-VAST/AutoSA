@@ -1143,6 +1143,20 @@ static __isl_give isl_printer *declare_and_allocate_cpu_arrays_xilinx(
     p = isl_printer_print_str(p, local_array->array->name);
     p = isl_printer_print_str(p, ";");
     p = isl_printer_end_line(p);
+
+    if (prog->scop->options->autosa->axi_stream) {
+      if (local_array->n_mem_ports > 1) {
+        printf("[AutoSA] Error: Can't generate AXI Stream interface for array with more than one memory port: %s\n", local_array->array->name);
+        exit(1);
+      }
+      p = isl_printer_start_line(p);
+      p = isl_printer_print_str(p, "hls::stream<");
+      p = autosa_print_array_type(p, local_array->array);
+      p = isl_printer_print_str(p, "> fifo_");
+      p = isl_printer_print_str(p, local_array->array->name);
+      p = isl_printer_print_str(p, ";");
+      p = isl_printer_end_line(p);
+    }
   }
 
   for (int i = 0; i < kernel->n_array; i++)
@@ -1459,7 +1473,7 @@ static __isl_give isl_printer *drain_merge_xilinx(
  * gpu_array_info_print_size.
  */
 static __isl_give isl_printer *copy_array_to_device_xilinx(
-    __isl_take isl_printer *p,
+    __isl_take isl_printer *p, struct autosa_prog *prog,
     struct autosa_array_info *array, int hls)
 {
   int indent;
@@ -1518,6 +1532,32 @@ static __isl_give isl_printer *copy_array_to_device_xilinx(
     p = isl_printer_print_str(p, ");");
     p = isl_printer_end_line(p);
 
+    if (prog->scop->options->autosa->axi_stream) {
+      p = isl_printer_start_line(p);
+      p = isl_printer_print_str(p, "for (int j = 0; j < ");
+      if (!local_array->host_serialize) {
+        printf("[AutoSA] Error: Can't generate AXI Stream interface for array: %s without serialization\n", array->name);
+        exit(1);
+      }
+      p = autosa_array_info_print_serialize_data_size(p, array);
+      p = isl_printer_print_str(p, " / ");
+      p = isl_printer_print_int(p, array->n_lane);
+      p = isl_printer_print_str(p, "; j++) {");
+      p = isl_printer_end_line(p);
+
+      p = isl_printer_indent(p, 2);
+      p = isl_printer_start_line(p);
+      p = isl_printer_print_str(p, "fifo_");
+      p = isl_printer_print_str(p, array->name);
+      p = isl_printer_print_str(p, ".write(buffer_");
+      p = isl_printer_print_str(p, array->name);
+      p = isl_printer_print_str(p, "[i][j]);");
+      p = isl_printer_end_line(p);
+
+      p = isl_printer_indent(p, -2);
+      p = print_str_new_line(p, "}");
+    }
+
     p = isl_printer_indent(p, -2);
     p = print_str_new_line(p, "}");
     p = isl_printer_end_line(p);
@@ -1532,7 +1572,8 @@ static __isl_give isl_printer *copy_array_to_device_xilinx(
  * polysa_array_info_print_size.
  */
 static __isl_give isl_printer *copy_array_from_device_xilinx(
-    __isl_take isl_printer *p, struct autosa_array_info *array, int hls)
+    __isl_take isl_printer *p, struct autosa_prog *prog,
+    struct autosa_array_info *array, int hls)
 {
   struct autosa_local_array_info *local_array;
   int indent;
@@ -1569,6 +1610,32 @@ static __isl_give isl_printer *copy_array_from_device_xilinx(
     p = isl_printer_print_str(p, "; i++) {");
     p = isl_printer_end_line(p);
     p = isl_printer_indent(p, 2);
+
+    if (prog->scop->options->autosa->axi_stream) {
+      p = isl_printer_start_line(p);
+      p = isl_printer_print_str(p, "for (int j = 0; j < ");
+      if (!local_array->host_serialize) {
+        printf("[AutoSA] Error: Can't generate AXI Stream interface for array: %s without serialization\n", array->name);
+        exit(1);
+      }
+      p = autosa_array_info_print_serialize_data_size(p, array);
+      p = isl_printer_print_str(p, " / ");
+      p = isl_printer_print_int(p, array->n_lane);
+      p = isl_printer_print_str(p, "; j++) {");
+      p = isl_printer_end_line(p);
+
+      p = isl_printer_indent(p, 2);
+      p = isl_printer_start_line(p);
+      p = isl_printer_print_str(p, "buffer_");
+      p = isl_printer_print_str(p, array->name);
+      p = isl_printer_print_str(p, "[i][j] = fifo_");
+      p = isl_printer_print_str(p, array->name);
+      p = isl_printer_print_str(p, ".read();");
+      p = isl_printer_end_line(p);
+
+      p = isl_printer_indent(p, -2);
+      p = print_str_new_line(p, "}");
+    }
 
     p = isl_printer_start_line(p);
     p = isl_printer_print_str(p, "memcpy(dev_");
@@ -1658,9 +1725,9 @@ static __isl_give isl_printer *print_device_node_xilinx(__isl_take isl_printer *
     return isl_printer_free(p);
 
   if (!prefixcmp(name, "to_device"))
-    return copy_array_to_device_xilinx(p, array, hls);
+    return copy_array_to_device_xilinx(p, prog, array, hls);
   else
-    return copy_array_from_device_xilinx(p, array, hls);
+    return copy_array_from_device_xilinx(p, prog, array, hls);
 
   return p;
 }
@@ -3997,16 +4064,28 @@ static __isl_give isl_printer *print_top_module_interface_xilinx(
         {
           p = print_str_new_line(p, "p = isl_printer_start_line(p);");
           p = isl_printer_start_line(p);
-          p = isl_printer_print_str(p, "p = isl_printer_print_str(p, \"#pragma HLS INTERFACE m_axi port=");
-          p = isl_printer_print_str(p, local_array->array->name);
-          p = isl_printer_print_str(p, "_");
-          p = isl_printer_print_int(p, j);
-          p = isl_printer_print_str(p, " offset=slave bundle=gmem_");
-          p = isl_printer_print_str(p, local_array->array->name);
-          p = isl_printer_print_str(p, "_");
-          p = isl_printer_print_int(p, j);
-          p = isl_printer_print_str(p, "\");");
-          p = isl_printer_end_line(p);
+          if (prog->scop->options->autosa->axi_stream) {
+            p = isl_printer_print_str(p, "p = isl_printer_print_str(p, \"#pragma HLS INTERFACE axis port=fifo_");
+            p = isl_printer_print_str(p, local_array->array->name);
+            p = isl_printer_print_str(p, "_");
+            p = isl_printer_print_int(p, j);
+            p = isl_printer_print_str(p, " bundle=gmem_");
+            p = isl_printer_print_str(p, local_array->array->name);
+            p = isl_printer_print_str(p, "_");
+            p = isl_printer_print_int(p, j);
+            p = isl_printer_print_str(p, "\");");            
+          } else {
+            p = isl_printer_print_str(p, "p = isl_printer_print_str(p, \"#pragma HLS INTERFACE m_axi port=");
+            p = isl_printer_print_str(p, local_array->array->name);
+            p = isl_printer_print_str(p, "_");
+            p = isl_printer_print_int(p, j);
+            p = isl_printer_print_str(p, " offset=slave bundle=gmem_");
+            p = isl_printer_print_str(p, local_array->array->name);
+            p = isl_printer_print_str(p, "_");
+            p = isl_printer_print_int(p, j);
+            p = isl_printer_print_str(p, "\");");
+          }
+          p = isl_printer_end_line(p);          
           p = print_str_new_line(p, "p = isl_printer_end_line(p);");
         }
       }
@@ -4014,46 +4093,56 @@ static __isl_give isl_printer *print_top_module_interface_xilinx(
       {
         p = print_str_new_line(p, "p = isl_printer_start_line(p);");
         p = isl_printer_start_line(p);
-        p = isl_printer_print_str(p, "p = isl_printer_print_str(p, \"#pragma HLS INTERFACE m_axi port=");
-        p = isl_printer_print_str(p, local_array->array->name);
-        p = isl_printer_print_str(p, " offset=slave bundle=gmem_");
-        p = isl_printer_print_str(p, local_array->array->name);
-        p = isl_printer_print_str(p, "\");");
+        if (prog->scop->options->autosa->axi_stream) {
+          p = isl_printer_print_str(p, "p = isl_printer_print_str(p, \"#pragma HLS INTERFACE axis port=fifo_");
+          p = isl_printer_print_str(p, local_array->array->name);
+          p = isl_printer_print_str(p, " bundle=gmem_");
+          p = isl_printer_print_str(p, local_array->array->name);
+          p = isl_printer_print_str(p, "\");");
+        } else {
+          p = isl_printer_print_str(p, "p = isl_printer_print_str(p, \"#pragma HLS INTERFACE m_axi port=");
+          p = isl_printer_print_str(p, local_array->array->name);
+          p = isl_printer_print_str(p, " offset=slave bundle=gmem_");
+          p = isl_printer_print_str(p, local_array->array->name);
+          p = isl_printer_print_str(p, "\");");          
+        }
         p = isl_printer_end_line(p);
         p = print_str_new_line(p, "p = isl_printer_end_line(p);");
       }
     }
   }
 
-  for (int i = 0; i < kernel->n_array; ++i)
-  {
-    struct autosa_local_array_info *local_array = &kernel->array[i];
-    if (autosa_kernel_requires_array_argument(kernel, i))
+  if (!prog->scop->options->autosa->axi_stream) {
+    for (int i = 0; i < kernel->n_array; ++i)
     {
-      if (local_array->n_io_group_refs > 1)
+      struct autosa_local_array_info *local_array = &kernel->array[i];
+      if (autosa_kernel_requires_array_argument(kernel, i))
       {
-        for (int j = 0; j < local_array->n_io_group_refs; j++)
+        if (local_array->n_io_group_refs > 1)
+        {
+          for (int j = 0; j < local_array->n_io_group_refs; j++)
+          {
+            p = print_str_new_line(p, "p = isl_printer_start_line(p);");
+            p = isl_printer_start_line(p);
+            p = isl_printer_print_str(p, "p = isl_printer_print_str(p, \"#pragma HLS INTERFACE s_axilite port=");
+            p = isl_printer_print_str(p, local_array->array->name);
+            p = isl_printer_print_str(p, "_");
+            p = isl_printer_print_int(p, j);
+            p = isl_printer_print_str(p, " bundle=control\");");
+            p = isl_printer_end_line(p);
+            p = print_str_new_line(p, "p = isl_printer_end_line(p);");
+          }
+        }
+        else
         {
           p = print_str_new_line(p, "p = isl_printer_start_line(p);");
           p = isl_printer_start_line(p);
           p = isl_printer_print_str(p, "p = isl_printer_print_str(p, \"#pragma HLS INTERFACE s_axilite port=");
           p = isl_printer_print_str(p, local_array->array->name);
-          p = isl_printer_print_str(p, "_");
-          p = isl_printer_print_int(p, j);
           p = isl_printer_print_str(p, " bundle=control\");");
           p = isl_printer_end_line(p);
           p = print_str_new_line(p, "p = isl_printer_end_line(p);");
         }
-      }
-      else
-      {
-        p = print_str_new_line(p, "p = isl_printer_start_line(p);");
-        p = isl_printer_start_line(p);
-        p = isl_printer_print_str(p, "p = isl_printer_print_str(p, \"#pragma HLS INTERFACE s_axilite port=");
-        p = isl_printer_print_str(p, local_array->array->name);
-        p = isl_printer_print_str(p, " bundle=control\");");
-        p = isl_printer_end_line(p);
-        p = print_str_new_line(p, "p = isl_printer_end_line(p);");
       }
     }
   }

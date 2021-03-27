@@ -17,3 +17,4 @@ architectures and the compilation process of AutoSA.
     intel_backend
     catapult_backend
     host_serialize
+    hcl_integrate
