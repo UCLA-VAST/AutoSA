@@ -24,7 +24,14 @@ First, HeteroCL might provide AutoSA with transposed input matrices. We consider
 Set `TRANS` to `A_B` in `kernel.c`.
 Use the following command to compile the program.
 ```bash
-./autosa ./autosa_tests/mm_hcl/kernel.c --config=./autosa_config/autosa_config.json --target=autosa_hls_c --output-dir=./autosa.tmp/output --sa-sizes="{kernel[]->space_time[3];kernel[]->array_part[16,16,16];kernel[]->latency[8,8]}" --simd-info=./autosa_tests/mm_hcl/simd_info.json --hls --hcl
+./autosa ./autosa_tests/mm_hcl/kernel.c \
+--config=./autosa_config/autosa_config.json \
+--target=autosa_hls_c \
+--output-dir=./autosa.tmp/output \
+--sa-sizes="{kernel[]->space_time[3];kernel[]->array_part[16,16,16];kernel[]->latency[8,8]}" \
+--simd-info=./autosa_tests/mm_hcl/simd_info.json \
+--hls \
+--hcl
 ```
 
 The generated files can be found under `autosa.tmp/output`.
@@ -47,7 +54,15 @@ SIMD vectorization opportunity is lost.
 
 To make use of SIMD vectorization, use the following command.
 ```bash
-./autosa ./autosa_tests/mm_hcl/kernel.c --config=./autosa_config/autosa_config.json --target=autosa_hls_c --output-dir=./autosa.tmp/output --sa-sizes="{kernel[]->space_time[3];kernel[]->array_part[16,16,16];kernel[]->latency[8,1]}" --simd-info=./autosa_tests/mm_hcl/simd_info.json --hls --hcl --simd-touch-space
+./autosa ./autosa_tests/mm_hcl/kernel.c \
+--config=./autosa_config/autosa_config.json \
+--target=autosa_hls_c \
+--output-dir=./autosa.tmp/output \
+--sa-sizes="{kernel[]->space_time[3];kernel[]->array_part[16,16,16];kernel[]->latency[8,1]}" \
+--simd-info=./autosa_tests/mm_hcl/simd_info.json \
+--hls \
+--hcl \
+--simd-touch-space
 ```
 
 We add `--simd-touch-space` to consider space loops as well for vectorization. To use loop j for vectorization, we set latency tiling factors to `[8,1]` which means that only loop i is tiled for latency hiding. AutoSA will dump out the possible loops for SIMD vectorization. Take a look at the file `tuning.json` under the directory `autosa.tmp/output`
@@ -67,7 +82,15 @@ Therefore, the `legal` value is set to 0 for the second loop.
 Now to apply SIMD vectorization, use the following command.
 
 ```bash
-./autosa ./autosa_tests/mm_hcl/kernel.c --config=./autosa_config/autosa_config.json --target=autosa_hls_c --output-dir=./autosa.tmp/output --sa-sizes="{kernel[]->space_time[3];kernel[]->array_part[16,16,16];kernel[]->latency[8,1];kernel[]->simd[8,1]}" --simd-info=./autosa_tests/mm_hcl/simd_info.json --hls --hcl --simd-touch-space
+./autosa ./autosa_tests/mm_hcl/kernel.c \
+--config=./autosa_config/autosa_config.json \
+--target=autosa_hls_c \
+--output-dir=./autosa.tmp/output \
+--sa-sizes="{kernel[]->space_time[3];kernel[]->array_part[16,16,16];kernel[]->latency[8,1];kernel[]->simd[8,1]}" \
+--simd-info=./autosa_tests/mm_hcl/simd_info.json \
+--hls \
+--hcl \
+--simd-touch-space
 ```
 
 A complete design with loop j vectorized is generated now.
@@ -77,7 +100,14 @@ A complete design with loop j vectorized is generated now.
 Set `TRANS` to `AT_B` in `kernel.c`.
 Use the following command to compile the program.
 ```bash
-./autosa ./autosa_tests/mm_hcl/kernel.c --config=./autosa_config/autosa_config.json --target=autosa_hls_c --output-dir=./autosa.tmp/output --sa-sizes="{kernel[]->space_time[3];kernel[]->array_part[16,16,16];kernel[]->latency[8,8]}" --simd-info=./autosa_tests/mm_hcl/simd_info.json --hls --hcl
+./autosa ./autosa_tests/mm_hcl/kernel.c \
+--config=./autosa_config/autosa_config.json \
+--target=autosa_hls_c \
+--output-dir=./autosa.tmp/output \
+--sa-sizes="{kernel[]->space_time[3];kernel[]->array_part[16,16,16];kernel[]->latency[8,8]}" \
+--simd-info=./autosa_tests/mm_hcl/simd_info.json \
+--hls \
+--hcl
 ```
 
 To enable SIMD vectorization, let's take a look at the array accesses `A[k][i]`, `B[k][j]`, and `C[i][j]`.
@@ -85,13 +115,29 @@ In this case, loop j can be used for vectorization as long as it is avoided duri
 Use the following command to only tile loop i for latency hiding.
 
 ```bash
-./autosa ./autosa_tests/mm_hcl/kernel.c --config=./autosa_config/autosa_config.json --target=autosa_hls_c --output-dir=./autosa.tmp/output --sa-sizes="{kernel[]->space_time[3];kernel[]->array_part[16,16,16];kernel[]->latency[8,1]}" --simd-info=./autosa_tests/mm_hcl/simd_info.json --hls --hcl --simd-touch-space
+./autosa ./autosa_tests/mm_hcl/kernel.c \
+--config=./autosa_config/autosa_config.json \
+--target=autosa_hls_c \
+--output-dir=./autosa.tmp/output \
+--sa-sizes="{kernel[]->space_time[3];kernel[]->array_part[16,16,16];kernel[]->latency[8,1]}" \
+--simd-info=./autosa_tests/mm_hcl/simd_info.json \
+--hls \
+--hcl \
+--simd-touch-space
 ```
 
 Similarly you may check `tuning.json` for more detailed information. Finally use the command below to generated a vectorized design.
 
 ```bash
-./autosa ./autosa_tests/mm_hcl/kernel.c --config=./autosa_config/autosa_config.json --target=autosa_hls_c --output-dir=./autosa.tmp/output --sa-sizes="{kernel[]->space_time[3];kernel[]->array_part[16,16,16];kernel[]->latency[8,1];kernel[]->simd[8,1]}" --simd-info=./autosa_tests/mm_hcl/simd_info.json --hls --hcl --simd-touch-space
+./autosa ./autosa_tests/mm_hcl/kernel.c \
+--config=./autosa_config/autosa_config.json \
+--target=autosa_hls_c \
+--output-dir=./autosa.tmp/output \
+--sa-sizes="{kernel[]->space_time[3];kernel[]->array_part[16,16,16];kernel[]->latency[8,1];kernel[]->simd[8,1]}" \
+--simd-info=./autosa_tests/mm_hcl/simd_info.json \
+--hls \
+--hcl \
+--simd-touch-space
 ```
 
 3. A_BT: The input matrix A remains the row major, and the matrix B is transposed to column major.
@@ -100,14 +146,28 @@ Set `TRANS` to `A_BT` in `kernel.c`.
 Run the following command first.
 
 ```bash
-./autosa ./autosa_tests/mm_hcl/kernel.c --config=./autosa_config/autosa_config.json --target=autosa_hls_c --output-dir=./autosa.tmp/output --sa-sizes="{kernel[]->space_time[3];kernel[]->array_part[16,16,16];kernel[]->latency[8,8]}" --simd-info=./autosa_tests/mm_hcl/simd_info.json --hls --hcl
+./autosa ./autosa_tests/mm_hcl/kernel.c \
+--config=./autosa_config/autosa_config.json \
+--target=autosa_hls_c \
+--output-dir=./autosa.tmp/output \
+--sa-sizes="{kernel[]->space_time[3];kernel[]->array_part[16,16,16];kernel[]->latency[8,8]}" \
+--simd-info=./autosa_tests/mm_hcl/simd_info.json \
+--hls \
+--hcl
 ```
 
 In this case, AutoSA already detects a SIMD candidate loop k and will stop.
 Array accesses in the current layout are `A[i][k]`, `B[j][k]`, and `C[i][j]`. Therefore, loop k can be used as the SIMD loop. Let's set the SIMD factor to 8 by using the following command to generate a complete design.
 
 ```bash
-./autosa ./autosa_tests/mm_hcl/kernel.c --config=./autosa_config/autosa_config.json --target=autosa_hls_c --output-dir=./autosa.tmp/output --sa-sizes="{kernel[]->space_time[3];kernel[]->array_part[16,16,16];kernel[]->latency[8,8];kernel[]->simd[8]}" --simd-info=./autosa_tests/mm_hcl/simd_info.json --hls --hcl
+./autosa ./autosa_tests/mm_hcl/kernel.c \
+--config=./autosa_config/autosa_config.json \
+--target=autosa_hls_c \
+--output-dir=./autosa.tmp/output \
+--sa-sizes="{kernel[]->space_time[3];kernel[]->array_part[16,16,16];kernel[]->latency[8,8];kernel[]->simd[8]}" \
+--simd-info=./autosa_tests/mm_hcl/simd_info.json \
+--hls \
+--hcl
 ```
 
 4. AT_BT: Both matrix A and B are transposed to column major.
@@ -117,7 +177,14 @@ Set `TRANS` to `AT_BT` in `kernel.c`.
 Run the following command first.
 
 ```bash
-./autosa ./autosa_tests/mm_hcl/kernel.c --config=./autosa_config/autosa_config.json --target=autosa_hls_c --output-dir=./autosa.tmp/output --sa-sizes="{kernel[]->space_time[3];kernel[]->array_part[16,16,16];kernel[]->latency[8,8]}" --simd-info=./autosa_tests/mm_hcl/simd_info.json --hls --hcl
+./autosa ./autosa_tests/mm_hcl/kernel.c \
+--config=./autosa_config/autosa_config.json \
+--target=autosa_hls_c \
+--output-dir=./autosa.tmp/output \
+--sa-sizes="{kernel[]->space_time[3];kernel[]->array_part[16,16,16];kernel[]->latency[8,8]}" \
+--simd-info=./autosa_tests/mm_hcl/simd_info.json \
+--hls \
+--hcl
 ```
 
 An unvectorized design is generated.
@@ -158,7 +225,15 @@ Set `TRANS` to `A_BT` in `kernel.c`.
 Use the following command to compile the design.
 
 ```bash
-./autosa ./autosa_tests/mm_hcl/kernel.c --config=./autosa_config/autosa_config.json --target=autosa_hls_c --output-dir=./autosa.tmp/output --sa-sizes="{kernel[]->space_time[3];kernel[]->array_part[16,16,16];kernel[]->latency[8,8];kernel[]->simd[8]}" --simd-info=./autosa_tests/mm_hcl/simd_info.json --hls --hcl --data-pack-sizes="{kernel[]->A[8,32,64];kernel[]->B[8,32,64];kernel[]->C[8,32,64]}"
+./autosa ./autosa_tests/mm_hcl/kernel.c \
+--config=./autosa_config/autosa_config.json \
+--target=autosa_hls_c \
+--output-dir=./autosa.tmp/output \
+--sa-sizes="{kernel[]->space_time[3];kernel[]->array_part[16,16,16];kernel[]->latency[8,8];kernel[]->simd[8]}" \
+--simd-info=./autosa_tests/mm_hcl/simd_info.json \
+--hls \
+--hcl \
+--data-pack-sizes="{kernel[]->A[8,32,64];kernel[]->B[8,32,64];kernel[]->C[8,32,64]}"
 ```
 
 Now let's take a look at the generated code.
@@ -176,7 +251,15 @@ Host serialization requires layout transformation on the host side which makes i
 The command below shows an example of using a larger latency hiding factor to allocate a larger tile inside each PE.
 
 ```bash
-./autosa ./autosa_tests/mm_hcl/kernel.c --config=./autosa_config/autosa_config.json --target=autosa_hls_c --output-dir=./autosa.tmp/output --sa-sizes="{kernel[]->space_time[3];kernel[]->array_part[16,32,16];kernel[]->latency[8,16];kernel[]->simd[8]}" --simd-info=./autosa_tests/mm_hcl/simd_info.json --hls --hcl --data-pack-sizes="{kernel[]->A[8,32,64];kernel[]->B[8,32,64];kernel[]->C[8,32,64]}"
+./autosa ./autosa_tests/mm_hcl/kernel.c \
+--config=./autosa_config/autosa_config.json \
+--target=autosa_hls_c \
+--output-dir=./autosa.tmp/output \
+--sa-sizes="{kernel[]->space_time[3];kernel[]->array_part[16,32,16];kernel[]->latency[8,16];kernel[]->simd[8]}" \
+--simd-info=./autosa_tests/mm_hcl/simd_info.json \
+--hls \
+--hcl \
+--data-pack-sizes="{kernel[]->A[8,32,64];kernel[]->B[8,32,64];kernel[]->C[8,32,64]}"
 ```
 
 You can check the generated the source code and find that we have successuflly packed all arrays to 16 elements each.
@@ -184,5 +267,13 @@ You can check the generated the source code and find that we have successuflly p
 The last thing to mention is that in the current flow we prioritize SIMD vectorization factors to user-specified data packing factors. In this example, as we specify the SIMD factor to be 8, array A and B will be packed with 8 elements at least. As an example, if running the following commmand which tries to restrain the data packing factors of A and B to 4 elements (16 bytes), AutoSA will ignore this constraint and pack A and B with 8 elements, only array C will be packed with 4 elements.
 
 ```bash
-./autosa ./autosa_tests/mm_hcl/kernel.c --config=./autosa_config/autosa_config.json --target=autosa_hls_c --output-dir=./autosa.tmp/output --sa-sizes="{kernel[]->space_time[3];kernel[]->array_part[16,32,16];kernel[]->latency[8,16];kernel[]->simd[8]}" --simd-info=./autosa_tests/mm_hcl/simd_info.json --hls --hcl --data-pack-sizes="{kernel[]->A[8,16,16];kernel[]->B[8,16,16];kernel[]->C[8,16,16]}"
+./autosa ./autosa_tests/mm_hcl/kernel.c \
+--config=./autosa_config/autosa_config.json \
+--target=autosa_hls_c \
+--output-dir=./autosa.tmp/output \
+--sa-sizes="{kernel[]->space_time[3];kernel[]->array_part[16,32,16];kernel[]->latency[8,16];kernel[]->simd[8]}" \
+--simd-info=./autosa_tests/mm_hcl/simd_info.json \
+--hls \
+--hcl \
+--data-pack-sizes="{kernel[]->A[8,16,16];kernel[]->B[8,16,16];kernel[]->C[8,16,16]}"
 ```

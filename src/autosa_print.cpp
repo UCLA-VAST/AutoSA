@@ -4943,7 +4943,7 @@ static __isl_give isl_printer *io_transfer_read_data_split(
       if (nxt_n_lane > 1)
         p = isl_printer_print_str(p, "data_split[split_idx]");
       else      
-        p = isl_printer_print_str(p, "data.data[split_idx]");
+        p = isl_printer_print_str(p, "in_data.data[split_idx]");
     } else if (hls->target == CATAPULT_HW) {
       p = isl_printer_print_str(p, "data_split[split_idx]");
     }

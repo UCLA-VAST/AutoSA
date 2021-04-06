@@ -27,7 +27,7 @@ Issue 2: Generating kernels with AXI Stream interface
 -----------------------------------------------------
 
 To generate AXI Stream interface, we will need to enable host serialization and generate
-the HLS host by adding the flag ``--axi-stream --hls``. 
+the HLS host by adding the flag ``--axi-stream --hls --host-serialize``.
 Below is the example command:
 
 .. code:: bash

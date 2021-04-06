@@ -46,6 +46,13 @@ if __name__ == "__main__":
                 xilinx_host = 'hls'
             if '--hcl' in arg:
                 hcl = True
+    #print(argv)
+    #exit(0)
+    if n_arg > 1 and target == 'autosa_opencl':
+        for arg in argv:
+            if '--hcl' in arg:
+                hcl = True    
+
     if tuning:
         del argv[tuning_idx]
     if insert_isl_flag:
@@ -102,6 +109,8 @@ if __name__ == "__main__":
                   '/src/top.cpp -d ' + output_dir + '/src/' + src_file_prefix + \
                   '_kernel_modules.cl -t ' + target + ' -o ' + output_dir + '/src/' + \
                   src_file_prefix + '_kernel.cl'
+            if hcl:
+                cmd += ' --hcl'
         elif target == 'autosa_catapult_c':
             cmd = './autosa_scripts/codegen.py -c ' + output_dir + \
                   '/src/top.cpp -d ' + output_dir + '/src/' + src_file_prefix + \

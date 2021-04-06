@@ -5,7 +5,7 @@ import sys
 import argparse
 import re
 import numpy as np
-
+import os
 
 def delete_arg_from_arg_list(line, arg, content):
     """ Delete the argument from the argument list
@@ -300,7 +300,7 @@ def generate_intel_kernel(
     with open(kernel, 'w') as f:
         # Print out headers
         for header in headers:
-            f.write(header + '\n')
+            f.write(header)
         f.write('\n')
 
         f.write('#pragma OPENCL EXTENSION cl_intel_channels : enable\n\n')
@@ -382,7 +382,6 @@ def generate_intel_kernel(
                 def_args,
                 call_args_type)
             # f.write('/* Module Definition */\n\n')
-
 
 def contains_pipeline_for(pos, lines):
     """ Examine if there is any for loop with hls_pipeline annotation inside the current for loop
@@ -1223,7 +1222,8 @@ def insert_intel_pragmas(lines):
 def intel_run(
         kernel_call,
         kernel_def,
-        kernel='autosa.tmp/output/src/kernel_kernel.cpp'):
+        kernel='autosa.tmp/output/src/kernel_kernel.cpp',
+        hcl=False):
     """ Generate the kernel file for Intel platform
 
     We will extract all the fifo declarations and module calls.
@@ -1237,6 +1237,8 @@ def intel_run(
         file containing kernel definitions
     kernel:
         output kernel file
+    hcl:
+        integrated with HeteroCL
     """
     # Load kernel call file
     module_calls = []
@@ -1276,14 +1278,24 @@ def intel_run(
 
     module_defs = {}
     headers = []
+    #print(hcl)
     with open(kernel_def, 'r') as f:
         while True:
             line = f.readline()
             if not line:
                 break
             if line.find('#include') != -1:
-                line = line.strip()
-                headers.append(line)
+                #line = line.strip()
+                if hcl == True and line.find('_kernel.h') != -1:
+                    # Replace the header include with header contents
+                    #print(line)
+                    file_name = re.search(r'include \"(.+?)\"', line).group(1)
+                    file_path = os.path.dirname(kernel) + '/' + file_name                    
+                    with open(file_path, 'r') as f2:
+                        header_lines = f2.readlines()
+                        headers += header_lines
+                else:
+                    headers.append(line)
 
     with open(kernel_def, 'r') as f:
         add = False
@@ -1326,7 +1338,6 @@ def intel_run(
         module_defs,
         module_calls,
         fifo_decls)
-
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='==== AutoSA CodeGen ====')
@@ -1374,7 +1385,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     if args.target == 'autosa_opencl':
-        intel_run(args.kernel_call, args.kernel_def, args.output)
+        intel_run(args.kernel_call, args.kernel_def, args.output, args.hcl)
     elif args.target == 'autosa_hls_c':
         xilinx_run(args.kernel_call, args.kernel_def, args.output, args.host, args.hcl)
     elif args.target == 'autosa_catapult_c':

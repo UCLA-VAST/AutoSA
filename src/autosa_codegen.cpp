@@ -2560,20 +2560,39 @@ static __isl_give struct autosa_hw_module *generate_filter_buffer_io_module(
   isl_schedule *boundary_sched2, *boundary_sched1;
 
   sched = isl_schedule_node_get_schedule(node);
-
-  /* We only enable double buffer for external array. 
-   * TODO: Offer options to enable the selection of which arrays to be double buffered.
-   */
+  
   if (gen->options->autosa->double_buffer && kernel->array_part_w > 0)
   {
-    if (group->local_array->array_type == AUTOSA_EXT_ARRAY && module->in) {
-      module->double_buffer = 1;
-    } else {
-      if (gen->options->autosa->local_reduce)
+    isl_union_map *double_buffer_assignment;
+    /* Check if the double buffer assignment exists. */
+    //printf("%s\n", gen->options->autosa->double_buffer_assignment);
+    double_buffer_assignment = extract_sizes_from_str(kernel->ctx, gen->options->autosa->double_buffer_assignment);
+    //DBGUMAP(stdout, double_buffer_assignment, kernel->ctx);
+    //exit(0);
+    if (!double_buffer_assignment) {
+      /* Use the default strategy.
+       * Only external array is set to double buffer.
+       */
+      if (group->local_array->array_type == AUTOSA_EXT_ARRAY && module->in) {
         module->double_buffer = 1;
-      else
-        module->double_buffer = 0;    
+      } else {
+        if (gen->options->autosa->local_reduce)
+          module->double_buffer = 1;
+        else
+          module->double_buffer = 0;    
+      }
+    } else {
+      isl_set *tmp;
+      tmp = extract_sa_sizes(double_buffer_assignment, group->local_array->array->name);
+      //printf("here\n");
+      
+      if (tmp) {
+        //printf("%s\n", module->io_groups[0]->local_array->array->name);
+        module->double_buffer = 1;        
+      }
+      isl_set_free(tmp);
     }
+    isl_union_map_free(double_buffer_assignment);
   }
   else
   {

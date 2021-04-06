@@ -105,6 +105,8 @@ ISL_ARG_STR(struct autosa_options, data_pack_sizes, 0, "data-pack-sizes", "sizes
 				NULL, "data pack sizes upper bound (bytes) at innermost, intermediate, outermost I/O level [default: kernel[]->data_pack[8,32,64]]")
 ISL_ARG_BOOL(struct autosa_options, double_buffer, 0, "double-buffer", 1,
 			 	"enable double-buffering for data transfer")
+ISL_ARG_STR(struct autosa_options, double_buffer_assignment, 0, "double-buffer-assign", "assignment",
+				NULL, "assign arrays to be double bufferred (e.g., kernel[]->A[])")
 ISL_ARG_INT(struct autosa_options, double_buffer_style, 0, "double-buffer-style", "id", 1,
 				"change double-buffering logic coding style (0: while loop 1: for loop)")
 ISL_ARG_INT(struct autosa_options, fifo_depth, 0, "fifo-depth", "depth", 2, "default FIFO depth")

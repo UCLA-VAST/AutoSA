@@ -298,6 +298,7 @@ static isl_stat print_data_types_intel(
     p = isl_printer_print_str(p, " ");
     p = isl_printer_print_str(p, local->array->name);
     p = isl_printer_print_str(p, "_t1;");
+    p = isl_printer_end_line(p);
   }
 
   for (int i = 0; i < kernel->n_array; i++)

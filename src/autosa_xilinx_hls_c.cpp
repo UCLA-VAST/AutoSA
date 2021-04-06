@@ -197,12 +197,10 @@ static void hls_open_files(struct hls_info *info, const char *input)
 
   fprintf(info->top_gen_c, "#include <isl/printer.h>\n");
   fprintf(info->top_gen_c, "#include \"%s\"\n", name);
-  
-  //if (!info->hcl) {
-    fprintf(info->kernel_h, "#include <ap_int.h>\n");
-    fprintf(info->kernel_h, "#include <hls_stream.h>\n");
-    fprintf(info->kernel_h, "\n");
-  //}    
+    
+  fprintf(info->kernel_h, "#include <ap_int.h>\n");
+  fprintf(info->kernel_h, "#include <hls_stream.h>\n");
+  fprintf(info->kernel_h, "\n");  
 
   fprintf(info->kernel_h, "#define min(x,y) ((x < y) ? x : y)\n");
   fprintf(info->kernel_h, "#define max(x,y) ((x > y) ? x : y)\n");

@@ -2,16 +2,19 @@
 #include "stdlib.h"
 #include "math.h"
 
-typedef float data_t;
-//typedef int data_t;
+//typedef float data_t;
+typedef int data_t;
 //#define I 1024
 //#define J 1024
 //#define K 1024
+#define I 256
+#define J 256
+#define K 512
 
 // kernel3 2D IxJ
-#define I 1040
-#define J 1024
-#define K 1024
+//#define I 1040
+//#define J 1024
+//#define K 1024
 
 // kernel4 2D IxK
 //#define I 1040
