@@ -1211,7 +1211,7 @@ __isl_give isl_printer *print_module_arguments(
                                                          module->io_groups[0]->array);
       }
       first = 0;
-    } else if (module->is_serialized && serialize && prog->scop->options->autosa->axi_stream) {
+    } else if (module->is_serialized && serialize && prog->scop->options->autosa->axi_stream && inter == -1) {
       /* Print a stream fifo */
       struct autosa_io_buffer *io_buffer =
           module->io_groups[0]->io_buffers[module->io_groups[0]->io_level - 1];
@@ -1227,12 +1227,12 @@ __isl_give isl_printer *print_module_arguments(
         p = autosa_fifo_print_declaration_arguments(p,
                                                     module->io_groups[0], n_lane, NULL, target);
       } else {
-        p = isl_printer_print_str(p, "/* fifo */");
+        p = isl_printer_print_str(p, "/* fifo */ ");
         p = autosa_fifo_print_call_argument(p,  
                                             module->io_groups[0], NULL, target);
       }
       first = 0;
-    } else {
+    } else if (inter == -1) {
       /* Print a serialize fifo */
       int n_lane = module->data_pack_inter;
       if (!first) {
@@ -1246,14 +1246,13 @@ __isl_give isl_printer *print_module_arguments(
         p = autosa_fifo_print_declaration_arguments(p,
                                                     module->io_groups[0], n_lane, "serialize", target);
       } else {
-        p = isl_printer_print_str(p, "/* fifo */");
+        p = isl_printer_print_str(p, "/* fifo */ ");
         p = autosa_fifo_print_call_argument(p,  
                                             module->io_groups[0], "serialize", target);
       }
       first = 0;
     }
-  }
-  else if (module->type == PE_MODULE)
+  } else if (module->type == PE_MODULE)
   {
     /* Scalars */
     for (int i = 0; i < prog->n_array; i++)

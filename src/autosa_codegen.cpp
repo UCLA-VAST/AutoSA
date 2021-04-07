@@ -5987,6 +5987,9 @@ static isl_stat top_module_io_gen_ext_module(
   int boundary = module->boundary;
   isl_union_set *boundary_filter, *non_boundary_filter;
   isl_union_set_list *boundary_filters;
+  isl_union_set *group_domain_filter;
+  int single_ele = -1;
+  isl_union_set *group_domain_filter_level;
 
   /* Only the top-level io module connected to the external memory is handled.
    */
@@ -5998,31 +6001,56 @@ static isl_stat top_module_io_gen_ext_module(
   node = isl_schedule_get_root(schedule);
   isl_schedule_free(schedule);
 
+  /* Compute the union of domains of all the array references in the group. */
+  group_domain_filter = compute_io_group_domain(node, group, kernel, gen, module->in);  
+  group_domain_filter = extend_io_group_domain(group_domain_filter, node, group, kernel, module->level);  
+  group_domain_filter_level = compute_io_group_domain_at_level(group_domain_filter, node, group, kernel, module->level);    
+
   /* Delete the node above the array mark. */
   node = autosa_tree_move_down_to_array(node, kernel->core);
-  node = isl_schedule_node_parent(node);
-  while (!autosa_tree_node_is_kernel(node))
-  {
+  node = isl_schedule_node_parent(node);  
+  while (!(autosa_tree_node_is_kernel(node) || isl_schedule_node_get_type(node) == isl_schedule_node_context)) {
     node = isl_schedule_node_delete(node);
     node = isl_schedule_node_parent(node);
   }
 
+  node = autosa_tree_move_up_to_kernel(node);
+
   /* Collect the filter for the boundary and non-boundary I/O module. */
-  if (boundary)
+  if (boundary && (module->level <= group->space_dim))
   {
     node = autosa_tree_move_down_to_io_mark(node, kernel->core, module->level);
     node = isl_schedule_node_parent(node);
     if (isl_schedule_node_get_type(node) == isl_schedule_node_band)
     {
-      boundary_filter = schedule_eq_ub(node);
-      non_boundary_filter = schedule_neq_ub(node);
-      boundary_filters = isl_union_set_list_from_union_set(non_boundary_filter);
-      boundary_filters = isl_union_set_list_add(boundary_filters, boundary_filter);
+      /* Test if the band only contains one elmenet */
+      isl_schedule_node *node_tmp;      
+      node_tmp = isl_schedule_node_copy(node);
+      if (group_domain_filter_level) {
+        node_tmp = isl_schedule_node_insert_filter(node_tmp, isl_union_set_copy(group_domain_filter_level));
+        node_tmp = isl_schedule_node_child(node_tmp, 0);
+      }
+      single_ele = get_band_single_schedule_val(node_tmp);
+      if (single_ele == -1) {
+        boundary_filter = schedule_eq_ub(node_tmp);
+        non_boundary_filter = schedule_neq_ub(node_tmp);
+      }
+      isl_schedule_node_free(node_tmp);
 
-      node = isl_schedule_node_child(node, 0); // io_mark
-      node = isl_schedule_node_child(node, 0); // band
-      node = isl_schedule_node_insert_sequence(node, boundary_filters);
-      /* The node now is right below the io_[module->level] mark. */
+      if (single_ele == -1) {
+        boundary_filters = isl_union_set_list_from_union_set(non_boundary_filter);
+        boundary_filters = isl_union_set_list_add(boundary_filters, boundary_filter);        
+
+        node = isl_schedule_node_child(node, 0); // io_mark
+        node = isl_schedule_node_child(node, 0); // band      
+        node = isl_schedule_node_insert_sequence(node, boundary_filters);
+        /* The node now is right below the io_[module->level] mark. */      
+      } else {
+        node = isl_schedule_node_child(node, 0); // io_mark
+        node = isl_schedule_node_child(node, 0); // band
+        node = isl_schedule_node_insert_filter(node, isl_union_set_copy(group_domain_filter_level));
+        node = isl_schedule_node_child(node, 0); // band
+      }
     }
   }
   else
@@ -6031,23 +6059,74 @@ static isl_stat top_module_io_gen_ext_module(
     node = isl_schedule_node_child(node, 0);
   }
 
-  if (boundary)
+  ///* Collect the filter for the boundary and non-boundary I/O module. */
+  //if (boundary)
+  //{
+  //  node = autosa_tree_move_down_to_io_mark(node, kernel->core, module->level);
+  //  node = isl_schedule_node_parent(node);
+  //  if (isl_schedule_node_get_type(node) == isl_schedule_node_band)
+  //  {
+  //    boundary_filter = schedule_eq_ub(node);
+  //    non_boundary_filter = schedule_neq_ub(node);
+  //    boundary_filters = isl_union_set_list_from_union_set(non_boundary_filter);
+  //    boundary_filters = isl_union_set_list_add(boundary_filters, boundary_filter);
+//
+  //    node = isl_schedule_node_child(node, 0); // io_mark
+  //    node = isl_schedule_node_child(node, 0); // band
+  //    node = isl_schedule_node_insert_sequence(node, boundary_filters);
+  //    /* The node now is right below the io_[module->level] mark. */
+  //  }
+  //}
+  //else
+  //{
+  //  node = autosa_tree_move_down_to_io_mark(node, kernel->core, module->level);
+  //  node = isl_schedule_node_child(node, 0);
+  //}
+
+  //if (boundary)
+  //{
+  //  node = isl_schedule_node_child(node, 0); // filter
+  //  node = isl_schedule_node_child(node, 0); // band
+  //  /* non-boundary */
+  //  node = io_gen_ext_module(node, module, kernel, group, 0);
+  //  node = autosa_tree_move_down_to_io_mark(node, kernel->core, module->level);
+  //  node = isl_schedule_node_child(node, 0); // sequence
+  //  node = isl_schedule_node_child(node, 1); // filter
+  //  node = isl_schedule_node_child(node, 0); // band
+  //  /* boundary */
+  //  node = io_gen_ext_module(node, module, kernel, group, 1);
+  //}
+  //else
+  //{
+  //  node = io_gen_ext_module(node, module, kernel, group, 0);
+  //}
+  if (boundary && (module->level <= group->space_dim))
   {
-    node = isl_schedule_node_child(node, 0); // filter
-    node = isl_schedule_node_child(node, 0); // band
-    /* non-boundary */
+    if (single_ele == -1) {
+      node = isl_schedule_node_child(node, 0); // filter
+      node = isl_schedule_node_child(node, 0); // band
+      
+      /* non-boundary */
+      //node = io_gen_module_call(node, module, kernel, group, 0, serialize, isl_union_set_copy(group_domain_filter));
+      node = io_gen_ext_module(node, module, kernel, group, 0);
+      node = autosa_tree_move_down_to_io_mark(node, kernel->core, module->level);
+      node = isl_schedule_node_child(node, 0); // sequence
+      node = isl_schedule_node_child(node, 1); // filter
+      node = isl_schedule_node_child(node, 0); // band
+
+      /* boundary */
+      //node = io_gen_module_call(node, module, kernel, group, 1, serialize, isl_union_set_copy(group_domain_filter));
+      node = io_gen_ext_module(node, module, kernel, group, 1);
+    } else {
+      /* boundary */
+      //node = io_gen_module_call(node, module, kernel, group, 1, serialize, isl_union_set_copy(group_domain_filter));
+      node = io_gen_ext_module(node, module, kernel, group, 1);
+    }
+  } else {
+    //node = io_gen_module_call(node, module, kernel, group, boundary, serialize, isl_union_set_copy(group_domain_filter));
     node = io_gen_ext_module(node, module, kernel, group, 0);
-    node = autosa_tree_move_down_to_io_mark(node, kernel->core, module->level);
-    node = isl_schedule_node_child(node, 0); // sequence
-    node = isl_schedule_node_child(node, 1); // filter
-    node = isl_schedule_node_child(node, 0); // band
-    /* boundary */
-    node = io_gen_ext_module(node, module, kernel, group, 1);
   }
-  else
-  {
-    node = io_gen_ext_module(node, module, kernel, group, 0);
-  }
+
 
   /* Cleanup the schedule tree. Remove "array" and "io_LX" mark.
    */
@@ -6064,6 +6143,8 @@ static isl_stat top_module_io_gen_ext_module(
 
   schedule = isl_schedule_node_get_schedule(node);
   isl_schedule_node_free(node);
+  isl_union_set_free(group_domain_filter);
+  isl_union_set_free(group_domain_filter_level);
 
   top->n_ext_module++;
   top->ext_module_scheds = (isl_schedule **)realloc(top->ext_module_scheds,

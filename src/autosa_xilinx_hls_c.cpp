@@ -2037,7 +2037,7 @@ static isl_stat print_module_headers_xilinx(
   p = isl_printer_to_file(prog->ctx, hls->kernel_c);
   p = isl_printer_set_output_format(p, ISL_FORMAT_C);
   p = print_module_header_xilinx(p, prog, module, inter, boundary);
-  p = isl_printer_end_line(p);
+  //p = isl_printer_end_line(p);
   isl_printer_free(p);
 
   return isl_stat_ok;
@@ -3365,6 +3365,9 @@ static __isl_give isl_printer *autosa_print_default_pe_dummy_module(
 
 struct print_db_module_while_data {
   int inter; // -1: outer 0: intra 1: inter  
+  int under_if; 
+  int reach_user;
+
   isl_printer *p_for;
   isl_printer *p_user;
   /* Outer */
@@ -3377,7 +3380,7 @@ struct print_db_module_while_data {
   std::vector<char *> inter_for_logic;  
   std::vector<char *> inter_iterator_name;
   std::vector<char *> inter_iterator_lb;
-  std::vector<char *> inter_iterator_ub;
+  std::vector<char *> inter_iterator_ub;  
   int inter_for_level;
   /* Intra */
   std::vector<char *> intra_for_logic;  
@@ -3504,6 +3507,29 @@ static __isl_give isl_printer *count_module_for(__isl_take isl_printer *p,
 
   return p;
 }                                                                                                
+
+/* Count the for level. A different implementation. 
+ * Currently only used for inter_trans module.
+ * Since there might be if branches existing, only count one branch.
+ * We assume the two branches are with the equal depth.
+ */
+static isl_bool count_module_for_alt(__isl_keep isl_ast_node *node, void *user) {
+  struct print_db_module_while_data *data = (struct print_db_module_while_data *)user;
+  if (isl_ast_node_get_type(node) == isl_ast_node_if) {
+    data->under_if = 1;
+  }  
+
+  if (isl_ast_node_get_type(node) == isl_ast_node_for) {
+    if (data->under_if == 0 || (data->under_if == 1 && data->reach_user == 0)) {
+      data->inter_for_level++;    
+    }
+  }
+  if (isl_ast_node_get_type(node) == isl_ast_node_user) {
+    data->reach_user = 1;
+  }
+
+  return isl_bool_true;
+}
 
 /* Extract the loop information. 
  */
@@ -3692,6 +3718,8 @@ static void extract_double_buffer_module_while_data(
 
   /* Inter module */
   data->inter = 1;
+  data->under_if = 0;
+  data->reach_user = 0;
   p = isl_printer_to_str(ctx);
   p = isl_printer_set_output_format(p, ISL_FORMAT_C);
   p_for = isl_printer_to_str(ctx);
@@ -3703,13 +3731,11 @@ static void extract_double_buffer_module_while_data(
   data->inter_for_level = 0;
 
   /* Count the for level first. */
-  print_options = isl_ast_print_options_alloc(ctx);
-  print_options = isl_ast_print_options_set_print_for(print_options,
-                                                      &count_module_for, data);
-  if (!boundary)
-    p = isl_ast_node_print(module->inter_tree, p, print_options);
-  else
-    p = isl_ast_node_print(module->boundary_inter_tree, p, print_options);
+  if (!boundary) {
+    isl_ast_node_foreach_descendant_top_down(module->inter_tree, &count_module_for_alt, data);
+  } else {        
+    isl_ast_node_foreach_descendant_top_down(module->boundary_inter_tree, &count_module_for_alt, data);
+  }  
 
   /* Extract the for logic. */
   data->p_for = isl_printer_indent(data->p_for, 4 * data->inter_for_level);
@@ -3847,6 +3873,14 @@ static __isl_give isl_printer *print_double_buffer_module_while(
   __isl_take isl_printer *p, struct autosa_hw_module *module,
   struct autosa_prog *prog, struct hls_info *hls, int boundary)
 {
+  if (!boundary) {
+    if (!module->device_tree)
+      return p;    
+  } else {
+    if (!module->boundary_tree)
+      return p;
+  }
+
   struct print_db_module_while_data print_data;
 
   /* Extract the code snippets. */
@@ -3952,6 +3986,12 @@ static __isl_give isl_printer *print_double_buffer_module_while(
   p = isl_printer_print_str(p, "/* Module Definition */");
   p = isl_printer_end_line(p);
 
+  /* If the module serialization is enabled, we will print out an extra module
+   * for serializing the data. */
+  if (module->to_mem && module->options->autosa->host_serialize) {
+    p = autosa_print_serialize_module(p, module, prog, hls, boundary);
+  }
+
   return p;
 }
 
@@ -3997,6 +4037,7 @@ static __isl_give isl_printer *autosa_print_host_code(__isl_take isl_printer *p,
 
   for (int i = 0; i < n_modules; i++)
   {
+    //std::cout << modules[i]->name << " " << module->device_tree << std::endl;
     if (modules[i]->double_buffer && modules[i]->options->autosa->double_buffer_style == 0) 
     {
       p_module = print_double_buffer_module_while(p_module, modules[i], prog, hls, 0);

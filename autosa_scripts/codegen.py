@@ -134,6 +134,8 @@ def print_module_def(
                         next_line_id += 1
                         next_line = module_def[next_line_id]
                     # Build a mapping between the def_arg to call_arg
+                    #print(inline_module_def_args)
+                    #print(inline_module_call_args)
                     for i in range(len(inline_module_def_args)):
                         def_arg = inline_module_def_args[i]
                         call_arg = inline_module_call_args[i]
@@ -210,7 +212,8 @@ def print_module_def(
                     print_content.append(', ')
                 print_content.append(arg)
                 first = False
-            print_content.append(')\n')
+            #print_content.append(')\n')
+            print_content.append(line[arg_end_pos:])
         else:
             # module ids
             for module_id in module_id_args:
