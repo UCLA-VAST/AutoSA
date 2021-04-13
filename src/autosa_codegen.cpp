@@ -11465,7 +11465,7 @@ static __isl_give isl_printer *print_user(__isl_take isl_printer *p,
 
 /* Find the element in scop->stmts that has the given "id".
  */
-static struct pet_stmt *find_stmt(struct ppcg_scop *scop, __isl_keep isl_id *id)
+static struct pet_stmt *pet_find_stmt(struct ppcg_scop *scop, __isl_keep isl_id *id)
 {
 	int i;
 
@@ -11540,7 +11540,7 @@ static __isl_give isl_ast_node *at_each_domain(__isl_take isl_ast_node *node,
 	isl_ast_expr_free(expr);
 	id = isl_ast_expr_get_id(arg);
 	isl_ast_expr_free(arg);
-	stmt->stmt = find_stmt(scop, id);
+	stmt->stmt = pet_find_stmt(scop, id);
 	isl_id_free(id);
 	if (!stmt->stmt)
     ppcg_stmt_free(stmt);

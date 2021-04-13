@@ -66,10 +66,12 @@ __isl_give isl_schedule_band *isl_schedule_band_from_multi_union_pw_aff(
 	band->coincident = isl_calloc_array(ctx, int, band->n);
 	/* AutoSA Extended */
 	band->space_time = isl_calloc_array(ctx, enum autosa_loop_type, band->n);
-  band->pe_opt = isl_calloc_array(ctx, enum autosa_loop_type, band->n);
+  	band->pe_opt = isl_calloc_array(ctx, enum autosa_loop_type, band->n);
 	band->sched_pos = isl_calloc_array(ctx, int, band->n);
 	for (int i = 0; i < band->n; ++i)
-		band->sched_pos[i] = -1;
+		band->sched_pos[i] = -1;		
+	for (int i = 0; i < band->n; ++i)
+		band->iter[i] = NULL;
 	/* AutoSA Extended */
 	band->mupa = mupa;
 	space = isl_space_params_alloc(ctx, 0);
@@ -112,21 +114,25 @@ __isl_give isl_schedule_band *isl_schedule_band_dup(
 	dup->permutable = band->permutable;
 
 	/* AutoSA Extended */
-  if (band->space_time) {
-    dup->space_time = isl_alloc_array(ctx, enum autosa_loop_type, band->n);
-    for (i = 0; i < band->n; ++i)
-      dup->space_time[i] = band->space_time[i];
-  }
-  if (band->pe_opt) {
-    dup->pe_opt = isl_alloc_array(ctx, enum autosa_loop_type, band->n);
-    for (i = 0; i < band->n; ++i)
-      dup->pe_opt[i] = band->pe_opt[i];
-  }	
+  	if (band->space_time) {
+  	  dup->space_time = isl_alloc_array(ctx, enum autosa_loop_type, band->n);
+  	  for (i = 0; i < band->n; ++i)
+  	    dup->space_time[i] = band->space_time[i];
+  	}
+  	if (band->pe_opt) {
+  	  dup->pe_opt = isl_alloc_array(ctx, enum autosa_loop_type, band->n);
+  	  for (i = 0; i < band->n; ++i)
+  	    dup->pe_opt[i] = band->pe_opt[i];
+  	}	
 	if (band->sched_pos) {
-    dup->sched_pos = isl_alloc_array(ctx, int, band->n);
-    for (i = 0; i < band->n; ++i)
-      dup->sched_pos[i] = band->sched_pos[i];
-  }	
+      dup->sched_pos = isl_alloc_array(ctx, int, band->n);
+      for (i = 0; i < band->n; ++i)
+        dup->sched_pos[i] = band->sched_pos[i];
+	}	
+	if (band->iter) {	  
+	  for (i = 0; i < band->n; ++i)
+	    dup->iter[i] = band->iter[i];
+	}
 	/* AutoSA Extended */
 
 	dup->mupa = isl_multi_union_pw_aff_copy(band->mupa);
@@ -201,6 +207,7 @@ __isl_null isl_schedule_band *isl_schedule_band_free(
 	free(band->space_time);
 	free(band->pe_opt);
 	free(band->sched_pos);
+	free(band->iter);
 	/* AutoSA Extended */
 	free(band);
 
@@ -1243,15 +1250,18 @@ __isl_give isl_schedule_band *isl_schedule_band_drop(
 			band->isolate_loop_type[i - n] =
 						    band->isolate_loop_type[i];
 	/* AutoSA Extended */								
-  if (band->space_time)
-    for (i = pos + n; i < band->n; ++i)
-      band->space_time[i - n] = band->space_time[i];
-  if (band->pe_opt)
-    for (i = pos + n; i < band->n; ++i)
-      band->pe_opt[i - n] = band->pe_opt[i];	
+    if (band->space_time)
+      for (i = pos + n; i < band->n; ++i)
+        band->space_time[i - n] = band->space_time[i];
+    if (band->pe_opt)
+      for (i = pos + n; i < band->n; ++i)
+        band->pe_opt[i - n] = band->pe_opt[i];	
 	if (band->sched_pos)
-    for (i = pos + n; i < band->n; ++i)
-      band->sched_pos[i - n] = band->sched_pos[i];
+      for (i = pos + n; i < band->n; ++i)
+        band->sched_pos[i - n] = band->sched_pos[i];
+	if (band->iter)
+      for (i = pos + n; i < band->n; ++i)
+        band->iter[i - n] = band->iter[i];
 	/* AutoSA Extended */
 
 	band->n -= n;

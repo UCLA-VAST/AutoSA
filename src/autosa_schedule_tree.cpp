@@ -88,13 +88,14 @@ struct autosa_node_band_prop *extract_node_band_prop(__isl_keep isl_schedule_nod
   prop->pe_opt = isl_calloc_array(isl_schedule_node_get_ctx(node),
                                   enum autosa_loop_type, prop->n_member);
   prop->sched_pos = isl_calloc_array(isl_schedule_node_get_ctx(node),
-                                     int, prop->n_member);
+                                     int, prop->n_member);  
   for (int i = 0; i < prop->n_member; i++)
   {
     prop->space_time[i] = isl_schedule_node_band_member_get_space_time(node, i);
     prop->pe_opt[i] = isl_schedule_node_band_member_get_pe_opt(node, i);
     prop->sched_pos[i] = isl_schedule_node_band_member_get_sched_pos(node, i);
-  }
+    prop->iter[i] = isl_schedule_node_band_member_get_iter(node, i);
+  }  
 
   return prop;
 }
@@ -106,7 +107,7 @@ struct autosa_node_band_prop *autosa_node_band_prop_free(
   free(prop->coincident);
   free(prop->space_time);
   free(prop->pe_opt);
-  free(prop->sched_pos);
+  free(prop->sched_pos);  
 
   free(prop);
 
@@ -625,6 +626,12 @@ __isl_give isl_schedule_node *loop_interchange_at_node(
   }
   node = isl_schedule_node_band_member_set_sched_pos(node, level1, prop->sched_pos[level2]);
   node = isl_schedule_node_band_member_set_sched_pos(node, level2, prop->sched_pos[level1]);
+  for (int i = 0; i < isl_schedule_node_band_n_member(node); i++) 
+  {
+    node = isl_schedule_node_band_member_set_iter(node, i, prop->iter[i]);    
+  }
+  node = isl_schedule_node_band_member_set_iter(node, level1, prop->iter[level2]);
+  node = isl_schedule_node_band_member_set_iter(node, level2, prop->iter[level1]);
 
   autosa_node_band_prop_free(prop);
 
@@ -863,6 +870,8 @@ static __isl_give isl_schedule_node *autosa_node_merge(
         node, i, parent_prop->pe_opt[i]);
     node = isl_schedule_node_band_member_set_sched_pos(
         node, i, parent_prop->sched_pos[i]);
+    node = isl_schedule_node_band_member_set_iter(
+        node, i, parent_prop->iter[i]);
   }
   for (int i = 0; i < child_prop->n_member; i++)
   {
@@ -877,6 +886,8 @@ static __isl_give isl_schedule_node *autosa_node_merge(
         node, i + parent_prop->n_member, child_prop->pe_opt[i]);
     node = isl_schedule_node_band_member_set_sched_pos(
         node, i + parent_prop->n_member, child_prop->sched_pos[i]);
+    node = isl_schedule_node_band_member_set_iter(
+        node, i + parent_prop->n_member, child_prop->iter[i]);
   }
 
   /* Delete the old nodes. */
@@ -888,13 +899,13 @@ static __isl_give isl_schedule_node *autosa_node_merge(
   free(parent_prop->coincident);
   free(parent_prop->pe_opt);
   free(parent_prop->space_time);
-  free(parent_prop->sched_pos);
+  free(parent_prop->sched_pos);  
   isl_multi_union_pw_aff_free(parent_prop->mupa);
   free(parent_prop);
   free(child_prop->coincident);
   free(child_prop->pe_opt);
-  free(child_prop->space_time);
-  free(child_prop->sched_pos);
+  free(child_prop->space_time);  
+  free(child_prop->sched_pos);  
   isl_multi_union_pw_aff_free(child_prop->mupa);
   free(child_prop);
   isl_schedule_node_free(child);
@@ -986,12 +997,13 @@ __isl_give isl_schedule_node *restore_node_band_prop(
     node = isl_schedule_node_band_member_set_space_time(node, i, prop->space_time[i]);
     node = isl_schedule_node_band_member_set_pe_opt(node, i, prop->pe_opt[i]);
     node = isl_schedule_node_band_member_set_sched_pos(node, i, prop->sched_pos[i]);
+    node = isl_schedule_node_band_member_set_iter(node, i, prop->iter[i]);
   }
 
   free(prop->coincident);
   free(prop->pe_opt);
   free(prop->space_time);
-  free(prop->sched_pos);
+  free(prop->sched_pos);  
   isl_multi_union_pw_aff_free(prop->mupa);
   free(prop);
 
@@ -1322,6 +1334,7 @@ static __isl_give isl_schedule_node *insert_node_at_depth(
     node = isl_schedule_node_band_member_set_pe_opt(node, i, data->prop->pe_opt[i]);
     node = isl_schedule_node_band_member_set_space_time(node, i, data->prop->space_time[i]);
     node = isl_schedule_node_band_member_set_sched_pos(node, i, data->prop->sched_pos[i]);
+    node = isl_schedule_node_band_member_set_iter(node, i, data->prop->iter[i]);
   }
 
   /* Insert a "inserted" mark */
@@ -1460,6 +1473,7 @@ static __isl_give isl_schedule_node *sink_node_to_mark(
     node = isl_schedule_node_band_member_set_pe_opt(node, i, data->prop->pe_opt[i]);
     node = isl_schedule_node_band_member_set_space_time(node, i, data->prop->space_time[i]);
     node = isl_schedule_node_band_member_set_sched_pos(node, i, data->prop->sched_pos[i]);
+    node = isl_schedule_node_band_member_set_iter(node, i, data->prop->iter[i]);
   }
 
   /* Insert a "name" mark */
@@ -1508,6 +1522,7 @@ __isl_give isl_schedule_node *autosa_node_sink_to_mark(
       node = isl_schedule_node_band_member_set_pe_opt(node, i, data.prop->pe_opt[i]);
       node = isl_schedule_node_band_member_set_space_time(node, i, data.prop->space_time[i]);
       node = isl_schedule_node_band_member_set_sched_pos(node, i, data.prop->sched_pos[i]);
+      node = isl_schedule_node_band_member_set_iter(node, i, data.prop->iter[i]);
     }
 
     /* Insert a "name" mark */

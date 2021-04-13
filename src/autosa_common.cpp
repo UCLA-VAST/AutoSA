@@ -63,7 +63,8 @@ void *autosa_kernel_free(struct autosa_kernel *kernel)
     free(kernel->var[i].name);
     isl_vec_free(kernel->var[i].size);
   }
-  free(kernel->var);  
+  free(kernel->var);
+  delete kernel->tuning_program;
 
   free(kernel);
   return NULL;
@@ -131,6 +132,9 @@ struct autosa_kernel *autosa_kernel_copy(struct autosa_kernel *kernel)
   kernel_dup->n_meta_data = kernel->n_meta_data;
   kernel_dup->eff_compress_ratio = kernel->eff_compress_ratio;
 
+  // TODO: Deep-copy
+  kernel_dup->tuning_program = kernel->tuning_program;
+
   return kernel_dup;
 }
 
@@ -183,6 +187,7 @@ struct autosa_kernel *autosa_kernel_from_schedule(__isl_take isl_schedule *sched
   kernel->compress_ratio = 0;
   kernel->n_meta_data = 0;
   kernel->eff_compress_ratio = 0;
+  kernel->tuning_program = NULL;
 
   return kernel;
 }
@@ -243,6 +248,7 @@ struct autosa_kernel *autosa_kernel_alloc(isl_ctx *ctx, struct ppcg_scop *scop)
   kernel->compress_ratio = 0;
   kernel->n_meta_data = 0;
   kernel->eff_compress_ratio = 0;
+  kernel->tuning_program = NULL;
 
   return kernel;
 }

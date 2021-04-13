@@ -27,8 +27,8 @@
 
 #include "ppcg.h"
 #include "schedule.h"
-#include "gpu.h"
 #include "util.h"
+#include "autosa_tuning.h"
 
 #ifdef _DEBUG
 #define D(x) x
@@ -308,6 +308,9 @@ struct autosa_kernel
   float compress_ratio;
   int n_meta_data;
   float eff_compress_ratio;
+
+  /* Tuning program */
+  TuningProgram *tuning_program;
 };
 
 struct autosa_io_info
@@ -691,7 +694,7 @@ struct autosa_prog
   struct autosa_stmt *stmts;
 
   int n_array;
-  struct autosa_array_info *array;
+  struct autosa_array_info *array;  
 };
 
 struct autosa_hw_top_module
@@ -897,6 +900,9 @@ struct autosa_gen
 
   /* Tuning configuration */
   cJSON *tuning_config;
+
+  /* Tuning programs */
+  std::vector<TuningProgram *> tuning_progs;
 };
 
 /* Representation of special statements, in particular copy statements
@@ -1030,6 +1036,7 @@ struct autosa_node_band_prop
   enum autosa_loop_type *pe_opt;
   enum autosa_loop_type *space_time;
   int *sched_pos;
+  void *iter[20];
   int n_member;
   isl_multi_union_pw_aff *mupa;
 };

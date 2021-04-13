@@ -8,6 +8,7 @@
 #include "autosa_schedule_tree.h"
 #include "autosa_comm.h"
 #include "autosa_codegen.h"
+#include "cpu.h"
 
 /* A program is legal to be transformed to systolic array if and only if 
  * it satisfies the following constraints:
@@ -135,8 +136,10 @@ struct autosa_kernel **sa_space_time_transform_at_dim_async(
         for (int i = 0; i < band_w; i++)
         {
             if (is_space_loop[i])
-            {
+            {                  
+                TuningProgram *tuning_program = new TuningProgram;
                 isl_schedule *new_schedule = isl_schedule_dup(schedule);
+                new_schedule = tuning_program->init_from_schedule(new_schedule); // TODO
                 isl_schedule_node *band = get_outermost_permutable_node(new_schedule);
                 isl_schedule_free(new_schedule);
 
@@ -159,6 +162,8 @@ struct autosa_kernel **sa_space_time_transform_at_dim_async(
                 sa->space_w = dim;
                 // TODO: incorrect, to fix.
                 sa->time_w = band_w - dim;
+                sa->tuning_program = tuning_program;
+                //sa->tuning_program->id = *num_sa;
 
                 /* Add the new variant into the list. */
                 sas = (struct autosa_kernel **)realloc(sas, (*num_sa + 1) *
@@ -178,7 +183,9 @@ struct autosa_kernel **sa_space_time_transform_at_dim_async(
                 {
                     if (is_space_loop[j])
                     {
+                        TuningProgram *tuning_program = new TuningProgram;
                         isl_schedule *new_schedule = isl_schedule_dup(schedule);
+                        new_schedule = tuning_program->init_from_schedule(new_schedule); // TODO
                         isl_schedule_node *band = get_outermost_permutable_node(new_schedule);
                         isl_schedule_free(new_schedule);
 
@@ -211,6 +218,8 @@ struct autosa_kernel **sa_space_time_transform_at_dim_async(
                         sa->space_w = dim;
                         // TODO: incorrect, to fix.
                         sa->time_w = band_w - dim;
+                        sa->tuning_program = tuning_program;  
+                        //sa->tuning_program->id = *num_sa;                      
 
                         /* Add the new variant into the list. */
                         sas = (struct autosa_kernel **)realloc(sas, (*num_sa + 1) *
@@ -236,7 +245,9 @@ struct autosa_kernel **sa_space_time_transform_at_dim_async(
                         {
                             if (is_space_loop[k])
                             {
+                                TuningProgram *tuning_program = new TuningProgram;
                                 isl_schedule *new_schedule = isl_schedule_dup(schedule);
+                                new_schedule = tuning_program->init_from_schedule(new_schedule); // TODO
                                 isl_schedule_node *band = get_outermost_permutable_node(new_schedule);
                                 isl_schedule_free(new_schedule);
 
@@ -276,6 +287,8 @@ struct autosa_kernel **sa_space_time_transform_at_dim_async(
                                 sa->space_w = dim;
                                 // TODO: incorrect, to fix.
                                 sa->time_w = band_w - dim;
+                                sa->tuning_program = tuning_program;  
+                                //sa->tuning_program->id = *num_sa;                              
 
                                 /* Add the new variant into the list. */
                                 sas = (struct autosa_kernel **)realloc(sas, (*num_sa + 1) *
@@ -576,6 +589,7 @@ struct autosa_kernel **sa_space_time_transform(__isl_take isl_schedule *schedule
         {
             sa_list[n_sa + i] = sa_dim_list[i];
             sa_list[n_sa + i]->space_time_id = n_sa + i;
+            sa_list[n_sa + i]->tuning_program->id = n_sa + i;
         }
         free(sa_dim_list);
         n_sa += n_sa_dim;
@@ -600,6 +614,7 @@ struct autosa_kernel **sa_space_time_transform(__isl_take isl_schedule *schedule
         {
             sa_list[n_sa + i] = sa_dim_list[i];
             sa_list[n_sa + i]->space_time_id = n_sa + i;
+            sa_list[n_sa + i]->tuning_program->id = n_sa + i;
         }
         free(sa_dim_list);
         n_sa += n_sa_dim;
@@ -624,6 +639,7 @@ struct autosa_kernel **sa_space_time_transform(__isl_take isl_schedule *schedule
         {
             sa_list[n_sa + i] = sa_dim_list[i];
             sa_list[n_sa + i]->space_time_id = n_sa + i;
+            sa_list[n_sa + i]->tuning_program->id = n_sa + i;
         }
         free(sa_dim_list);
         n_sa += n_sa_dim;
@@ -873,10 +889,15 @@ struct autosa_kernel *sa_candidates_smart_pick(
         //#endif
     }
 
-    sa_opt = autosa_kernel_copy(sa_list[opt_id]);
+    //sa_opt = autosa_kernel_copy(sa_list[opt_id]);
+    sa_opt = sa_list[opt_id];
 
-    for (int i = 0; i < num_sa; i++)
-        autosa_kernel_free(sa_list[i]);
+    for (int i = 0; i < num_sa; i++) {
+        if (i == opt_id)
+            continue;
+        else
+            autosa_kernel_free(sa_list[i]);
+    }
     free(sa_list);
 
     return sa_opt;
@@ -886,10 +907,15 @@ struct autosa_kernel *sa_candidates_smart_pick(
 struct autosa_kernel *sa_candidates_manual_pick(struct autosa_kernel **sa_list,
                                                 isl_size num_sa, int sa_id)
 {
-    struct autosa_kernel *sa_opt = autosa_kernel_copy(sa_list[sa_id]);
+    struct autosa_kernel *sa_opt = sa_list[sa_id];
+    //struct autosa_kernel *sa_opt = autosa_kernel_copy(sa_list[sa_id]);
 
-    for (int i = 0; i < num_sa; i++)
-        autosa_kernel_free(sa_list[i]);
+    for (int i = 0; i < num_sa; i++) {        
+        if (sa_id == i)
+            continue;
+        else
+            autosa_kernel_free(sa_list[i]);
+    }
     free(sa_list);
 
     return sa_opt;
@@ -1178,53 +1204,58 @@ isl_stat sa_array_partitioning_optimize(struct autosa_kernel *sa,
     isl_schedule_free(schedule);
 
     tile_len = isl_schedule_node_band_n_member(node);
-    if (!strcmp(mode, "manual"))
-    {
-        /* Manual mode */
-        tile_size = read_array_part_tile_sizes(sa, tile_len);
-        if (!tile_size)
+    if (sa->scop->options->autosa->tuning) {
+        /* Select the tiling factor as the upper bound of the loop. */
+        tile_size = extract_band_upper_bounds(node);        
+    } else {
+        if (!strcmp(mode, "manual"))
         {
-            /* User hasn't specified the tiling factors for array partitioning yet,
-             * we will dump out the number and upper bounds of array_part loops 
-             * and exit the program. */
-            int *ubs = extract_band_upper_bounds(node);
-            FILE *fp;
-            char *content;
-            cJSON *tuning, *array_part_json, *loops_json, *n_sa_dim_json;
-            isl_printer *p_str;
-            char *tuning_path;
-
-            tuning = cJSON_CreateObject();
-            array_part_json = cJSON_CreateObject();
-            cJSON_AddItemToObject(tuning, "array_part", array_part_json);
-            loops_json = cJSON_CreateArray();
-            cJSON_AddItemToObject(array_part_json, "tilable_loops", loops_json);
-            for (int i = 0; i < tile_len; i++)
+            /* Manual mode */
+            tile_size = read_array_part_tile_sizes(sa, tile_len);
+            if (!tile_size)
             {
-                cJSON *loop = cJSON_CreateNumber(ubs[i]);
-                cJSON_AddItemToArray(loops_json, loop);
+                /* User hasn't specified the tiling factors for array partitioning yet,
+                 * we will dump out the number and upper bounds of array_part loops 
+                 * and exit the program. */
+                int *ubs = extract_band_upper_bounds(node);
+                FILE *fp;
+                char *content;
+                cJSON *tuning, *array_part_json, *loops_json, *n_sa_dim_json;
+                isl_printer *p_str;
+                char *tuning_path;
+
+                tuning = cJSON_CreateObject();
+                array_part_json = cJSON_CreateObject();
+                cJSON_AddItemToObject(tuning, "array_part", array_part_json);
+                loops_json = cJSON_CreateArray();
+                cJSON_AddItemToObject(array_part_json, "tilable_loops", loops_json);
+                for (int i = 0; i < tile_len; i++)
+                {
+                    cJSON *loop = cJSON_CreateNumber(ubs[i]);
+                    cJSON_AddItemToArray(loops_json, loop);
+                }
+                /* Add the sa_dim */
+                n_sa_dim_json = cJSON_CreateNumber(sa->n_sa_dim);
+                cJSON_AddItemToObject(array_part_json, "n_sa_dim", n_sa_dim_json);
+                p_str = isl_printer_to_str(sa->ctx);
+                p_str = isl_printer_print_str(p_str, sa->options->autosa->output_dir);
+                p_str = isl_printer_print_str(p_str, "/tuning.json");
+                tuning_path = isl_printer_get_str(p_str);
+                fp = fopen(tuning_path, "w");
+                content = cJSON_Print(tuning);
+                fprintf(fp, "%s", content);
+                cJSON_Delete(tuning);
+                isl_printer_free(p_str);
+                free(tuning_path);
+                exit(0);
             }
-            /* Add the sa_dim */
-            n_sa_dim_json = cJSON_CreateNumber(sa->n_sa_dim);
-            cJSON_AddItemToObject(array_part_json, "n_sa_dim", n_sa_dim_json);
-            p_str = isl_printer_to_str(sa->ctx);
-            p_str = isl_printer_print_str(p_str, sa->options->autosa->output_dir);
-            p_str = isl_printer_print_str(p_str, "/tuning.json");
-            tuning_path = isl_printer_get_str(p_str);
-            fp = fopen(tuning_path, "w");
-            content = cJSON_Print(tuning);
-            fprintf(fp, "%s", content);
-            cJSON_Delete(tuning);
-            isl_printer_free(p_str);
-            free(tuning_path);
-            exit(0);
         }
-    }
-    else
-    {
-        /* Auto mode.
-         * Perform the array partitioning following the default policy. */
-        tile_size = read_default_array_part_tile_sizes(sa, tile_len);
+        else
+        {
+            /* Auto mode.
+             * Perform the array partitioning following the default policy. */
+            tile_size = read_default_array_part_tile_sizes(sa, tile_len);
+        }
     }
 
     /* Tile the band. */
@@ -1273,27 +1304,15 @@ isl_stat sa_array_partitioning_optimize(struct autosa_kernel *sa,
             return isl_stat_ok;
         }
     }
-
-    /* Update the systolic aray dimensions. 
-     * TODO: should use barvinok to handle this case.
-     */
-    //if (sa->type == AUTOSA_SA_TYPE_SYNC)
-    //{
-    //    for (int i = 0; i < sa->n_sa_dim; i++)
-    //    {
-    //        sa->sa_dim[i] = tile_size[tile_len - sa->n_sa_dim + i];
-    //    }
-    //}
-    //else
-    //{
-    //    for (int i = 0; i < sa->n_sa_dim; i++)
-    //    {
-    //        sa->sa_dim[i] = tile_size[i];
-    //    }
-    //}
+        
     sa->array_part_w = tile_len;
-
+    //printf("%d\n", tile_size[0]);
+    //printf("%d\n", tile_size[1]);
+    //printf("%d\n", tile_size[2]);
     node = autosa_tile_band(node, tile_size);
+    if (sa->scop->options->autosa->tuning)
+        node = sa->tuning_program->tile(node, 0);
+
     free(tile_size);
     node = isl_schedule_node_child(node, 0);
     extract_sa_dims_from_node(node, sa->sa_dim, sa->n_sa_dim);
@@ -1751,11 +1770,6 @@ static __isl_give isl_schedule_node *autosa_latency_tile_band_loop(
     int i;
     int reverse_visit = 0;
 
-//#ifndef REVERSE_ORDER    
-//    for (int i = 0; i < n; i++)
-//#else    
-//    for (int i = n - 1; i >= 0; i--)
-//#endif    
     if ((data->sa->options->autosa->reverse_order && !data->sa->options->autosa->isl_sink) ||
        (!data->sa->options->autosa->reverse_order && data->sa->options->autosa->isl_sink)) {
         i = 0;
@@ -1769,14 +1783,11 @@ static __isl_give isl_schedule_node *autosa_latency_tile_band_loop(
         if (isl_schedule_node_band_member_get_pe_opt(node, i) == autosa_loop_latency)
         {
             int loop_tile_size;
-//#ifdef REVERSE_ORDER
             if (reverse_visit) {
                 loop_tile_size = data->tile_size[data->tile_len - data->n_touched_loop - 1];            
-//#else
             } else {
                 loop_tile_size = data->tile_size[data->n_touched_loop];
             }
-//#endif            
             (data->n_touched_loop)++;
             /* If latency hiding is applied on the space loops, we need to update
              * the SA dimensions. 
@@ -1804,6 +1815,8 @@ static __isl_give isl_schedule_node *autosa_latency_tile_band_loop(
                  * size "loop_tile_size".
                  * The returned node points at the tile loop. */
                 node = autosa_node_band_tile_loop(node, loop_tile_size, i);
+                if (data->sa->scop->options->autosa->tuning) 
+                    node = data->sa->tuning_program->tile(node, i, 1);
                 /* Reset the candidate loop in the tile loop the pe_opt property to default. */
                 node = isl_schedule_node_band_member_set_pe_opt(node, i, autosa_loop_default);
                 /* Reset the point loop space_time property to time loop. */
@@ -1907,52 +1920,74 @@ static __isl_give isl_schedule_node *autosa_latency_tile_loop(
         node, &count_latency_hiding_loop, &data);
     tile_len = data.tile_len;
 
-    if (!strcmp(mode, "manual"))
-    {
-        tile_size = read_latency_tile_sizes(sa, tile_len);
-        if (!tile_size)
-        {
-            /* Dump out the number and upper bounds of latency loops and exit the program. */
-            int *ubs = data.ubs;
-            FILE *fp;
-            char *content;
-            cJSON *tuning, *latency_json, *loops_json;
-            char *tuning_path;
-            isl_printer *p_str;
-
-            tuning = cJSON_CreateObject();
-            latency_json = cJSON_CreateObject();
-            cJSON_AddItemToObject(tuning, "latency", latency_json);
-            loops_json = cJSON_CreateArray();
-            cJSON_AddItemToObject(latency_json, "tilable_loops", loops_json);
-            for (int i = 0; i < tile_len; i++)
-            {
-                cJSON *loop = cJSON_CreateNumber(ubs[i]);
-                cJSON_AddItemToArray(loops_json, loop);
+    if (sa->scop->options->autosa->tuning) {
+        /* Select one tiling factor in between (1, ub).
+         * Avoid 1 as such a tiling factor will be skipped and the AST loop will 
+         * be degenerated.
+         * Avoid ub as generating space dim with 1 is not supported. 
+         */        
+        tile_size = data.ubs;
+        for (int i = 0; i < tile_len; i++) {
+            int size = tile_size[i];
+            std::vector<int> factors = get_factors(size);
+            if (factors.size() < 3) {
+                printf("[AutoSA] Error: Cannot find legal tiling factors for auto-tuning template!\n");
+                exit(1);
             }
-            p_str = isl_printer_to_str(sa->ctx);
-            p_str = isl_printer_print_str(p_str, sa->options->autosa->output_dir);
-            p_str = isl_printer_print_str(p_str, "/tuning.json");
-            tuning_path = isl_printer_get_str(p_str);
-            fp = fopen(tuning_path, "w");
-            content = cJSON_Print(tuning);
-            fprintf(fp, "%s", content);
-            cJSON_Delete(tuning);
-            isl_printer_free(p_str);
-            free(tuning_path);
-            exit(0);
+            tile_size[i] = factors[1];
         }
-    }
-    else
-    {
-        /* Perform the latency hiding following the default policy. */
-        tile_size = read_default_latency_tile_sizes(sa, tile_len);
-    }
+    } else {
+        if (!strcmp(mode, "manual"))
+        {
+            tile_size = read_latency_tile_sizes(sa, tile_len);
+            if (!tile_size)
+            {
+                /* Dump out the number and upper bounds of latency loops and exit the program. */
+                int *ubs = data.ubs;
+                FILE *fp;
+                char *content;
+                cJSON *tuning, *latency_json, *loops_json;
+                char *tuning_path;
+                isl_printer *p_str;
 
-    free(data.ubs);
+                tuning = cJSON_CreateObject();
+                latency_json = cJSON_CreateObject();
+                cJSON_AddItemToObject(tuning, "latency", latency_json);
+                loops_json = cJSON_CreateArray();
+                cJSON_AddItemToObject(latency_json, "tilable_loops", loops_json);
+                for (int i = 0; i < tile_len; i++)
+                {
+                    cJSON *loop = cJSON_CreateNumber(ubs[i]);
+                    cJSON_AddItemToArray(loops_json, loop);
+                }
+                p_str = isl_printer_to_str(sa->ctx);
+                p_str = isl_printer_print_str(p_str, sa->options->autosa->output_dir);
+                p_str = isl_printer_print_str(p_str, "/tuning.json");
+                tuning_path = isl_printer_get_str(p_str);
+                fp = fopen(tuning_path, "w");
+                content = cJSON_Print(tuning);
+                fprintf(fp, "%s", content);
+                cJSON_Delete(tuning);
+                isl_printer_free(p_str);
+                free(tuning_path);
+                exit(0);
+            }
+        }
+        else
+        {
+            /* Perform the latency hiding following the default policy. */
+            tile_size = read_default_latency_tile_sizes(sa, tile_len);
+        }
+        free(data.ubs);
+    }
+    
+    //for (int i = 0; i < tile_len; i++) {
+    //    printf("%d\n", tile_size[i]);
+    //}
+
     if (!tile_size)
     {
-        isl_schedule_node_free(node);
+        isl_schedule_node_free(node);        
         return NULL;
     }
 
@@ -1984,7 +2019,7 @@ static __isl_give isl_schedule_node *autosa_latency_tile_loop(
                 node, &autosa_latency_tile_band_loop, &tile_data);
         }
     }
-
+    
     free(tile_size);
     return node;
 }
@@ -2692,6 +2727,8 @@ static __isl_give isl_schedule_node *autosa_simd_tile_loop(
                 }                
                 /* Tile the loop */
                 node = autosa_node_band_tile_loop(node, tile_size, i);
+                if (data->kernel->scop->options->autosa->tuning)
+                    node = data->kernel->tuning_program->tile(node, i, 1);
                 /* Reset the candidate loop in the tile loop the pe_opt property to default */
                 node = isl_schedule_node_band_member_set_pe_opt(node, i, autosa_loop_default);
                 /* Reset the point loop space_time property to time loop. */
@@ -2700,18 +2737,15 @@ static __isl_give isl_schedule_node *autosa_simd_tile_loop(
                 /* Reset the point loop pe_opt property to default. */
                 node = isl_schedule_node_band_member_set_pe_opt(node, 0, autosa_loop_default);                
                 /* Sink the point loop innermost */
-//#ifdef ISL_SINK                
                 if (kernel->options->autosa->isl_sink) {
                     node = isl_schedule_node_band_sink(node);
                     /* Add the simd marker */
                     node = isl_schedule_node_map_descendant_bottom_up(node, &add_simd_mark, NULL);
                 }
-//#else                
                 else {
                     /* Sink the point loop innermost and add the simd marker */
                     node = autosa_node_sink_to_mark(node, "simd");
                 }
-//#endif
                 /* Update the stride information for array references under the SIMD loop. */
                 isl_schedule_node_every_descendant(node, &update_simd_acc, &stride_data);                
 
@@ -2868,70 +2902,96 @@ isl_stat sa_simd_vectorization_optimize(struct autosa_kernel *sa, char *mode)
          * Tile the candidate loop and permute the point loop innermost. 
          * A SIMD vectorization marker is added. 
          */
-        if (!strcmp(mode, "manual"))
-        {
-            tile_size = read_simd_tile_sizes(sa, data.n_loops);
-            if (!tile_size)
+        if (sa->scop->options->autosa->tuning) {
+            /* Select one tiling factor in between (1, ub).
+             * Avoid 1 as such a tiling factor will be skipped and the AST loop will
+             * be degenerated.
+             * Avoid ub as generating space dim with 1 is not supported.
+             */
+            tile_size = data.ubs;
+            for (int i = 0; i < data.n_loops; i++) {
+                if (data.scores[i] == data.best_score) {
+                    std::vector<int> factors = get_factors(tile_size[i]);
+                    if (factors.size() < 3) {
+                        printf("[AutoSA] Error: Cannot find legal tiling factors for auto-tuning template!\n");
+                        exit(1);
+                    }
+                    tile_size[i] = factors[1];
+                } else {
+                    tile_size[i] = 1;
+                }
+            }
+            //printf("data.n_loops: %d\n", data.n_loops);
+            //std::vector<int> factors = get_factors
+            //printf("%d\n", tile_size[0]);
+            //exit(0);
+        } else {
+            if (!strcmp(mode, "manual"))
             {
-                /* Dump out the number, score and upper bounds of simd loops 
-                 * and exit the program. 
-                 */
-                int *ubs = data.ubs;
-                FILE *fp;
-                char *content;
-                cJSON *tuning, *simd_json, *loops_json, *scores_json, *legal_json;
-                isl_printer *p_str;
-                char *tuning_path;
+                tile_size = read_simd_tile_sizes(sa, data.n_loops);
+                if (!tile_size)
+                {
+                    /* Dump out the number, score and upper bounds of simd loops 
+                     * and exit the program. 
+                     */
+                    int *ubs = data.ubs;
+                    FILE *fp;
+                    char *content;
+                    cJSON *tuning, *simd_json, *loops_json, *scores_json, *legal_json;
+                    isl_printer *p_str;
+                    char *tuning_path;
 
-                tuning = cJSON_CreateObject();
-                simd_json = cJSON_CreateObject();
-                cJSON_AddItemToObject(tuning, "simd", simd_json);
-                loops_json = cJSON_CreateArray();
-                cJSON_AddItemToObject(simd_json, "tilable_loops", loops_json);
-                for (int i = 0; i < data.n_loops; i++)
-                {
-                    cJSON *loop = cJSON_CreateNumber(ubs[i]);
-                    cJSON_AddItemToArray(loops_json, loop);
-                }
-                scores_json = cJSON_CreateArray();
-                cJSON_AddItemToObject(simd_json, "scores", scores_json);
-                for (int i = 0; i < data.n_loops; i++)
-                {
-                    cJSON *loop = cJSON_CreateNumber(data.scores[i]);
-                    cJSON_AddItemToArray(scores_json, loop);
-                }
-                legal_json = cJSON_CreateArray();
-                cJSON_AddItemToObject(simd_json, "legal", legal_json);
-                for (int i = 0; i < data.n_loops; i++)
-                {
-                    cJSON *loop = cJSON_CreateNumber(data.legal[i]);
-                    cJSON_AddItemToArray(legal_json, loop);
-                }
-                if (data.has_space_candidate == 0) {
+                    tuning = cJSON_CreateObject();
+                    simd_json = cJSON_CreateObject();
+                    cJSON_AddItemToObject(tuning, "simd", simd_json);
                     loops_json = cJSON_CreateArray();
-                    cJSON_AddItemToObject(simd_json, "sa_dims", loops_json);
-                    for (int i = 0; i < sa->n_sa_dim; i++)
+                    cJSON_AddItemToObject(simd_json, "tilable_loops", loops_json);
+                    for (int i = 0; i < data.n_loops; i++)
                     {
-                        cJSON *loop = cJSON_CreateNumber(sa->sa_dim[i]);
+                        cJSON *loop = cJSON_CreateNumber(ubs[i]);
                         cJSON_AddItemToArray(loops_json, loop);
                     }
+                    scores_json = cJSON_CreateArray();
+                    cJSON_AddItemToObject(simd_json, "scores", scores_json);
+                    for (int i = 0; i < data.n_loops; i++)
+                    {
+                        cJSON *loop = cJSON_CreateNumber(data.scores[i]);
+                        cJSON_AddItemToArray(scores_json, loop);
+                    }
+                    legal_json = cJSON_CreateArray();
+                    cJSON_AddItemToObject(simd_json, "legal", legal_json);
+                    for (int i = 0; i < data.n_loops; i++)
+                    {
+                        cJSON *loop = cJSON_CreateNumber(data.legal[i]);
+                        cJSON_AddItemToArray(legal_json, loop);
+                    }
+                    if (data.has_space_candidate == 0) {
+                        loops_json = cJSON_CreateArray();
+                        cJSON_AddItemToObject(simd_json, "sa_dims", loops_json);
+                        for (int i = 0; i < sa->n_sa_dim; i++)
+                        {
+                            cJSON *loop = cJSON_CreateNumber(sa->sa_dim[i]);
+                            cJSON_AddItemToArray(loops_json, loop);
+                        }
+                    }
+                    p_str = isl_printer_to_str(sa->ctx);
+                    p_str = isl_printer_print_str(p_str, sa->options->autosa->output_dir);
+                    p_str = isl_printer_print_str(p_str, "/tuning.json");
+                    tuning_path = isl_printer_get_str(p_str);
+                    fp = fopen(tuning_path, "w");
+                    content = cJSON_Print(tuning);
+                    fprintf(fp, "%s", content);
+                    cJSON_Delete(tuning);
+                    free(tuning_path);
+                    isl_printer_free(p_str);
+                    exit(0);
                 }
-                p_str = isl_printer_to_str(sa->ctx);
-                p_str = isl_printer_print_str(p_str, sa->options->autosa->output_dir);
-                p_str = isl_printer_print_str(p_str, "/tuning.json");
-                tuning_path = isl_printer_get_str(p_str);
-                fp = fopen(tuning_path, "w");
-                content = cJSON_Print(tuning);
-                fprintf(fp, "%s", content);
-                cJSON_Delete(tuning);
-                free(tuning_path);
-                isl_printer_free(p_str);
-                exit(0);
             }
-        }
-        else
-        {
-            throw std::runtime_error("[AutoSA] Error: Auto SIMD vectorization is not supported.\n");
+            else
+            {
+                throw std::runtime_error("[AutoSA] Error: Auto SIMD vectorization is not supported.\n");
+            }
+            free(data.ubs);
         }
 
         /* Perform the simd vectorization. */
@@ -2940,8 +3000,7 @@ isl_stat sa_simd_vectorization_optimize(struct autosa_kernel *sa, char *mode)
         node = isl_schedule_node_map_descendant_bottom_up(node,
                                                           &autosa_simd_tile_loop, &data);
     }
-
-    free(data.ubs);
+    
     free(data.legal);
     free(tile_size);
     /* Clean up the band pe_opt properties. */
@@ -2988,12 +3047,9 @@ isl_stat sa_simd_vectorization_optimize(struct autosa_kernel *sa, char *mode)
  * - SIMD vectorization
  * - array partitioning
  */
-isl_stat sa_pe_optimize(struct autosa_kernel *sa, bool pass_en[], char *pass_mode[])
+isl_stat compute_management(struct autosa_kernel *sa, bool pass_en[], char *pass_mode[])
 {
-    printf("[AutoSA] Appy PE optimization.\n");
-//#ifdef _DEBUG
-//    DBGSCHD(stdout, sa->schedule, isl_schedule_get_ctx(sa->schedule))
-//#endif
+    printf("[AutoSA] Appy compute management.\n");
 
     /* Prepartion before the optimization. */
     /* Initialize the autosa_loop_types. */
@@ -3011,7 +3067,6 @@ isl_stat sa_pe_optimize(struct autosa_kernel *sa, bool pass_en[], char *pass_mod
 
 //#ifdef _DEBUG
 //    DBGSCHD(stdout, sa->schedule, isl_schedule_get_ctx(sa->schedule));
-//    
 //#endif
     /* Array partitioning. */
     sa_array_partitioning_optimize(sa, pass_en[0], pass_mode[0], pass_en[1], pass_mode[1]);    
@@ -3168,26 +3223,6 @@ static __isl_give isl_schedule_node *group_statements(
     return isl_schedule_node_group(node, id);
 }
 
-/* Apply communication management including:
- * - data allocation
- * - I/O construction
- * - I/O optimization 
- * First, data allocation allocates the on-chip buffers inside PEs.
- * Next, I/O construction builds the I/O system to transfer the data.
- * Lastly, I/O optimization optimizes the I/O system, performing tasks including:
- * - I/O module clustering
- * - L2 I/O buffering
- * - data packing
- */
-isl_stat sa_comm_management(struct autosa_kernel *sa, struct autosa_gen *gen)
-{
-    printf("[AutoSA] Apply communication management.\n");
-
-    sa_io_construct_optimize(sa, gen);
-
-    return isl_stat_ok;
-}
-
 /* Replace "pa" by the zero function defined over the universe domain
  * in the space of "pa".
  */
@@ -3218,11 +3253,11 @@ static __isl_give isl_pw_aff *set_universally_zero(__isl_take isl_pw_aff *pa)
  * function.  Since the access function cannot actually access anything,
  * there is no harm in printing the array sizes as zero.
  */
-static void localize_bounds(struct autosa_kernel *kernel,
-                            __isl_keep isl_set *host_domain)
+static void localize_bounds(struct autosa_kernel *kernel)
 {
     int i, j;
     isl_set *context;
+    isl_set *host_domain = kernel->host_domain;
 
     context = isl_set_copy(host_domain);
     context = isl_set_params(context);
@@ -3260,189 +3295,39 @@ static void localize_bounds(struct autosa_kernel *kernel,
     isl_set_free(context);
 }
 
-/* Create an autosa_kernel represents the domain isntances that reach "node" and 
- * insert a mark node pointing to the autosa_kernel before "node".
- *
- * Mark all outer band nodes as atomic to ensure each kernel is only scheduled once.
- * If the domain elements that reach "node" live in more than one space,
- * then group the domain elements into a single space, named kernelX, 
- * with X the kernel sequence numbers.
- *
- * [Space-time transformation]
- * We will first perform space-time transformation to transform the design to 
- * systolic array.
- * [PE optimization]
- * PE optimization is applied next including: array parititioning, latency hiding, 
- * and SIMD vectorization.
- * For array partitioning, the mark "array" is added between the tile and point loops.
- * All the loops below the "array" mark will be mapped to FPGA device at once.
- * For latency hiding, SIMD vectorization, all the generated loops will be marked
- * "latency" and "SIMD".
- * [Communication management]
- * Then we perform comm opt. through: data allocation, I/O construction, and 
- * I/O optimization.
- * 
- * [Ignore below...]
- * The linear branch between the kernel node and "array" mark may also have a 
- * "local" mark. If present, the mapping to local memory is computed at this point. 
- * The "local" mark will be removed at the end of this function.
- *
- * Compute array reference groups for all arrays, set the local array bounds 
- * based on the set of domain instances that reach the kernel node, 
- * check the total amount of shared memory used and compute 
- * all group tilings.
- *
- * We save a copy of the schedule that may influence the mappings to shared or private
- * memory in kernel->copy_schedule.
- *
- * We add copy statements to the schedule tree and create representations for 
- * the local variables in the kernel.
- *
- * We keep a copy of the isl_id that points to the kernel to ensure 
- * that the kernel does not get destroyed if the schedule node 
- * is freed due to some error condition.
+/* Apply communication management including:
+ * - data allocation
+ * - I/O construction
+ * - I/O optimization 
+ * First, data allocation allocates the on-chip buffers inside PEs.
+ * Next, I/O construction builds the I/O system to transfer the data.
+ * Lastly, I/O optimization optimizes the I/O system, performing tasks including:
+ * - I/O module clustering
+ * - L2 I/O buffering
+ * - data packing
  */
-static __isl_give isl_schedule_node *compute_and_comm_optimize(
-    struct autosa_gen *gen, __isl_take isl_schedule_node *node)
+isl_stat comm_management(struct autosa_kernel *sa, struct autosa_gen *gen)
 {
-    isl_size num_sa = 0;
-    struct autosa_kernel **sa_candidates;
-    struct autosa_kernel *sa_opt, *kernel;
-    isl_schedule *schedule;
-    /* Enable for array partitioning, L2 array partitioning, latency hiding, SIMD. */
-    bool pe_opt_en[4];
-    char *pe_opt_mode[4];
+    printf("[AutoSA] Apply communication management.\n");
+
+    sa_io_construct_optimize(sa, gen);
+
+    /* Localize the array bounds using parameters from the host domain. */
+    localize_bounds(sa);
+
+    return isl_stat_ok;
+}
+
+static struct autosa_kernel *process_kernel_meta_data(struct autosa_kernel *kernel, struct autosa_gen *gen)
+{
+    isl_schedule_node *node;
     isl_union_set *domain, *expanded;
     int single_statement;
+    isl_union_pw_multi_aff *contraction;
     isl_union_map *host_schedule;
     isl_set *host_domain;
-    isl_id *id;
-    isl_union_pw_multi_aff *contraction;
+    isl_id *id;    
     int n_space_dim;
-    char *space_time_mode;
-    cJSON *space_time_json, *space_time_mode_json, *n_sa_json, *tuning;
-    cJSON *array_part_json, *array_part_en_json, *array_part_mode_json;
-    cJSON *array_part_L2_json, *array_part_L2_en_json, *array_part_L2_mode_json;
-    cJSON *latency_json, *latency_en_json, *latency_mode_json;
-    cJSON *simd_json, *simd_en_json, *simd_mode_json;
-
-    /* Set up the sched_pos property */
-    node = sched_pos_setup(node);
-
-//#ifdef _DEBUG
-//    DBGSCHDNODE(stdout, node, isl_schedule_node_get_ctx(node))
-//#endif
-
-    /* Generate systolic arrays using space-time mapping. */
-    schedule = isl_schedule_node_get_schedule(node);
-    isl_schedule_node_free(node);
-    sa_candidates = sa_space_time_transform(schedule, gen->prog->scop, &num_sa);
-    if (num_sa > 0)
-        printf("[AutoSA] %d systolic arrays generated.\n", num_sa);
-    else
-    {
-        printf("[AutoSA] No systolic array generated. Exit now.\n");
-        exit(0);
-    }
-    
-    space_time_json = cJSON_GetObjectItemCaseSensitive(gen->tuning_config, "space_time");
-    space_time_mode_json = cJSON_GetObjectItemCaseSensitive(space_time_json, "mode");
-    space_time_mode = space_time_mode_json->valuestring;    
-
-    if (!strcmp(space_time_mode, "auto"))
-    {
-        /* Space-time transformation is set in AUTO mode. We will pick up
-         * one systolic array to proceed based on heuristics. 
-         */
-        kernel = sa_candidates_smart_pick(sa_candidates, num_sa);
-    }
-    else
-    {
-        /* Space-time transformation is set in MANUAL mode. We will take the user
-         * specification to select one systolic array to proceed.
-         */
-        isl_union_map *sizes = extract_sizes_from_str(gen->ctx,
-                                                      gen->options->autosa->sa_sizes);
-        int kernel_id = read_space_time_kernel_id(sizes);
-        isl_union_map_free(sizes);
-        if (kernel_id < 0)
-        {
-            /* User hasn't specified which systolic array to choose yet.
-             * We will dump out the number of systolic array designs and 
-             * exit the program. */
-            FILE *fp;
-            char *content;
-            isl_printer *p_str;
-            char *tuning_path;
-
-            tuning = cJSON_CreateObject();
-            space_time_json = cJSON_CreateObject();
-            n_sa_json = cJSON_CreateNumber(num_sa);
-            cJSON_AddItemToObject(space_time_json, "n_kernel", n_sa_json);
-            cJSON_AddItemToObject(tuning, "space_time", space_time_json);
-            p_str = isl_printer_to_str(gen->ctx);
-            p_str = isl_printer_print_str(p_str, gen->options->autosa->output_dir);
-            p_str = isl_printer_print_str(p_str, "/tuning.json");
-            tuning_path = isl_printer_get_str(p_str);
-            fp = fopen(tuning_path, "w");
-            free(tuning_path);
-            isl_printer_free(p_str);
-            content = cJSON_Print(tuning);
-            fprintf(fp, "%s", content);
-            cJSON_Delete(tuning);
-            exit(0);
-        }
-        else
-        {
-            kernel = sa_candidates_manual_pick(sa_candidates, num_sa, kernel_id);
-        }
-    }
-
-    kernel->prog = gen->prog;
-    kernel->options = gen->options;    
-
-    /* Create local arrays. */
-    kernel = autosa_kernel_create_local_arrays(kernel, gen->prog);
-    assert(kernel != NULL);
-
-    /* Update the sparse structures */
-    if (gen->options->autosa->block_sparse) {
-        autosa_kernel_extract_sparse_info(kernel, gen);
-    }
-
-    /* Apply PE optimization. */
-    array_part_json = cJSON_GetObjectItemCaseSensitive(gen->tuning_config, "array_part");
-    array_part_en_json = cJSON_GetObjectItemCaseSensitive(array_part_json, "enable");
-    array_part_mode_json = cJSON_GetObjectItemCaseSensitive(array_part_json, "mode");
-
-    array_part_L2_json = cJSON_GetObjectItemCaseSensitive(gen->tuning_config, "array_part_L2");
-    array_part_L2_en_json = cJSON_GetObjectItemCaseSensitive(array_part_L2_json, "enable");
-    array_part_L2_mode_json = cJSON_GetObjectItemCaseSensitive(array_part_L2_json, "mode");
-
-    latency_json = cJSON_GetObjectItemCaseSensitive(gen->tuning_config, "latency");
-    latency_en_json = cJSON_GetObjectItemCaseSensitive(latency_json, "enable");
-    latency_mode_json = cJSON_GetObjectItemCaseSensitive(latency_json, "mode");
-
-    simd_json = cJSON_GetObjectItemCaseSensitive(gen->tuning_config, "simd");
-    simd_en_json = cJSON_GetObjectItemCaseSensitive(simd_json, "enable");
-    simd_mode_json = cJSON_GetObjectItemCaseSensitive(simd_json, "mode");
-
-    pe_opt_en[0] = array_part_en_json->valueint;
-    pe_opt_en[1] = array_part_L2_en_json->valueint;
-    pe_opt_en[2] = latency_en_json->valueint;
-    pe_opt_en[3] = simd_en_json->valueint;
-
-    pe_opt_mode[0] = array_part_mode_json->valuestring;
-    pe_opt_mode[1] = array_part_L2_mode_json->valuestring;
-    pe_opt_mode[2] = latency_mode_json->valuestring;
-    pe_opt_mode[3] = simd_mode_json->valuestring;
-
-    sa_pe_optimize(kernel, pe_opt_en, pe_opt_mode);
-    /* Create the autosa_kernel object and attach to the schedule. */
-    if (!kernel)
-    {
-        return NULL;
-    }
 
     node = isl_schedule_get_root(kernel->schedule);
     node = isl_schedule_node_child(node, 0);
@@ -3525,13 +3410,206 @@ static __isl_give isl_schedule_node *compute_and_comm_optimize(
     node = autosa_tree_move_up_to_kernel(node);
 
     kernel->schedule = isl_schedule_free(kernel->schedule);
-    kernel->schedule = isl_schedule_node_get_schedule(node);    
+    kernel->schedule = isl_schedule_node_get_schedule(node);
+    isl_schedule_node_free(node);
+
+    return kernel;
+}
+
+static struct autosa_kernel *optimize_single_array(struct autosa_kernel *kernel, struct autosa_gen *gen) 
+{
+    cJSON *array_part_json, *array_part_en_json, *array_part_mode_json;
+    cJSON *array_part_L2_json, *array_part_L2_en_json, *array_part_L2_mode_json;
+    cJSON *latency_json, *latency_en_json, *latency_mode_json;
+    cJSON *simd_json, *simd_en_json, *simd_mode_json;
+    /* Enable for array partitioning, L2 array partitioning, latency hiding, SIMD. */
+    bool pe_opt_en[4];
+    char *pe_opt_mode[4];    
+
+    kernel->prog = gen->prog;
+    kernel->options = gen->options;    
+
+    /* Create local arrays. */
+    kernel = autosa_kernel_create_local_arrays(kernel, gen->prog);
+    assert(kernel != NULL);
+
+    /* Update the sparse structures */
+    if (gen->options->autosa->block_sparse) {
+        autosa_kernel_extract_sparse_info(kernel, gen);
+    }
+
+    /* Apply PE optimization. */
+    array_part_json = cJSON_GetObjectItemCaseSensitive(gen->tuning_config, "array_part");
+    array_part_en_json = cJSON_GetObjectItemCaseSensitive(array_part_json, "enable");
+    array_part_mode_json = cJSON_GetObjectItemCaseSensitive(array_part_json, "mode");
+
+    array_part_L2_json = cJSON_GetObjectItemCaseSensitive(gen->tuning_config, "array_part_L2");
+    array_part_L2_en_json = cJSON_GetObjectItemCaseSensitive(array_part_L2_json, "enable");
+    array_part_L2_mode_json = cJSON_GetObjectItemCaseSensitive(array_part_L2_json, "mode");
+
+    latency_json = cJSON_GetObjectItemCaseSensitive(gen->tuning_config, "latency");
+    latency_en_json = cJSON_GetObjectItemCaseSensitive(latency_json, "enable");
+    latency_mode_json = cJSON_GetObjectItemCaseSensitive(latency_json, "mode");
+
+    simd_json = cJSON_GetObjectItemCaseSensitive(gen->tuning_config, "simd");
+    simd_en_json = cJSON_GetObjectItemCaseSensitive(simd_json, "enable");
+    simd_mode_json = cJSON_GetObjectItemCaseSensitive(simd_json, "mode");
+
+    pe_opt_en[0] = array_part_en_json->valueint;
+    pe_opt_en[1] = array_part_L2_en_json->valueint;
+    pe_opt_en[2] = latency_en_json->valueint;
+    pe_opt_en[3] = simd_en_json->valueint;
+
+    pe_opt_mode[0] = array_part_mode_json->valuestring;
+    pe_opt_mode[1] = array_part_L2_mode_json->valuestring;
+    pe_opt_mode[2] = latency_mode_json->valuestring;
+    pe_opt_mode[3] = simd_mode_json->valuestring;
+
+    /* Compute Management */
+    compute_management(kernel, pe_opt_en, pe_opt_mode);
+    /* Create the autosa_kernel object and attach to the schedule. */
+    if (!kernel)    
+        return NULL;    
+
+    /* Process meta data */
+    kernel = process_kernel_meta_data(kernel, gen);
 
     /* Communication Management */
-    sa_comm_management(kernel, gen);
+    comm_management(kernel, gen);    
 
-    /* Localize the array bounds using parameters from the host domain. */
-    localize_bounds(kernel, host_domain);
+    return kernel;
+}
+
+/* Create an autosa_kernel represents the domain isntances that reach "node" and 
+ * insert a mark node pointing to the autosa_kernel before "node".
+ *
+ * Mark all outer band nodes as atomic to ensure each kernel is only scheduled once.
+ * If the domain elements that reach "node" live in more than one space,
+ * then group the domain elements into a single space, named kernelX, 
+ * with X the kernel sequence numbers.
+ *
+ * [Space-time transformation]
+ * We will first perform space-time transformation to transform the design to 
+ * systolic array.
+ * [PE optimization]
+ * PE optimization is applied next including: array parititioning, latency hiding, 
+ * and SIMD vectorization.
+ * For array partitioning, the mark "array" is added between the tile and point loops.
+ * All the loops below the "array" mark will be mapped to FPGA device at once.
+ * For latency hiding, SIMD vectorization, all the generated loops will be marked
+ * "latency" and "SIMD".
+ * [Communication management]
+ * Then we perform comm opt. through: data allocation, I/O construction, and 
+ * I/O optimization.
+ * 
+ * [Ignore below...]
+ * The linear branch between the kernel node and "array" mark may also have a 
+ * "local" mark. If present, the mapping to local memory is computed at this point. 
+ * The "local" mark will be removed at the end of this function.
+ *
+ * Compute array reference groups for all arrays, set the local array bounds 
+ * based on the set of domain instances that reach the kernel node, 
+ * check the total amount of shared memory used and compute 
+ * all group tilings.
+ *
+ * We save a copy of the schedule that may influence the mappings to shared or private
+ * memory in kernel->copy_schedule.
+ *
+ * We add copy statements to the schedule tree and create representations for 
+ * the local variables in the kernel.
+ *
+ * We keep a copy of the isl_id that points to the kernel to ensure 
+ * that the kernel does not get destroyed if the schedule node 
+ * is freed due to some error condition.
+ */
+static __isl_give isl_schedule_node *compute_and_comm_optimize(
+    struct autosa_gen *gen, __isl_take isl_schedule_node *node)
+{
+    isl_size num_sa = 0;
+    struct autosa_kernel **sa_candidates;
+    struct autosa_kernel *sa_opt, *kernel;
+    isl_schedule *schedule;                       
+    char *space_time_mode;
+    cJSON *space_time_json, *space_time_mode_json, *n_sa_json, *tuning;
+
+    /* Set up the sched_pos property */
+    node = sched_pos_setup(node);
+
+//#ifdef _DEBUG
+//    DBGSCHDNODE(stdout, node, isl_schedule_node_get_ctx(node))
+//#endif
+
+    /* Generate systolic arrays using space-time mapping. */
+    schedule = isl_schedule_node_get_schedule(node);
+    isl_schedule_node_free(node);
+    sa_candidates = sa_space_time_transform(schedule, gen->prog->scop, &num_sa);
+    if (num_sa > 0)
+        printf("[AutoSA] %d systolic arrays generated.\n", num_sa);
+    else
+    {
+        printf("[AutoSA] No systolic array generated. Exit now.\n");
+        exit(0);
+    }
+
+    space_time_json = cJSON_GetObjectItemCaseSensitive(gen->tuning_config, "space_time");
+    space_time_mode_json = cJSON_GetObjectItemCaseSensitive(space_time_json, "mode");
+    space_time_mode = space_time_mode_json->valuestring;
+    
+    if (!strcmp(space_time_mode, "auto"))
+    {
+        /* Space-time transformation is set in AUTO mode. We will pick up
+         * one systolic array to proceed based on heuristics. 
+         */
+        kernel = sa_candidates_smart_pick(sa_candidates, num_sa);
+    } else {
+        /* Space-time transformation is set in MANUAL mode. We will take the user
+         * specification to select one systolic array to proceed.
+         */
+        isl_union_map *sizes = extract_sizes_from_str(gen->ctx,
+                                                      gen->options->autosa->sa_sizes);
+        int kernel_id = read_space_time_kernel_id(sizes);
+        isl_union_map_free(sizes);
+        if (kernel_id < 0)
+        {
+            /* User hasn't specified which systolic array to choose yet.
+             * We will dump out the number of systolic array designs and 
+             * exit the program. */
+            FILE *fp;
+            char *content;
+            isl_printer *p_str;
+            char *tuning_path;
+
+            tuning = cJSON_CreateObject();
+            space_time_json = cJSON_CreateObject();
+            n_sa_json = cJSON_CreateNumber(num_sa);
+            cJSON_AddItemToObject(space_time_json, "n_kernel", n_sa_json);
+            cJSON_AddItemToObject(tuning, "space_time", space_time_json);
+            p_str = isl_printer_to_str(gen->ctx);
+            p_str = isl_printer_print_str(p_str, gen->options->autosa->output_dir);
+            p_str = isl_printer_print_str(p_str, "/tuning.json");
+            tuning_path = isl_printer_get_str(p_str);
+            fp = fopen(tuning_path, "w");
+            free(tuning_path);
+            isl_printer_free(p_str);
+            content = cJSON_Print(tuning);
+            fprintf(fp, "%s", content);
+            cJSON_Delete(tuning);
+            exit(0);
+        }
+        else
+        {
+            kernel = sa_candidates_manual_pick(sa_candidates, num_sa, kernel_id);
+        }
+    }
+    kernel = optimize_single_array(kernel, gen);
+    gen->tuning_progs.push_back(kernel->tuning_program);
+
+    if (kernel) {
+        node = isl_schedule_get_root(kernel->schedule);
+        node = autosa_tree_move_down_to_kernel(node);
+    } else {
+        return NULL;
+    }
 
     return node;
 }
@@ -4138,6 +4216,15 @@ static __isl_give isl_printer *generate(__isl_take isl_printer *p,
                        gen->hw_top_module, gen->drain_merge_funcs, gen->n_drain_merge_funcs,
                        &gen->types, gen->print_user);
 
+        /* Dump tuning information */
+        if (options->autosa->tuning) {
+            std::string params_f(options->autosa->output_dir);
+            params_f += "/tuning";
+            for (int i = 0; i < gen->tuning_progs.size(); i++) {
+                gen->tuning_progs[i]->dump(params_f);
+            }
+        }
+
         /* Clean up */
         isl_ast_node_free(gen->tree);
         autosa_kernel_free(gen->kernel);
@@ -4203,24 +4290,24 @@ int generate_sa(isl_ctx *ctx, const char *input, FILE *out,
     gen.kernel = NULL;
     gen.tuning_config = NULL;
 
-    if (options->debug->dump_sizes)
-    {
-        isl_space *space = isl_space_params_alloc(ctx, 0);
-        gen.used_sizes = isl_union_map_empty(space);
-    }
+    //if (options->debug->dump_sizes)
+    //{
+    //    isl_space *space = isl_space_params_alloc(ctx, 0);
+    //    gen.used_sizes = isl_union_map_empty(space);
+    //}
 
     r = ppcg_transform(ctx, input, out, options, &generate_wrap, &gen);
 
-    if (options->debug->dump_sizes)
-    {
-        isl_union_map_dump(gen.used_sizes);
-        isl_union_map_free(gen.used_sizes);
-    }
+    //if (options->debug->dump_sizes)
+    //{
+    //    isl_union_map_dump(gen.used_sizes);
+    //    isl_union_map_free(gen.used_sizes);
+    //}
 
     isl_union_map_free(gen.sizes);
     for (i = 0; i < gen.types.n; ++i)
         free(gen.types.name[i]);
-    free(gen.types.name);
+    free(gen.types.name);    
 
     return r;
 }

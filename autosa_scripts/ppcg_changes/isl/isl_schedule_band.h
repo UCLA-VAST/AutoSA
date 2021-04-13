@@ -44,6 +44,7 @@ struct isl_schedule_band {
 	enum autosa_loop_type *space_time;
 	enum autosa_loop_type *pe_opt;
 	int *sched_pos;
+	void *iter[20];
 	/* AutoSA Extended */
 };
 typedef struct isl_schedule_band isl_schedule_band;
@@ -141,6 +142,10 @@ int isl_schedule_band_member_get_sched_pos(
 	__isl_keep isl_schedule_band *band, int pos);
 __isl_give isl_schedule_band *isl_schedule_band_member_set_sched_pos(
 	__isl_take isl_schedule_band *band, int pos, int sched_pos);
+void *isl_schedule_band_member_get_iter(
+	__isl_keep isl_schedule_band *band, int pos);
+__isl_give isl_schedule_band *isl_schedule_band_member_set_iter(
+	__isl_take isl_schedule_band *band, int pos, void *iter);	
 /* AutoSA Extended */
 
 #endif

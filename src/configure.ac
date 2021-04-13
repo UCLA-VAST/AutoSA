@@ -31,7 +31,8 @@ bundled)
   ISL_BUILDDIR=isl
 	ppcg_configure_args="$ppcg_configure_args --with-isl-builddir=../isl"
 	ppcg_configure_args="$ppcg_configure_args --with-isl=build"
-	ppcg_configure_args="$ppcg_configure_args --with-clang=system"
+	#ppcg_configure_args="$ppcg_configure_args --with-clang=system"
+	ppcg_configure_args="$ppcg_configure_args --with-clang=no"
   PACKAGE_CFLAGS_ISL='-I${prefix}/include'
 	;;
 build)

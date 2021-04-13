@@ -8,8 +8,14 @@
 
 #include <pet.h>
 
+#include <vector>
+
 #include "ppcg.h"
 #include "ppcg_options.h"
+
+#if defined(__cplusplus)
+extern "C" {
+#endif    
 
 __isl_give isl_union_map *extract_sizes_from_str(isl_ctx *ctx, const char *str);
 
@@ -45,5 +51,12 @@ char *isl_vec_to_str(__isl_keep isl_vec *vec);
 long isl_val_get_num(__isl_take isl_val *val);
 long compute_set_min(__isl_keep isl_set *set, int dim);
 long compute_set_max(__isl_keep isl_set *set, int dim);
+
+/* Get the factors of the number x. */
+std::vector<int> get_factors(int x);
+
+#if defined(__cplusplus)
+}
+#endif
 
 #endif

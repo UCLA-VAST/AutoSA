@@ -31,29 +31,10 @@ LIB_PET = $(PET_LA) @PET_LIBS@
 AM_CPPFLAGS = @ISL_CFLAGS@ @BARVINOK_CFLAGS@ @PET_CFLAGS@
 LDADD = $(LIB_PET) $(LIB_ISL) $(LIB_BARVINOK)
 AM_CXXFLAGS = -std=c++11
-
 bin_PROGRAMS = autosa
 autosa_SOURCES = \
 	cpu.c \
 	cpu.h \
-	cuda.c \
-	cuda.h \
-	opencl.c \
-	opencl.h \
-	cuda_common.h \
-	cuda_common.c \
-	gpu.c \
-	gpu.h \
-	gpu_array_tile.c \
-	gpu_array_tile.h \
-	gpu_group.c \
-	gpu_group.h \
-	gpu_hybrid.c \
-	gpu_hybrid.h \
-	gpu_print.c \
-	gpu_print.h \
-	gpu_tree.c \
-	gpu_tree.h \
 	grouping.c \
 	grouping.h \
 	hybrid.c \
@@ -81,7 +62,9 @@ autosa_SOURCES = \
 	autosa_trans.cpp \
 	autosa_utils.cpp \
 	autosa_xilinx_hls_c.cpp  \
-	autosa_catapult_hls_c.cpp
+	autosa_catapult_hls_c.cpp \
+	autosa_tuning.cpp \
+	json.hpp
 
 #TESTS = @extra_tests@
 #EXTRA_TESTS = opencl_test.sh polybench_test.sh
@@ -102,3 +85,24 @@ autosa_SOURCES = \
 #
 #gitversion.h: @GIT_HEAD@
 #	$(AM_V_GEN)echo '#define GIT_HEAD_ID "'@GIT_HEAD_VERSION@'"' > $@
+#
+#cpu.c \
+#cpu.h \
+#cuda.c \
+#cuda.h \
+#opencl.c \
+#opencl.h \
+#cuda_common.h \
+#cuda_common.c \
+#gpu.c \
+#gpu.h \
+#gpu_array_tile.c \
+#gpu_array_tile.h \
+#gpu_group.c \
+#gpu_group.h \
+#gpu_hybrid.c \
+#gpu_hybrid.h \
+#gpu_print.c \
+#gpu_print.h \
+#gpu_tree.c \
+#gpu_tree.h

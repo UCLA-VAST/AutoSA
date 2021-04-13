@@ -110,6 +110,8 @@ extern "C"
 		int reverse_order;
 		/* Use AXI Stream Interface. */
 		int axi_stream;
+		/* Execute in the tuning mode. */
+		int tuning;
 	};	
 
 	struct ppcg_options

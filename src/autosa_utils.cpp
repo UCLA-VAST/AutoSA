@@ -3,6 +3,7 @@
 #include <ctype.h>
 #include <stdexcept>
 #include <limits>
+#include <cmath>
 
 #include <isl/space.h>
 #include <barvinok/isl.h>
@@ -441,4 +442,19 @@ long compute_set_max(__isl_keep isl_set *set, int dim)
   isl_pw_aff_free(pa);
 
   return max;  
+}
+
+std::vector<int> get_factors(int x) {
+  std::vector<int> factors;
+  std::vector<int> large_factors;
+  for (int i = 1; i < int(sqrt((float)x) + 1); i++) {
+    if (x % i == 0)
+      factors.push_back(i);
+    if (i * i != x)
+      large_factors.push_back((int)(x / i));
+  }
+  for (int i = large_factors.size() - 1; i >= 0; i--) {
+    factors.push_back(large_factors[i]);
+  }
+  return factors;
 }

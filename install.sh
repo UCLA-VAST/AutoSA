@@ -17,4 +17,4 @@ echo "Patch ISL"
 
 # Cleanup 
 cp ./autosa_scripts/autosa.py ./autosa
-(mkdir autosa.tmp; cd autosa.tmp; mkdir output optimizer; cd output; mkdir src latency_est resource_est)
+(mkdir autosa.tmp; cd autosa.tmp; mkdir output optimizer; cd output; mkdir src latency_est resource_est tuning)
