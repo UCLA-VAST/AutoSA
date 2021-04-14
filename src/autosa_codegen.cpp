@@ -1875,9 +1875,6 @@ static int get_local_reduce_sched_depth(
       if (isl_schedule_node_band_member_get_coincident(node, pos))
         break;
     }
-//#ifdef _DEBUG
-//    DBGVAR(std::cout, pos)
-//#endif
     if (pos == n - 1) {
       node = isl_schedule_node_child(node, 0);
     } else {
@@ -1888,9 +1885,6 @@ static int get_local_reduce_sched_depth(
 
   int depth = isl_schedule_node_get_schedule_depth(node);
   isl_schedule_node_free(node);
-//#ifdef _DEBUG
-//  DBGVAR(std::cout, depth)
-//#endif
 
   return depth;
 }
@@ -2629,6 +2623,28 @@ static __isl_give struct autosa_hw_module *generate_filter_buffer_io_module(
   module->outer_sched = sched1;
   module->inter_sched = sched2;
   module->intra_sched = sched3;
+  if (gen->options->autosa->tuning_method == 1) {
+    module->tuning_sched = NULL;
+    module->tuning_inter_sched = kernel->tuning_program->generate_tuning_schedule(isl_schedule_dup(sched2));
+    module->tuning_intra_sched = kernel->tuning_program->generate_tuning_schedule(isl_schedule_dup(sched3));
+    /* Remove the filter ids */
+    isl_schedule *tuning_sched = isl_schedule_dup(sched1);
+    isl_schedule_node *root = isl_schedule_get_root(tuning_sched);
+    isl_schedule_free(tuning_sched);
+    root = autosa_tree_move_down_to_io_mark(root, kernel->core, io_level + 1);
+    while (isl_schedule_node_has_parent(root)) {
+      root = isl_schedule_node_parent(root);
+      if (isl_schedule_node_get_type(root) == isl_schedule_node_filter) {
+        root = isl_schedule_node_delete(root);
+      }
+      if (autosa_tree_node_is_mark(root, "array"))
+        break;
+    }
+    tuning_sched = isl_schedule_node_get_schedule(root);
+    isl_schedule_node_free(root);
+    module->tuning_outer_sched = kernel->tuning_program->generate_tuning_schedule(tuning_sched);
+  }
+
   if (module->boundary)
   {
     module->boundary_outer_sched = boundary_sched1;
@@ -3318,10 +3334,10 @@ static isl_stat generate_default_io_module_schedule(
 
   /* Add the module id filters. */
   n_io_ids = space_dim - io_level + 1;
-  io_ids = ppcg_scop_generate_names(gen->prog->scop, n_io_ids, "p");  
-  node = autosa_tree_move_down_to_array(node, kernel->core);
+  io_ids = ppcg_scop_generate_names(gen->prog->scop, n_io_ids, "p");   
+  node = autosa_tree_move_down_to_array(node, kernel->core);  
   node = add_io_ids_filter(node, io_ids, io_level, space_dim - io_level + 1, is_filter, module->to_pe, read);
-  node = autosa_tree_move_up_to_kernel(node);  
+  node = autosa_tree_move_up_to_kernel(node);    
 
   /* Add the data transfer statements. */  
   init_suffix(module, group, &fifo_suffix, &buf_suffix);  
@@ -3440,14 +3456,32 @@ static isl_stat generate_default_io_module_schedule(
   free(buf_suffix);
   isl_union_set_free(group_core);
 
-  //DBGSCHDNODE(stdout, node, isl_schedule_node_get_ctx(node));
-  //exit(0);
-
   /* Add the module mark. */
   id = isl_id_alloc(ctx, "module", module);
   node = autosa_tree_move_up_to_kernel(node);
   node = isl_schedule_node_child(node, 0);
   node = isl_schedule_node_insert_mark(node, id);
+
+  if (gen->options->autosa->tuning_method == 1 && !boundary) {
+    isl_schedule *orig_sched = isl_schedule_node_get_schedule(node);
+    isl_schedule *tuning_sched = isl_schedule_dup(orig_sched);
+    isl_schedule_free(orig_sched);
+    /* Remove module filters. */
+    isl_schedule_node *root = isl_schedule_get_root(tuning_sched);
+    isl_schedule_free(tuning_sched);
+    root = autosa_tree_move_down_to_io_mark(root, kernel->core, io_level);
+    while (isl_schedule_node_has_parent(root)) {
+      root = isl_schedule_node_parent(root);
+      if (isl_schedule_node_get_type(root) == isl_schedule_node_filter) {
+        root = isl_schedule_node_delete(root);
+      }
+      if (autosa_tree_node_is_mark(root, "array"))
+        break;
+    }
+    tuning_sched = isl_schedule_node_get_schedule(root);
+    isl_schedule_node_free(root);
+    module->tuning_sched = kernel->tuning_program->generate_tuning_schedule(tuning_sched);
+  }
 
   sched1 = isl_schedule_node_get_schedule(node);
   isl_schedule_node_free(node);
@@ -3794,9 +3828,9 @@ static __isl_give struct autosa_hw_module **sa_io_module_gen(
           for (int p = 0; p < group->n_mem_ports; p++)
           {
             int group_ref_offset = group->local_array->n_io_group_refs;
-            int mem_port_offset = group->mem_port_id;            
-            group->local_array->group_ref_mem_port_map.emplace_back(
-                std::make_pair(group_ref_offset + p, mem_port_offset + p));
+            int mem_port_offset = group->mem_port_id;                 
+            group->local_array->group_ref_mem_port_map.push_back(group_ref_offset + p);
+            group->local_array->group_ref_mem_port_map.push_back(mem_port_offset + p);
           }
           group->local_array->n_io_group_refs += group->n_mem_ports;
         }
@@ -3897,9 +3931,9 @@ static __isl_give struct autosa_hw_module **sa_io_module_gen(
           for (int p = 0; p < group->n_mem_ports; p++)
           {
             int group_ref_offset = group->local_array->n_io_group_refs;
-            int mem_port_offset = group->mem_port_id;            
-            group->local_array->group_ref_mem_port_map.emplace_back(
-                std::make_pair(group_ref_offset + p, mem_port_offset + p));
+            int mem_port_offset = group->mem_port_id;                        
+            group->local_array->group_ref_mem_port_map.push_back(group_ref_offset + p);
+            group->local_array->group_ref_mem_port_map.push_back(mem_port_offset + p);
           }
           group->local_array->n_io_group_refs += group->n_mem_ports;
         }
@@ -5022,6 +5056,12 @@ static __isl_give struct autosa_hw_module *sa_pe_module_gen(struct autosa_gen *g
   node = isl_schedule_node_child(node, 0);
   node = isl_schedule_node_insert_mark(node, hw_id);
 
+  if (gen->options->autosa->tuning_method == 1) {
+    /* Generate another schedule for latency estimation. */
+    isl_schedule *tuning_sched = isl_schedule_node_get_schedule(node);
+    module->tuning_sched = kernel->tuning_program->generate_tuning_schedule(tuning_sched);
+  }
+
   /* Add the PE id filter. */
   node = autosa_tree_move_up_to_kernel(node);
   isl_schedule_node_child(node, 0);
@@ -5074,37 +5114,6 @@ static __isl_give struct autosa_hw_module *sa_pe_module_gen(struct autosa_gen *g
         continue;
       if (group->copy_in == 0 && group->copy_out == 0)
         continue;
-      ///* Generate the dummy module */       
-      //if (group->copy_in == 0) {
-      //  /* Generate the dummy module that produces the dummy data. */
-      //  isl_schedule *sched;
-      //  sched = pe_module_dummy_gen(gen, module, group, 0);
-      //  module->n_pe_dummy_modules++;
-      //  module->pe_dummy_modules = 
-      //      (struct autosa_pe_dummy_module **)realloc(module->pe_dummy_modules,
-      //                                                module->n_pe_dummy_modules * sizeof(struct autosa_pe_dummy_module *));
-      //  struct autosa_pe_dummy_module *dummy_module = autosa_pe_dummy_module_alloc();
-      //  dummy_module->module = module;
-      //  dummy_module->io_group = group;
-      //  dummy_module->sched = sched;
-      //  dummy_module->in = 0;
-      //  module->pe_dummy_modules[module->n_pe_dummy_modules - 1] = dummy_module;
-      //}
-      //if (group->copy_out == 0) {
-      //  /* Generate the dummy module that consumes the dummy data. */ 
-      //  isl_schedule *sched;
-      //  sched = pe_module_dummy_gen(gen, module, group, 1);
-      //  module->n_pe_dummy_modules++;
-      //  module->pe_dummy_modules = 
-      //      (struct autosa_pe_dummy_module **)realloc(module->pe_dummy_modules,
-      //                                                module->n_pe_dummy_modules * sizeof(struct autosa_pe_dummy_module *));
-      //  struct autosa_pe_dummy_module *dummy_module = autosa_pe_dummy_module_alloc();
-      //  dummy_module->module = module;
-      //  dummy_module->io_group = group;
-      //  dummy_module->sched = sched;
-      //  dummy_module->in = 1;
-      //  module->pe_dummy_modules[module->n_pe_dummy_modules - 1] = dummy_module;
-      //}
 
       /* Generate the dummy module. */
       isl_schedule *sched;
@@ -7420,6 +7429,8 @@ struct autosa_at_domain_data
   int filter_buffer;
   int boundary;
   int pe_dummy;
+  /* In the tuning mode. */
+  int tuning;
 
   /* Under a "pipeline" mark */
   int under_pipeline;
@@ -7768,9 +7779,9 @@ static __isl_give isl_multi_pw_aff *transform_index(
 
   /* recompute the sched2copy for each index. */
   if (group->group_type == AUTOSA_PE_GROUP) {
-    std::cout << "guard begin" << std::endl;
+    //std::cout << "guard begin" << std::endl;
     sched2copy = compute_sched_to_copy_group(isl_pw_multi_aff_copy(data->iterator_map), group);
-    std::cout << "guard end" << std::endl;
+    //std::cout << "guard end" << std::endl;
   }
 
   space = isl_space_domain(isl_multi_aff_get_space(tile->tiling));
@@ -8422,6 +8433,7 @@ static void autosa_at_domain_data_init(
   data->pe_dummy = 0;
   data->pe_dummy_module = NULL;
   data->drain_merge_func = NULL;
+  data->tuning = 0;
 }
 
 /* Return a pointer to the autosa_array_ref_group in "local"
@@ -9108,10 +9120,7 @@ static __isl_give isl_ast_node *create_io_leaf(struct autosa_kernel *kernel,
     p_str = isl_printer_to_str(kernel->ctx);
     p_str = autosa_array_ref_group_print_name(group, p_str);
     local_name = isl_printer_get_str(p_str);
-    isl_printer_free(p_str);
-    
-    //std::cout << module->name << std::endl;
-    //std::cout << module->is_filter << std::endl;
+    isl_printer_free(p_str);    
 
     //if (module->is_filter && kernel->options->target == AUTOSA_TARGET_CATAPULT_HLS_C) {
     //  sprintf(buf, "%s_tmp.data", local_name);  
@@ -9736,6 +9745,7 @@ static __isl_give isl_ast_node *after_mark_module(__isl_take isl_ast_node *node,
   struct autosa_hw_module *module;
   struct autosa_pe_dummy_module *pe_dummy_module;
   struct autosa_drain_merge_func *func;
+  int tuning = data->tuning;
 
   ctx = isl_ast_node_get_ctx(node);
   id = isl_ast_node_mark_get_id(node);
@@ -9745,21 +9755,28 @@ static __isl_give isl_ast_node *after_mark_module(__isl_take isl_ast_node *node,
   if (!strcmp(isl_id_get_name(id), "kernel") && data->kernel)
   {
     isl_id_free(id);
-    if (!data->kernel->space)
-      data->kernel->space = isl_ast_build_get_schedule_space(build);
+    if (!tuning) {
+      if (!data->kernel->space)
+        data->kernel->space = isl_ast_build_get_schedule_space(build);
+    }
     data->kernel = NULL;
     return node;
   }
   if (!strcmp(isl_id_get_name(id), "io_module.inter_trans"))
   {
     module = data->module;
-    if (!module->inter_space)
-      module->inter_space = isl_ast_build_get_schedule_space(build);
+    if (!tuning) {
+      if (!module->inter_space)
+        module->inter_space = isl_ast_build_get_schedule_space(build);
 
-    if (!data->boundary)
-      module->inter_tree = isl_ast_node_mark_get_node(node);
-    else
-      module->boundary_inter_tree = isl_ast_node_mark_get_node(node);
+      if (!data->boundary)
+        module->inter_tree = isl_ast_node_mark_get_node(node);
+      else
+        module->boundary_inter_tree = isl_ast_node_mark_get_node(node);
+    } else {
+      if (!data->boundary)
+        module->tuning_inter_tree = isl_ast_node_mark_get_node(node);
+    }
     isl_ast_node_free(node);
 
     expr = isl_ast_expr_from_id(isl_id_copy(id));
@@ -9773,9 +9790,13 @@ static __isl_give isl_ast_node *after_mark_module(__isl_take isl_ast_node *node,
   if (!strcmp(isl_id_get_name(id), "io_module.intra_trans"))
   {
     module = data->module;
-    if (!module->intra_space)
-      module->intra_space = isl_ast_build_get_schedule_space(build);
-    module->intra_tree = isl_ast_node_mark_get_node(node);
+    if (!tuning) {
+      if (!module->intra_space)
+        module->intra_space = isl_ast_build_get_schedule_space(build);
+      module->intra_tree = isl_ast_node_mark_get_node(node);
+    } else {
+      module->tuning_intra_tree = isl_ast_node_mark_get_node(node);
+    }
     isl_ast_node_free(node);
 
     expr = isl_ast_expr_from_id(isl_id_copy(id));
@@ -9788,8 +9809,10 @@ static __isl_give isl_ast_node *after_mark_module(__isl_take isl_ast_node *node,
   }
   if (!strcmp(isl_id_get_name(id), "drain_merge"))
   {
-    func = data->drain_merge_func;
-    func->device_tree = isl_ast_node_mark_get_node(node);
+    if (!tuning) {
+      func = data->drain_merge_func;
+      func->device_tree = isl_ast_node_mark_get_node(node);
+    }
     isl_ast_node_free(node);
 
     expr = isl_ast_expr_from_id(isl_id_copy(id));
@@ -9804,7 +9827,9 @@ static __isl_give isl_ast_node *after_mark_module(__isl_take isl_ast_node *node,
   {
     module = data->module;
     data->module = NULL;
-    module->serialize_tree = isl_ast_node_mark_get_node(node);
+    if (!tuning) {
+      module->serialize_tree = isl_ast_node_mark_get_node(node);
+    }
     isl_ast_node_free(node);
 
     expr = isl_ast_expr_from_id(isl_id_copy(id));
@@ -9839,11 +9864,15 @@ static __isl_give isl_ast_node *after_mark_module(__isl_take isl_ast_node *node,
   {
     module = data->module;
     data->module = NULL;
-    module->boundary_tree = isl_ast_node_mark_get_node(node);
+    if (!tuning) {
+      module->boundary_tree = isl_ast_node_mark_get_node(node);
+      if (!module->space)
+        module->space = isl_ast_build_get_schedule_space(build);
+    } else {
+      // TODO
+    }
     isl_ast_node_free(node);
-    if (!module->space)
-      module->space = isl_ast_build_get_schedule_space(build);
-
+    
     expr = isl_ast_expr_from_id(isl_id_copy(id));
     list = isl_ast_expr_list_alloc(ctx, 0);
     expr = isl_ast_expr_call(expr, list);
@@ -9858,13 +9887,18 @@ static __isl_give isl_ast_node *after_mark_module(__isl_take isl_ast_node *node,
   {
     module = data->module;
     data->module = NULL;
-    pe_dummy_module = data->pe_dummy_module;
+    if (!tuning) {
+      pe_dummy_module = data->pe_dummy_module;      
+      pe_dummy_module->device_tree = isl_ast_node_mark_get_node(node);
+      if (!module->space)
+        module->space = isl_ast_build_get_schedule_space(build);
+    } else {
+      // TODO
+    }
+    
     data->pe_dummy_module = NULL;
-    pe_dummy_module->device_tree = isl_ast_node_mark_get_node(node);
     isl_ast_node_free(node);
-    if (!module->space)
-      module->space = isl_ast_build_get_schedule_space(build);
-
+    
     expr = isl_ast_expr_from_id(isl_id_copy(id));
     list = isl_ast_expr_list_alloc(ctx, 0);
     expr = isl_ast_expr_call(expr, list);
@@ -9878,11 +9912,15 @@ static __isl_give isl_ast_node *after_mark_module(__isl_take isl_ast_node *node,
   {
     module = data->module;
     data->module = NULL;
-    module->device_tree = isl_ast_node_mark_get_node(node);
+    if (!tuning) {
+      module->device_tree = isl_ast_node_mark_get_node(node);
+      if (!module->space)
+        module->space = isl_ast_build_get_schedule_space(build);
+    } else {
+      module->tuning_device_tree = isl_ast_node_mark_get_node(node);
+    }
     isl_ast_node_free(node);
-    if (!module->space)
-      module->space = isl_ast_build_get_schedule_space(build);
-
+    
     expr = isl_ast_expr_from_id(isl_id_copy(id));
     list = isl_ast_expr_list_alloc(ctx, 0);
     expr = isl_ast_expr_call(expr, list);
@@ -10885,6 +10923,14 @@ isl_stat sa_filter_buffer_io_module_generate_code(struct autosa_gen *gen,
   tree = autosa_generate_ast_from_schedule(schedule, data, gen,
                                            module->double_buffer && gen->options->autosa->double_buffer_style == 0 ? "inter_c" : NULL);
   isl_ast_node_free(tree);
+  if (gen->options->autosa->tuning_method == 1 && module->tuning_inter_sched) {
+    schedule = module->tuning_inter_sched;
+    autosa_at_domain_data_init(&data, gen);
+    data.tuning = 1;
+    tree = autosa_generate_ast_from_schedule(schedule, data, gen,
+                                             module->double_buffer && gen->options->autosa->double_buffer_style == 0 ? "inter_c" : NULL);
+    isl_ast_node_free(tree);
+  }
 
   if (module->boundary)
   {
@@ -10913,6 +10959,14 @@ isl_stat sa_filter_buffer_io_module_generate_code(struct autosa_gen *gen,
   tree = autosa_generate_ast_from_schedule(schedule, data, gen,
                                            module->double_buffer && gen->options->autosa->double_buffer_style == 0 ? "intra_c" : NULL);
   isl_ast_node_free(tree);
+  if (gen->options->autosa->tuning_method == 1 && module->tuning_inter_sched) {
+    schedule = module->tuning_intra_sched;
+    autosa_at_domain_data_init(&data, gen);
+    data.tuning = 1;
+    tree = autosa_generate_ast_from_schedule(schedule, data, gen,
+                                             module->double_buffer && gen->options->autosa->double_buffer_style == 0 ? "inter_c" : NULL);
+    isl_ast_node_free(tree);
+  }
 
   /* Generate AST for outer loop function call. */
   schedule = module->outer_sched;  
@@ -10925,6 +10979,14 @@ isl_stat sa_filter_buffer_io_module_generate_code(struct autosa_gen *gen,
   tree = autosa_generate_ast_from_schedule(schedule, data, gen,
                                            module->double_buffer && gen->options->autosa->double_buffer_style == 0 ? "outer_c" : NULL);
   module->tree = tree;
+  if (gen->options->autosa->tuning_method == 1 && module->tuning_inter_sched) {
+    schedule = module->tuning_outer_sched;
+    autosa_at_domain_data_init(&data, gen);
+    data.tuning = 1;
+    tree = autosa_generate_ast_from_schedule(schedule, data, gen,
+                                             module->double_buffer && gen->options->autosa->double_buffer_style == 0 ? "inter_c" : NULL);
+    module->tuning_tree = tree;
+  }
 
   if (module->boundary)
   {
@@ -11003,6 +11065,14 @@ isl_stat sa_module_generate_code(struct autosa_gen *gen,
   autosa_at_domain_data_init(&data, gen);
   tree = autosa_generate_ast_from_schedule(schedule, data, gen, NULL);
   module->tree = tree;
+  if (gen->options->autosa->tuning_method == 1 && module->tuning_sched) {
+    /* Generate the tuning AST. */
+    schedule = module->tuning_sched;
+    autosa_at_domain_data_init(&data, gen);
+    data.tuning = 1;
+    tree = autosa_generate_ast_from_schedule(schedule, data, gen, NULL);
+    module->tuning_tree = tree;
+  }
 
   if (module->boundary)
   {

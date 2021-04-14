@@ -156,8 +156,8 @@ ISL_ARG_STR(struct autosa_options, simd_info, 0, "simd-info", "info", NULL,
 				"per kernel SIMD information")
 ISL_ARG_BOOL(struct autosa_options, simd_touch_space, 0, "simd-touch-space", 0,
 				"use space loops as SIMD vectorization loops")
-ISL_ARG_BOOL(struct autosa_options, tuning, 0, "tuning", 0,
-				"execute in the tuning mode")
+ISL_ARG_INT(struct autosa_options, tuning_method, 0, "tuning-method", "method", -1,
+				"tuning method (0: exhaustive search 1: others)")
 ISL_ARG_BOOL(struct autosa_options, two_level_buffer, 0, "two-level-buffer", 0,
 			 	"enable two-level buffering in I/O modules")
 ISL_ARG_BOOL(struct autosa_options, t2s_tile, 0, "t2s-tile", 0,

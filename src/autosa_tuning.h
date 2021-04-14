@@ -9,6 +9,10 @@
 #include <unordered_map>
 #include <unordered_set>
 
+#include "json.hpp"
+
+using json = nlohmann::json;
+
 #if defined(__cplusplus)
 extern "C" {
 #endif    
@@ -59,6 +63,7 @@ class TPIterator {
         std::string name;
         TPExpr *lb;
         TPExpr *ub;     
+        std::string space_time;
         ~TPIterator() {
             delete lb;
             delete ub;
@@ -92,6 +97,7 @@ class TPParameter: public TPExpr {
         TPParameter *dep_param;  
         TPIterator *dep_iter;
         bool tune;
+        std::string attr;
         ~TPParameter(){
             for (int i = 0; i < bounds.size(); i++)
                 delete bounds[i];
@@ -117,19 +123,23 @@ class TuningProgram {
         __isl_give isl_schedule_node *tile(__isl_take isl_schedule_node *node, int div);
         __isl_give isl_schedule_node *tile(__isl_take isl_schedule_node *node, int pos, int div);
         void dump(std::string dir);
+        __isl_give isl_schedule *generate_tuning_schedule(__isl_take isl_schedule *schedule);
+        __isl_give isl_schedule *generate_io_tuning_schedule(__isl_take isl_schedule *schedule, int io_level);
+        void extract_module_loop_info(std::string name, std::vector<isl_ast_node *> &tree);
 
-        std::vector<TPIterator *> iters;
-        std::vector<TPParameter *> params;        
+        std::vector<TPIterator *> iters;        
+        std::vector<TPParameter *> params;                
         // Maps the parameter name to the point in "params"
         std::unordered_map<std::string, TPParameter *> param_map;        
         int id;
+        std::unordered_map<std::string, std::shared_ptr<json>> module_loop_info;
 
         ~TuningProgram() {                        
             for (int i = 0; i < iters.size(); i++)
                 delete iters[i];            
             for (int i = 0; i < params.size(); i++)
                 delete params[i];             
-        } 
+        }
 
         // Future use
         //std::unordered_set<TPStatement *> stmts;

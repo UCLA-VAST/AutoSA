@@ -882,11 +882,7 @@ struct autosa_kernel *sa_candidates_smart_pick(
         {
             opt_id = i;
             max_score = data.score;
-        }
-        //#ifdef _DEBUG
-        //    DBGVAR(std::cout, i);
-        //    DBGVAR(std::cout, data.score);
-        //#endif
+        }        
     }
 
     //sa_opt = autosa_kernel_copy(sa_list[opt_id]);
@@ -1204,9 +1200,22 @@ isl_stat sa_array_partitioning_optimize(struct autosa_kernel *sa,
     isl_schedule_free(schedule);
 
     tile_len = isl_schedule_node_band_n_member(node);
-    if (sa->scop->options->autosa->tuning) {
-        /* Select the tiling factor as the upper bound of the loop. */
-        tile_size = extract_band_upper_bounds(node);        
+    if (sa->scop->options->autosa->tuning_method == 1) {
+        /* Select one tiling factor in between (1, ub)/
+         * Avoid 1 as such as tiling factor will eliminate the opt chances for the 
+         * later stages. 
+         * Avoid ub as it will generate loop with single iteration that will be eliminated.
+         */
+        tile_size = extract_band_upper_bounds(node);
+        for (int i = 0; i < tile_len; i++) {
+            int size = tile_size[i];
+            std::vector<int> factors = get_factors(size);
+            if (factors.size() < 3) {
+                printf("[AutoSA] Error: Cannot find legal tiling factors for auto-tuning template!\n");
+                exit(1);
+            }
+            tile_size[i] = factors[factors.size() - 2];
+        }
     } else {
         if (!strcmp(mode, "manual"))
         {
@@ -1305,12 +1314,9 @@ isl_stat sa_array_partitioning_optimize(struct autosa_kernel *sa,
         }
     }
         
-    sa->array_part_w = tile_len;
-    //printf("%d\n", tile_size[0]);
-    //printf("%d\n", tile_size[1]);
-    //printf("%d\n", tile_size[2]);
+    sa->array_part_w = tile_len;    
     node = autosa_tile_band(node, tile_size);
-    if (sa->scop->options->autosa->tuning)
+    if (sa->scop->options->autosa->tuning_method == 1)
         node = sa->tuning_program->tile(node, 0);
 
     free(tile_size);
@@ -1815,7 +1821,7 @@ static __isl_give isl_schedule_node *autosa_latency_tile_band_loop(
                  * size "loop_tile_size".
                  * The returned node points at the tile loop. */
                 node = autosa_node_band_tile_loop(node, loop_tile_size, i);
-                if (data->sa->scop->options->autosa->tuning) 
+                if (data->sa->scop->options->autosa->tuning_method == 1) 
                     node = data->sa->tuning_program->tile(node, i, 1);
                 /* Reset the candidate loop in the tile loop the pe_opt property to default. */
                 node = isl_schedule_node_band_member_set_pe_opt(node, i, autosa_loop_default);
@@ -1920,7 +1926,7 @@ static __isl_give isl_schedule_node *autosa_latency_tile_loop(
         node, &count_latency_hiding_loop, &data);
     tile_len = data.tile_len;
 
-    if (sa->scop->options->autosa->tuning) {
+    if (sa->scop->options->autosa->tuning_method == 1) {
         /* Select one tiling factor in between (1, ub).
          * Avoid 1 as such a tiling factor will be skipped and the AST loop will 
          * be degenerated.
@@ -1979,11 +1985,7 @@ static __isl_give isl_schedule_node *autosa_latency_tile_loop(
             tile_size = read_default_latency_tile_sizes(sa, tile_len);
         }
         free(data.ubs);
-    }
-    
-    //for (int i = 0; i < tile_len; i++) {
-    //    printf("%d\n", tile_size[i]);
-    //}
+    }    
 
     if (!tile_size)
     {
@@ -2065,11 +2067,9 @@ isl_stat sa_latency_hiding_optimize(struct autosa_kernel *sa, bool en, char *mod
      */
     struct latency_opt_check_data data;
     data.kernel = sa;
-    data.is_required = 1;
-    //DBGSCHDNODE(stdout, node, sa->ctx);
+    data.is_required = 1;    
     node = isl_schedule_node_map_descendant_bottom_up(node,
                                                       &latency_opt_check, &data);
-    //DBGSCHDNODE(stdout, node, sa->ctx);
     if (!data.is_required)
     {
         //printf("[AutoSA] The innermost time loop is parallel. Latency hiding is skipped.\n");
@@ -2727,7 +2727,7 @@ static __isl_give isl_schedule_node *autosa_simd_tile_loop(
                 }                
                 /* Tile the loop */
                 node = autosa_node_band_tile_loop(node, tile_size, i);
-                if (data->kernel->scop->options->autosa->tuning)
+                if (data->kernel->scop->options->autosa->tuning_method == 1)
                     node = data->kernel->tuning_program->tile(node, i, 1);
                 /* Reset the candidate loop in the tile loop the pe_opt property to default */
                 node = isl_schedule_node_band_member_set_pe_opt(node, i, autosa_loop_default);
@@ -2802,10 +2802,7 @@ static __isl_give char *load_simd_info(struct autosa_kernel *sa)
         cJSON *reductions = NULL;
         int info_id = 0;
         char kernel_name[20];
-        sprintf(kernel_name, "kernel%d", sa->space_time_id);
-        //#ifdef _DEBUG
-        //    DBGVAR(std::cout, sa->space_time_id);
-        //#endif
+        sprintf(kernel_name, "kernel%d", sa->space_time_id);        
         reductions = cJSON_GetObjectItemCaseSensitive(simd_info, kernel_name);
         if (reductions)
         {
@@ -2902,7 +2899,7 @@ isl_stat sa_simd_vectorization_optimize(struct autosa_kernel *sa, char *mode)
          * Tile the candidate loop and permute the point loop innermost. 
          * A SIMD vectorization marker is added. 
          */
-        if (sa->scop->options->autosa->tuning) {
+        if (sa->scop->options->autosa->tuning_method == 1) {
             /* Select one tiling factor in between (1, ub).
              * Avoid 1 as such a tiling factor will be skipped and the AST loop will
              * be degenerated.
@@ -2920,11 +2917,7 @@ isl_stat sa_simd_vectorization_optimize(struct autosa_kernel *sa, char *mode)
                 } else {
                     tile_size[i] = 1;
                 }
-            }
-            //printf("data.n_loops: %d\n", data.n_loops);
-            //std::vector<int> factors = get_factors
-            //printf("%d\n", tile_size[0]);
-            //exit(0);
+            }            
         } else {
             if (!strcmp(mode, "manual"))
             {
@@ -4204,6 +4197,13 @@ static __isl_give isl_printer *generate(__isl_take isl_printer *p,
         {
             sa_extract_loop_info(gen, gen->hw_modules[i]);
         }
+        if (options->autosa->tuning_method == 1) {
+            /* Extract the information for performance est in the auto tuner. */
+            for (int i = 0; i < gen->n_hw_modules; i++) {     
+                sa_extract_tuning_info(gen, gen->hw_modules[i]);                
+            }
+        }
+
         /* Dump out the array information */
         sa_extract_array_info(gen->kernel);
         /* Extract design information for resource estimation */
@@ -4217,7 +4217,7 @@ static __isl_give isl_printer *generate(__isl_take isl_printer *p,
                        &gen->types, gen->print_user);
 
         /* Dump tuning information */
-        if (options->autosa->tuning) {
+        if (options->autosa->tuning_method == 1) {
             std::string params_f(options->autosa->output_dir);
             params_f += "/tuning";
             for (int i = 0; i < gen->tuning_progs.size(); i++) {

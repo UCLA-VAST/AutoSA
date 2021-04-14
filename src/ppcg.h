@@ -3,6 +3,7 @@
 
 #include <isl/schedule.h>
 #include <isl/set.h>
+#include <isl/id.h>
 #include <isl/union_set.h>
 #include <isl/union_map.h>
 #include <isl/id_to_ast_expr.h>

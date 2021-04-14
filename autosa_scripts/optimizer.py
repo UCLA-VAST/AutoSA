@@ -361,15 +361,13 @@ def execute_sys_cmd(cmd, config):
     return ret
 
 def generate_autosa_cmd_str(cmds):
-    """ Generate the cmd to print.
-
-    Specifically, 'tuning' flag is filtered out if exists.
+    """ Generate the cmd to print.    
     """
     cmd_str = ''
     is_first = True
     for cmd in cmds:
-        if cmd.find(' --tuning') != -1:
-            cmd = cmd.replace(' --tuning', '')
+        #if cmd.find(' --tuning') != -1:
+        #    cmd = cmd.replace(' --tuning', '')
         if not is_first:
             cmd_str += ' '
         cmd_str += cmd
@@ -1272,7 +1270,7 @@ def search_xilinx(config):
     config['mode'] = 'search'
     config['search_results'] = init_search_results()
     # Modify the command
-    config['cmds'][0] += ' --tuning'
+    #config['cmds'][0] += ' --tuning'
 
     if config['setting'][config['mode']]['pruning']['random_start']['enable']:
         # Random search the design space

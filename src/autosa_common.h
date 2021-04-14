@@ -36,6 +36,10 @@
 #define D(x)
 #endif
 
+#if defined(__cplusplus)
+extern "C" {
+#endif  
+
 #define min(a, b) (((a) < (b)) ? (a) : (b))
 #define max(a, b) (((a) > (b)) ? (a) : (b))
 
@@ -619,8 +623,8 @@ struct autosa_local_array_info
   int n_io_group_refs;
   /* Number of external memory ports that this array is allocated. */
   int n_mem_ports;
-  /* Map from io_group_ref to mem_port. */
-  std::vector<std::pair<int, int> > group_ref_mem_port_map;
+  /* Map from io_group_ref to mem_port. */  
+  std::vector<int> group_ref_mem_port_map;  
 
   /* Default groups */
   int n_group;
@@ -855,6 +859,21 @@ struct autosa_hw_module
   int n_fifo_intra;
   char **fifo_names_intra;
   isl_pw_qpolynomial **fifo_bounds_intra;  
+
+  /* Tuning purpose */
+  isl_schedule *tuning_sched;
+  isl_schedule *tuning_outer_sched;
+  isl_schedule *tuning_inter_sched;
+  isl_schedule *tuning_intra_sched;
+  //isl_schedule *tuning_boundary_outer_sched;
+  //isl_schedule *tuning_boundary_inter_sched;
+
+  isl_ast_node *tuning_tree;
+  isl_ast_node *tuning_device_tree;  
+  isl_ast_node *tuning_intra_tree;
+  isl_ast_node *tuning_inter_tree;
+  //isl_ast_node *tuning_boundary_outer_tree;
+  //isl_ast_node *tuning_boundary_inter_tree;
 };
 
 struct autosa_gen
@@ -1276,9 +1295,14 @@ isl_stat sa_extract_array_info(struct autosa_kernel *kernel);
 int extract_memory_type(struct autosa_hw_module *module,
                         struct autosa_kernel_var *var, int uram);
 isl_stat sa_extract_design_info(struct autosa_gen *gen);
+isl_stat sa_extract_tuning_info(struct autosa_gen *gen, struct autosa_hw_module *module);
 
 /* AutoSA block sparsity */
 isl_stat autosa_kernel_extract_sparse_info(struct autosa_kernel *kernel, 
   struct autosa_gen *gen);
+
+#if defined(__cplusplus)
+}
+#endif  
 
 #endif

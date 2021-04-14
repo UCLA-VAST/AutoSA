@@ -26,11 +26,11 @@ __isl_give isl_printer *autosa_array_info_print_call_argument(
   }  
   p = isl_printer_print_str(p, array->name);
   if (n_ref >= 0)
-  {
-    //std::pair<int, int> ref_port_map = array->local_array->group_ref_mem_port_map[n_ref];
-    auto ref_port_map = array->local_array->group_ref_mem_port_map.at(n_ref);
+  {    
+    //auto ref_port_map = array->local_array->group_ref_mem_port_map.at(n_ref);
     p = isl_printer_print_str(p, "[");
-    p = isl_printer_print_int(p, ref_port_map.second);
+    //p = isl_printer_print_int(p, ref_port_map.second);    
+    p = isl_printer_print_int(p, array->local_array->group_ref_mem_port_map.at(n_ref * 2 + 1));
     p = isl_printer_print_str(p, "]");
   }
 

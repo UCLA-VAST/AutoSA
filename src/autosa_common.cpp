@@ -53,7 +53,7 @@ void *autosa_kernel_free(struct autosa_kernel *kernel)
     isl_multi_pw_aff_free(array->bound);
     isl_ast_expr_free(array->bound_expr);
     
-    isl_pw_qpolynomial_free(array->serialize_bound);    
+    isl_pw_qpolynomial_free(array->serialize_bound);
   }
   if (kernel->array)
     free(kernel->array);
@@ -1590,6 +1590,15 @@ struct autosa_hw_module *autosa_hw_module_alloc(struct autosa_gen *gen)
   module->fifo_names_intra = NULL;
   module->fifo_bounds_intra = NULL;
 
+  module->tuning_sched = NULL;
+  module->tuning_outer_sched = NULL;
+  module->tuning_inter_sched = NULL;
+  module->tuning_intra_sched = NULL;
+  module->tuning_tree = NULL;
+  module->tuning_device_tree = NULL;
+  module->tuning_intra_tree = NULL;
+  module->tuning_inter_tree = NULL;
+
   return module;
 }
 
@@ -1659,6 +1668,11 @@ void *autosa_hw_module_free(struct autosa_hw_module *module)
     free(module->fifo_bounds_intra);
     free(module->fifo_names_intra);
   }
+
+  isl_ast_node_free(module->tuning_tree);
+  isl_ast_node_free(module->tuning_device_tree);
+  isl_ast_node_free(module->tuning_inter_tree);
+  isl_ast_node_free(module->tuning_intra_tree);
 
   free(module);
 
@@ -2813,6 +2827,22 @@ isl_stat sa_extract_array_info(struct autosa_kernel *kernel)
   free(json_str);
   cJSON_Delete(array_info);
 
+  return isl_stat_ok;
+}
+
+isl_stat sa_extract_tuning_info(struct autosa_gen *gen, struct autosa_hw_module *module) {
+  std::vector<isl_ast_node *> asts;  
+  if (module->is_filter && module->is_buffer) {
+     asts.push_back(module->tuning_device_tree);
+     asts.push_back(module->tuning_intra_tree);
+     asts.push_back(module->tuning_inter_tree);              
+  } else {
+    /* Default module */
+    asts.push_back(module->tuning_device_tree);        
+  }
+  gen->kernel->tuning_program->extract_module_loop_info(      
+      std::string(module->name), asts);
+  
   return isl_stat_ok;
 }
 

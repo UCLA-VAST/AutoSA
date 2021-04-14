@@ -383,7 +383,7 @@ After resource models are trained, run the following command to search for the b
 .. code:: bash
 
     python3 ./autosa_scripts/optimizer.py \
-    -c './autosa ./autosa_tests/mm/kernel.c --target=autosa_hls_c --simd-info=./autosa_tests/mm/simd_info.json --host-serialize --hls --sa-sizes="{kernel[]->space_time[3]}' \
+    -c './autosa ./autosa_tests/mm/kernel.c --target=autosa_hls_c --simd-info=./autosa_tests/mm/simd_info.json --host-serialize --hls --sa-sizes="{kernel[]->space_time[3]} --tuning-method=0' \
     --info autosa_config/hw_info.json \
     -s autosa_config/optimizer_settings.json \
     --search \
