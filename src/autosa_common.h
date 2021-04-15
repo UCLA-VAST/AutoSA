@@ -469,6 +469,8 @@ struct autosa_array_info
   int copy_in;
   /* Is the array to be copied out from the device memory? */
   int copy_out;
+  /* Tuning array refs */
+  std::vector<TPArrayRef *> tuning_refs;
   /* AutoSA Extended */
 };
 
@@ -485,6 +487,8 @@ struct autosa_io_buffer
   /* Is the buffer data sparse */
   int sparse;
   int vec_len;
+  /* Tuning array tile */
+  TPArrayTile *tuning_tile;
 };
 
 /* A group of array references in a kernel that should be handled together. 
@@ -576,6 +580,9 @@ struct autosa_array_ref_group
   int copy_out;
   /* Attached drain group */
   struct autosa_array_ref_group *attached_drain_group;  
+  /* Tuning array refs */
+  std::vector<TPArrayRef *> tuning_refs;
+  TPArrayTile *tuning_pe_tile;
   /* AutoSA Extended */
 };
 
@@ -1295,7 +1302,13 @@ isl_stat sa_extract_array_info(struct autosa_kernel *kernel);
 int extract_memory_type(struct autosa_hw_module *module,
                         struct autosa_kernel_var *var, int uram);
 isl_stat sa_extract_design_info(struct autosa_gen *gen);
-isl_stat sa_extract_tuning_info(struct autosa_gen *gen, struct autosa_hw_module *module);
+
+/* Tuning program */
+isl_stat TP_extract_loop_info(struct autosa_gen *gen, struct autosa_hw_module *module);
+isl_stat TP_extract_array_info(struct autosa_gen *gen, struct autosa_kernel *kernel);
+TPArrayTile *TP_infer_tiled_array(
+  struct autosa_gen *gen, struct autosa_kernel *kernel, struct isl_schedule_node *node,
+  struct autosa_array_ref_group *group, int read, int write);
 
 /* AutoSA block sparsity */
 isl_stat autosa_kernel_extract_sparse_info(struct autosa_kernel *kernel, 

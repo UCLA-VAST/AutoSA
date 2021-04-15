@@ -3594,7 +3594,9 @@ static __isl_give isl_schedule_node *compute_and_comm_optimize(
             kernel = sa_candidates_manual_pick(sa_candidates, num_sa, kernel_id);
         }
     }
-    kernel = optimize_single_array(kernel, gen);
+    // Update the array information
+    TP_extract_array_info(gen, kernel);
+    kernel = optimize_single_array(kernel, gen);    
     gen->tuning_progs.push_back(kernel->tuning_program);
 
     if (kernel) {
@@ -4200,7 +4202,7 @@ static __isl_give isl_printer *generate(__isl_take isl_printer *p,
         if (options->autosa->tuning_method == 1) {
             /* Extract the information for performance est in the auto tuner. */
             for (int i = 0; i < gen->n_hw_modules; i++) {     
-                sa_extract_tuning_info(gen, gen->hw_modules[i]);                
+                TP_extract_loop_info(gen, gen->hw_modules[i]);                
             }
         }
 

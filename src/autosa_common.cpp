@@ -430,6 +430,7 @@ struct autosa_io_buffer *autosa_io_buffer_alloc()
   io_buffer->serialize = -1;
   io_buffer->sparse = -1;
   io_buffer->vec_len = -1;  
+  io_buffer->tuning_tile = NULL;
 
   return io_buffer;
 }
@@ -920,8 +921,11 @@ struct autosa_array_ref_group *autosa_array_ref_group_free(
   isl_ast_expr_free(group->io_pe_expr_boundary);
   isl_ast_expr_free(group->io_L1_pe_expr_boundary);
   for (int i = 0; i < group->n_io_buffer; i++)
-  {
+  {        
     autosa_array_tile_free(group->io_buffers[i]->tile);
+    if (group->io_buffers[i]->tuning_tile) {      
+      delete group->io_buffers[i]->tuning_tile;         
+    }
     free(group->io_buffers[i]);
   }
   free(group->io_buffers);
@@ -931,6 +935,7 @@ struct autosa_array_ref_group *autosa_array_ref_group_free(
   isl_union_pw_multi_aff_free(group->copy_schedule);
   if (group->attached_drain_group)
     autosa_array_ref_group_free(group->attached_drain_group);
+  delete group->tuning_pe_tile;
   free(group);
 
   return NULL;
@@ -972,6 +977,7 @@ struct autosa_array_ref_group *autosa_array_ref_group_init(
   group->copy_schedule_dim = 0;
   group->copy_schedule = NULL;
   group->attached_drain_group = NULL;
+  group->tuning_pe_tile = NULL;
 
   return group;
 }
@@ -2830,7 +2836,7 @@ isl_stat sa_extract_array_info(struct autosa_kernel *kernel)
   return isl_stat_ok;
 }
 
-isl_stat sa_extract_tuning_info(struct autosa_gen *gen, struct autosa_hw_module *module) {
+isl_stat TP_extract_loop_info(struct autosa_gen *gen, struct autosa_hw_module *module) {
   std::vector<isl_ast_node *> asts;  
   if (module->is_filter && module->is_buffer) {
      asts.push_back(module->tuning_device_tree);
@@ -2844,6 +2850,87 @@ isl_stat sa_extract_tuning_info(struct autosa_gen *gen, struct autosa_hw_module 
       std::string(module->name), asts);
   
   return isl_stat_ok;
+}
+
+/* Extract the array references in the prog and build a mapping in the tuning program. 
+ */
+isl_stat TP_extract_array_info(struct autosa_gen *gen, struct autosa_kernel *kernel) {
+  struct autosa_prog *prog = gen->prog;  
+  isl_schedule *schedule = kernel->schedule;
+  isl_schedule_node *root = isl_schedule_get_root(schedule);
+  isl_union_map *umap_schedule = isl_schedule_node_get_subtree_schedule_union_map(root);
+  //DBGUMAP(stdout, umap_schedule, gen->ctx);
+  isl_schedule_node_free(root);
+
+  for (int i = 0; i < prog->n_array; i++) {
+    struct autosa_array_info *array = &(prog->array[i]);
+    TPArray *tp_arr = new TPArray(std::string(array->name));
+    //std::cout << "----" << std::endl;
+    //std::cout << array->name << std::endl;
+    array->tuning_refs.clear();
+    for (int j = 0; j < array->n_ref; j++) {
+      struct autosa_stmt_access *ref = array->refs[j];
+      isl_map *access = ref->access;
+      //DBGMAP(stdout, access, isl_map_get_ctx(access));      
+      /* Build the tuning program array access representation. */
+      TPArrayRef *tp_ref = kernel->tuning_program->build_array_ref(std::string(array->name), access, schedule);
+     
+      tp_arr->refs.push_back(tp_ref);      
+      array->tuning_refs.push_back(tp_ref);
+      //std::cout << tp_ref->to_str() << std::endl;
+    }
+    kernel->tuning_program->arrays.push_back(tp_arr);    
+  }
+  //exit(0);
+  isl_union_map_free(umap_schedule);
+
+  return isl_stat_ok;
+}
+
+/* Generate a tiled array reference. */
+TPArrayTile *TP_infer_tiled_array(
+  struct autosa_gen *gen, struct autosa_kernel *kernel, 
+  __isl_keep struct isl_schedule_node *node,
+  struct autosa_array_ref_group *group,
+  int read, int write)
+{
+  // Collect all accesses in the group
+  std::vector<TPArrayRef *> group_refs;  
+  for (int i = 0; i < group->n_ref; i++) {
+    if (!((read && group->refs[i]->read) ||
+          (write && group->refs[i]->write)))
+      continue;
+    group_refs.push_back(group->tuning_refs[i]);    
+  }
+
+  // Collect the fixed iter dimensions
+  std::vector<TPIterator *> fixed_iters;  
+  isl_schedule_node *new_node = isl_schedule_node_copy(node);
+  while (isl_schedule_node_has_parent(new_node)) {
+    if (isl_schedule_node_get_type(new_node) == isl_schedule_node_band) {
+      for (int i = 0; i < isl_schedule_node_band_n_member(new_node); i++) {
+        TPIterator *iter = (TPIterator *)isl_schedule_node_band_member_get_iter(new_node, i);
+        if (iter) {
+          fixed_iters.push_back(iter);
+        } else {
+          std::cout << "not found" << std::endl;
+        }
+      }
+    }
+    new_node = isl_schedule_node_parent(new_node);
+  }
+  isl_schedule_node_free(new_node);  
+
+  // Infer the tile bounds
+  TPArrayTile *array_tile = new TPArrayTile();
+  array_tile = kernel->tuning_program->infer_tiled_array_bounds(array_tile, group_refs, fixed_iters);
+  array_tile->name = std::string(group->array->name);
+  array_tile->type = std::string(group->array->type);
+  array_tile->ele_size = group->array->size;  
+
+  // TODO: Update the data pack_factor  
+
+  return array_tile;
 }
 
 /* Extract the memory type of the local array.

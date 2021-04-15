@@ -133,6 +133,8 @@ static int populate_array_references_pe(struct autosa_local_array_info *local,
     group->io_buffers = NULL;
     group->copy_schedule = NULL;
     group->pe_tile = NULL;
+    group->tuning_refs.push_back(local->array->tuning_refs[i]);
+    group->tuning_pe_tile = NULL;
 
     groups[n++] = group;
   }
@@ -175,8 +177,10 @@ static struct autosa_array_ref_group *join_groups(
                                 group->n_ref);
   if (!group->refs)                                     
     return autosa_array_ref_group_free(group);
-  for (i = 0; i < group1->n_ref; ++i)
+  for (i = 0; i < group1->n_ref; ++i) {
     group->refs[i] = group1->refs[i];
+    group->tuning_refs.push_back(group1->tuning_refs[i]);
+  }
   /* Compare if the refs equals */      
   for (i = 0; i < group2->n_ref; ++i) {
     struct autosa_stmt_access *ref = group2->refs[i];
@@ -190,9 +194,9 @@ static struct autosa_array_ref_group *join_groups(
     if (!found) {
       group->n_ref++;
       group->refs = (struct autosa_stmt_access **)realloc(group->refs,
-                        group->n_ref * sizeof(struct autosa_stmt_access *));
-      //group->refs[group1->n_ref + i] = group2->refs[i];
+                        group->n_ref * sizeof(struct autosa_stmt_access *));      
       group->refs[group->n_ref - 1] = group2->refs[i];
+      group->tuning_refs.push_back(group2->tuning_refs[i]);      
     }
   }
 
@@ -207,6 +211,10 @@ static struct autosa_array_ref_group *join_groups(
   group->n_io_buffer = group1->n_io_buffer;
   group->io_buffers = group1->io_buffers;
   group->n_mem_ports = group1->n_mem_ports;
+  /* Merge the tuning refs */
+  for (auto ref : group1->tuning_refs) {
+    group->tuning_refs.push_back(ref);
+  }
 
   return group;
 }
@@ -1136,6 +1144,9 @@ static int populate_array_references_io(struct autosa_local_array_info *local,
       group->copy_schedule = NULL;
       group->pe_tile = NULL;
       group->n_mem_ports = 1;
+      //std::cout << local->array->tuning_refs[i]->to_str() << std::endl;
+      group->tuning_refs.push_back(local->array->tuning_refs[i]);
+      group->tuning_pe_tile = NULL;
 
       groups[n++] = group;
     }
@@ -1281,10 +1292,16 @@ static __isl_give isl_schedule_node *io_cluster(
   isl_ctx *ctx;
   isl_space *space;
   isl_multi_aff *ma;
+  std::vector<TPIterator *> iters;
 
   mupa = isl_schedule_node_band_get_partial_schedule(node);
   space_dim = isl_schedule_node_band_n_member(node);
   ctx = isl_schedule_node_get_ctx(node);
+
+  /* Store the tuning iters */
+  for (int i = 0; i < isl_schedule_node_band_n_member(node); i++) {
+    iters.push_back((TPIterator *)isl_schedule_node_band_member_get_iter(node, i));
+  }
 
   /* Build the transformation matrix. */
   trans_mat = isl_mat_alloc(ctx, space_dim, space_dim);
@@ -1294,12 +1311,7 @@ static __isl_give isl_schedule_node *io_cluster(
     d_mat = isl_mat_set_element_val(d_mat, 0, i,
                                     isl_vec_get_element_val(dir, i));
   }
-  null_mat = isl_mat_right_kernel(d_mat);
-  //#ifdef _DEBUG
-  //  DBGVAR(std::cout, isl_mat_rows(null_mat));
-  //  DBGVAR(std::cout, isl_mat_cols(null_mat));
-  //  print_mat(stdout, null_mat);
-  //#endif
+  null_mat = isl_mat_right_kernel(d_mat);  
 
   for (int i = 0; i < isl_mat_cols(null_mat); i++)
     for (int j = 0; j < isl_mat_rows(null_mat); j++)
@@ -1331,10 +1343,6 @@ static __isl_give isl_schedule_node *io_cluster(
     ma = isl_multi_aff_set_aff(ma, i, aff);
   }
 
-//#ifdef _DEBUG
-//  DBGMUPA(stdout, mupa, isl_schedule_node_get_ctx(node));
-//  DBGMA(stdout, ma, isl_schedule_node_get_ctx(node));
-//#endif
   /* Apply the new transformation on the original partial schedule. */
   mupa = isl_multi_union_pw_aff_apply_multi_aff(mupa, isl_multi_aff_copy(ma));
   *io_trans_ma = ma;
@@ -1342,6 +1350,24 @@ static __isl_give isl_schedule_node *io_cluster(
   node = isl_schedule_node_delete(node);
   /* Insert the new partial schedule. */
   node = isl_schedule_node_insert_partial_schedule(node, mupa);
+  /* Add back the tuning iterators.
+   * Since all the io dirs are unit vectors, which means only loop permutation is 
+   * allowed, we simply swap the iter infos.
+   */
+  std::vector<int> swap_index;  
+  for (int i = 0; i < isl_mat_rows(*io_trans_mat); i++) {
+    int tmp = 0;
+    for (int j = 0; j < isl_mat_cols(*io_trans_mat); j++) {
+      isl_val *val_tmp = isl_mat_get_element_val(*io_trans_mat, i, j);
+      tmp += isl_val_get_num_si(val_tmp) * j;
+      isl_val_free(val_tmp);
+    }
+    swap_index.push_back(tmp);
+  }
+  // Restore the loop iterators
+  for (int i = 0; i < isl_schedule_node_band_n_member(node); i++) {
+    node = isl_schedule_node_band_member_set_iter(node, i, iters[swap_index[i]]);
+  }
 
   isl_mat_free(null_mat);
 
@@ -2854,6 +2880,13 @@ static isl_stat compute_io_group_buffer(struct autosa_kernel *kernel,
           autosa_array_ref_group_compute_tiling(
               group->io_buffers[group->n_io_buffer - 1]->tile, group);
           compute_drain_tiling_at_PE(kernel, group);
+          if (gen->options->autosa->tuning_method == 1) {                        
+            group->io_buffers[group->n_io_buffer - 1]->tuning_tile = TP_infer_tiled_array(gen, kernel, node, group, 0, 1);
+            isl_schedule_node *new_node = isl_schedule_get_root(kernel->schedule);
+            new_node = autosa_tree_move_down_to_pe(new_node, kernel->core);
+            group->tuning_pe_tile = TP_infer_tiled_array(gen, kernel, node, group, 0, 1); 
+            isl_schedule_node_free(new_node);
+          }
         }
         else
         {
@@ -2874,6 +2907,15 @@ static isl_stat compute_io_group_buffer(struct autosa_kernel *kernel,
           {
             compute_io_tiling_at_PE(kernel, group);
           }
+          if (gen->options->autosa->tuning_method == 1) {
+            group->io_buffers[group->n_io_buffer - 1]->tuning_tile = TP_infer_tiled_array(gen, kernel, node, group, 1, 1);
+            if (group->io_type == AUTOSA_INT_IO && i == 1) {
+              isl_schedule_node *new_node = isl_schedule_get_root(kernel->schedule);
+              new_node = autosa_tree_move_down_to_pe(new_node, kernel->core);
+              group->tuning_pe_tile = TP_infer_tiled_array(gen, kernel, node, group, 1, 1); 
+              isl_schedule_node_free(new_node);
+            }
+          }          
         }
         else
         {
@@ -4074,17 +4116,6 @@ static int group_array_references_io(struct autosa_kernel *kernel,
   for (i = 0; i < local->array->n_ref; i++)
   {    
     struct autosa_stmt_access *ref = local->array->refs[i];
-//#ifdef _DEBUG    
-//    if (!strcmp(local->array->name, "U_tmp")) {
-//      DBGMAP(stdout, ref->access, ctx);
-//      printf("n_io_info: %d\n", ref->n_io_info);
-//      for (int j = 0; j < ref->n_io_info; j++) {
-//        struct autosa_io_info *io_info = ref->io_info[j];
-//        DBGBMAP(stdout, io_info->dep->isl_dep, ctx);
-//        printf("%d\n", io_info->io_type);
-//      }
-//    }
-//#endif
     for (j = 0; j < ref->n_io_info; j++) {
       struct autosa_io_info *io_info = ref->io_info[j];
       if (io_info->dep->type == AUTOSA_DEP_RAW || io_info->dep->type == AUTOSA_DEP_RAR)
@@ -4323,6 +4354,8 @@ static int group_array_references_drain(struct autosa_kernel *kernel,
       group->copy_schedule = NULL;
       group->pe_tile = NULL;
       group->n_mem_ports = 1;
+      group->tuning_refs.push_back(local->array->tuning_refs[i]);
+      group->tuning_pe_tile = NULL;
 
       groups = (struct autosa_array_ref_group **)realloc(groups, (++n) *
                                                                      sizeof(struct autosa_array_ref_group *));

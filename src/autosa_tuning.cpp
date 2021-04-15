@@ -22,6 +22,141 @@ TPExpr *TPExpr::ceil() {
     return expr;
 }
 
+TPExpr *TPExpr::add(TPExpr *expr) {
+    if (this->func == "NULL") {        
+        delete this;
+        return expr;        
+    } else {
+        TPExpr *new_expr = new TPExpr("add", this, expr);
+        return new_expr;
+    }
+}
+
+TPExpr *TPExpr::mul(TPExpr *expr) {    
+    TPExpr *new_expr = new TPExpr("mul", this, expr);
+    return new_expr;    
+}
+
+TPExpr *TPExpr::subtract(TPExpr *expr) {    
+    if (this->func == "literal" && dynamic_cast<TPConst *>(this->ops[0])) {        
+        int val = ((TPConst *)(this->ops[0]))->val;
+        if (expr->func == "literal" && dynamic_cast<TPConst *>(expr->ops[0])) {
+            val -= ((TPConst *)(expr->ops[0]))->val;        
+            delete this;
+            delete expr;
+            return new TPExpr("literal", new TPConst(val));
+        }
+    } else if (expr->func == "literal" && dynamic_cast<TPConst *>(expr->ops[0])) {
+        int val = ((TPConst *)(expr->ops[0]))->val;
+        if (val == 0) {
+            delete expr;
+            return this;
+        }        
+    }
+    TPExpr *new_expr = new TPExpr("sub", this, expr);
+    return new_expr;
+}
+
+TPExpr *TPExpr::min(TPExpr *expr) {    
+    if (this->func == "literal" && dynamic_cast<TPConst *>(this->ops[0])) {        
+        int val = ((TPConst *)(this->ops[0]))->val;
+        if (expr->func == "literal" && dynamic_cast<TPConst *>(expr->ops[0])) {
+            val = std::min(val, ((TPConst *)(expr->ops[0]))->val);
+            return new TPExpr("literal", new TPConst(val));
+        }
+    } else if (this->func == "NULL") {
+        delete this;
+        return expr->dup();
+    }
+    TPExpr *new_expr = new TPExpr("min", this, expr);
+    return new_expr;
+}
+
+TPExpr *TPExpr::max(TPExpr *expr) {
+    if (this->func == "literal" && dynamic_cast<TPConst *>(this->ops[0])) {        
+        int val = ((TPConst *)(this->ops[0]))->val;
+        if (expr->func == "literal" && dynamic_cast<TPConst *>(expr->ops[0])) {
+            val = std::max(val, ((TPConst *)(expr->ops[0]))->val);
+            return new TPExpr("literal", new TPConst(val));
+        }
+    } else if (this->func == "NULL") {
+        delete this;
+        return expr->dup();
+    }
+    TPExpr *new_expr = new TPExpr("max", this, expr);
+    return new_expr;
+}
+
+/* Create a duplicate of the current expression. */
+TPExpr *TPExpr::dup() {
+    TPExpr *new_expr = new TPExpr();
+    new_expr->func = this->func;
+    if (this->func == "literal") {
+        TPExpr *op = this->ops[0];
+        if (dynamic_cast<TPParameter *>(op)) {            
+            new_expr->ops.push_back(((TPParameter *)(op))->dup());            
+        } else if (dynamic_cast<TPConst *>(op)) {            
+            new_expr->ops.push_back(((TPConst *)(op))->dup());            
+        }
+    } else {
+        for (auto op : this->ops) {
+            new_expr->ops.push_back(op->dup());
+        }
+    }
+    return new_expr;
+}        
+
+TPParameter *TPParameter::dup() {
+    TPParameter *new_param = new TPParameter();
+    new_param->name = this->name;
+    new_param->type = this->type;
+    for (auto bound : this->bounds) {
+        new_param->bounds.push_back(bound->dup());
+    }
+    new_param->div = this->div;
+    new_param->dep_param = this->dep_param;
+    new_param->dep_iter = this->dep_iter;
+    new_param->tune = this->tune;
+    new_param->attr = this->attr; 
+
+    return new_param;
+}
+
+TPConst *TPConst::dup() {
+    TPConst *new_const = new TPConst();
+    new_const->type = this->type;
+    new_const->val = this->val;
+
+    return new_const; 
+}
+
+/* Replace the expression that matches "match" with replace.
+ */
+TPExpr *TPExpr::replace(TPExpr *match, TPExpr *replace) {        
+    if (this->to_str() == match->to_str()) {
+        /* Matched */
+        delete this;
+        return replace->dup();
+    } else {
+        if (this->func == "literal") {
+            return this;
+        } else if (this->func == "floor" || this->func == "ceil") {
+            this->ops[0] = this->ops[0]->replace(match, replace);        
+            return this;
+        } else if (this->func == "div" || this->func == "add" || this->func == "mul" || 
+                   this->func == "min" || this->func == "max" || this->func == "sub") {
+            this->ops[0] = this->ops[0]->replace(match, replace);
+            this->ops[1] = this->ops[1]->replace(match, replace);
+            return this;
+        } else if (this->func == "NULL") {
+            return this;
+        } else {
+            std::cout << "[AutoSA] Error: unsupported TPExpr function type: " << this->func << std::endl;
+            exit(1);
+        }
+    }
+}
+
 std::string TPExpr::to_str() {
     if (this->func == "literal") {
         TPExpr *op = this->ops[0];        
@@ -41,16 +176,149 @@ std::string TPExpr::to_str() {
         ret += ")";
         return ret;
     } else if (this->func == "div") {
-        std::string ret = "(";
-        ret += this->ops[0]->to_str();
-        ret += ")/(";
-        ret += this->ops[1]->to_str();
-        ret += ")";
+        int single_op = 0;
+        std::string l = this->ops[0]->to_str();        
+        std::string r = this->ops[1]->to_str();
+        if (r == "1")
+            single_op = 1;            
+        std::string ret = "";
+        if (!single_op)
+            ret += "(";
+        ret += l;        
+        if (r != "1") {
+            ret += ("/" + r);
+        }
+        if (!single_op)
+            ret += ")";        
         return ret;
-    } else {
-        std::cout << "[AutoSA] Error: unsupported TPExpr function type!" << std::endl;
+    } else if (this->func == "add") {        
+        std::string l = this->ops[0]->to_str();        
+        std::string r = this->ops[1]->to_str();
+        std::string ret = "(" + l + "+" + r + ")";
+        return ret;
+    } else if (this->func == "sub") {        
+        std::string l = this->ops[0]->to_str();        
+        std::string r = this->ops[1]->to_str();
+        std::string ret = "(" + l + "-" + r + ")";
+        return ret;
+    } else if (this->func == "mul") {
+        int single_op = 0;        
+        std::string l = this->ops[0]->to_str();        
+        std::string r = this->ops[1]->to_str();
+        if (l == "1" || r == "1")
+            single_op = 1;
+        std::string ret = "";
+        if (!single_op)
+            ret += "(";
+        if (l != "1")
+            ret += l;
+        if (l != "1" && r != "1")
+            ret += "*";
+        if (r != "1")
+            ret += r;        
+        if (!single_op)
+            ret += ")";
+        return ret;    
+    } else if (this->func == "min") {        
+        std::string l = this->ops[0]->to_str();        
+        std::string r = this->ops[1]->to_str();
+        std::string ret = "min(" + l + "," + r + ")";
+        return ret;
+    } else if (this->func == "max") {        
+        std::string l = this->ops[0]->to_str();        
+        std::string r = this->ops[1]->to_str();
+        std::string ret = "max(" + l + "," + r + ")";
+        return ret;
+    } else if (this->func == "NULL") {
+        return "";
+    }
+    else {
+        std::cout << "[AutoSA] Error: unsupported TPExpr function type: " << this->func << std::endl;
         exit(1);
     }
+}
+
+TPExpr *TPExpr::infer_bound(
+    std::unordered_map<std::string, TPExpr *> lbs, 
+    std::unordered_map<std::string, TPExpr *> ubs,
+    std::unordered_set<std::string> ignore, int max)
+{    
+    if (this->func == "literal") {
+        TPExpr *op = this->ops[0];
+        if (dynamic_cast<TPParameter *>(op)) {          
+            TPParameter *param = (TPParameter *)(op);            
+            if (ignore.find(param->name) != ignore.end()) {
+                return new TPExpr("literal", new TPConst(0));
+            } else if (lbs.find(param->name) != lbs.end() || ubs.find(param->name) != ubs.end()){
+                if (max == 1) {
+                    return ubs[param->name]->dup();
+                } else {                    
+                    return lbs[param->name]->dup();
+                }
+            } else {
+                return this->dup();
+            }
+        } else if (dynamic_cast<TPConst *>(op)) {                        
+            return this->dup();
+        }
+    } else if (this->func == "floor") {
+        std::cout << "[AutoSA] Error: unsupported TPExpr function type: " << this->func << std::endl;
+        exit(1);
+    } else if (this->func == "ceil") {
+        std::cout << "[AutoSA] Error: unsupported TPExpr function type: " << this->func << std::endl;
+        exit(1);
+    } else if (this->func == "div") {
+        std::cout << "[AutoSA] Error: unsupported TPExpr function type: " << this->func << std::endl;
+        exit(1);
+    } else if (this->func == "add") {
+        TPExpr *left, *right;
+        if (max == 1) {
+            left = this->ops[0]->infer_bound(lbs, ubs, ignore, 1);
+            right = this->ops[1]->infer_bound(lbs, ubs, ignore, 1);
+        } else {
+            left = this->ops[0]->infer_bound(lbs, ubs, ignore, 0);
+            right = this->ops[1]->infer_bound(lbs, ubs, ignore, 0);
+        }
+        if (left->to_str() == "0" && right->to_str() == "0") {
+            delete left;
+            delete right;
+            return new TPExpr("literal", new TPConst(0));
+        } else if (left->to_str() == "0") {
+            delete left;
+            return right;
+        } else if (right->to_str() == "0") {
+            delete right;
+            return left;
+        } else {
+            return new TPExpr("add", left, right);
+        }
+    } else if (this->func == "mul") {
+        TPExpr *left, *right;
+        if (max == 1) {
+            left = this->ops[0]->infer_bound(lbs, ubs, ignore, 1);
+            right = this->ops[1]->infer_bound(lbs, ubs, ignore, 1);
+        } else {
+            left = this->ops[0]->infer_bound(lbs, ubs, ignore, 0);
+            right = this->ops[1]->infer_bound(lbs, ubs, ignore, 0);
+        }
+        if (left->to_str() == "0" || right->to_str() == "0") {
+            delete left;
+            delete right;
+            return new TPExpr("literal", new TPConst(0));
+        } else
+            return new TPExpr("mul", left, right);
+    } else {
+        std::cout << "[AutoSA] Error: unsupported TPExpr function type: " << this->func << std::endl;
+        exit(1);
+    }
+}
+
+std::string TPArrayRef::to_str() {
+    std::string ret = this->name;
+    for (auto index : this->index) {
+        ret += ("[" + index->to_str() + "]");                
+    }
+    return ret;
 }
 
 static __isl_give isl_schedule_node *extract_tuning_program_from_schedule(
@@ -100,6 +368,9 @@ static __isl_give isl_schedule_node *extract_tuning_program_from_schedule(
  */
 __isl_give isl_schedule *TuningProgram::init_from_schedule(__isl_take isl_schedule *schedule) {
     // Init the iter field to each dim of the schedule tree
+    // TODO: Add a legality check.
+    // Currently, we require all axis to be independent of each other. And the loop iterators
+    // should start from 0.
     isl_schedule_node *root = isl_schedule_get_root(schedule);
     root = isl_schedule_node_map_descendant_bottom_up(root, 
                                                       &extract_tuning_program_from_schedule, this);
@@ -149,6 +420,9 @@ __isl_give isl_schedule_node *TuningProgram::tile(__isl_take isl_schedule_node *
         point_ub->dep_iter = point_iter;            
         point_node = isl_schedule_node_band_member_set_iter(point_node, i, (void *)point_iter);
         this->iters.push_back(point_iter);
+
+        // Update the array indices
+        this->update_tiled_arrays(tile_iter, point_iter, point_ub);
     }
 
     isl_schedule_node_free(tile_node);
@@ -194,6 +468,9 @@ __isl_give isl_schedule_node *TuningProgram::tile(__isl_take isl_schedule_node *
     isl_schedule_node_free(tile_node);
     node = isl_schedule_node_parent(point_node);
 
+    // Update the array indices
+    this->update_tiled_arrays(tile_iter, point_iter, point_ub);
+
     return node;
 }
 
@@ -234,6 +511,15 @@ void TuningProgram::dump(std::string dir)
     std::ofstream o(dir + "/kernel" + std::to_string(this->id) + ".json");
     o << std::setw(4) << j << std::endl;
     o.close();
+
+    // Debug
+    //for (int i = 0; i < this->arrays.size(); i++) {
+    //    TPArray *arr = this->arrays[i];
+    //    for (int j = 0; j < arr->refs.size(); j++) {
+    //        TPArrayRef *ref = arr->refs[j];
+    //        std::cout << ref->to_str() << std::endl;            
+    //    }
+    //}
 
     return;
 }
@@ -445,4 +731,248 @@ void TuningProgram::extract_module_loop_info(std::string name, std::vector<isl_a
     }
 
     return;
+}
+
+struct build_dim_iter_map_data {
+    isl_map *ref;
+    isl_map *new_ref;
+    std::unordered_map<int, TPIterator *> dim_iter_map;  
+    TPExpr *dim_expr;
+    int done;
+};
+
+/* Test if the partial schedule above the "node" matches the "domain".
+ * If so, climb the schedule tree and update the mapping between the schedule dimension and the 
+ * TPIterator.
+ */
+__isl_give isl_schedule_node *build_dim_iter_map(__isl_take isl_schedule_node *node, void *user)
+{    
+    struct build_dim_iter_map_data *data = (struct build_dim_iter_map_data *)user;
+    if (data->done)
+        return node;
+
+    isl_union_set *domain = isl_schedule_node_get_domain(node);
+    isl_union_set *ref_domain = isl_union_set_from_set(isl_map_domain(isl_map_copy(data->ref)));
+    if (!isl_union_set_is_empty(domain) && isl_union_set_is_strict_subset(domain, ref_domain)) {        
+        //DBGSCHDNODE(stdout, node, isl_schedule_node_get_ctx(node));
+        isl_union_map *prefix = isl_schedule_node_get_prefix_schedule_relation(node);
+        data->new_ref = isl_map_from_union_map(isl_union_map_apply_domain(
+            isl_union_map_from_map(isl_map_copy(data->ref)), prefix));            
+        data->done = 1; 
+        isl_schedule_node *new_node = isl_schedule_node_copy(node);
+        while (isl_schedule_node_has_parent(new_node)) {
+            if (isl_schedule_node_get_type(new_node) == isl_schedule_node_band) {
+                isl_set *new_prefix_sched_domain = 
+                    isl_set_from_union_set(isl_union_map_range(isl_schedule_node_get_prefix_schedule_relation(new_node)));
+  
+                int n = isl_schedule_node_band_n_member(new_node);
+                for (int i = 0; i < n; i++) {
+                    TPIterator *iter = (TPIterator *)isl_schedule_node_band_member_get_iter(new_node, i);
+                    if (iter) {
+                        //std::cout << isl_set_dim(new_prefix_sched_domain, isl_dim_set) + i << std::endl;
+                        data->dim_iter_map[isl_set_dim(new_prefix_sched_domain, isl_dim_set) + i] = iter;
+                    }
+                }
+                isl_set_free(new_prefix_sched_domain);
+            }
+            new_node = isl_schedule_node_parent(new_node);        
+        }
+        isl_schedule_node_free(new_node);
+    }
+    isl_union_set_free(domain);
+    isl_union_set_free(ref_domain);  
+
+    return node;
+}
+
+isl_stat extract_dim_expr(__isl_take isl_basic_map *bmap, void *user) 
+{
+    struct build_dim_iter_map_data *data = (struct build_dim_iter_map_data *)user;
+    //DBGBMAP(stdout, bmap, isl_basic_map_get_ctx(bmap));
+    isl_mat *cst_mat = isl_basic_map_equalities_matrix(
+        bmap, isl_dim_in, isl_dim_param, isl_dim_cst, isl_dim_div, isl_dim_out
+    );    
+    //print_mat(stdout, cst_mat);
+    //assert(isl_mat_rows(cst_mat) == 1);
+    assert(isl_basic_map_dim(bmap, isl_dim_param) == 0);
+    assert(isl_basic_map_dim(bmap, isl_dim_div) == 0);
+    for (int r = 0; r < isl_mat_rows(cst_mat); r++) {
+        isl_val *val = isl_mat_get_element_val(cst_mat, r, 
+            isl_basic_map_dim(bmap, isl_dim_in) + isl_basic_map_dim(bmap, isl_dim_param)
+            + isl_basic_map_dim(bmap, isl_dim_cst) + isl_basic_map_dim(bmap, isl_dim_div));
+        int val_i = isl_val_get_num_si(val);
+        isl_val_free(val);
+        if (val_i != 1) {
+            continue;
+        }
+        for (int i = 0; i < isl_basic_map_dim(bmap, isl_dim_in); i++) {
+            isl_val *val = isl_mat_get_element_val(cst_mat, r, i);
+            int val_i = isl_val_get_num_si(val);        
+            if (val_i != 0) {
+                auto it = data->dim_iter_map.find(i);
+                if (it != data->dim_iter_map.end()) {
+                    TPIterator *iter = data->dim_iter_map[i];
+                    //std::cout << "f0: " << val_i << ": " << iter->name << std::endl;
+                    TPExpr *expr = new TPExpr(
+                        "mul", 
+                        new TPExpr("literal", new TPConst(val_i * (-1))), 
+                        new TPExpr("literal", new TPParameter(iter->name))
+                    );
+                    //std::cout << "f1: " << expr->to_str() << std::endl;
+                    data->dim_expr = data->dim_expr->add(expr);
+                    //std::cout << "f2: " << data->dim_expr->to_str() << std::endl;
+                }
+            }
+
+            isl_val_free(val);
+        }
+        for (int i = 0; i < isl_basic_map_dim(bmap, isl_dim_cst); i++) {
+            //std::cout << "here" << std::endl;
+            isl_val *val = isl_mat_get_element_val(cst_mat, r, isl_basic_map_dim(bmap, isl_dim_in) + i);
+            int val_i = isl_val_get_num_si(val);
+            if (val_i != 0) 
+                data->dim_expr = data->dim_expr->add(new TPExpr("literal", new TPConst(val_i * (-1))));
+            //std::cout << "f3: " << data->dim_expr->to_str() << std::endl;            
+            isl_val_free(val);
+        }
+    }
+
+    isl_mat_free(cst_mat);
+    isl_basic_map_free(bmap);
+
+    return isl_stat_ok;
+}
+
+TPArrayRef *TuningProgram::build_array_ref(
+    std::string name, __isl_keep isl_map *ref, __isl_keep isl_schedule *schedule)
+{
+    // Step 1: Build the mapping between the sched dims to the loop iterators
+    // i0 -> c0
+    // i1 -> c1
+    // i2 -> c2    
+    struct build_dim_iter_map_data data;
+    data.ref = ref;
+    data.done = 0;
+    isl_schedule_node *root = isl_schedule_get_root(schedule);
+    root = isl_schedule_node_map_descendant_bottom_up(root, &build_dim_iter_map, &data);    
+    isl_schedule_node_free(root);
+    
+    // Step 2: Parse the access map to build the array reference
+    // [i0, i1, i2, 1] -> A[i0, i2];
+    // class array_ref
+    // {
+    //   std::string name; // A
+    //   std::vector<TPExpr *> index; // [i0, i2]
+    // }
+    TPArrayRef *tp_ref = new TPArrayRef();
+    tp_ref->name = name;
+    int dim = isl_map_dim(ref, isl_dim_out);
+    for (int i = 0; i < dim; i++) {
+        // Project all the other output dims
+        isl_map *ref_dim = isl_map_project_out(isl_map_copy(data.new_ref), isl_dim_out, 0, i);
+        ref_dim = isl_map_project_out(ref_dim, isl_dim_out, 1, dim - i - 1);
+        TPExpr *dim_expr = new TPExpr();
+        data.dim_expr = dim_expr;
+        isl_map_foreach_basic_map(ref_dim, &extract_dim_expr, &data);
+        isl_map_free(ref_dim);
+        tp_ref->index.push_back(data.dim_expr);
+        //std::cout << data.dim_expr->to_str() << std::endl;
+    }
+    isl_map_free(data.new_ref);    
+    //exit(0);
+
+    return tp_ref;
+}
+
+//void infer_bound() 
+//{
+//    // index: [p0*i0 + i3, i2]
+//    // bound: min(i3)->max(i3), 1
+//    // data_pack: param: bounds (1, 1) div by 1
+//}
+
+/* Update the array indices after tiling. 
+ * Find the original parameter with the name as "tile_iter", replace it with a new expression
+ * tile_iter * tile_factor + point_iter
+ */
+void TuningProgram::update_tiled_arrays(TPIterator *tile_iter, TPIterator *point_iter, TPParameter *tile_factor)
+{    
+    for (int i = 0; i < this->arrays.size(); i++) {
+        TPArray *arr = this->arrays[i];
+        for (int j = 0; j < arr->refs.size(); j++) {
+            TPArrayRef *ref = arr->refs[j];
+            //std::cout << ref->to_str() << std::endl;
+            for (int n = 0; n < ref->index.size(); n++) {
+                TPExpr *old_expr = new TPExpr("literal", new TPParameter(tile_iter->name));
+                TPExpr *new_expr = new TPExpr("literal", new TPParameter(tile_iter->name));
+                new_expr = (new_expr->mul(new TPExpr("literal", new TPParameter(tile_factor))))
+                            ->add(new TPExpr("literal", new TPParameter(point_iter->name)));
+                ref->index[n] = ref->index[n]->replace(old_expr, new_expr);
+                delete old_expr;
+                delete new_expr;
+            }
+            //std::cout << ref->to_str() << std::endl;
+        }
+    }
+    //exit(0);
+}
+
+std::vector<TPExpr *> TuningProgram::infer_tiled_array_bound_at_dim(int dim, std::vector<TPArrayRef *> refs, std::vector<TPIterator *> fixed_iters)
+{
+    TPExpr *lb = new TPExpr();
+    TPExpr *ub = new TPExpr();
+    std::unordered_map<std::string, TPExpr *> iter_ubs;
+    for (auto iter : this->iters) {
+        //std::cout << iter->name << " ub: " << iter->ub->to_str() << std::endl;
+        iter_ubs[iter->name] = iter->ub;
+    }
+    std::unordered_map<std::string, TPExpr *> iter_lbs;
+    for (auto iter : this->iters) {
+        //std::cout << iter->name << " lb: " << iter->lb->to_str() << std::endl;
+        iter_lbs[iter->name] = iter->lb;
+    }
+    std::unordered_set<std::string> ignore_iters;
+    for (auto iter : fixed_iters) {
+        //std::cout << "ignore: " << iter->name << std::endl;
+        ignore_iters.insert(iter->name);
+    }
+    for (auto ref : refs) {
+        TPExpr *index = ref->index[dim];
+        //std::cout << index->to_str() << std::endl;
+        TPExpr *local_lb = index->infer_bound(iter_lbs, iter_ubs, ignore_iters, 0);        
+        TPExpr *local_ub = index->infer_bound(iter_lbs, iter_ubs, ignore_iters, 1);
+        lb->min(local_lb);
+        ub->max(local_ub);        
+        delete local_lb;
+        delete local_ub;
+    }
+    //std::cout << lb->to_str() << std::endl;
+    //std::cout << ub->to_str() << std::endl;                            
+    TPExpr *size = ub->subtract(lb->dup());
+    //std::cout << lb->to_str() << std::endl;
+    //std::cout << size->to_str() << std::endl;                            
+    //exit(0);
+    std::vector<TPExpr *> ret = {lb, size};
+
+    return ret;
+}
+
+/* Given the fixed iters, infer the maximal bounds of the tiled array given the refs.
+ * Construct a array tile object and return it.
+ */
+TPArrayTile *TuningProgram::infer_tiled_array_bounds(TPArrayTile *tile, std::vector<TPArrayRef *> refs, std::vector<TPIterator *> fixed_iters)
+{    
+    std::vector<TPExpr *> lbs;
+    std::vector<TPExpr *> sizes;
+    int dim = refs[0]->index.size();
+    for (int i = 0; i < dim; i++) {
+        std::vector<TPExpr *> ret = this->infer_tiled_array_bound_at_dim(i, refs, fixed_iters);
+        lbs.push_back(ret[0]);
+        sizes.push_back(ret[1]);        
+    }
+
+    tile->lbs = lbs;
+    tile->sizes = sizes;
+
+    return tile;
 }

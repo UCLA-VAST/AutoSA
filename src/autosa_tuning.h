@@ -3,6 +3,7 @@
 
 #include <isl/schedule.h>
 #include <isl/schedule_node.h>
+#include <isl/constraint.h>
 
 #include <string>
 #include <vector>
@@ -10,6 +11,7 @@
 #include <unordered_set>
 
 #include "json.hpp"
+#include "autosa_utils.h"
 
 using json = nlohmann::json;
 
@@ -28,7 +30,7 @@ extern "C" {
 
 class TPExpr {
     public:
-        TPExpr() {}
+        TPExpr() {func = "NULL";}
         TPExpr(std::string f, TPExpr *op) {
             func = f;
             ops.push_back(op);
@@ -41,8 +43,21 @@ class TPExpr {
 
         TPExpr *div_by_param(TPExpr *divisor);
         TPExpr *ceil();
+        TPExpr *add(TPExpr *expr);        
+        TPExpr *mul(TPExpr *expr);
+        TPExpr *subtract(TPExpr *expr); // TODO
+        TPExpr *min(TPExpr *expr);
+        TPExpr *max(TPExpr *expr);
+
+        TPExpr *infer_bound(
+            std::unordered_map<std::string, TPExpr *> lbs, 
+            std::unordered_map<std::string, TPExpr *> ubs,
+            std::unordered_set<std::string> ignore, int max);
+        TPExpr *replace(TPExpr *match, TPExpr *replace);
+        TPExpr *dup();
         virtual std::string to_str();
-        std::string func; // [floor, ceil, div, literal]
+        
+        std::string func; // [floor, ceil, div, literal, mul, null, min, max, sub, add]
         std::vector<TPExpr *> ops;        
         
         ~TPExpr() {
@@ -90,6 +105,8 @@ class TPParameter: public TPExpr {
             dep_iter = p->dep_iter;
             tune = p->tune;            
         }     
+        TPParameter *dup();
+
         std::string name;
         std::string type;        
         std::vector<TPExpr *> bounds;
@@ -111,8 +128,61 @@ class TPConst: public TPExpr {
             type = "const";
             val = v;
         }
+        TPConst *dup();
+
         std::string type;
         int val;
+};
+
+class TPArrayRef {
+    public:
+        TPArrayRef(){}
+        TPArrayRef(std::string n, std::vector<TPExpr *> idx) {
+            name = n;
+            for (auto i : idx) {
+                index.push_back(i);
+            }
+        }
+        std::string name;
+        std::vector<TPExpr *> index;
+        std::string to_str();
+        ~TPArrayRef() {
+            for (auto i : index) {
+                delete i;
+            }
+        }
+};
+
+class TPArray {
+    public:
+        TPArray(){}
+        TPArray(std::string n) {name = n;}
+        std::string name;
+        std::vector<TPArrayRef *> refs;
+        ~TPArray() {
+            for (auto ref : refs) 
+                delete ref;
+        }
+};
+
+class TPArrayTile {
+    public:
+        TPArrayTile(){data_pack_factor = NULL;}
+        std::string name;
+        std::string type;
+        int ele_size; 
+        std::vector<TPExpr *> lbs;
+        std::vector<TPExpr *> sizes;
+        TPParameter *data_pack_factor;
+        ~TPArrayTile() {
+            for (auto lb : lbs) {
+                delete lb;
+            }
+            for (auto size : sizes) {
+                delete size;
+            }
+            delete data_pack_factor;
+        }
 };
 
 class TuningProgram {
@@ -125,20 +195,30 @@ class TuningProgram {
         void dump(std::string dir);
         __isl_give isl_schedule *generate_tuning_schedule(__isl_take isl_schedule *schedule);
         __isl_give isl_schedule *generate_io_tuning_schedule(__isl_take isl_schedule *schedule, int io_level);
-        void extract_module_loop_info(std::string name, std::vector<isl_ast_node *> &tree);
+        void extract_module_loop_info(std::string name, std::vector<isl_ast_node *> &tree);        
+        TPArrayRef *build_array_ref(std::string name, __isl_keep isl_map *ref, __isl_keep isl_schedule *);
+        void update_tiled_arrays(TPIterator *tile_iter, TPIterator *point_iter, TPParameter *tile_factor);
+        TPArrayTile *infer_tiled_array_bounds(TPArrayTile *tile, std::vector<TPArrayRef *> refs, std::vector<TPIterator *> fixed_iters);
+        std::vector<TPExpr *> infer_tiled_array_bound_at_dim(int dim, std::vector<TPArrayRef *> refs, std::vector<TPIterator *> fixed_iters);
+        TPExpr *infer_array_index_lb(TPExpr *, std::vector<TPIterator *> fixed_iters);
+        TPExpr *infer_array_index_ub(TPExpr *, std::vector<TPIterator *> fixed_iters);
 
         std::vector<TPIterator *> iters;        
         std::vector<TPParameter *> params;                
+        std::vector<TPArray *> arrays;
         // Maps the parameter name to the point in "params"
         std::unordered_map<std::string, TPParameter *> param_map;        
+        // Unique id to the tuning program
         int id;
-        std::unordered_map<std::string, std::shared_ptr<json>> module_loop_info;
+        std::unordered_map<std::string, std::shared_ptr<json>> module_loop_info;        
 
         ~TuningProgram() {                        
             for (int i = 0; i < iters.size(); i++)
                 delete iters[i];            
             for (int i = 0; i < params.size(); i++)
-                delete params[i];             
+                delete params[i];     
+            for (int i = 0; i < arrays.size(); i++)        
+                delete arrays[i];
         }
 
         // Future use
