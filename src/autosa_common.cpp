@@ -2886,7 +2886,7 @@ isl_stat TP_extract_resource_info(struct autosa_gen *gen, struct autosa_hw_modul
   if (module->type == PE_MODULE) {
     std::string ele_type = std::string(module->io_groups[0]->array->type);
     gen->kernel->tuning_program->extract_module_compute_info(
-        std::string(module->name), ele_type, module->tuning_device_tree); // TODO
+        std::string(module->name), ele_type, module->tuning_device_tree);
   }
 
   return isl_stat_ok;

@@ -32,9 +32,14 @@ __isl_give TPExpr *TPExpr::add(__isl_take TPExpr *expr) {
     }
 }
 
-__isl_give TPExpr *TPExpr::mul(__isl_take TPExpr *expr) {    
-    TPExpr *new_expr = new TPExpr("mul", this, expr);
-    return new_expr;    
+__isl_give TPExpr *TPExpr::mul(__isl_take TPExpr *expr) {   
+    if (this->func == "NULL") {
+        delete this;
+        return expr;
+    } else {
+        TPExpr *new_expr = new TPExpr("mul", this, expr);
+        return new_expr;    
+    }
 }
 
 __isl_give TPExpr *TPExpr::subtract(__isl_take TPExpr *expr) {    
@@ -396,6 +401,9 @@ __isl_give isl_schedule *TuningProgram::init_from_schedule(__isl_take isl_schedu
  */
 __isl_give isl_schedule_node *TuningProgram::tile(__isl_take isl_schedule_node *node, int div, std::string step)
 {
+    //DBGSCHDNODE(stdout, node, isl_schedule_node_get_ctx(node));
+    //exit(0);
+
     isl_schedule_node *tile_node = node;
     isl_schedule_node *point_node = isl_schedule_node_child(isl_schedule_node_copy(node), 0);
     int n = isl_schedule_node_band_n_member(point_node);
@@ -426,10 +434,12 @@ __isl_give isl_schedule_node *TuningProgram::tile(__isl_take isl_schedule_node *
             "c" + std::to_string(this->iters.size()), 
             new TPExpr("literal", new TPConst(0)), 
             new TPExpr("literal", new TPParameter(point_ub)));
-        if (isl_schedule_node_band_member_get_space_time(tile_node, i) == autosa_loop_space)
+        if (isl_schedule_node_band_member_get_space_time(point_node, i) == autosa_loop_space) {
+            //std::cout << "iter space: " << point_iter->name << std::endl;
             point_iter->space_time = "space";
-        else
+        } else {
             point_iter->space_time = "time";        
+        }
         point_node = isl_schedule_node_band_member_set_iter(point_node, i, (void *)point_iter);
         this->iters.push_back(point_iter);
 
@@ -448,13 +458,13 @@ __isl_give isl_schedule_node *TuningProgram::tile(__isl_take isl_schedule_node *
  */
 __isl_give isl_schedule_node *TuningProgram::tile(
     __isl_take isl_schedule_node *node, int pos, int div, std::string step, std::unordered_set<std::string> tags)
-{
+{    
     isl_schedule_node *tile_node = node;
     isl_schedule_node *point_node = isl_schedule_node_child(isl_schedule_node_copy(node), 0);    
     TPIterator *tile_iter = (TPIterator *)isl_schedule_node_band_member_get_iter(tile_node, pos);
+    //std::cout << step << " " << tile_iter->name << " " << tile_iter->space_time << std::endl;
     TPParameter *point_ub = new TPParameter("p" + std::to_string(this->params.size()));
     point_ub->tune = true;
-    //point_ub->div = div;
     point_ub->bounds.push_back(std::make_shared<TPExpr>("literal", new TPConst(1)));
     TPParameter *tile_ub = (TPParameter *)(tile_iter->ub->ops[0]);
     point_ub->bounds.push_back(std::make_shared<TPExpr>("literal", new TPParameter(tile_ub)));    
@@ -479,6 +489,11 @@ __isl_give isl_schedule_node *TuningProgram::tile(
         "c" + std::to_string(this->iters.size()), 
         new TPExpr("literal", new TPConst(0)), 
         new TPExpr("literal", new TPParameter(point_ub)));    
+    if (isl_schedule_node_band_member_get_space_time(point_node, 0) == autosa_loop_space) {
+        point_iter->space_time = "space";
+    } else {
+        point_iter->space_time = "time";        
+    }        
     point_node = isl_schedule_node_band_member_set_iter(point_node, 0, (void *)point_iter);
     this->iters.push_back(point_iter);    
 
@@ -519,13 +534,18 @@ void TuningProgram::dump(std::string dir)
     }
     j["params"] = j_params;
 
-    // loop struct - latency
-    json j_module_latency;
+    // loop struct - latency    
     for (auto x: this->module_loop_info) {        
-        j["modules"][x.first]["latency"] = *x.second;
+        j["latency"][x.first] = *x.second;
     }
     
     // design stats - resource
+    for (auto x: this->module_memory_info) {
+        j["memory"][x.first] = *x.second;
+    }
+    for (auto x: this->module_compute_info) {        
+        j["compute"][x.first] = *x.second;
+    }
 
     std::ofstream o(dir + "/kernel" + std::to_string(this->id) + ".json");
     o << std::setw(4) << j << std::endl;
@@ -563,15 +583,22 @@ static __isl_give isl_schedule_node *modify_tuning_schedule(
                 node = isl_schedule_node_child(node, 0);
             }
             TPIterator *iter = (TPIterator *)isl_schedule_node_band_member_get_iter(node, 0);
+            //if (iter) {
+            //    std::cout << iter->name << std::endl;
+            //    std::cout << iter->space_time << std::endl;
+            //}
             if (iter) {
                 isl_id *id = isl_id_alloc(ctx, "iter_info", iter);
+                /* Insert it under the current band node. */
+                node = isl_schedule_node_child(node, 0);
                 node = isl_schedule_node_insert_mark(node, id);
+                node = isl_schedule_node_parent(node); // band node
             }
             if (i > 0) {
                 node = isl_schedule_node_parent(node);
             }
         }
-        node = isl_schedule_node_parent(node);
+        //node = isl_schedule_node_parent(node);
     }
 
     return node;
@@ -616,31 +643,27 @@ std::shared_ptr<json> extract_isl_ast_node_user(__isl_keep isl_ast_node *node)
     return info;
 }
 
+struct extract_loop_info_data {
+    int after_for;
+};
+
 std::shared_ptr<json> extract_loop_info(__isl_keep isl_ast_node *node, void *user)
-{
-    //json j_info;
+{    
     std::shared_ptr<json> j_info;
     enum isl_ast_node_type type;    
     isl_ctx *ctx = isl_ast_node_get_ctx(node);
     type = isl_ast_node_get_type(node);
+    struct extract_loop_info_data *data = (struct extract_loop_info_data *)user;
 
     switch(type) {
         case isl_ast_node_for:
-        {            
-            TPIterator *iter = (TPIterator *)user;            
+        {         
+            data->after_for = 1;            
             isl_ast_node *child;
             child = isl_ast_node_for_get_body(node);
             std::shared_ptr<json> j_child = extract_loop_info(child, NULL);
             isl_ast_node_free(child);
-            if (iter) {                
-                j_info = std::make_shared<json>();
-                *j_info = {{"type", "for"}, {"iterator", iter->name}};
-                (*j_info)["bounds"].push_back(iter->lb->to_str());                
-                (*j_info)["bounds"].push_back(iter->ub->to_str());
-                (*j_info)["child"] = *j_child;
-            } else {
-                j_info = j_child;
-            }            
+            j_info = j_child;            
 
             break;
         }
@@ -659,6 +682,7 @@ std::shared_ptr<json> extract_loop_info(__isl_keep isl_ast_node *node, void *use
             }
             isl_ast_node_list_free(child_list);
 
+            data->after_for = 0;
             break;
         }
         case isl_ast_node_user:
@@ -668,6 +692,7 @@ std::shared_ptr<json> extract_loop_info(__isl_keep isl_ast_node *node, void *use
             std::shared_ptr<json> j_user = extract_isl_ast_node_user(node);
             *j_info = {{"type", "user"}, {"child", *j_user}};
 
+            data->after_for = 0;
             break;
         }
         case isl_ast_node_if: 
@@ -687,19 +712,28 @@ std::shared_ptr<json> extract_loop_info(__isl_keep isl_ast_node *node, void *use
                 (*j_info)["child"].push_back(*j_else);
             }            
 
+            data->after_for = 0;
             break;
         }
         case isl_ast_node_mark: 
         {            
             isl_id *id = isl_ast_node_mark_get_id(node);                        
             TPIterator *iter = NULL;
-            if (!strcmp(isl_id_get_name(id), "iter_info")) {
+            if (!strcmp(isl_id_get_name(id), "iter_info") && data->after_for == 1) {
                 /* For loop */                
-                iter = (TPIterator *)isl_id_get_user(id);
-                //std::cout << iter->name << std::endl;
                 isl_ast_node *child = isl_ast_node_mark_get_node(node);
-                j_info = extract_loop_info(child, iter);
+                std::shared_ptr<json> j_child = extract_loop_info(child, iter);
                 isl_ast_node_free(child);
+                iter = (TPIterator *)isl_id_get_user(id);
+                if (iter) {
+                    j_info = std::make_shared<json>();
+                    *j_info = {{"type", "for"}, {"iterator", iter->name}};
+                    (*j_info)["bounds"].push_back(iter->lb->to_str());                
+                    (*j_info)["bounds"].push_back(iter->ub->to_str());
+                    (*j_info)["child"] = *j_child;
+                } else {
+                    j_info = j_child;
+                }                                
             } else if (!strcmp(isl_id_get_name(id), "tuning_array_tile")) {
                 /* Print the array information */
                 TPArrayTile *tile = (TPArrayTile *)isl_id_get_user(id);
@@ -724,11 +758,13 @@ std::shared_ptr<json> extract_loop_info(__isl_keep isl_ast_node *node, void *use
                 (*j_info)["child"] = *j_child;
             }
             isl_id_free(id);            
+            data->after_for = 0;
 
             break;
         }
         default:
         {
+            data->after_for = 0;
             break;
         }
     }
@@ -746,20 +782,24 @@ void TuningProgram::extract_module_loop_info(std::string name, std::vector<isl_a
             
     if (ast.size() == 1) {
         std::shared_ptr<json> j_loop;    
-        j_loop = extract_loop_info(ast[0], NULL);
+        struct extract_loop_info_data data = {0};
+        j_loop = extract_loop_info(ast[0], &data);
         this->module_loop_info[name] = j_loop;
     } else if (ast.size() == 3) {        
         // outer module
         std::shared_ptr<json> j_loop1;
-        j_loop1 = extract_loop_info(ast[0], NULL);
+        struct extract_loop_info_data data = {0};
+        j_loop1 = extract_loop_info(ast[0], &data);
         this->module_loop_info[name] = j_loop1;
         // intra module
         std::shared_ptr<json> j_loop2;
-        j_loop2 = extract_loop_info(ast[1], NULL);        
+        data.after_for = 0;
+        j_loop2 = extract_loop_info(ast[1], &data);
         this->module_loop_info[name + "_intra"] = j_loop2;
         // inter module
         std::shared_ptr<json> j_loop3;
-        j_loop3 = extract_loop_info(ast[2], NULL);
+        data.after_for = 0;
+        j_loop3 = extract_loop_info(ast[2], &data);
         this->module_loop_info[name + "_inter"] = j_loop3;
     }
 
@@ -786,8 +826,7 @@ __isl_give isl_schedule_node *build_dim_iter_map(__isl_take isl_schedule_node *n
 
     isl_union_set *domain = isl_schedule_node_get_domain(node);
     isl_union_set *ref_domain = isl_union_set_from_set(isl_map_domain(isl_map_copy(data->ref)));
-    if (!isl_union_set_is_empty(domain) && isl_union_set_is_strict_subset(domain, ref_domain)) {        
-        //DBGSCHDNODE(stdout, node, isl_schedule_node_get_ctx(node));
+    if (!isl_union_set_is_empty(domain) && isl_union_set_is_strict_subset(domain, ref_domain)) {                
         isl_union_map *prefix = isl_schedule_node_get_prefix_schedule_relation(node);
         data->new_ref = isl_map_from_union_map(isl_union_map_apply_domain(
             isl_union_map_from_map(isl_map_copy(data->ref)), prefix));            
@@ -801,8 +840,7 @@ __isl_give isl_schedule_node *build_dim_iter_map(__isl_take isl_schedule_node *n
                 int n = isl_schedule_node_band_n_member(new_node);
                 for (int i = 0; i < n; i++) {
                     TPIterator *iter = (TPIterator *)isl_schedule_node_band_member_get_iter(new_node, i);
-                    if (iter) {
-                        //std::cout << isl_set_dim(new_prefix_sched_domain, isl_dim_set) + i << std::endl;
+                    if (iter) {                        
                         data->dim_iter_map[isl_set_dim(new_prefix_sched_domain, isl_dim_set) + i] = iter;
                     }
                 }
@@ -820,13 +858,10 @@ __isl_give isl_schedule_node *build_dim_iter_map(__isl_take isl_schedule_node *n
 
 isl_stat extract_dim_expr(__isl_take isl_basic_map *bmap, void *user) 
 {
-    struct build_dim_iter_map_data *data = (struct build_dim_iter_map_data *)user;
-    //DBGBMAP(stdout, bmap, isl_basic_map_get_ctx(bmap));
+    struct build_dim_iter_map_data *data = (struct build_dim_iter_map_data *)user;    
     isl_mat *cst_mat = isl_basic_map_equalities_matrix(
         bmap, isl_dim_in, isl_dim_param, isl_dim_cst, isl_dim_div, isl_dim_out
-    );    
-    //print_mat(stdout, cst_mat);
-    //assert(isl_mat_rows(cst_mat) == 1);
+    );        
     assert(isl_basic_map_dim(bmap, isl_dim_param) == 0);
     assert(isl_basic_map_dim(bmap, isl_dim_div) == 0);
     for (int r = 0; r < isl_mat_rows(cst_mat); r++) {
@@ -844,28 +879,23 @@ isl_stat extract_dim_expr(__isl_take isl_basic_map *bmap, void *user)
             if (val_i != 0) {
                 auto it = data->dim_iter_map.find(i);
                 if (it != data->dim_iter_map.end()) {
-                    TPIterator *iter = data->dim_iter_map[i];
-                    //std::cout << "f0: " << val_i << ": " << iter->name << std::endl;
+                    TPIterator *iter = data->dim_iter_map[i];                    
                     TPExpr *expr = new TPExpr(
                         "mul", 
                         new TPExpr("literal", new TPConst(val_i * (-1))), 
                         new TPExpr("literal", new TPParameter(iter->name))
-                    );
-                    //std::cout << "f1: " << expr->to_str() << std::endl;
-                    data->dim_expr = data->dim_expr->add(expr);
-                    //std::cout << "f2: " << data->dim_expr->to_str() << std::endl;
+                    );                    
+                    data->dim_expr = data->dim_expr->add(expr);                    
                 }
             }
 
             isl_val_free(val);
         }
-        for (int i = 0; i < isl_basic_map_dim(bmap, isl_dim_cst); i++) {
-            //std::cout << "here" << std::endl;
+        for (int i = 0; i < isl_basic_map_dim(bmap, isl_dim_cst); i++) {            
             isl_val *val = isl_mat_get_element_val(cst_mat, r, isl_basic_map_dim(bmap, isl_dim_in) + i);
             int val_i = isl_val_get_num_si(val);
             if (val_i != 0) 
-                data->dim_expr = data->dim_expr->add(new TPExpr("literal", new TPConst(val_i * (-1))));
-            //std::cout << "f3: " << data->dim_expr->to_str() << std::endl;            
+                data->dim_expr = data->dim_expr->add(new TPExpr("literal", new TPConst(val_i * (-1))));            
             isl_val_free(val);
         }
     }
@@ -908,21 +938,12 @@ std::shared_ptr<TPArrayRef> TuningProgram::build_array_ref(
         data.dim_expr = dim_expr;
         isl_map_foreach_basic_map(ref_dim, &extract_dim_expr, &data);
         isl_map_free(ref_dim);
-        tp_ref->index.push_back(data.dim_expr);
-        //std::cout << data.dim_expr->to_str() << std::endl;
+        tp_ref->index.push_back(data.dim_expr);        
     }
-    isl_map_free(data.new_ref);    
-    //exit(0);
+    isl_map_free(data.new_ref);        
 
     return tp_ref;
 }
-
-//void infer_bound() 
-//{
-//    // index: [p0*i0 + i3, i2]
-//    // bound: min(i3)->max(i3), 1
-//    // data_pack: param: bounds (1, 1) div by 1
-//}
 
 /* Update the array indices after tiling. 
  * Find the original parameter with the name as "tile_iter", replace it with a new expression
@@ -933,8 +954,7 @@ void TuningProgram::update_tiled_arrays(TPIterator *tile_iter, TPIterator *point
     for (int i = 0; i < this->arrays.size(); i++) {
         TPArray *arr = this->arrays[i];
         for (int j = 0; j < arr->refs.size(); j++) {
-            TPArrayRef *ref = arr->refs[j].get();
-            //std::cout << ref->to_str() << std::endl;
+            TPArrayRef *ref = arr->refs[j].get();     
             for (int n = 0; n < ref->index.size(); n++) {
                 TPExpr *old_expr = new TPExpr("literal", new TPParameter(tile_iter->name));
                 TPExpr *new_expr = new TPExpr("literal", new TPParameter(tile_iter->name));
@@ -943,11 +963,9 @@ void TuningProgram::update_tiled_arrays(TPIterator *tile_iter, TPIterator *point
                 ref->index[n] = ref->index[n]->replace(old_expr, new_expr);
                 delete old_expr;
                 delete new_expr;
-            }
-            //std::cout << ref->to_str() << std::endl;
+            }            
         }
-    }
-    //exit(0);
+    }    
 }
 
 std::vector<TPExpr *> TuningProgram::infer_tiled_array_bound_at_dim(int dim, std::vector<std::shared_ptr<TPArrayRef>> refs, std::vector<TPIterator *> fixed_iters)
@@ -955,33 +973,25 @@ std::vector<TPExpr *> TuningProgram::infer_tiled_array_bound_at_dim(int dim, std
     TPExpr *lb = new TPExpr();
     TPExpr *ub = new TPExpr();
     std::unordered_map<std::string, TPExpr *> iter_ubs;
-    for (auto iter : this->iters) {
-        //std::cout << iter->name << " ub: " << iter->ub->to_str() << std::endl;
+    for (auto iter : this->iters) {        
         iter_ubs[iter->name] = iter->ub;
     }
     std::unordered_map<std::string, TPExpr *> iter_lbs;
-    for (auto iter : this->iters) {
-        //std::cout << iter->name << " lb: " << iter->lb->to_str() << std::endl;
+    for (auto iter : this->iters) {        
         iter_lbs[iter->name] = iter->lb;
     }
     std::unordered_set<std::string> ignore_iters;
-    for (auto iter : fixed_iters) {
-        //std::cout << "ignore: " << iter->name << std::endl;
+    for (auto iter : fixed_iters) {        
         ignore_iters.insert(iter->name);
     }
     for (auto ref : refs) {
-        TPExpr *index = ref->index[dim];
-        //std::cout << index->to_str() << std::endl;
+        TPExpr *index = ref->index[dim];        
         TPExpr *local_lb = index->infer_bound(iter_lbs, iter_ubs, ignore_iters, 0);        
         TPExpr *local_ub = index->infer_bound(iter_lbs, iter_ubs, ignore_iters, 1);
         lb = lb->min(local_lb);
         ub = ub->max(local_ub);
-    }
-    //std::cout << lb->to_str() << std::endl;
-    //std::cout << ub->to_str() << std::endl;                            
-    TPExpr *size = ub->subtract(lb->dup());
-    //std::cout << lb->to_str() << std::endl;
-    //std::cout << size->to_str() << std::endl;
+    }    
+    TPExpr *size = ub->subtract(lb->dup());    
     std::vector<TPExpr *> ret = {lb, size};
 
     return ret;
@@ -1007,12 +1017,80 @@ TPArrayTile *TuningProgram::infer_tiled_array_bounds(TPArrayTile *tile, std::vec
     return tile;
 }
 
+std::shared_ptr<TPExpr> TPArrayTile::compute_size() {
+    TPExpr *size = new TPExpr();
+    for (auto s : this->sizes) {
+        size = size->mul(s->dup());
+    }
+    return std::shared_ptr<TPExpr>(size);
+}
+
+std::shared_ptr<TPExpr> TPIterator::compute_size() {
+    TPExpr *size = this->ub->dup();
+    size = size->subtract(this->lb->dup());    
+    return std::shared_ptr<TPExpr>(size);
+}
+
+struct mul_space_dim_data {    
+    TPExpr *num;
+    int after_for;
+};
+
+isl_bool mul_space_dim(__isl_keep isl_ast_node *node, void *user) {
+    struct mul_space_dim_data *data = (struct mul_space_dim_data *)user;
+    if (isl_ast_node_get_type(node) == isl_ast_node_for) {
+        data->after_for = 1;        
+    } else if (isl_ast_node_get_type(node) == isl_ast_node_mark) {
+        isl_id *id = isl_ast_node_mark_get_id(node);
+        if (!strcmp(isl_id_get_name(id), "iter_info") and data->after_for) {
+            TPIterator *iter = (TPIterator *)isl_id_get_user(id);                        
+            if (iter && iter->space_time == "space") {
+                data->num = data->num->mul(iter->compute_size().get()->dup());
+            }
+        }
+        isl_id_free(id);
+        data->after_for = 0;
+    } else {
+        data->after_for = 0;
+    }
+    return isl_bool_true;
+}
+
+std::shared_ptr<TPExpr> TuningProgram::extract_module_num(isl_ast_node *tree)
+{
+    TPExpr *num = new TPExpr();
+    struct mul_space_dim_data data;
+    data.num = num;    
+    data.after_for = 0;
+    isl_ast_node_foreach_descendant_top_down(tree, &mul_space_dim, &data);
+    return std::shared_ptr<TPExpr>(data.num);
+}
+
 void TuningProgram::extract_module_memory_info(std::string name, int double_buffer, TPArrayTile *tile, isl_ast_node *tree)
 {
-
+    auto j_memory = std::make_shared<json>();
+    // Extract number of modules, double buffer, ele_type, ele_size, buffer_size, data_pack_factor
+    (*j_memory)["double_buffer"] = double_buffer;
+    (*j_memory)["array"] = tile->name;
+    (*j_memory)["ele_type"] = tile->type;
+    (*j_memory)["ele_size"] = tile->ele_size;    
+    (*j_memory)["buf_size"] = tile->compute_size()->to_str();
+    (*j_memory)["data_pack_factor"] = tile->data_pack_factor->to_str();
+    (*j_memory)["num"] = (this->extract_module_num(tree))->to_str();
+    this->module_memory_info[name] = j_memory;
 }
 
 void TuningProgram::extract_module_compute_info(std::string name, std::string arr_type, isl_ast_node *tree)
 {
-
+    auto j_compute = std::make_shared<json>();
+    // Extract number of modules, unroll factor, array type
+    for (auto p : this->params) {
+        if (p->attr == "SIMD_tiling_factor")
+            (*j_compute)["unroll_factor"] = p->name;
+    }
+    (*j_compute)["ele_type"] = arr_type;
+    std::shared_ptr<TPExpr> num = this->extract_module_num(tree);    
+    (*j_compute)["num"] = num->to_str();
+    
+    this->module_compute_info[name] = j_compute;
 }

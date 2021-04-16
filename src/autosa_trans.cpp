@@ -1821,16 +1821,19 @@ static __isl_give isl_schedule_node *autosa_latency_tile_band_loop(
                  * Specifically, tile the loop in the band at "i"th position with the 
                  * size "loop_tile_size".
                  * The returned node points at the tile loop. */
-                node = autosa_node_band_tile_loop(node, loop_tile_size, i);
-                if (data->sa->scop->options->autosa->tuning_method == 1) 
-                    node = data->sa->tuning_program->tile(node, i, 1, "latency", {});
+                node = autosa_node_band_tile_loop(node, loop_tile_size, i);                
                 /* Reset the candidate loop in the tile loop the pe_opt property to default. */
                 node = isl_schedule_node_band_member_set_pe_opt(node, i, autosa_loop_default);
                 /* Reset the point loop space_time property to time loop. */
                 node = isl_schedule_node_child(node, 0);
-                node = isl_schedule_node_band_member_set_space_time(node, 0, autosa_loop_time);
+                node = isl_schedule_node_band_member_set_space_time(node, 0, autosa_loop_time);                
                 /* Reset the point loop pe_opt property to default .*/
                 node = isl_schedule_node_band_member_set_pe_opt(node, 0, autosa_loop_default);
+                if (data->sa->scop->options->autosa->tuning_method == 1) {
+                    node = isl_schedule_node_parent(node);
+                    node = data->sa->tuning_program->tile(node, i, 1, "latency", {});
+                    node = isl_schedule_node_child(node, 0);
+                }
                 /* Move the single loop node to the bottom of the time band. */
                 node = autosa_latency_node_band_sink_time(node, data->sa);                
                 (data->n_tiled_loop)++;
@@ -2727,9 +2730,7 @@ static __isl_give isl_schedule_node *autosa_simd_tile_loop(
                     }
                 }                
                 /* Tile the loop */
-                node = autosa_node_band_tile_loop(node, tile_size, i);
-                if (data->kernel->scop->options->autosa->tuning_method == 1)
-                    node = data->kernel->tuning_program->tile(node, i, 1, "SIMD", {"power_of_two"});
+                node = autosa_node_band_tile_loop(node, tile_size, i);                
                 /* Reset the candidate loop in the tile loop the pe_opt property to default */
                 node = isl_schedule_node_band_member_set_pe_opt(node, i, autosa_loop_default);
                 /* Reset the point loop space_time property to time loop. */
@@ -2737,6 +2738,11 @@ static __isl_give isl_schedule_node *autosa_simd_tile_loop(
                 node = isl_schedule_node_band_member_set_space_time(node, 0, autosa_loop_time);
                 /* Reset the point loop pe_opt property to default. */
                 node = isl_schedule_node_band_member_set_pe_opt(node, 0, autosa_loop_default);                
+                if (data->kernel->scop->options->autosa->tuning_method == 1) {
+                    node = isl_schedule_node_parent(node);
+                    node = data->kernel->tuning_program->tile(node, i, 1, "SIMD", {"power_of_two"});
+                    node = isl_schedule_node_child(node, 0);
+                }
                 /* Sink the point loop innermost */
                 if (kernel->options->autosa->isl_sink) {
                     node = isl_schedule_node_band_sink(node);

@@ -1310,6 +1310,8 @@ static __isl_give isl_schedule_node *io_cluster(
   /* Store the tuning iters */
   for (int i = 0; i < isl_schedule_node_band_n_member(node); i++) {
     iters.push_back((TPIterator *)isl_schedule_node_band_member_get_iter(node, i));
+    //std::cout << "io cluster: " << iters[iters.size() - 1]->name << ", " << 
+    //    iters[iters.size() - 1]->space_time << std::endl;
   }
 
   /* Build the transformation matrix. */
@@ -1375,6 +1377,7 @@ static __isl_give isl_schedule_node *io_cluster(
   }
   // Restore the loop iterators
   for (int i = 0; i < isl_schedule_node_band_n_member(node); i++) {
+    //std::cout << "swapped iter: " << iters[swap_index[i]]->name << std::endl;
     node = isl_schedule_node_band_member_set_iter(node, i, iters[swap_index[i]]);
   }
 

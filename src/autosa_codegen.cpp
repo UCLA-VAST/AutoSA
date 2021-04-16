@@ -5065,7 +5065,7 @@ static __isl_give struct autosa_hw_module *sa_pe_module_gen(struct autosa_gen *g
   node = isl_schedule_node_insert_mark(node, hw_id);
 
   if (gen->options->autosa->tuning_method == 1) {
-    /* Generate another schedule for latency estimation. */
+    /* Generate another schedule for latency estimation. */    
     isl_schedule *tuning_sched = isl_schedule_node_get_schedule(node);
     module->tuning_sched = kernel->tuning_program->generate_tuning_schedule(tuning_sched);
   }
@@ -5079,17 +5079,9 @@ static __isl_give struct autosa_hw_module *sa_pe_module_gen(struct autosa_gen *g
   node = isl_schedule_node_insert_filter(node,
                                          isl_union_set_copy(kernel->pe_filter));
 
-//#ifdef _DEBUG
-//  DBGSCHDNODE(stdout, node, isl_schedule_node_get_ctx(node));
-//#endif
-
   isl_schedule_free(schedule);
   new_schedule = isl_schedule_node_get_schedule(node);
   isl_schedule_node_free(node);
-
-//#ifdef _DEBUG
-//  DBGSCHD(stdout, new_schedule, isl_schedule_get_ctx(new_schedule));
-//#endif
 
   module->sched = new_schedule;
   module->type = PE_MODULE;
@@ -11074,7 +11066,7 @@ isl_stat sa_module_generate_code(struct autosa_gen *gen,
   tree = autosa_generate_ast_from_schedule(schedule, data, gen, NULL);
   module->tree = tree;
   if (gen->options->autosa->tuning_method == 1 && module->tuning_sched) {
-    /* Generate the tuning AST. */
+    /* Generate the tuning AST. */    
     schedule = module->tuning_sched;
     autosa_at_domain_data_init(&data, gen);
     data.tuning = 1;

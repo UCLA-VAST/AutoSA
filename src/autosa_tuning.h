@@ -75,6 +75,7 @@ class TPIterator {
             lb = l;
             ub = u;
         }
+        std::shared_ptr<TPExpr> compute_size();
         std::string name;
         TPExpr *lb;
         TPExpr *ub;     
@@ -180,6 +181,7 @@ class TPArrayTile {
         std::vector<TPExpr *> lbs;
         std::vector<TPExpr *> sizes;
         TPParameter *data_pack_factor;
+        std::shared_ptr<TPExpr> compute_size();
         ~TPArrayTile() {
             for (auto lb : lbs) {
                 delete lb;
@@ -202,6 +204,7 @@ class TuningProgram {
         __isl_give isl_schedule *generate_tuning_schedule(__isl_take isl_schedule *schedule);
         __isl_give isl_schedule *generate_io_tuning_schedule(__isl_take isl_schedule *schedule, int io_level);
         void extract_module_loop_info(std::string name, std::vector<isl_ast_node *> &tree);
+        std::shared_ptr<TPExpr> extract_module_num(isl_ast_node *tree);
         void extract_module_memory_info(std::string name, int double_buffer, TPArrayTile *tile, isl_ast_node *tree);
         void extract_module_compute_info(std::string name, std::string arr_type, isl_ast_node *tree);
         std::shared_ptr<TPArrayRef> build_array_ref(std::string name, __isl_keep isl_map *ref, __isl_keep isl_schedule *);
@@ -219,7 +222,8 @@ class TuningProgram {
         // Unique id to the tuning program
         int id;
         std::unordered_map<std::string, std::shared_ptr<json>> module_loop_info;        
-        std::unordered_map<std::string, std::shared_ptr<json>> module_resource_info;
+        std::unordered_map<std::string, std::shared_ptr<json>> module_memory_info;
+        std::unordered_map<std::string, std::shared_ptr<json>> module_compute_info;
 
         ~TuningProgram() {                        
             for (int i = 0; i < iters.size(); i++)
