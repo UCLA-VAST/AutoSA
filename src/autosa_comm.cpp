@@ -108,7 +108,9 @@ static int populate_array_references_pe(struct autosa_local_array_info *local,
     map = isl_map_from_union_map(umap);
     map = isl_map_detect_equalities(map);
 
-    group = isl_calloc_type(ctx, struct autosa_array_ref_group);
+    //group = isl_calloc_type(ctx, struct autosa_array_ref_group);
+    group = new autosa_array_ref_group;
+    group = autosa_array_ref_group_init(group);
     if (!group)
     {
       isl_map_free(map);
@@ -133,7 +135,7 @@ static int populate_array_references_pe(struct autosa_local_array_info *local,
     group->io_buffers = NULL;
     group->copy_schedule = NULL;
     group->pe_tile = NULL;
-    group->tuning_refs.push_back(local->array->tuning_refs[i]);
+    group->tuning_refs.push_back(std::shared_ptr<TPArrayRef>(local->array->tuning_refs[i]));
     group->tuning_pe_tile = NULL;
 
     groups[n++] = group;
@@ -157,7 +159,9 @@ static struct autosa_array_ref_group *join_groups(
     return NULL;
 
   ctx = isl_map_get_ctx(group1->access);
-  group = isl_calloc_type(ctx, struct autosa_array_ref_group);
+  //group = isl_calloc_type(ctx, struct autosa_array_ref_group);
+  group = new autosa_array_ref_group;
+  group = autosa_array_ref_group_init(group);
   if (!group)
     return NULL;
   group->local_array = group1->local_array;
@@ -179,7 +183,7 @@ static struct autosa_array_ref_group *join_groups(
     return autosa_array_ref_group_free(group);
   for (i = 0; i < group1->n_ref; ++i) {
     group->refs[i] = group1->refs[i];
-    group->tuning_refs.push_back(group1->tuning_refs[i]);
+    group->tuning_refs.push_back(std::shared_ptr<TPArrayRef>(group1->tuning_refs[i]));
   }
   /* Compare if the refs equals */      
   for (i = 0; i < group2->n_ref; ++i) {
@@ -196,7 +200,7 @@ static struct autosa_array_ref_group *join_groups(
       group->refs = (struct autosa_stmt_access **)realloc(group->refs,
                         group->n_ref * sizeof(struct autosa_stmt_access *));      
       group->refs[group->n_ref - 1] = group2->refs[i];
-      group->tuning_refs.push_back(group2->tuning_refs[i]);      
+      group->tuning_refs.push_back(std::shared_ptr<TPArrayRef>(group2->tuning_refs[i]));
     }
   }
 
@@ -211,9 +215,11 @@ static struct autosa_array_ref_group *join_groups(
   group->n_io_buffer = group1->n_io_buffer;
   group->io_buffers = group1->io_buffers;
   group->n_mem_ports = group1->n_mem_ports;
+  group->local_tile = NULL;
+  group->pe_tile = NULL;
   /* Merge the tuning refs */
   for (auto ref : group1->tuning_refs) {
-    group->tuning_refs.push_back(ref);
+    group->tuning_refs.push_back(std::shared_ptr<TPArrayRef>(ref));
   }
 
   return group;
@@ -228,7 +234,7 @@ static struct autosa_array_ref_group *join_groups_and_free(
 {
   struct autosa_array_ref_group *group;
 
-  group = join_groups(group1, group2);
+  group = join_groups(group1, group2);  
   autosa_array_ref_group_free(group1);
   autosa_array_ref_group_free(group2);
   return group;
@@ -260,7 +266,7 @@ static int group_array_references_default(struct autosa_kernel *kernel,
   isl_schedule_node *node;
 
   groups = isl_calloc_array(ctx, struct autosa_array_ref_group *,
-                            local->array->n_ref);
+                            local->array->n_ref);  
   if (!groups)
     return -1;
 
@@ -290,7 +296,7 @@ static int group_array_references_default(struct autosa_kernel *kernel,
   {
     /* Join all referneces together. */
     for (int i = 1; i < n; ++i)
-    {
+    {      
       groups[0] = join_groups_and_free(groups[0], groups[i]);
     }
     n = 1;
@@ -1116,7 +1122,9 @@ static int populate_array_references_io(struct autosa_local_array_info *local,
       map = isl_map_from_union_map(umap);
       map = isl_map_detect_equalities(map);
 
-      group = isl_calloc_type(ctx, struct autosa_array_ref_group);
+      //group = isl_calloc_type(ctx, struct autosa_array_ref_group);
+      group = new autosa_array_ref_group;
+      group = autosa_array_ref_group_init(group);
       if (!group)
       {
         isl_map_free(map);
@@ -1144,8 +1152,9 @@ static int populate_array_references_io(struct autosa_local_array_info *local,
       group->copy_schedule = NULL;
       group->pe_tile = NULL;
       group->n_mem_ports = 1;
+      group->local_tile = NULL;
       //std::cout << local->array->tuning_refs[i]->to_str() << std::endl;
-      group->tuning_refs.push_back(local->array->tuning_refs[i]);
+      group->tuning_refs.push_back(std::shared_ptr<TPArrayRef>(local->array->tuning_refs[i]));
       group->tuning_pe_tile = NULL;
 
       groups[n++] = group;
@@ -2286,14 +2295,6 @@ static isl_stat compute_io_group_schedule(
   isl_schedule_free(sched);
   isl_schedule_node_free(node);
 
-//#ifdef _DEBUG
-//  if (!strcmp(group->array->name, "U_tmp") && group->nr == 1) {
-//    //printf("print here\n");
-//    //print_code(gen, group->io_L1_schedule, "U_tmp_1_tmp_code.c");
-//    DBGSCHD(stdout, group->io_L1_schedule, ctx);
-//  }
-//#endif
-
   return isl_stat_ok;
 }
 
@@ -3033,6 +3034,7 @@ struct update_group_simd_data
 {
   struct autosa_array_ref_group *group;
   struct autosa_kernel *kernel;
+  int updated;
 };
 
 /* Examine if there is any array references in the "group" under the SIMD loop.
@@ -3084,8 +3086,10 @@ static isl_bool update_group_simd(__isl_keep isl_schedule_node *node, void *user
           uset = isl_union_set_intersect(uset, isl_union_set_copy(domain));
           if (!isl_union_set_is_empty(uset))
           {
-            if (ref->simd_stride == 1)
+            if (ref->simd_stride == 1) {
               group->n_lane = data->kernel->simd_w;
+              data->updated = 1;
+            }
           }
           isl_union_set_free(uset);
         }
@@ -3119,8 +3123,10 @@ static isl_stat compute_io_group_data_pack_sparse(
   node = isl_schedule_get_root(kernel->schedule);
   data.group = group;
   data.kernel = kernel;
+  data.updated = 0;
   isl_schedule_node_foreach_descendant_top_down(node, &update_group_simd, &data);
   isl_schedule_node_free(node);
+
   /* Update the group n_lane considering the sparse information */
   if (group->n_lane % kernel->vec_len != 0) {
     printf("[AutoSA] Error: The sparse block size is not a sub-multiple of the SIMD factor. Abort!\n");
@@ -3244,8 +3250,47 @@ static isl_stat compute_io_group_data_pack(struct autosa_kernel *kernel,
   node = isl_schedule_get_root(kernel->schedule);
   data.group = group;
   data.kernel = kernel;
+  data.updated = 0;
   isl_schedule_node_foreach_descendant_top_down(node, &update_group_simd, &data);
   isl_schedule_node_free(node);
+
+  if (gen->options->autosa->tuning_method == 1) {    
+    /* Update the data packing factor */
+    for (int i = 0; i < group->io_level; i++) {
+      struct autosa_io_buffer *buf = group->io_buffers[i];
+      if (buf->tuning_tile && buf->tuning_tile->data_pack_factor == NULL) {        
+        class TPParameter *dp = new TPParameter("p" + std::to_string(kernel->tuning_program->params.size()));
+        dp->tune = false;
+        dp->attr = "data_pack_factor";
+        dp->tags.insert("auto_infer");
+        /* Update the bounds */
+        /* lb */
+        if (data.updated == 0) {
+          //dp->bounds.push_back(new TPExpr("literal", new TPConst(1)));
+          dp->bounds.push_back(std::make_shared<TPExpr>("literal", new TPConst(1)));
+        } else {
+          /* Find the SIMD tiling factor */
+          for (auto param : kernel->tuning_program->params) {
+            if (param->attr == "SIMD_tiling_factor") {
+              //dp->bounds.push_back(new TPExpr("literal", param->dup()));
+              dp->bounds.push_back(std::make_shared<TPExpr>("literal", param->dup()));
+              //dp->multiples.push_back(new TPExpr("literal", param->dup()));
+              dp->multiples.push_back(std::make_shared<TPExpr>("literal", param->dup()));
+            }
+          }
+        }
+        /* ub */
+        dp->bounds.push_back(std::shared_ptr<TPExpr>(buf->tuning_tile->sizes[buf->tuning_tile->sizes.size() - 1]->dup()));
+        dp->divisors.push_back(std::shared_ptr<TPExpr>(buf->tuning_tile->sizes[buf->tuning_tile->sizes.size() - 1]->dup()));
+        assert(dp->bounds.size() == 2);    
+        buf->tuning_tile->data_pack_factor = dp;
+        kernel->tuning_program->params.push_back(dp);
+        kernel->tuning_program->param_map[dp->name] = dp;
+        break;
+      }
+    }            
+  }
+
   if (max_n_lane % group->n_lane != 0)
   {
     printf("[AutoSA] Error: The data is not aligned to the DRAM port. Abort!\n");
@@ -4125,6 +4170,7 @@ static int group_array_references_io(struct autosa_kernel *kernel,
 
   groups = (struct autosa_array_ref_group **)calloc(n,
                                                     sizeof(struct autosa_array_ref_group *));
+  //groups = new autosa_array_ref_group*[n];
   if (!groups)
     return -1;
 
@@ -4319,8 +4365,10 @@ static int group_array_references_drain(struct autosa_kernel *kernel,
       map = isl_map_detect_equalities(map);
 
       /* Add this access relation to the group. */
-      struct autosa_array_ref_group *group =
-          isl_calloc_type(ctx, struct autosa_array_ref_group);
+      //struct autosa_array_ref_group *group =
+      //    isl_calloc_type(ctx, struct autosa_array_ref_group);
+      struct autosa_array_ref_group *group = new autosa_array_ref_group;
+      group = autosa_array_ref_group_init(group);
       if (!group)
       {
         isl_map_free(map);
@@ -4353,12 +4401,19 @@ static int group_array_references_drain(struct autosa_kernel *kernel,
       group->io_buffers = NULL;
       group->copy_schedule = NULL;
       group->pe_tile = NULL;
+      group->local_tile = NULL;
       group->n_mem_ports = 1;
-      group->tuning_refs.push_back(local->array->tuning_refs[i]);
+      group->tuning_refs.push_back(std::shared_ptr<TPArrayRef>(local->array->tuning_refs[i]));
       group->tuning_pe_tile = NULL;
 
-      groups = (struct autosa_array_ref_group **)realloc(groups, (++n) *
-                                                                     sizeof(struct autosa_array_ref_group *));
+      //groups = (struct autosa_array_ref_group **)realloc(groups, (++n) *
+      //                                                               sizeof(struct autosa_array_ref_group *));      
+      struct autosa_array_ref_group **groups_tmp = isl_calloc_array(ctx, struct autosa_array_ref_group *, ++n);
+      for (int g = 0; g < n - 1; g++) {
+        groups_tmp[g] = groups[g];
+      }
+      free(groups);
+      groups = groups_tmp;      
       groups[n - 1] = group;
     }
     isl_set_free(drain_data.drain_domain);

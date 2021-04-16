@@ -971,7 +971,7 @@ static __isl_give isl_schedule_node *add_io_copies_stmt_tile(
   struct autosa_array_ref_group *group,
   __isl_take isl_schedule_node *node,
   struct autosa_array_tile *local_tile, /* Local buffer */
-  struct autosa_array_tile *tile,       /* The tile to be copied */
+  struct autosa_array_tile *tile,       /* The tile to be copied */  
   int n_lane,
   int read,
   __isl_take char *stmt_name,
@@ -981,9 +981,9 @@ static __isl_give isl_schedule_node *add_io_copies_stmt_tile(
   /* If needs to insert a access_serialize mark. */
   int insert_serialize,
   struct autosa_hw_module *module,
-  int module_type
-  )
-{
+  int module_type,
+  TPArrayTile *tuning_tile
+) {
   isl_union_map *access = NULL;
   int empty;
   isl_multi_aff *from_access;
@@ -1057,6 +1057,13 @@ static __isl_give isl_schedule_node *add_io_copies_stmt_tile(
 
   if (insert_serialize) {
     id = isl_id_alloc(ctx, "access_serialize", NULL);
+    graft = isl_schedule_node_insert_mark(graft, id);
+    graft = isl_schedule_node_child(graft, 0);
+  }
+
+  if (kernel->options->autosa->tuning_method == 1) {
+    /* Insert the buffer informaton */
+    id = isl_id_alloc(ctx, "tuning_array_tile", tuning_tile);
     graft = isl_schedule_node_insert_mark(graft, id);
     graft = isl_schedule_node_child(graft, 0);
   }
@@ -1744,7 +1751,7 @@ static __isl_give isl_schedule_node *insert_io_stmts_tile(
                                  is_buffer & 0,
                                  insert_hls_dep,
                                  module->is_serialized,
-                                 module, module_type);
+                                 module, module_type, copy_buffer->tuning_tile);
 
   if (cut) {
     node = isl_schedule_node_cut(node);
@@ -1755,6 +1762,7 @@ static __isl_give isl_schedule_node *insert_io_stmts_tile(
   }  
 
   //DBGSCHDNODE(stdout, node, isl_schedule_node_get_ctx(node));
+  //exit(0);
 
   return node;
 }

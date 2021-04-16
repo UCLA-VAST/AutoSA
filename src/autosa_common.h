@@ -470,7 +470,7 @@ struct autosa_array_info
   /* Is the array to be copied out from the device memory? */
   int copy_out;
   /* Tuning array refs */
-  std::vector<TPArrayRef *> tuning_refs;
+  std::vector<std::shared_ptr<TPArrayRef>> tuning_refs;
   /* AutoSA Extended */
 };
 
@@ -581,7 +581,7 @@ struct autosa_array_ref_group
   /* Attached drain group */
   struct autosa_array_ref_group *attached_drain_group;  
   /* Tuning array refs */
-  std::vector<TPArrayRef *> tuning_refs;
+  std::vector<std::shared_ptr<TPArrayRef>> tuning_refs;
   TPArrayTile *tuning_pe_tile;
   /* AutoSA Extended */
 };
@@ -1305,6 +1305,7 @@ isl_stat sa_extract_design_info(struct autosa_gen *gen);
 
 /* Tuning program */
 isl_stat TP_extract_loop_info(struct autosa_gen *gen, struct autosa_hw_module *module);
+isl_stat TP_extract_resource_info(struct autosa_gen *gen, struct autosa_hw_module *module);
 isl_stat TP_extract_array_info(struct autosa_gen *gen, struct autosa_kernel *kernel);
 TPArrayTile *TP_infer_tiled_array(
   struct autosa_gen *gen, struct autosa_kernel *kernel, struct isl_schedule_node *node,

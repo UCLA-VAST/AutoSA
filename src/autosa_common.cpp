@@ -41,7 +41,7 @@ void *autosa_kernel_free(struct autosa_kernel *kernel)
     struct autosa_local_array_info *array = &kernel->array[i];
     for (int j = 0; j < array->n_group; ++j)
       autosa_array_ref_group_free(array->groups[j]);
-    free(array->groups);
+    free(array->groups);    
     for (int j = 0; j < array->n_pe_group; ++j)
       autosa_array_ref_group_free(array->pe_groups[j]);
     free(array->pe_groups);
@@ -55,8 +55,10 @@ void *autosa_kernel_free(struct autosa_kernel *kernel)
     
     isl_pw_qpolynomial_free(array->serialize_bound);
   }
-  if (kernel->array)
-    free(kernel->array);
+  if (kernel->array) {
+    delete[] kernel->array;
+    //free(kernel->array);
+  }
 
   for (int i = 0; i < kernel->n_var; i++)
   {
@@ -502,7 +504,8 @@ static void free_array_info(struct autosa_prog *prog)
     free(prog->array[i].refs);
     isl_union_map_free(prog->array[i].dep_order);
   }
-  free(prog->array);
+  //free(prog->array);
+  delete[] prog->array;
 }
 
 /* Is the array "array" being extracted a read-only scalar?
@@ -701,6 +704,9 @@ static isl_stat extract_array_info(struct autosa_prog *prog,
   if (collect_references(prog, info) < 0)
     return isl_stat_error;
   info->only_fixed_element = only_fixed_element_accessed(info);
+  info->declare_local = 0;
+  info->dep_order = NULL;
+  info->declared_size = NULL;
 
   /* AutoSA Extended */
   info->n_lane = 0;
@@ -832,8 +838,9 @@ isl_stat collect_array_info(struct autosa_prog *prog)
   isl_union_set *arrays;
 
   prog->n_array = 0;
-  prog->array = isl_calloc_array(prog->ctx,
-                                 struct autosa_array_info, prog->scop->pet->n_array);
+  //prog->array = isl_calloc_array(prog->ctx,
+  //                               struct autosa_array_info, prog->scop->pet->n_array);
+  prog->array = new autosa_array_info[prog->scop->pet->n_array];
   if (!prog->array)
     return isl_stat_error;
 
@@ -924,19 +931,22 @@ struct autosa_array_ref_group *autosa_array_ref_group_free(
   {        
     autosa_array_tile_free(group->io_buffers[i]->tile);
     if (group->io_buffers[i]->tuning_tile) {      
-      delete group->io_buffers[i]->tuning_tile;         
+      delete group->io_buffers[i]->tuning_tile;
     }
     free(group->io_buffers[i]);
   }
   free(group->io_buffers);
   isl_schedule_free(group->io_schedule);
-  isl_schedule_free(group->io_L1_schedule);
+  if (group->io_L1_schedule)
+    isl_schedule_free(group->io_L1_schedule);
   isl_schedule_free(group->io_L1_lower_schedule);
   isl_union_pw_multi_aff_free(group->copy_schedule);
   if (group->attached_drain_group)
     autosa_array_ref_group_free(group->attached_drain_group);
+  group->tuning_refs.clear();
   delete group->tuning_pe_tile;
-  free(group);
+  //free(group);
+  delete group;
 
   return NULL;
 }
@@ -962,6 +972,8 @@ struct autosa_array_ref_group *autosa_array_ref_group_init(
   group->io_type = AUTOSA_UNKNOWN_IO;
   group->pe_io_dir = IO_UNKNOWN;
   group->array_io_dir = IO_UNKNOWN;
+  group->dir = NULL;
+  group->old_dir = NULL;
   group->io_trans = NULL;
   group->io_L1_trans = NULL;
   group->io_pe_expr = NULL;
@@ -1635,7 +1647,7 @@ void *autosa_hw_module_free(struct autosa_hw_module *module)
     isl_vec_free(module->var[i].size);
   }
   free(module->var);
-  free(module->io_groups);
+  free(module->io_groups);  
   for (int i = 0; i < module->n_pe_dummy_modules; i++)
   {
     autosa_pe_dummy_module_free(module->pe_dummy_modules[i]);
@@ -2852,6 +2864,34 @@ isl_stat TP_extract_loop_info(struct autosa_gen *gen, struct autosa_hw_module *m
   return isl_stat_ok;
 }
 
+/* Extract the memory (BRAM) and computation (DSP) information that will be used for 
+ * resource estimation in the auto-tuner.
+ */
+isl_stat TP_extract_resource_info(struct autosa_gen *gen, struct autosa_hw_module *module) {
+  /* BRAM */
+  if (module->type == IO_MODULE && module->is_buffer) {
+    int double_buffer = module->double_buffer;
+    struct autosa_array_ref_group *group = module->io_groups[0];
+    for (int i = 0; i < group->n_io_buffer; i++) {
+      if (group->io_buffers[i]->tuning_tile) {
+        gen->kernel->tuning_program->extract_module_memory_info(
+            std::string(module->name), double_buffer, group->io_buffers[i]->tuning_tile, module->tuning_device_tree); // TODO
+      }
+    }
+  } else if (module->type == PE_MODULE) {
+    // TODO
+  }
+
+  /* DSP */
+  if (module->type == PE_MODULE) {
+    std::string ele_type = std::string(module->io_groups[0]->array->type);
+    gen->kernel->tuning_program->extract_module_compute_info(
+        std::string(module->name), ele_type, module->tuning_device_tree); // TODO
+  }
+
+  return isl_stat_ok;
+}
+
 /* Extract the array references in the prog and build a mapping in the tuning program. 
  */
 isl_stat TP_extract_array_info(struct autosa_gen *gen, struct autosa_kernel *kernel) {
@@ -2865,23 +2905,19 @@ isl_stat TP_extract_array_info(struct autosa_gen *gen, struct autosa_kernel *ker
   for (int i = 0; i < prog->n_array; i++) {
     struct autosa_array_info *array = &(prog->array[i]);
     TPArray *tp_arr = new TPArray(std::string(array->name));
-    //std::cout << "----" << std::endl;
-    //std::cout << array->name << std::endl;
+    assert(array->tuning_refs.size() == 0);
     array->tuning_refs.clear();
     for (int j = 0; j < array->n_ref; j++) {
       struct autosa_stmt_access *ref = array->refs[j];
-      isl_map *access = ref->access;
-      //DBGMAP(stdout, access, isl_map_get_ctx(access));      
+      isl_map *access = ref->access;      
       /* Build the tuning program array access representation. */
-      TPArrayRef *tp_ref = kernel->tuning_program->build_array_ref(std::string(array->name), access, schedule);
+      std::shared_ptr<TPArrayRef> tp_ref = kernel->tuning_program->build_array_ref(std::string(array->name), access, schedule);
      
-      tp_arr->refs.push_back(tp_ref);      
-      array->tuning_refs.push_back(tp_ref);
-      //std::cout << tp_ref->to_str() << std::endl;
+      tp_arr->refs.push_back(std::shared_ptr<TPArrayRef>(tp_ref));      
+      array->tuning_refs.push_back(std::shared_ptr<TPArrayRef>(tp_ref));
     }
     kernel->tuning_program->arrays.push_back(tp_arr);    
-  }
-  //exit(0);
+  }  
   isl_union_map_free(umap_schedule);
 
   return isl_stat_ok;
@@ -2895,12 +2931,12 @@ TPArrayTile *TP_infer_tiled_array(
   int read, int write)
 {
   // Collect all accesses in the group
-  std::vector<TPArrayRef *> group_refs;  
+  std::vector<std::shared_ptr<TPArrayRef>> group_refs;
   for (int i = 0; i < group->n_ref; i++) {
     if (!((read && group->refs[i]->read) ||
           (write && group->refs[i]->write)))
       continue;
-    group_refs.push_back(group->tuning_refs[i]);    
+    group_refs.push_back(group->tuning_refs[i]);
   }
 
   // Collect the fixed iter dimensions
@@ -2926,9 +2962,7 @@ TPArrayTile *TP_infer_tiled_array(
   array_tile = kernel->tuning_program->infer_tiled_array_bounds(array_tile, group_refs, fixed_iters);
   array_tile->name = std::string(group->array->name);
   array_tile->type = std::string(group->array->type);
-  array_tile->ele_size = group->array->size;  
-
-  // TODO: Update the data pack_factor  
+  array_tile->ele_size = group->array->size;
 
   return array_tile;
 }
@@ -3318,7 +3352,7 @@ isl_stat sa_extract_design_info(struct autosa_gen *gen)
 
 /* The sparse info is provided in the format of 
  * kernel[]->block_sparse[n_non_zero_num, vec_len]
- * Extract these information and compute the extra meta information.
+ * Extract these information and compute the extra meta i nformation.
  */
 isl_stat autosa_kernel_extract_sparse_info(struct autosa_kernel *kernel, 
   struct autosa_gen *gen)
@@ -3336,23 +3370,16 @@ isl_stat autosa_kernel_extract_sparse_info(struct autosa_kernel *kernel,
   sparse_info = extract_sizes_from_str(kernel->ctx, gen->options->autosa->block_sparse_ratio);
   for (int i = 0; i < kernel->n_array; i++) {
     struct autosa_local_array_info *local_array = &kernel->array[i];
-    isl_set *tmp_size;
-    //printf("%s\n", local_array->array->name);
+    isl_set *tmp_size;    
     tmp_size = extract_sa_sizes(sparse_info, local_array->array->name);
     if (tmp_size) {
       local_array->is_sparse = 1;
-      size = tmp_size;
-      //DBGSET(stdout, size, gen->ctx);
-      //printf("%s\n", local_array->array->name);
+      size = tmp_size;    
     } else {
       isl_set_free(tmp_size);
     }
   }
   isl_union_map_free(sparse_info);
-
-//#ifdef _DEBUG
-//  DBGSET(stdout, size, gen->ctx);
-//#endif
 
   if (isl_set_dim(size, isl_dim_set) < 2) {
     isl_set_free(size);
@@ -3362,11 +3389,6 @@ isl_stat autosa_kernel_extract_sparse_info(struct autosa_kernel *kernel,
 
   if (read_sa_sizes_from_set(size, ratios, 2) < 0) 
     goto error;
-
-//#ifdef _DEBUG
-//  DBGUMAP(stdout, sparse_info, gen->ctx);  
-//#endif
-  //printf("%d %d\n", ratios[0], ratios[1]);
 
   kernel->sparse = 1;
   kernel->vec_len = ratios[1];

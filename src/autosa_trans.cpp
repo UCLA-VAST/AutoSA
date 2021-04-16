@@ -933,8 +933,9 @@ static struct autosa_kernel *autosa_kernel_create_local_arrays(
         return NULL;
 
     ctx = isl_set_get_ctx(prog->context);
-    kernel->array = isl_calloc_array(ctx,
-                                     struct autosa_local_array_info, prog->n_array);
+    //kernel->array = isl_calloc_array(ctx,
+    //                                 struct autosa_local_array_info, prog->n_array);
+    kernel->array = new autosa_local_array_info[prog->n_array];
     if (!kernel->array)
         return (struct autosa_kernel *)autosa_kernel_free(kernel);
     kernel->n_array = prog->n_array;
@@ -1317,7 +1318,7 @@ isl_stat sa_array_partitioning_optimize(struct autosa_kernel *sa,
     sa->array_part_w = tile_len;    
     node = autosa_tile_band(node, tile_size);
     if (sa->scop->options->autosa->tuning_method == 1)
-        node = sa->tuning_program->tile(node, 0);
+        node = sa->tuning_program->tile(node, 0, "array_part");
 
     free(tile_size);
     node = isl_schedule_node_child(node, 0);
@@ -1822,7 +1823,7 @@ static __isl_give isl_schedule_node *autosa_latency_tile_band_loop(
                  * The returned node points at the tile loop. */
                 node = autosa_node_band_tile_loop(node, loop_tile_size, i);
                 if (data->sa->scop->options->autosa->tuning_method == 1) 
-                    node = data->sa->tuning_program->tile(node, i, 1);
+                    node = data->sa->tuning_program->tile(node, i, 1, "latency", {});
                 /* Reset the candidate loop in the tile loop the pe_opt property to default. */
                 node = isl_schedule_node_band_member_set_pe_opt(node, i, autosa_loop_default);
                 /* Reset the point loop space_time property to time loop. */
@@ -2728,7 +2729,7 @@ static __isl_give isl_schedule_node *autosa_simd_tile_loop(
                 /* Tile the loop */
                 node = autosa_node_band_tile_loop(node, tile_size, i);
                 if (data->kernel->scop->options->autosa->tuning_method == 1)
-                    node = data->kernel->tuning_program->tile(node, i, 1);
+                    node = data->kernel->tuning_program->tile(node, i, 1, "SIMD", {"power_of_two"});
                 /* Reset the candidate loop in the tile loop the pe_opt property to default */
                 node = isl_schedule_node_band_member_set_pe_opt(node, i, autosa_loop_default);
                 /* Reset the point loop space_time property to time loop. */
@@ -4202,7 +4203,8 @@ static __isl_give isl_printer *generate(__isl_take isl_printer *p,
         if (options->autosa->tuning_method == 1) {
             /* Extract the information for performance est in the auto tuner. */
             for (int i = 0; i < gen->n_hw_modules; i++) {     
-                TP_extract_loop_info(gen, gen->hw_modules[i]);                
+                TP_extract_loop_info(gen, gen->hw_modules[i]);
+                TP_extract_resource_info(gen, gen->hw_modules[i]);
             }
         }
 

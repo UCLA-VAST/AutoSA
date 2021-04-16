@@ -12,17 +12,17 @@
 #include "autosa_tuning.h"
 #include "autosa_schedule_tree.h"
 
-TPExpr *TPExpr::div_by_param(TPExpr *divisor) {        
+__isl_give TPExpr *TPExpr::div_by_param(__isl_take TPExpr *divisor) {        
     TPExpr *expr = new TPExpr("div", this, divisor);
     return expr;
 }
 
-TPExpr *TPExpr::ceil() {    
+__isl_give TPExpr *TPExpr::ceil() {    
     TPExpr *expr = new TPExpr("ceil", this);
     return expr;
 }
 
-TPExpr *TPExpr::add(TPExpr *expr) {
+__isl_give TPExpr *TPExpr::add(__isl_take TPExpr *expr) {
     if (this->func == "NULL") {        
         delete this;
         return expr;        
@@ -32,12 +32,12 @@ TPExpr *TPExpr::add(TPExpr *expr) {
     }
 }
 
-TPExpr *TPExpr::mul(TPExpr *expr) {    
+__isl_give TPExpr *TPExpr::mul(__isl_take TPExpr *expr) {    
     TPExpr *new_expr = new TPExpr("mul", this, expr);
     return new_expr;    
 }
 
-TPExpr *TPExpr::subtract(TPExpr *expr) {    
+__isl_give TPExpr *TPExpr::subtract(__isl_take TPExpr *expr) {    
     if (this->func == "literal" && dynamic_cast<TPConst *>(this->ops[0])) {        
         int val = ((TPConst *)(this->ops[0]))->val;
         if (expr->func == "literal" && dynamic_cast<TPConst *>(expr->ops[0])) {
@@ -57,44 +57,54 @@ TPExpr *TPExpr::subtract(TPExpr *expr) {
     return new_expr;
 }
 
-TPExpr *TPExpr::min(TPExpr *expr) {    
+__isl_give TPExpr *TPExpr::min(__isl_take TPExpr *expr) {    
     if (this->func == "literal" && dynamic_cast<TPConst *>(this->ops[0])) {        
         int val = ((TPConst *)(this->ops[0]))->val;
         if (expr->func == "literal" && dynamic_cast<TPConst *>(expr->ops[0])) {
             val = std::min(val, ((TPConst *)(expr->ops[0]))->val);
+            delete this;
+            delete expr;
             return new TPExpr("literal", new TPConst(val));
         }
     } else if (this->func == "NULL") {
         delete this;
-        return expr->dup();
+        return expr;
+    } else if (this->to_str() == expr->to_str()) {
+        delete expr;
+        return this;
     }
     TPExpr *new_expr = new TPExpr("min", this, expr);
     return new_expr;
 }
 
-TPExpr *TPExpr::max(TPExpr *expr) {
+__isl_give TPExpr *TPExpr::max(__isl_take TPExpr *expr) {
     if (this->func == "literal" && dynamic_cast<TPConst *>(this->ops[0])) {        
         int val = ((TPConst *)(this->ops[0]))->val;
         if (expr->func == "literal" && dynamic_cast<TPConst *>(expr->ops[0])) {
             val = std::max(val, ((TPConst *)(expr->ops[0]))->val);
+            delete this;
+            delete expr;
             return new TPExpr("literal", new TPConst(val));
         }
     } else if (this->func == "NULL") {
         delete this;
-        return expr->dup();
+        return expr;
+    } else if (this->to_str() == expr->to_str()) {
+        delete expr;
+        return this;
     }
     TPExpr *new_expr = new TPExpr("max", this, expr);
     return new_expr;
 }
 
 /* Create a duplicate of the current expression. */
-TPExpr *TPExpr::dup() {
+__isl_give TPExpr *TPExpr::dup() {
     TPExpr *new_expr = new TPExpr();
     new_expr->func = this->func;
     if (this->func == "literal") {
         TPExpr *op = this->ops[0];
         if (dynamic_cast<TPParameter *>(op)) {            
-            new_expr->ops.push_back(((TPParameter *)(op))->dup());            
+            new_expr->ops.push_back(((TPParameter *)(op))->dup());
         } else if (dynamic_cast<TPConst *>(op)) {            
             new_expr->ops.push_back(((TPConst *)(op))->dup());            
         }
@@ -106,23 +116,29 @@ TPExpr *TPExpr::dup() {
     return new_expr;
 }        
 
-TPParameter *TPParameter::dup() {
+__isl_give TPParameter *TPParameter::dup() {
     TPParameter *new_param = new TPParameter();
     new_param->name = this->name;
     new_param->type = this->type;
     for (auto bound : this->bounds) {
-        new_param->bounds.push_back(bound->dup());
-    }
-    new_param->div = this->div;
-    new_param->dep_param = this->dep_param;
-    new_param->dep_iter = this->dep_iter;
-    new_param->tune = this->tune;
+        new_param->bounds.push_back(std::shared_ptr<TPExpr>(bound->dup()));
+    }    
+    for (auto d : this->divisors) {
+        new_param->divisors.push_back(std::shared_ptr<TPExpr>(d->dup()));
+    }    
+    for (auto m : this->multiples) {
+        new_param->multiples.push_back(std::shared_ptr<TPExpr>(m->dup()));
+    }    
+    new_param->tune = this->tune;    
     new_param->attr = this->attr; 
+    for (auto tag : this->tags) {
+        new_param->tags.insert(tag);
+    }
 
     return new_param;
 }
 
-TPConst *TPConst::dup() {
+__isl_give TPConst *TPConst::dup() {
     TPConst *new_const = new TPConst();
     new_const->type = this->type;
     new_const->val = this->val;
@@ -132,7 +148,7 @@ TPConst *TPConst::dup() {
 
 /* Replace the expression that matches "match" with replace.
  */
-TPExpr *TPExpr::replace(TPExpr *match, TPExpr *replace) {        
+__isl_give TPExpr *TPExpr::replace(__isl_keep TPExpr *match, __isl_keep TPExpr *replace) {
     if (this->to_str() == match->to_str()) {
         /* Matched */
         delete this;
@@ -238,7 +254,7 @@ std::string TPExpr::to_str() {
     }
 }
 
-TPExpr *TPExpr::infer_bound(
+__isl_give TPExpr *TPExpr::infer_bound(
     std::unordered_map<std::string, TPExpr *> lbs, 
     std::unordered_map<std::string, TPExpr *> ubs,
     std::unordered_set<std::string> ignore, int max)
@@ -335,24 +351,18 @@ static __isl_give isl_schedule_node *extract_tuning_program_from_schedule(
         for (int i = 0; i < n; i++) {            
             /* We assume the loop bounds are independent and 
              * all the loops start from zero for now. 
-             */
-            //TPParameter *lb = new TPParameter("p" + std::to_string(prog->params.size()));
-            //prog->params.push_back(lb);
-            //prog->param_map[lb->name] = lb;
-            //lb->tune = false;          
-            //lb->attr = "loop_lb";
+             */            
             TPParameter *ub = new TPParameter("p" + std::to_string(prog->params.size()));
             prog->params.push_back(ub);
             prog->param_map[ub->name] = ub;
             ub->tune = false;
             ub->attr = "loop_ub";
+            ub->tags.insert("external");
 
             TPIterator *iter = new TPIterator(
                 "c" + std::to_string(prog->iters.size()),                
                 new TPExpr("literal", new TPConst(0)),
-                new TPExpr("literal", new TPParameter(ub)));
-            //lb->dep_iter = iter;
-            ub->dep_iter = iter;                
+                new TPExpr("literal", new TPParameter(ub)));            
             // Assign the iterator to schedule dim                        
             node = isl_schedule_node_band_member_set_iter(node, i, (void *)iter);            
             prog->iters.push_back(iter);
@@ -382,8 +392,9 @@ __isl_give isl_schedule *TuningProgram::init_from_schedule(__isl_take isl_schedu
 }
 
 /* Update the band iters after tiling. The "node" points to the tile band. 
+ * Div indicates if the tiling factors should be a divisor of the tiled loop.
  */
-__isl_give isl_schedule_node *TuningProgram::tile(__isl_take isl_schedule_node *node, int div)
+__isl_give isl_schedule_node *TuningProgram::tile(__isl_take isl_schedule_node *node, int div, std::string step)
 {
     isl_schedule_node *tile_node = node;
     isl_schedule_node *point_node = isl_schedule_node_child(isl_schedule_node_copy(node), 0);
@@ -393,12 +404,14 @@ __isl_give isl_schedule_node *TuningProgram::tile(__isl_take isl_schedule_node *
         TPIterator *tile_iter = (TPIterator *)isl_schedule_node_band_member_get_iter(tile_node, i);
         TPParameter *point_ub = new TPParameter("p" + std::to_string(this->params.size()));
         point_ub->tune = true;
-        point_ub->div = div;
-        point_ub->bounds.push_back(new TPExpr("literal", new TPConst(1)));
+        //point_ub->div = div;
+        point_ub->bounds.push_back(std::make_shared<TPExpr>("literal", new TPConst(1)));
         TPParameter *tile_ub = (TPParameter *)(tile_iter->ub->ops[0]);
-        point_ub->bounds.push_back(new TPExpr("literal", new TPParameter(tile_ub)));
-        point_ub->dep_param = this->param_map[tile_ub->name];
-        point_ub->attr = "tile_factor";
+        point_ub->bounds.push_back(std::make_shared<TPExpr>("literal", new TPParameter(tile_ub)));        
+        if (div) {
+            point_ub->divisors.push_back(std::make_shared<TPExpr>("literal", new TPParameter(tile_ub)));
+        }
+        point_ub->attr = step + "_tiling_factor";
         this->params.push_back(point_ub);
         this->param_map[point_ub->name] = point_ub;
                 
@@ -416,8 +429,7 @@ __isl_give isl_schedule_node *TuningProgram::tile(__isl_take isl_schedule_node *
         if (isl_schedule_node_band_member_get_space_time(tile_node, i) == autosa_loop_space)
             point_iter->space_time = "space";
         else
-            point_iter->space_time = "time";
-        point_ub->dep_iter = point_iter;            
+            point_iter->space_time = "time";        
         point_node = isl_schedule_node_band_member_set_iter(point_node, i, (void *)point_iter);
         this->iters.push_back(point_iter);
 
@@ -434,19 +446,25 @@ __isl_give isl_schedule_node *TuningProgram::tile(__isl_take isl_schedule_node *
 /* Update the band iters after tiling. The "node" points to the tile band. 
  * Dim "pos" in the band is tiled. Point band contains a single loop.
  */
-__isl_give isl_schedule_node *TuningProgram::tile(__isl_take isl_schedule_node *node, int pos, int div)
+__isl_give isl_schedule_node *TuningProgram::tile(
+    __isl_take isl_schedule_node *node, int pos, int div, std::string step, std::unordered_set<std::string> tags)
 {
     isl_schedule_node *tile_node = node;
     isl_schedule_node *point_node = isl_schedule_node_child(isl_schedule_node_copy(node), 0);    
     TPIterator *tile_iter = (TPIterator *)isl_schedule_node_band_member_get_iter(tile_node, pos);
     TPParameter *point_ub = new TPParameter("p" + std::to_string(this->params.size()));
     point_ub->tune = true;
-    point_ub->div = div;
-    point_ub->bounds.push_back(new TPExpr("literal", new TPConst(1)));
+    //point_ub->div = div;
+    point_ub->bounds.push_back(std::make_shared<TPExpr>("literal", new TPConst(1)));
     TPParameter *tile_ub = (TPParameter *)(tile_iter->ub->ops[0]);
-    point_ub->bounds.push_back(new TPExpr("literal", new TPParameter(tile_ub)));
-    point_ub->dep_param = this->param_map[tile_ub->name];
-    point_ub->attr = "tile_factor";
+    point_ub->bounds.push_back(std::make_shared<TPExpr>("literal", new TPParameter(tile_ub)));    
+    point_ub->attr = step + "_tiling_factor";
+    for (auto tag : tags) {
+        point_ub->tags.insert(tag);
+    }
+
+    if (div) 
+        point_ub->divisors.push_back(std::make_shared<TPExpr>("literal", new TPParameter(tile_ub)));
     this->params.push_back(point_ub);
     this->param_map[point_ub->name] = point_ub;
             
@@ -460,8 +478,7 @@ __isl_give isl_schedule_node *TuningProgram::tile(__isl_take isl_schedule_node *
     TPIterator *point_iter = new TPIterator(
         "c" + std::to_string(this->iters.size()), 
         new TPExpr("literal", new TPConst(0)), 
-        new TPExpr("literal", new TPParameter(point_ub)));
-    point_ub->dep_iter = point_iter;
+        new TPExpr("literal", new TPParameter(point_ub)));    
     point_node = isl_schedule_node_band_member_set_iter(point_node, 0, (void *)point_iter);
     this->iters.push_back(point_iter);    
 
@@ -484,18 +501,20 @@ void TuningProgram::dump(std::string dir)
     for (int i = 0; i < this->params.size(); i++) {
         json j_param;
         TPParameter *param = this->params[i];
-        j_param["name"] = param->name;
-        j_param["divisable"] = param->div;
-        if (param->dep_param) {
-            j_param["dep_param"] = param->dep_param->name;
-        }
-        if (param->dep_iter) {
-            j_param["dep_iter"] = param->dep_iter->name;
+        j_param["name"] = param->name;        
+        for (auto d : param->divisors) {
+            j_param["divisors"].push_back(d->to_str());
+        }        
+        for (auto m : param->multiples) {
+            j_param["multiples"].push_back(m->to_str());
         }
         j_param["tunable"] = param->tune;
         j_param["attr"] = param->attr;    
         if (param->bounds.size() > 0)
-            j_param["bounds"] = {param->bounds[0]->to_str(), param->bounds[1]->to_str()};
+            j_param["bounds"] = {param->bounds[0]->to_str(), param->bounds[1]->to_str()};        
+        for (auto tag : param->tags) {
+            j_param["tags"].push_back(tag);
+        }
         j_params.push_back(j_param);
     }
     j["params"] = j_params;
@@ -681,6 +700,20 @@ std::shared_ptr<json> extract_loop_info(__isl_keep isl_ast_node *node, void *use
                 isl_ast_node *child = isl_ast_node_mark_get_node(node);
                 j_info = extract_loop_info(child, iter);
                 isl_ast_node_free(child);
+            } else if (!strcmp(isl_id_get_name(id), "tuning_array_tile")) {
+                /* Print the array information */
+                TPArrayTile *tile = (TPArrayTile *)isl_id_get_user(id);
+                j_info = std::make_shared<json>();
+                *j_info = {{"type", "array_tile"}, {"data_pack_factor", tile->data_pack_factor->name}};
+                std::string size = "";
+                int is_first = 1;
+                for (auto s : tile->sizes) {
+                    if (!is_first)
+                        size += "*";
+                    size += s->to_str();
+                    is_first = 0;
+                }
+                (*j_info)["size"] = size;
             } else {
                 std::string mark_content(isl_id_get_name(id));
                 j_info = std::make_shared<json>();
@@ -843,7 +876,7 @@ isl_stat extract_dim_expr(__isl_take isl_basic_map *bmap, void *user)
     return isl_stat_ok;
 }
 
-TPArrayRef *TuningProgram::build_array_ref(
+std::shared_ptr<TPArrayRef> TuningProgram::build_array_ref(
     std::string name, __isl_keep isl_map *ref, __isl_keep isl_schedule *schedule)
 {
     // Step 1: Build the mapping between the sched dims to the loop iterators
@@ -864,7 +897,7 @@ TPArrayRef *TuningProgram::build_array_ref(
     //   std::string name; // A
     //   std::vector<TPExpr *> index; // [i0, i2]
     // }
-    TPArrayRef *tp_ref = new TPArrayRef();
+    auto tp_ref = std::make_shared<TPArrayRef>();
     tp_ref->name = name;
     int dim = isl_map_dim(ref, isl_dim_out);
     for (int i = 0; i < dim; i++) {
@@ -900,7 +933,7 @@ void TuningProgram::update_tiled_arrays(TPIterator *tile_iter, TPIterator *point
     for (int i = 0; i < this->arrays.size(); i++) {
         TPArray *arr = this->arrays[i];
         for (int j = 0; j < arr->refs.size(); j++) {
-            TPArrayRef *ref = arr->refs[j];
+            TPArrayRef *ref = arr->refs[j].get();
             //std::cout << ref->to_str() << std::endl;
             for (int n = 0; n < ref->index.size(); n++) {
                 TPExpr *old_expr = new TPExpr("literal", new TPParameter(tile_iter->name));
@@ -917,7 +950,7 @@ void TuningProgram::update_tiled_arrays(TPIterator *tile_iter, TPIterator *point
     //exit(0);
 }
 
-std::vector<TPExpr *> TuningProgram::infer_tiled_array_bound_at_dim(int dim, std::vector<TPArrayRef *> refs, std::vector<TPIterator *> fixed_iters)
+std::vector<TPExpr *> TuningProgram::infer_tiled_array_bound_at_dim(int dim, std::vector<std::shared_ptr<TPArrayRef>> refs, std::vector<TPIterator *> fixed_iters)
 {
     TPExpr *lb = new TPExpr();
     TPExpr *ub = new TPExpr();
@@ -941,17 +974,14 @@ std::vector<TPExpr *> TuningProgram::infer_tiled_array_bound_at_dim(int dim, std
         //std::cout << index->to_str() << std::endl;
         TPExpr *local_lb = index->infer_bound(iter_lbs, iter_ubs, ignore_iters, 0);        
         TPExpr *local_ub = index->infer_bound(iter_lbs, iter_ubs, ignore_iters, 1);
-        lb->min(local_lb);
-        ub->max(local_ub);        
-        delete local_lb;
-        delete local_ub;
+        lb = lb->min(local_lb);
+        ub = ub->max(local_ub);
     }
     //std::cout << lb->to_str() << std::endl;
     //std::cout << ub->to_str() << std::endl;                            
     TPExpr *size = ub->subtract(lb->dup());
     //std::cout << lb->to_str() << std::endl;
-    //std::cout << size->to_str() << std::endl;                            
-    //exit(0);
+    //std::cout << size->to_str() << std::endl;
     std::vector<TPExpr *> ret = {lb, size};
 
     return ret;
@@ -960,7 +990,7 @@ std::vector<TPExpr *> TuningProgram::infer_tiled_array_bound_at_dim(int dim, std
 /* Given the fixed iters, infer the maximal bounds of the tiled array given the refs.
  * Construct a array tile object and return it.
  */
-TPArrayTile *TuningProgram::infer_tiled_array_bounds(TPArrayTile *tile, std::vector<TPArrayRef *> refs, std::vector<TPIterator *> fixed_iters)
+TPArrayTile *TuningProgram::infer_tiled_array_bounds(TPArrayTile *tile, std::vector<std::shared_ptr<TPArrayRef>> refs, std::vector<TPIterator *> fixed_iters)
 {    
     std::vector<TPExpr *> lbs;
     std::vector<TPExpr *> sizes;
@@ -975,4 +1005,14 @@ TPArrayTile *TuningProgram::infer_tiled_array_bounds(TPArrayTile *tile, std::vec
     tile->sizes = sizes;
 
     return tile;
+}
+
+void TuningProgram::extract_module_memory_info(std::string name, int double_buffer, TPArrayTile *tile, isl_ast_node *tree)
+{
+
+}
+
+void TuningProgram::extract_module_compute_info(std::string name, std::string arr_type, isl_ast_node *tree)
+{
+
 }

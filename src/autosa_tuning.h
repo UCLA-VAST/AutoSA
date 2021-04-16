@@ -60,10 +60,10 @@ class TPExpr {
         std::string func; // [floor, ceil, div, literal, mul, null, min, max, sub, add]
         std::vector<TPExpr *> ops;        
         
-        ~TPExpr() {
-            for (int i = 0; i < ops.size(); i++) {
+        virtual ~TPExpr() {            
+            for (int i = 0; i < ops.size(); i++) {                
                 delete ops[i];
-            }
+            }            
         }
 };
 
@@ -91,33 +91,39 @@ class TPParameter: public TPExpr {
         TPParameter() {}
         TPParameter(std::string n) {
             name = n;
-            type = "param";
-            div = -1;
-            dep_param = NULL;
-            dep_iter = NULL;
+            type = "param";        
             tune = false;
         }     
         TPParameter(TPParameter *p) {
             name = p->name;
-            type = p->type;
-            div = p->div;
-            dep_param = p->dep_param;
-            dep_iter = p->dep_iter;
-            tune = p->tune;            
+            type = p->type;            
+            tune = p->tune;
+            attr = p->attr;                        
         }     
         TPParameter *dup();
 
         std::string name;
         std::string type;        
-        std::vector<TPExpr *> bounds;
-        int div;
-        TPParameter *dep_param;  
-        TPIterator *dep_iter;
+        std::vector<std::shared_ptr<TPExpr>> bounds;        
         bool tune;
+        /* The parameter is divisors of the following exps. */
+        std::vector <std::shared_ptr<TPExpr>> divisors; 
+        /* The parameter is multiples of the following exps. */
+        std::vector <std::shared_ptr<TPExpr>> multiples;    
+        /* Other constraint tags for this parameters. 
+         * "power_of_two", this parameter should be a power of 2.
+         * "auto_infer", this parameter will be auto-inferred by other parameters.
+         * "external", this parameter will be provided externally.
+         */
+        std::unordered_set<std::string> tags;
         std::string attr;
-        ~TPParameter(){
-            for (int i = 0; i < bounds.size(); i++)
-                delete bounds[i];
+        virtual ~TPParameter(){
+            //for (int i = 0; i < bounds.size(); i++)
+            //    delete bounds[i];
+            //for (int i = 0; i > divisors.size(); i++)
+            //    delete divisors[i];
+            //for (int i = 0; i > multiples.size(); i++)
+            //    delete multiples[i];
         }
 };
 
@@ -158,10 +164,10 @@ class TPArray {
         TPArray(){}
         TPArray(std::string n) {name = n;}
         std::string name;
-        std::vector<TPArrayRef *> refs;
+        std::vector<std::shared_ptr<TPArrayRef>> refs;
         ~TPArray() {
-            for (auto ref : refs) 
-                delete ref;
+            //for (auto ref : refs) 
+            //    delete ref;
         }
 };
 
@@ -181,7 +187,6 @@ class TPArrayTile {
             for (auto size : sizes) {
                 delete size;
             }
-            delete data_pack_factor;
         }
 };
 
@@ -190,16 +195,19 @@ class TuningProgram {
         TuningProgram(){};
         /* Initialize the tuning program from an ISL schedule */
         __isl_give isl_schedule *init_from_schedule(__isl_take isl_schedule *schedule);
-        __isl_give isl_schedule_node *tile(__isl_take isl_schedule_node *node, int div);
-        __isl_give isl_schedule_node *tile(__isl_take isl_schedule_node *node, int pos, int div);
+        __isl_give isl_schedule_node *tile(__isl_take isl_schedule_node *node, int div, std::string step);
+        __isl_give isl_schedule_node *tile(
+            __isl_take isl_schedule_node *node, int pos, int div, std::string step, std::unordered_set<std::string> tags);
         void dump(std::string dir);
         __isl_give isl_schedule *generate_tuning_schedule(__isl_take isl_schedule *schedule);
         __isl_give isl_schedule *generate_io_tuning_schedule(__isl_take isl_schedule *schedule, int io_level);
-        void extract_module_loop_info(std::string name, std::vector<isl_ast_node *> &tree);        
-        TPArrayRef *build_array_ref(std::string name, __isl_keep isl_map *ref, __isl_keep isl_schedule *);
+        void extract_module_loop_info(std::string name, std::vector<isl_ast_node *> &tree);
+        void extract_module_memory_info(std::string name, int double_buffer, TPArrayTile *tile, isl_ast_node *tree);
+        void extract_module_compute_info(std::string name, std::string arr_type, isl_ast_node *tree);
+        std::shared_ptr<TPArrayRef> build_array_ref(std::string name, __isl_keep isl_map *ref, __isl_keep isl_schedule *);
         void update_tiled_arrays(TPIterator *tile_iter, TPIterator *point_iter, TPParameter *tile_factor);
-        TPArrayTile *infer_tiled_array_bounds(TPArrayTile *tile, std::vector<TPArrayRef *> refs, std::vector<TPIterator *> fixed_iters);
-        std::vector<TPExpr *> infer_tiled_array_bound_at_dim(int dim, std::vector<TPArrayRef *> refs, std::vector<TPIterator *> fixed_iters);
+        TPArrayTile *infer_tiled_array_bounds(TPArrayTile *tile, std::vector<std::shared_ptr<TPArrayRef>> refs, std::vector<TPIterator *> fixed_iters);
+        std::vector<TPExpr *> infer_tiled_array_bound_at_dim(int dim, std::vector<std::shared_ptr<TPArrayRef>> refs, std::vector<TPIterator *> fixed_iters);
         TPExpr *infer_array_index_lb(TPExpr *, std::vector<TPIterator *> fixed_iters);
         TPExpr *infer_array_index_ub(TPExpr *, std::vector<TPIterator *> fixed_iters);
 
@@ -211,6 +219,7 @@ class TuningProgram {
         // Unique id to the tuning program
         int id;
         std::unordered_map<std::string, std::shared_ptr<json>> module_loop_info;        
+        std::unordered_map<std::string, std::shared_ptr<json>> module_resource_info;
 
         ~TuningProgram() {                        
             for (int i = 0; i < iters.size(); i++)
