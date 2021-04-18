@@ -583,6 +583,7 @@ struct autosa_array_ref_group
   /* Tuning array refs */
   std::vector<std::shared_ptr<TPArrayRef>> tuning_refs;
   TPArrayTile *tuning_pe_tile;
+  TPArrayTile *tuning_local_tile;
   /* AutoSA Extended */
 };
 
@@ -868,19 +869,27 @@ struct autosa_hw_module
   isl_pw_qpolynomial **fifo_bounds_intra;  
 
   /* Tuning purpose */
+  /* Latency */
   isl_schedule *tuning_sched;
   isl_schedule *tuning_outer_sched;
   isl_schedule *tuning_inter_sched;
-  isl_schedule *tuning_intra_sched;
-  //isl_schedule *tuning_boundary_outer_sched;
-  //isl_schedule *tuning_boundary_inter_sched;
+  isl_schedule *tuning_intra_sched;  
 
   isl_ast_node *tuning_tree;
   isl_ast_node *tuning_device_tree;  
   isl_ast_node *tuning_intra_tree;
-  isl_ast_node *tuning_inter_tree;
-  //isl_ast_node *tuning_boundary_outer_tree;
-  //isl_ast_node *tuning_boundary_inter_tree;
+  isl_ast_node *tuning_inter_tree;  
+  
+  /* Counting module numbers */
+  isl_schedule *tuning_num_sched;
+  isl_schedule *tuning_num_outer_sched;
+  isl_schedule *tuning_num_inter_sched;
+  isl_schedule *tuning_num_intra_sched;  
+
+  isl_ast_node *tuning_num_tree;
+  isl_ast_node *tuning_num_device_tree;  
+  isl_ast_node *tuning_num_intra_tree;
+  isl_ast_node *tuning_num_inter_tree;
 };
 
 struct autosa_gen

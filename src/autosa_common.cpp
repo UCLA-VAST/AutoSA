@@ -945,6 +945,7 @@ struct autosa_array_ref_group *autosa_array_ref_group_free(
     autosa_array_ref_group_free(group->attached_drain_group);
   group->tuning_refs.clear();
   delete group->tuning_pe_tile;
+  delete group->tuning_local_tile;
   //free(group);
   delete group;
 
@@ -990,6 +991,7 @@ struct autosa_array_ref_group *autosa_array_ref_group_init(
   group->copy_schedule = NULL;
   group->attached_drain_group = NULL;
   group->tuning_pe_tile = NULL;
+  group->tuning_local_tile = NULL;
 
   return group;
 }
@@ -1617,6 +1619,15 @@ struct autosa_hw_module *autosa_hw_module_alloc(struct autosa_gen *gen)
   module->tuning_intra_tree = NULL;
   module->tuning_inter_tree = NULL;
 
+  module->tuning_num_sched = NULL;
+  module->tuning_num_outer_sched = NULL;
+  module->tuning_num_inter_sched = NULL;
+  module->tuning_num_intra_sched = NULL;
+  module->tuning_num_tree = NULL;
+  module->tuning_num_device_tree = NULL;
+  module->tuning_num_intra_tree = NULL;
+  module->tuning_num_inter_tree = NULL;  
+
   return module;
 }
 
@@ -1691,6 +1702,11 @@ void *autosa_hw_module_free(struct autosa_hw_module *module)
   isl_ast_node_free(module->tuning_device_tree);
   isl_ast_node_free(module->tuning_inter_tree);
   isl_ast_node_free(module->tuning_intra_tree);
+
+  isl_ast_node_free(module->tuning_num_tree);
+  isl_ast_node_free(module->tuning_num_device_tree);
+  isl_ast_node_free(module->tuning_num_inter_tree);
+  isl_ast_node_free(module->tuning_num_intra_tree);
 
   free(module);
 
@@ -2851,11 +2867,20 @@ isl_stat sa_extract_array_info(struct autosa_kernel *kernel)
 isl_stat TP_extract_loop_info(struct autosa_gen *gen, struct autosa_hw_module *module) {
   std::vector<isl_ast_node *> asts;  
   if (module->is_filter && module->is_buffer) {
+    //if (module->in) {
+    //  std::cout << module->name << std::endl;
+    //  DBGASTNODE(stdout, module->tuning_device_tree, gen->ctx);
+    ////  DBGASTNODE(stdout, module->device_tree, gen->ctx);
+    //}
      asts.push_back(module->tuning_device_tree);
      asts.push_back(module->tuning_intra_tree);
      asts.push_back(module->tuning_inter_tree);              
   } else {
     /* Default module */
+    //if (!module->in) {
+    //  std::cout << module->name << std::endl;
+    //  DBGASTNODE(stdout, module->tuning_device_tree, gen->ctx);
+    //}
     asts.push_back(module->tuning_device_tree);        
   }
   gen->kernel->tuning_program->extract_module_loop_info(      
@@ -2869,24 +2894,45 @@ isl_stat TP_extract_loop_info(struct autosa_gen *gen, struct autosa_hw_module *m
  */
 isl_stat TP_extract_resource_info(struct autosa_gen *gen, struct autosa_hw_module *module) {
   /* BRAM */
-  if (module->type == IO_MODULE && module->is_buffer) {
+  //std::cout << module->name << ": " << module->is_buffer << std::endl;
+  if ((module->type == IO_MODULE || module->type == DRAIN_MODULE) && module->is_buffer) {    
     int double_buffer = module->double_buffer;
     struct autosa_array_ref_group *group = module->io_groups[0];
     for (int i = 0; i < group->n_io_buffer; i++) {
-      if (group->io_buffers[i]->tuning_tile) {
-        gen->kernel->tuning_program->extract_module_memory_info(
-            std::string(module->name), double_buffer, group->io_buffers[i]->tuning_tile, module->tuning_device_tree); // TODO
+      if (group->io_buffers[i]->tuning_tile) {    
+        std::vector<isl_ast_node *> asts;
+        if (module->is_filter) {
+          asts.push_back(module->tuning_num_device_tree);
+          asts.push_back(module->tuning_num_inter_tree);
+          gen->kernel->tuning_program->extract_module_memory_info(
+              std::string(module->name), double_buffer, group->io_buffers[i]->tuning_tile, asts);
+        } else {
+          asts.push_back(module->tuning_num_device_tree);
+          gen->kernel->tuning_program->extract_module_memory_info(
+              std::string(module->name), double_buffer, group->io_buffers[i]->tuning_tile, asts);
+        }
+      }
+    }    
+  } else if (module->type == PE_MODULE) {
+    for (int i = 0; i < gen->kernel->n_array; i++) {
+      struct autosa_local_array_info *array = &(gen->kernel->array[i]);
+      for (int j = 0; j < array->n_pe_group; j++) {
+        struct autosa_array_ref_group *group = array->pe_groups[j];
+        if (group->tuning_local_tile) {
+          std::vector<isl_ast_node *> asts;
+          asts.push_back(module->tuning_num_device_tree);
+          gen->kernel->tuning_program->extract_module_memory_info(
+              std::string(module->name), 0, group->tuning_local_tile, asts);
+        }
       }
     }
-  } else if (module->type == PE_MODULE) {
-    // TODO
   }
 
   /* DSP */
   if (module->type == PE_MODULE) {
     std::string ele_type = std::string(module->io_groups[0]->array->type);
     gen->kernel->tuning_program->extract_module_compute_info(
-        std::string(module->name), ele_type, module->tuning_device_tree);
+        std::string(module->name), ele_type, module->tuning_num_device_tree);
   }
 
   return isl_stat_ok;
@@ -2959,7 +3005,7 @@ TPArrayTile *TP_infer_tiled_array(
 
   // Infer the tile bounds
   TPArrayTile *array_tile = new TPArrayTile();
-  array_tile = kernel->tuning_program->infer_tiled_array_bounds(array_tile, group_refs, fixed_iters);
+  array_tile = kernel->tuning_program->infer_tiled_array_bounds(array_tile, group_refs, fixed_iters);  
   array_tile->name = std::string(group->array->name);
   array_tile->type = std::string(group->array->type);
   array_tile->ele_size = group->array->size;

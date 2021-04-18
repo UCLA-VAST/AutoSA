@@ -36,6 +36,12 @@ __isl_give TPExpr *TPExpr::mul(__isl_take TPExpr *expr) {
     if (this->func == "NULL") {
         delete this;
         return expr;
+    } else if (this->to_str() == "1") {
+        delete this;
+        return expr;
+    } else if (expr->to_str() == "1") {
+        delete expr;
+        return this;
     } else {
         TPExpr *new_expr = new TPExpr("mul", this, expr);
         return new_expr;    
@@ -151,6 +157,109 @@ __isl_give TPConst *TPConst::dup() {
     return new_const; 
 }
 
+bool propagate_cst(TPExpr *expr, int cst) {
+    bool status = false;
+    if (expr->func == "add" || expr->func == "sub") {
+        if (expr->ops[1]->func == "add" || expr->ops[1]->func == "sub") {
+            status = propagate_cst(expr->ops[1], cst);
+        } else if (expr->ops[1]->func == "literal" && dynamic_cast<TPConst *>(expr->ops[1]->ops[0])) {
+            int new_cst;
+            if (expr->func == "sub") 
+                new_cst = dynamic_cast<TPConst *>(expr->ops[1]->ops[0])->val - cst;
+            else
+                new_cst = dynamic_cast<TPConst *>(expr->ops[1]->ops[0])->val + cst;
+            delete expr->ops[1]->ops[0];
+            expr->ops[1]->ops[0] = new TPConst(new_cst);
+            status = true;
+        }
+    }
+    return status;
+}
+
+__isl_give TPExpr *const_propagation(__isl_take TPExpr *expr) {
+    TPExpr *ret_expr = expr;
+    if (ret_expr->func == "add" || ret_expr->func == "sub") {
+        /* Check if const propogation is possible */
+        if (ret_expr->ops[1]->func == "literal" && dynamic_cast<TPConst *>(ret_expr->ops[1]->ops[0])) {            
+            bool status = propagate_cst(ret_expr->ops[0], dynamic_cast<TPConst *>(ret_expr->ops[1]->ops[0])->val);
+            if (status) {                
+                TPExpr *new_expr = ret_expr->ops[0]->dup();                
+                delete ret_expr;
+                ret_expr = new_expr;
+            }
+        }
+        /* Check if there is any zero in the operands. */
+        if (ret_expr->ops[1]->func == "literal" && dynamic_cast<TPConst *>(ret_expr->ops[1]->ops[0])) {
+            if (dynamic_cast<TPConst *>(ret_expr->ops[1]->ops[0])->val == 0) {
+                TPExpr *new_expr = ret_expr->ops[0]->dup();
+                delete ret_expr;
+                ret_expr = new_expr;
+            }
+        }        
+    }
+    for (int i = 0; i < ret_expr->ops.size(); i++) {
+        ret_expr->ops[i] = ret_expr->ops[i]->simplify();
+    }
+    return ret_expr;
+}
+
+__isl_give TPExpr *combine_like_terms(__isl_take TPExpr *expr) {
+    TPExpr *ret_expr = expr;
+
+    if (ret_expr->func == "add" || ret_expr->func == "sub") {
+        /* Try unite like terms */
+        //if (ret_expr->ops[0]->func == "mul") {
+        //    std::cout << "f1: " << ret_expr->ops[0]->ops[1]->to_str() << std::endl;
+        //    std::cout << "f2: " << ret_expr->ops[1]->to_str() << std::endl;
+        //}
+        if (ret_expr->ops[0]->func == "mul" && 
+            (ret_expr->ops[0]->ops[1]->to_str() == ret_expr->ops[1]->to_str())) {
+            TPExpr *left = ret_expr->ops[0]->ops[0]->dup();
+            TPExpr *right = ret_expr->ops[0]->ops[1]->dup();
+            if (ret_expr->func == "add") {
+                left = left->add(new TPExpr("literal", new TPConst(1)));
+            } else {
+                left = left->subtract(new TPExpr("literal", new TPConst(1)));
+            }
+            TPExpr *new_expr = new TPExpr("mul", left, right);
+            delete ret_expr;
+            ret_expr = new_expr;
+        }
+    }
+
+    ret_expr = const_propagation(ret_expr);
+
+    return ret_expr;
+}
+
+__isl_give TPExpr *simplify_chain_ops(__isl_take TPExpr *expr) {
+    TPExpr *ret_expr = expr;
+
+    if (ret_expr->func == "mul") {
+        if (ret_expr->ops[0]->func == "div" &&
+            (ret_expr->ops[0]->ops[1]->to_str() == ret_expr->ops[1]->to_str())) {
+            TPExpr *new_expr = ret_expr->ops[0]->ops[0]->dup();
+            delete ret_expr;
+            ret_expr = new_expr;
+        }
+    }
+
+    return ret_expr;
+}
+
+/* Simplify the expression. */
+__isl_give TPExpr *TPExpr::simplify() {
+    TPExpr *ret_expr = this;
+    /* Const propagation */
+    ret_expr = const_propagation(ret_expr);
+    /* Combine like terms */
+    ret_expr = combine_like_terms(ret_expr); 
+    /* Simplify chain ops */
+    ret_expr = simplify_chain_ops(ret_expr);
+
+    return ret_expr;
+}
+
 /* Replace the expression that matches "match" with replace.
  */
 __isl_give TPExpr *TPExpr::replace(__isl_keep TPExpr *match, __isl_keep TPExpr *replace) {
@@ -252,11 +361,15 @@ std::string TPExpr::to_str() {
         return ret;
     } else if (this->func == "NULL") {
         return "";
-    }
-    else {
+    } else {
         std::cout << "[AutoSA] Error: unsupported TPExpr function type: " << this->func << std::endl;
         exit(1);
     }
+    return "";
+}
+
+std::string TPParameter::to_str() {
+    return this->name;
 }
 
 __isl_give TPExpr *TPExpr::infer_bound(
@@ -272,7 +385,7 @@ __isl_give TPExpr *TPExpr::infer_bound(
                 return new TPExpr("literal", new TPConst(0));
             } else if (lbs.find(param->name) != lbs.end() || ubs.find(param->name) != ubs.end()){
                 if (max == 1) {
-                    return ubs[param->name]->dup();
+                    return (ubs[param->name]->dup())->subtract(new TPExpr("literal", new TPConst(1)));
                 } else {                    
                     return lbs[param->name]->dup();
                 }
@@ -332,6 +445,7 @@ __isl_give TPExpr *TPExpr::infer_bound(
         std::cout << "[AutoSA] Error: unsupported TPExpr function type: " << this->func << std::endl;
         exit(1);
     }
+    return NULL;
 }
 
 std::string TPArrayRef::to_str() {
@@ -661,7 +775,7 @@ std::shared_ptr<json> extract_loop_info(__isl_keep isl_ast_node *node, void *use
             data->after_for = 1;            
             isl_ast_node *child;
             child = isl_ast_node_for_get_body(node);
-            std::shared_ptr<json> j_child = extract_loop_info(child, NULL);
+            std::shared_ptr<json> j_child = extract_loop_info(child, user);
             isl_ast_node_free(child);
             j_info = j_child;            
 
@@ -669,6 +783,7 @@ std::shared_ptr<json> extract_loop_info(__isl_keep isl_ast_node *node, void *use
         }
         case isl_ast_node_block:
         {
+            data->after_for = 0;
             /* Extract the block information and insert it into the loop struc. */
             j_info = std::make_shared<json>();
             *j_info = {{"type", "block"}, {"child", {}}};
@@ -676,65 +791,71 @@ std::shared_ptr<json> extract_loop_info(__isl_keep isl_ast_node *node, void *use
             int n_child = isl_ast_node_list_n_ast_node(child_list);
             for (int i = 0; i < n_child; i++) {
                 isl_ast_node *child = isl_ast_node_list_get_ast_node(child_list, i);
-                std::shared_ptr<json> j_child = extract_loop_info(child, NULL);
+                std::shared_ptr<json> j_child = extract_loop_info(child, user);
                 isl_ast_node_free(child);
                 (*j_info)["child"].push_back(*j_child);
             }
-            isl_ast_node_list_free(child_list);
-
-            data->after_for = 0;
+            isl_ast_node_list_free(child_list);            
             break;
         }
         case isl_ast_node_user:
         {
+            data->after_for = 0;
             /* Print nothing. */
             j_info = std::make_shared<json>();
             std::shared_ptr<json> j_user = extract_isl_ast_node_user(node);
-            *j_info = {{"type", "user"}, {"child", *j_user}};
-
-            data->after_for = 0;
+            *j_info = {{"type", "user"}, {"child", *j_user}};            
             break;
         }
         case isl_ast_node_if: 
         {
+            data->after_for = 0;
             j_info = std::make_shared<json>();
             *j_info = {{"type", "if"}, {"child", {}}};
             isl_ast_node *then_child, *else_child;
             then_child = isl_ast_node_if_get_then_node(node);
-            std::shared_ptr<json> j_then = extract_loop_info(then_child, NULL);
+            std::shared_ptr<json> j_then = extract_loop_info(then_child, user);
             isl_ast_node_free(then_child);
             (*j_info)["child"].push_back(*j_then);
 
             else_child = isl_ast_node_if_get_else_node(node);
             if (else_child) {
-                std::shared_ptr<json> j_else = extract_loop_info(else_child, NULL);
+                std::shared_ptr<json> j_else = extract_loop_info(else_child, user);
                 isl_ast_node_free(else_child);
                 (*j_info)["child"].push_back(*j_else);
             }            
-
-            data->after_for = 0;
             break;
         }
         case isl_ast_node_mark: 
         {            
             isl_id *id = isl_ast_node_mark_get_id(node);                        
             TPIterator *iter = NULL;
-            if (!strcmp(isl_id_get_name(id), "iter_info") && data->after_for == 1) {
-                /* For loop */                
-                isl_ast_node *child = isl_ast_node_mark_get_node(node);
-                std::shared_ptr<json> j_child = extract_loop_info(child, iter);
-                isl_ast_node_free(child);
-                iter = (TPIterator *)isl_id_get_user(id);
-                if (iter) {
-                    j_info = std::make_shared<json>();
-                    *j_info = {{"type", "for"}, {"iterator", iter->name}};
-                    (*j_info)["bounds"].push_back(iter->lb->to_str());                
-                    (*j_info)["bounds"].push_back(iter->ub->to_str());
-                    (*j_info)["child"] = *j_child;
+            if (!strcmp(isl_id_get_name(id), "iter_info")) {
+                if (data->after_for == 1) {
+                    /* For loop */                
+                    isl_ast_node *child = isl_ast_node_mark_get_node(node);
+                    data->after_for = 0;
+                    std::shared_ptr<json> j_child = extract_loop_info(child, user);
+                    isl_ast_node_free(child);
+                    iter = (TPIterator *)isl_id_get_user(id);
+                    if (iter) {
+                        j_info = std::make_shared<json>();
+                        *j_info = {{"type", "for"}, {"iterator", iter->name}};
+                        (*j_info)["bounds"].push_back(iter->lb->to_str());                
+                        (*j_info)["bounds"].push_back(iter->ub->to_str());
+                        (*j_info)["child"] = *j_child;
+                    } else {
+                        j_info = j_child;
+                    }  
                 } else {
+                    /* Skip this one */
+                    isl_ast_node *child = isl_ast_node_mark_get_node(node);
+                    std::shared_ptr<json> j_child = extract_loop_info(child, user);
+                    isl_ast_node_free(child);
                     j_info = j_child;
-                }                                
+                }                             
             } else if (!strcmp(isl_id_get_name(id), "tuning_array_tile")) {
+                data->after_for = 0;
                 /* Print the array information */
                 TPArrayTile *tile = (TPArrayTile *)isl_id_get_user(id);
                 j_info = std::make_shared<json>();
@@ -753,12 +874,12 @@ std::shared_ptr<json> extract_loop_info(__isl_keep isl_ast_node *node, void *use
                 j_info = std::make_shared<json>();
                 *j_info = {{"type", "mark"}, {"content", mark_content}};
                 isl_ast_node *child = isl_ast_node_mark_get_node(node);
-                std::shared_ptr<json> j_child = extract_loop_info(child, iter);
+                data->after_for = 0;
+                std::shared_ptr<json> j_child = extract_loop_info(child, user);
                 isl_ast_node_free(child);                
                 (*j_info)["child"] = *j_child;
             }
-            isl_id_free(id);            
-            data->after_for = 0;
+            isl_id_free(id);                        
 
             break;
         }
@@ -991,7 +1112,8 @@ std::vector<TPExpr *> TuningProgram::infer_tiled_array_bound_at_dim(int dim, std
         lb = lb->min(local_lb);
         ub = ub->max(local_ub);
     }    
-    TPExpr *size = ub->subtract(lb->dup());    
+    TPExpr *size = (ub->subtract(lb->dup()))->add(new TPExpr("literal", new TPConst(1)));    
+    size = size->simplify();
     std::vector<TPExpr *> ret = {lb, size};
 
     return ret;
@@ -1002,6 +1124,10 @@ std::vector<TPExpr *> TuningProgram::infer_tiled_array_bound_at_dim(int dim, std
  */
 TPArrayTile *TuningProgram::infer_tiled_array_bounds(TPArrayTile *tile, std::vector<std::shared_ptr<TPArrayRef>> refs, std::vector<TPIterator *> fixed_iters)
 {    
+    //std::cout << "---------------" << std::endl;
+    //for (auto ref : refs) {
+    //    std::cout << ref->to_str() << std::endl;
+    //}
     std::vector<TPExpr *> lbs;
     std::vector<TPExpr *> sizes;
     int dim = refs[0]->index.size();
@@ -1010,6 +1136,10 @@ TPArrayTile *TuningProgram::infer_tiled_array_bounds(TPArrayTile *tile, std::vec
         lbs.push_back(ret[0]);
         sizes.push_back(ret[1]);        
     }
+    //for (auto size : sizes) {
+    //    std::cout << size->to_str() << std::endl;
+    //}    
+    //std::cout << "---------------" << std::endl;
 
     tile->lbs = lbs;
     tile->sizes = sizes;
@@ -1058,7 +1188,7 @@ isl_bool mul_space_dim(__isl_keep isl_ast_node *node, void *user) {
 
 std::shared_ptr<TPExpr> TuningProgram::extract_module_num(isl_ast_node *tree)
 {
-    TPExpr *num = new TPExpr();
+    TPExpr *num = new TPExpr("literal", new TPConst(1));
     struct mul_space_dim_data data;
     data.num = num;    
     data.after_for = 0;
@@ -1066,7 +1196,8 @@ std::shared_ptr<TPExpr> TuningProgram::extract_module_num(isl_ast_node *tree)
     return std::shared_ptr<TPExpr>(data.num);
 }
 
-void TuningProgram::extract_module_memory_info(std::string name, int double_buffer, TPArrayTile *tile, isl_ast_node *tree)
+void TuningProgram::extract_module_memory_info(std::string name, int double_buffer, TPArrayTile *tile, 
+    std::vector<isl_ast_node *> &asts)
 {
     auto j_memory = std::make_shared<json>();
     // Extract number of modules, double buffer, ele_type, ele_size, buffer_size, data_pack_factor
@@ -1075,8 +1206,14 @@ void TuningProgram::extract_module_memory_info(std::string name, int double_buff
     (*j_memory)["ele_type"] = tile->type;
     (*j_memory)["ele_size"] = tile->ele_size;    
     (*j_memory)["buf_size"] = tile->compute_size()->to_str();
-    (*j_memory)["data_pack_factor"] = tile->data_pack_factor->to_str();
-    (*j_memory)["num"] = (this->extract_module_num(tree))->to_str();
+    if (tile->data_pack_factor)
+        (*j_memory)["data_pack_factor"] = tile->data_pack_factor->to_str();
+    TPExpr *num = new TPExpr("literal", new TPConst(1));
+    for (isl_ast_node *ast : asts) {
+        num = num->mul(this->extract_module_num(ast).get()->dup());
+    }
+    (*j_memory)["num"] = num->to_str();
+    delete num;
     this->module_memory_info[name] = j_memory;
 }
 

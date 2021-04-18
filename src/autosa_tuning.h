@@ -53,6 +53,7 @@ class TPExpr {
             std::unordered_map<std::string, TPExpr *> lbs, 
             std::unordered_map<std::string, TPExpr *> ubs,
             std::unordered_set<std::string> ignore, int max);
+        TPExpr *simplify();
         TPExpr *replace(TPExpr *match, TPExpr *replace);
         TPExpr *dup();
         virtual std::string to_str();
@@ -102,6 +103,7 @@ class TPParameter: public TPExpr {
             attr = p->attr;                        
         }     
         TPParameter *dup();
+        std::string to_str();
 
         std::string name;
         std::string type;        
@@ -205,7 +207,7 @@ class TuningProgram {
         __isl_give isl_schedule *generate_io_tuning_schedule(__isl_take isl_schedule *schedule, int io_level);
         void extract_module_loop_info(std::string name, std::vector<isl_ast_node *> &tree);
         std::shared_ptr<TPExpr> extract_module_num(isl_ast_node *tree);
-        void extract_module_memory_info(std::string name, int double_buffer, TPArrayTile *tile, isl_ast_node *tree);
+        void extract_module_memory_info(std::string name, int double_buffer, TPArrayTile *tile, std::vector<isl_ast_node *> &tree);
         void extract_module_compute_info(std::string name, std::string arr_type, isl_ast_node *tree);
         std::shared_ptr<TPArrayRef> build_array_ref(std::string name, __isl_keep isl_map *ref, __isl_keep isl_schedule *);
         void update_tiled_arrays(TPIterator *tile_iter, TPIterator *point_iter, TPParameter *tile_factor);

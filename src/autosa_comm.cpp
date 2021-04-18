@@ -727,7 +727,11 @@ static isl_stat compute_group_bounds_core_pe(struct autosa_kernel *kernel,
                                                                                 isl_union_pw_multi_aff_copy(kernel->contraction));
     } else {
       /* Map the domain to the outer scheduling dimensions */
-      acc = local_access_pe(group, access, data);
+      acc = local_access_pe(group, access, data);  
+      node = isl_schedule_get_root(kernel->schedule);
+      node = autosa_tree_move_down_to_pe(node, kernel->core);
+      group->tuning_local_tile = TP_infer_tiled_array(data->gen, kernel, node, group, 1, 1);
+      isl_schedule_node_free(node);
     }
     if (contract_data.prefix) 
       isl_union_map_free(contract_data.prefix);
@@ -3263,6 +3267,7 @@ static isl_stat compute_io_group_data_pack(struct autosa_kernel *kernel,
       struct autosa_io_buffer *buf = group->io_buffers[i];
       if (buf->tuning_tile && buf->tuning_tile->data_pack_factor == NULL) {        
         class TPParameter *dp = new TPParameter("p" + std::to_string(kernel->tuning_program->params.size()));
+        //std::cout << "dp_factor: " << dp->to_str() << std::endl;
         dp->tune = false;
         dp->attr = "data_pack_factor";
         dp->tags.insert("auto_infer");
@@ -3286,7 +3291,8 @@ static isl_stat compute_io_group_data_pack(struct autosa_kernel *kernel,
         dp->bounds.push_back(std::shared_ptr<TPExpr>(buf->tuning_tile->sizes[buf->tuning_tile->sizes.size() - 1]->dup()));
         dp->divisors.push_back(std::shared_ptr<TPExpr>(buf->tuning_tile->sizes[buf->tuning_tile->sizes.size() - 1]->dup()));
         assert(dp->bounds.size() == 2);    
-        buf->tuning_tile->data_pack_factor = dp;
+        buf->tuning_tile->data_pack_factor = dp;        
+        //std::cout << "dp_factor: " << dp->to_str() << std::endl;
         kernel->tuning_program->params.push_back(dp);
         kernel->tuning_program->param_map[dp->name] = dp;
         break;
