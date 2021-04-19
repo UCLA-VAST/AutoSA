@@ -2426,12 +2426,40 @@ OUTER_INSERT_STMT:
   }
   isl_union_set_free(group_core);
 
-  /* Add the inter_trans and intra_trans function calls. */
+  /* Add the inter_trans and intra_trans function calls. */  
   stmt_name1 = boundary == 0 ? "io_module.inter_trans.0" : "io_module.inter_trans.1";
   stmt_name2 = "io_module.intra_trans";
-  stmt_name3 = boundary == 0 ? "io_module.inter_intra.0" : "io_module.inter_intra.1";
-  stmt_name4 = boundary == 0 ? "io_module.intra_inter.0" : "io_module.intra_inter.1";
+  isl_printer *p_str = isl_printer_to_str(ctx);
+  if (boundary == 0)
+    p_str = isl_printer_print_str(p_str, "io_module.inter_intra.0.");
+  else
+    p_str = isl_printer_print_str(p_str, "io_module.inter_intra.1.");
+  if (module->double_buffer)
+    p_str = isl_printer_print_int(p_str, 1);
+  else
+    p_str = isl_printer_print_int(p_str, 0);
+  stmt_name3 = isl_printer_get_str(p_str);
+  isl_printer_free(p_str);
+
+  p_str = isl_printer_to_str(ctx);
+  if (boundary == 0)
+    p_str = isl_printer_print_str(p_str, "io_module.intra_inter.0.");
+  else
+    p_str = isl_printer_print_str(p_str, "io_module.intra_inter.1.");
+  if (module->double_buffer)
+    p_str = isl_printer_print_int(p_str, 1);
+  else
+    p_str = isl_printer_print_int(p_str, 0);
+  stmt_name4 = isl_printer_get_str(p_str);
+  isl_printer_free(p_str);
+  
   stmt_name5 = "io_module.state_handle";
+  
+  //stmt_name1 = boundary == 0 ? "io_module.inter_trans.0" : "io_module.inter_trans.1";
+  //stmt_name2 = "io_module.intra_trans";
+  //stmt_name3 = boundary == 0 ? "io_module.inter_intra.0" : "io_module.inter_intra.1";
+  //stmt_name4 = boundary == 0 ? "io_module.intra_inter.0" : "io_module.intra_inter.1";
+  //stmt_name5 = "io_module.state_handle";
   
   node = isl_schedule_node_cut(node);
 

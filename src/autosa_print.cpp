@@ -7285,10 +7285,17 @@ __isl_give isl_printer *print_module_serialize_body(
 
       if (hls->target == XILINX_HW) {
         if (data_pack_out == 1) {
+          /* union {unsigned int ui; [type] ut;} u; */
+          p = isl_printer_start_line(p);
+          p = isl_printer_print_str(p, "union {unsigned int ui; ");
+          p = isl_printer_print_str(p, module->io_groups[0]->array->type);
+          p = isl_printer_print_str(p, " ut;} u;");        
+          p = isl_printer_end_line(p);
+
           p = print_str_new_line(p, "u.ut = fifo_data;");
 
           p = isl_printer_start_line(p);
-          p = isl_printer_print_str(p, "mem_data_split[n] = ap_uint<");
+          p = isl_printer_print_str(p, "mem_data_split[p] = ap_uint<");
           p = isl_printer_print_int(p, module->io_groups[0]->array->size * 8);
           p = isl_printer_print_str(p, ">(u.ui);");
           p = isl_printer_end_line(p);

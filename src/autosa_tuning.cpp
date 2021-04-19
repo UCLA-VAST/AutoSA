@@ -661,6 +661,10 @@ void TuningProgram::dump(std::string dir)
         j["compute"][x.first] = *x.second;
     }
 
+    for (auto x: this->module_attr) {
+        j["attr"][x.first] = *x.second;
+    }
+
     std::ofstream o(dir + "/kernel" + std::to_string(this->id) + ".json");
     o << std::setw(4) << j << std::endl;
     o.close();
@@ -923,6 +927,18 @@ void TuningProgram::extract_module_loop_info(std::string name, std::vector<isl_a
         j_loop3 = extract_loop_info(ast[2], &data);
         this->module_loop_info[name + "_inter"] = j_loop3;
     }
+
+    return;
+}
+
+void TuningProgram::extract_module_attr(std::string name, int double_buffer, int in, int io) {
+    std::shared_ptr<json> j = std::make_shared<json>();
+    //(*j)["name"] = name;
+    (*j)["double_buffer"] = double_buffer;
+    (*j)["in"] = in;
+    (*j)["io"] = io;
+
+    this->module_attr[name] = j;
 
     return;
 }

@@ -213,9 +213,9 @@ ISL_ARG_BOOL(struct ppcg_options, reschedule, 0, "reschedule", 1,
 ISL_ARG_USER_OPT_CHOICE(struct ppcg_options, target, 0, "target", target,
 						&set_target, PPCG_TARGET_CUDA, PPCG_TARGET_CUDA,
 						"the target to generate code for")
-//ISL_ARG_BOOL(struct ppcg_options, linearize_device_arrays, 0,
-//			 "linearize-device-arrays", 1,
-//			 "linearize all device arrays, even those of fixed size")
+ISL_ARG_BOOL(struct ppcg_options, linearize_device_arrays, 0,
+			 "linearize-device-arrays", 1,
+			 "linearize all device arrays, even those of fixed size")
 //ISL_ARG_BOOL(struct ppcg_options, allow_gnu_extensions, 0,
 //			 "allow-gnu-extensions", 1,
 //			 "allow the use of GNU extensions in generated code")

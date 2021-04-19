@@ -4211,7 +4211,8 @@ static __isl_give isl_printer *generate(__isl_take isl_printer *p,
             for (int i = 0; i < gen->n_hw_modules; i++) {     
                 TP_extract_loop_info(gen, gen->hw_modules[i]);
                 TP_extract_resource_info(gen, gen->hw_modules[i]);
-            }
+                TP_extract_module_attr(gen, gen->hw_modules[i]);
+            }        
         }
 
         /* Dump out the array information */

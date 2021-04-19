@@ -209,6 +209,7 @@ class TuningProgram {
         std::shared_ptr<TPExpr> extract_module_num(isl_ast_node *tree);
         void extract_module_memory_info(std::string name, int double_buffer, TPArrayTile *tile, std::vector<isl_ast_node *> &tree);
         void extract_module_compute_info(std::string name, std::string arr_type, isl_ast_node *tree);
+        void extract_module_attr(std::string name, int double_buffer, int in, int io);
         std::shared_ptr<TPArrayRef> build_array_ref(std::string name, __isl_keep isl_map *ref, __isl_keep isl_schedule *);
         void update_tiled_arrays(TPIterator *tile_iter, TPIterator *point_iter, TPParameter *tile_factor);
         TPArrayTile *infer_tiled_array_bounds(TPArrayTile *tile, std::vector<std::shared_ptr<TPArrayRef>> refs, std::vector<TPIterator *> fixed_iters);
@@ -226,6 +227,7 @@ class TuningProgram {
         std::unordered_map<std::string, std::shared_ptr<json>> module_loop_info;        
         std::unordered_map<std::string, std::shared_ptr<json>> module_memory_info;
         std::unordered_map<std::string, std::shared_ptr<json>> module_compute_info;
+        std::unordered_map<std::string, std::shared_ptr<json>> module_attr;
 
         ~TuningProgram() {                        
             for (int i = 0; i < iters.size(); i++)

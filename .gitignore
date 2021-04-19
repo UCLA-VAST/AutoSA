@@ -39,3 +39,5 @@ autosa.tmp
 .libs
 autosa_scripts/__pycache__
 docs/_build
+autosa_scripts/tuner/__pycache__
+autosa_scripts/tuner/outdir
