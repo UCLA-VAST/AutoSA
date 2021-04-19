@@ -3218,4 +3218,45 @@ __isl_give isl_schedule_tree *isl_schedule_tree_band_member_set_sched_pos(
   
   return tree;
 }
+
+/* Return the iter property of the band member at position 
+ * "pos" of the band tree root.
+ */
+void *isl_schedule_tree_band_member_get_iter(
+  __isl_keep isl_schedule_tree *tree, int pos)
+{
+  if (!tree)
+    return NULL;
+  
+  if (tree->type != isl_schedule_node_band)
+    isl_die(isl_schedule_tree_get_ctx(tree), isl_error_invalid,
+        "not a band node", return NULL);
+
+  return isl_schedule_band_member_get_iter(tree->band, pos);
+}
+
+/* Set the iter property of the band member accoding to "iter".
+ */
+__isl_give isl_schedule_tree *isl_schedule_tree_band_member_set_iter(
+  __isl_take isl_schedule_tree *tree, int pos, void *iter)
+{
+  if (!tree)
+    return NULL;
+  if (tree->type != isl_schedule_node_band)
+    isl_die(isl_schedule_tree_get_ctx(tree), isl_error_invalid,
+        "not a band node", return isl_schedule_tree_free(tree));
+  if (isl_schedule_tree_band_member_get_iter(tree, pos) == 
+      iter)
+    return tree;
+  tree = isl_schedule_tree_cow(tree);
+  if (!tree)
+    return NULL;
+
+  tree->band = isl_schedule_band_member_set_iter(tree->band, pos,
+      iter);
+  if (!tree->band)
+    return isl_schedule_tree_free(tree);
+  
+  return tree;
+}
 /* AutoSA Extended */

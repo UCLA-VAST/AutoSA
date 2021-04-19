@@ -68,10 +68,10 @@ __isl_give isl_schedule_band *isl_schedule_band_from_multi_union_pw_aff(
 	band->space_time = isl_calloc_array(ctx, enum autosa_loop_type, band->n);
   	band->pe_opt = isl_calloc_array(ctx, enum autosa_loop_type, band->n);
 	band->sched_pos = isl_calloc_array(ctx, int, band->n);
-	for (int i = 0; i < band->n; ++i)
-		band->sched_pos[i] = -1;		
-	for (int i = 0; i < band->n; ++i)
+	for (int i = 0; i < band->n; ++i) {
+		band->sched_pos[i] = -1;
 		band->iter[i] = NULL;
+	}
 	/* AutoSA Extended */
 	band->mupa = mupa;
 	space = isl_space_params_alloc(ctx, 0);
@@ -114,25 +114,25 @@ __isl_give isl_schedule_band *isl_schedule_band_dup(
 	dup->permutable = band->permutable;
 
 	/* AutoSA Extended */
-  	if (band->space_time) {
-  	  dup->space_time = isl_alloc_array(ctx, enum autosa_loop_type, band->n);
-  	  for (i = 0; i < band->n; ++i)
-  	    dup->space_time[i] = band->space_time[i];
-  	}
-  	if (band->pe_opt) {
-  	  dup->pe_opt = isl_alloc_array(ctx, enum autosa_loop_type, band->n);
-  	  for (i = 0; i < band->n; ++i)
-  	    dup->pe_opt[i] = band->pe_opt[i];
-  	}	
+    if (band->space_time) {
+      dup->space_time = isl_alloc_array(ctx, enum autosa_loop_type, band->n);
+      for (i = 0; i < band->n; ++i)
+        dup->space_time[i] = band->space_time[i];
+    }
+    if (band->pe_opt) {
+      dup->pe_opt = isl_alloc_array(ctx, enum autosa_loop_type, band->n);
+      for (i = 0; i < band->n; ++i)
+        dup->pe_opt[i] = band->pe_opt[i];
+    }	
 	if (band->sched_pos) {
       dup->sched_pos = isl_alloc_array(ctx, int, band->n);
       for (i = 0; i < band->n; ++i)
         dup->sched_pos[i] = band->sched_pos[i];
-	}	
-	if (band->iter) {	  
-	  for (i = 0; i < band->n; ++i)
-	    dup->iter[i] = band->iter[i];
-	}
+    }	
+	if (band->iter) {      
+      for (i = 0; i < band->n; ++i)
+        dup->iter[i] = band->iter[i];
+    }	
 	/* AutoSA Extended */
 
 	dup->mupa = isl_multi_union_pw_aff_copy(band->mupa);
@@ -207,7 +207,6 @@ __isl_null isl_schedule_band *isl_schedule_band_free(
 	free(band->space_time);
 	free(band->pe_opt);
 	free(band->sched_pos);
-	free(band->iter);
 	/* AutoSA Extended */
 	free(band);
 
@@ -1250,12 +1249,12 @@ __isl_give isl_schedule_band *isl_schedule_band_drop(
 			band->isolate_loop_type[i - n] =
 						    band->isolate_loop_type[i];
 	/* AutoSA Extended */								
-    if (band->space_time)
-      for (i = pos + n; i < band->n; ++i)
-        band->space_time[i - n] = band->space_time[i];
-    if (band->pe_opt)
-      for (i = pos + n; i < band->n; ++i)
-        band->pe_opt[i - n] = band->pe_opt[i];	
+  	if (band->space_time)
+  	  for (i = pos + n; i < band->n; ++i)
+  	    band->space_time[i - n] = band->space_time[i];
+  	if (band->pe_opt)
+  	  for (i = pos + n; i < band->n; ++i)
+  	    band->pe_opt[i - n] = band->pe_opt[i];	
 	if (band->sched_pos)
       for (i = pos + n; i < band->n; ++i)
         band->sched_pos[i - n] = band->sched_pos[i];
@@ -1485,6 +1484,52 @@ __isl_give isl_schedule_band *isl_schedule_band_member_set_sched_pos(
     band->sched_pos = isl_calloc_array(isl_schedule_band_get_ctx(band), 
 			int, band->n);
   band->sched_pos[pos] = sched_pos;
+
+  return band;	
+}
+
+/* Return the iter property of the scheduling dimension within the band.
+ */
+void *isl_schedule_band_member_get_iter(
+	__isl_keep isl_schedule_band *band, int pos)
+{
+	if (!band)
+		return NULL;
+
+	if (pos < 0 || pos >= band->n)
+		isl_die(isl_schedule_band_get_ctx(band), isl_error_invalid,
+        "invalid member position", return NULL);
+
+	if (!band->iter)
+		return NULL;
+
+	return band->iter[pos];
+}
+
+/* Mark the given scheduling dimension as "iter".
+ */
+__isl_give isl_schedule_band *isl_schedule_band_member_set_iter(
+		__isl_take isl_schedule_band *band, int pos, void *iter)
+{
+	if (!band)
+		return NULL;
+	band = isl_schedule_band_cow(band);
+	if (!band)
+    return NULL;
+
+  if (pos < 0 || pos >= band->n)
+    isl_die(isl_schedule_band_get_ctx(band), isl_error_invalid,
+        "invalid member position",
+        return isl_schedule_band_free(band));
+
+  //if (!band->iter)
+  //  band->iter = isl_calloc_array(isl_schedule_band_get_ctx(band), 
+	//		void, band->n);
+  if (pos > 20) 
+	isl_die(isl_schedule_band_get_ctx(band), isl_error_invalid,
+		"maximal band dim 20 surpassed",
+		return isl_schedule_band_free(band));
+  band->iter[pos] = iter;
 
   return band;	
 }

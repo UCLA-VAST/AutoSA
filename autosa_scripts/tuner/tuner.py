@@ -45,7 +45,9 @@ class GeneticTuner(Tuner):
         return parents
 
     def crossover(self, pool, num_children):
-        pass
+        """ Perform single-point crossover.
+        """
+
 
     def mutation(self, pool):
         pass
@@ -75,7 +77,7 @@ class GeneticTuner(Tuner):
         self.logger.info(f'Number of parents: {num_parents}')
 
         # Init the population
-        population = np.empty((num_pop, 6), dtype=int)
+        population = np.empty((num_pop, len(self.design.params_config["tunable"])), dtype=int)
         if "ancestor" in self.params and self.params["ancestor"] != None:
             pass
         else:
@@ -84,9 +86,8 @@ class GeneticTuner(Tuner):
             while pop_cnt < num_pop:                
                 task_params = self.task.generate_random_sample() # TODO
                 param_arr = []
-                for param in self.design.params_config:
-                    if param["tunable"]:
-                        param_arr.append(task_params[param["name"]])
+                for param in self.design.params_config["tunable"]:                    
+                    param_arr.append(task_params[param["name"]])
                 population[pop_cnt] = np.array(param_arr, dtype=int)
                 pop_cnt += 1                
         fitness = np.empty(num_pop, dtype=float)
@@ -94,10 +95,11 @@ class GeneticTuner(Tuner):
             idv = population[i]
             task_params = {}
             idx = 0
-            for param in self.design.params_config:
-                if param["tunable"]:
-                    task_params[param["name"]] = idv[idx]
-                    idx += 1
+            for param in self.design.params_config["tunable"]:                
+                task_params[param["name"]] = idv[idx]
+                idx += 1
+            for param in self.design.params_config["external"]:                
+                task_params[param["name"]] = self.task["params"][param["name"]]
             reward, used_constraint = self.task.evaluate(task_params, self.obj) # TODO
             if self.overuse_constraint(used_constraint):                
                 reward = 0
@@ -118,17 +120,19 @@ class GeneticTuner(Tuner):
                 idv = population[i]
                 task_params = {}
                 idx = 0
-                for param in self.design.params_config:
-                    if param["tunable"]:
-                        task_params[param["name"]] = idv[idx]
-                        idx += 1
-                reward, used_constraint = self.task.evaluate(task_params, self.obj) # TODO
+                for param in self.design.params_config["tunable"]:                
+                    task_params[param["name"]] = idv[idx]
+                    idx += 1
+                for param in self.design.params_config["external"]:                
+                    task_params[param["name"]] = self.task["params"][param["name"]]
+                reward, used_constraint = self.task.evaluate(task_params, self.obj)
                 if self.overuse_constraint(used_constraint):                
                     reward = 0
                 fitness[i] = reward
                 # Update the record
                 if reward > self.best_reward:
                     self.best_reward = reward
+                    self.best_cst = used_constraint
                     self.best_task_params = task_params
                     self.logger.info(f'Epoch {self.epoch}: new best reward: {self.best_reward} ({1/self.best_reward:.0f})')
                     self.best_search_record = utils.SearchRecord().extract_from_tuner(self)

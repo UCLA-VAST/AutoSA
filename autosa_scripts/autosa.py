@@ -31,7 +31,7 @@ if __name__ == "__main__":
             output_dir = arg.split('=')[-1]
         if '--target' in arg:
             target = arg.split('=')[-1]
-        if '--tuning' in arg:            
+        if '--tuning-method' in arg:            
             tuning = True
             tuning_idx = i
         if '--isl-schedule-whole-component' in arg:
@@ -53,8 +53,8 @@ if __name__ == "__main__":
             if '--hcl' in arg:
                 hcl = True    
 
-    if tuning:
-        del argv[tuning_idx]
+    #if tuning:
+    #    del argv[tuning_idx]
     if insert_isl_flag:
         argv.append(isl_flag)
 

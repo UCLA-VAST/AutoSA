@@ -11,11 +11,11 @@
         "mode": "manual"
     },
     "latency": {
-        "enable": 0,
+        "enable": 1,
         "mode": "manual"
     },
     "simd": {
-        "enable": 0,
+        "enable": 1,
         "mode": "manual"
     },
     "hbm": {

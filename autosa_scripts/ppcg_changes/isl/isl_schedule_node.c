@@ -5006,29 +5006,29 @@ __isl_give isl_schedule_node *isl_schedule_node_band_member_set_sched_pos(
   return node;
 }
 
-//void *isl_schedule_node_band_member_get_iter(__isl_keep isl_schedule_node *node, int pos)
-//{
-//  if (!node)
-//	return NULL;
-//  return isl_schedule_tree_band_member_get_iter(node->tree, pos);
-//}
-//
-//__isl_give isl_schedule_node *isl_schedule_node_band_member_set_iter(
-//  __isl_take isl_schedule_node *node, int pos, void *iter) 
-//{
-//  void *it;
-//  isl_schedule_tree *tree;
-//
-//  if (!node)
-//    return NULL;
-//  it = isl_schedule_node_band_member_get_iter(node, pos);
-//  if (it == iter)
-//    return node;
-//
-//  tree = isl_schedule_tree_copy(node->tree);
-//  tree = isl_schedule_tree_band_member_set_iter(tree, pos, iter);
-//  node = isl_schedule_node_graft_tree(node, tree);
-//
-//  return node;
-//}
+void *isl_schedule_node_band_member_get_iter(__isl_keep isl_schedule_node *node, int pos)
+{
+  if (!node)
+	return NULL;
+  return isl_schedule_tree_band_member_get_iter(node->tree, pos);
+}
+
+__isl_give isl_schedule_node *isl_schedule_node_band_member_set_iter(
+  __isl_take isl_schedule_node *node, int pos, void *iter) 
+{
+  void *it;
+  isl_schedule_tree *tree;
+
+  if (!node)
+    return NULL;
+  it = isl_schedule_node_band_member_get_iter(node, pos);
+  if (it == iter)
+    return node;
+
+  tree = isl_schedule_tree_copy(node->tree);
+  tree = isl_schedule_tree_band_member_set_iter(tree, pos, iter);
+  node = isl_schedule_node_graft_tree(node, tree);
+
+  return node;
+}
 /* AutoSA Extended */

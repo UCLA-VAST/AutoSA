@@ -9,7 +9,7 @@ class Design(object):
         self.name = name # design name        
         self.est_resource_func = None
         self.est_latency_func = None
-        self.params_config = None
+        self.params_config = None        
 
     def print_resource_est_func(self, f, desp):
         f.write("def est_resource(params):\n")
@@ -293,7 +293,16 @@ class Design(object):
             self.print_latency_est_func(f, desp)
 
             # Tuning parameters
-            self.params_config = desp["params"]
+            #self.params_config = desp["params"]
+            self.params_config = {"external": [], "tunable": [], "infer": []}
+            for param in desp["params"]:
+                if param["tunable"]:
+                    self.params_config["tunable"].append(param)
+                else:
+                    if "external" in param["tags"]:
+                        self.params_config["external"].append(param)
+                    elif "auto_infer" in param["tags"]:
+                        self.params_config["infer"].append(param)
         
         sys.path.append(os.path.dirname(py_f))
         basename = os.path.basename(py_f).split(".")[0]        

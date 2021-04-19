@@ -278,6 +278,10 @@ int isl_schedule_tree_band_member_get_sched_pos(
 	__isl_keep isl_schedule_tree *tree, int pos);
 __isl_give isl_schedule_tree *isl_schedule_tree_band_member_set_sched_pos(
 	__isl_take isl_schedule_tree *tree, int pos, int sched_pos);
+void *isl_schedule_tree_band_member_get_iter(
+	__isl_keep isl_schedule_tree *tree, int pos);
+__isl_give isl_schedule_tree *isl_schedule_tree_band_member_set_iter(
+	__isl_take isl_schedule_tree *tree, int pos, void *iter);
 /* AutoSA Extended */
 
 #endif
