@@ -10,6 +10,40 @@ import pprint
 import concurrent.futures
 import queue
 
+def factorization(x):
+    prime_factors = []
+    while x % 2 == 0:
+        prime_factors.append(2)
+        x = x / 2
+    
+    for i in range(3, int(math.sqrt(x)) + 1, 2):
+        while x % i == 0:
+            prime_factors.append(int(i))
+            x = x / i
+    
+    if x > 2:
+        prime_factors.append(int(x))
+
+    return prime_factors
+
+def get_divisors(x, filter=None):
+    """ Return the divisors of the integer x
+    Call the filter function to filter out the illegal one.
+    """
+    divisors = []
+    large_divisors = []
+    for i in range(1, int(math.sqrt(x) + 1)):
+        if x % i == 0:
+            if filter and not filter(i) or not filter:
+                divisors.append(int(i))
+            if i * i != x:
+                if filter and not filter(int(x / i)) or not filter:
+                    large_divisors.append(int(x / i))
+    for d in reversed(large_divisors):
+        divisors.append(d)
+
+    return divisors
+
 class PerfCounter(object):
     def __init__(self, logger):
         self.logger = logger
@@ -93,9 +127,9 @@ class SearchRecord(object):
 
         return self
 
-    def update(self, new_record):
+    def update(self, new_record):        
         if self.max != new_record.max:
-			raise RuntimeError("Inconsistent search record configuration")
+            raise RuntimeError("Inconsistent search record configuration")
         status = False
         if self.max == 1:
             if new_record.reward > self.reward:				
@@ -114,7 +148,7 @@ class SearchRecord(object):
             self.task_name = new_record.task_name            
 
     def extract_from_tuner(self, tuner):
-        if tuner.best_tuning_params:
+        if tuner.best_task_params:
             self.cst = tuner.best_cst
             self.reward = tuner.best_reward
             if tuner.obj == "latency":
@@ -122,5 +156,18 @@ class SearchRecord(object):
             else:
                 raise RuntimeError("Unsupported search objective")
             self.design = tuner.task.design.name
-            self.task_params = tuner.task["params"]
-            self.task_name = tuner.task["name"]            
+            self.task_params = tuner.best_task_params
+            self.task_name = tuner.task.task["name"]            
+
+        return self
+
+    def __repr__(self):
+        to_print = ""
+        to_print += f"\nreward: {self.reward}"
+        to_print += f"\ncst: {pprint.pformat(self.cst, indent=4)}"
+        to_print += f"\nlatency: {self.latency}"
+        to_print += f"\ntask_name: {self.task_name}"
+        to_print += f"\ntask_params: \n{pprint.pformat(self.task_params, indent=4)}"
+        to_print += "\n"
+
+        return to_print

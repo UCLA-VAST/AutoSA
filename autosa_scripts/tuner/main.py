@@ -68,6 +68,8 @@ if __name__ == "__main__":
             design = Design(f.split(".")[0])
             design.register(desp, f"{design_dir}/register/{design.name}.py")
             designs.append(design)
+    if len(designs) == 0:
+        raise RuntimeError("No design found")
 
     # Load task
     with open(f'task/{args.task}.json') as f:
@@ -77,20 +79,20 @@ if __name__ == "__main__":
         tasks.append(task)
 
     # Start searching
-    counter = utils.PerfCounter()
+    counter = utils.PerfCounter(logger)
     counter.init_counter("Total Search Time")        
     for task in tasks:
         search_record = utils.SearchRecord().reset()
         for design in designs:
             search_task = SearchTask(design , task)
-            search_record.update(tuner.genetic_search(task, cst, search_obj, logger, max_epochs, max_time)) # TODO
+            search_record.update(tuner.genetic_search(search_task, cst, search_obj, logger, max_epochs, max_time)) # TODO
         task["search results"] = search_record
 
     counter.update_counter("Total Search Time")
     counter.print_counter("Total Search Time")
 
     # Display and dump the search history
-    for task in search_task.tasks:
+    for task in tasks:
         logger.info(pprint.pformat(task, indent=4))
     with open(f"{outdir}/results.log", 'w') as f:
         f.write(pprint.pformat(task, indent=4))

@@ -95,12 +95,14 @@ class TPParameter: public TPExpr {
             name = n;
             type = "param";        
             tune = false;
+            split_by = NULL;
         }     
         TPParameter(TPParameter *p) {
             name = p->name;
             type = p->type;            
             tune = p->tune;
             attr = p->attr;                        
+            split_by = p->split_by;
         }     
         TPParameter *dup();
         std::string to_str();
@@ -113,6 +115,7 @@ class TPParameter: public TPExpr {
         std::vector <std::shared_ptr<TPExpr>> divisors; 
         /* The parameter is multiples of the following exps. */
         std::vector <std::shared_ptr<TPExpr>> multiples;    
+        TPParameter *split_by;
         /* Other constraint tags for this parameters. 
          * "power_of_two", this parameter should be a power of 2.
          * "auto_infer", this parameter will be auto-inferred by other parameters.

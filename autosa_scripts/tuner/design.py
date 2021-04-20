@@ -9,7 +9,9 @@ class Design(object):
         self.name = name # design name        
         self.est_resource_func = None
         self.est_latency_func = None
-        self.params_config = None        
+        self.infer_params_func = None
+        self.params_config = None      
+        self.desp = None  
 
     def print_resource_est_func(self, f, desp):
         f.write("def est_resource(params):\n")
@@ -42,7 +44,7 @@ class Design(object):
         # Print function est_BRAM18K
         f.write("\t# BRAM18K\n")
         f.write("\tdef est_BRAM18K(ele_size, ele_num, pack):\n")
-        f.write(f"\t\treturn ceil(ele_size*8*pack / 18) * np.ceil(ele_num/pack/1024)\n\n")
+        f.write(f"\t\treturn ceil(ele_size*8*pack / 18) * ceil(ele_num/pack/1024)\n\n")
 
         for module in desp["memory"]:
             module_mem = desp["memory"][module]
@@ -279,6 +281,38 @@ class Design(object):
         f.write("\treturn latency\n")
         f.write("\n")
 
+    def print_infer_params_func(self, f, desp):
+        f.write("def infer_params(params):\n")
+        # Load parameters
+        f.write("\t")
+        is_first = True
+        for p in desp["params"]:
+            if "tags" in p and "auto_infer" in p["tags"]:
+                continue
+            if not is_first:
+                f.write(", ")            
+            f.write(p["name"])
+            is_first = False
+        f.write(" = ")
+        is_first = True
+        for p in desp["params"]:
+            if "tags" in p and "auto_infer" in p["tags"]:
+                continue
+            if not is_first:
+                f.write(", ")            
+            f.write(f'params[\"{p["name"]}\"]')
+            is_first = False
+        f.write("\n\n")
+
+        for p in desp["params"]:
+            if "tags" in p and "auto_infer" in p["tags"]:
+                f.write(f"\t{p['name']}_choices = [n*{p['bounds'][0]} for n in range(1, min({p['bounds'][1]}//{p['bounds'][0]}, 256//{desp['memory']['PE']['ele_size']*8}//{p['bounds'][0]})+1) if {p['bounds'][1]}%(n*{p['bounds'][0]})==0]\n")
+                f.write(f"\tif len({p['name']}_choices) == 0:\n")
+                f.write(f"\t\treturn None\n")
+                f.write(f"\tparams[\"{p['name']}\"] = max({p['name']}_choices)\n")
+        f.write("\n")                
+        f.write("\treturn params\n\n")
+
     def register(self, desp, py_f):
         """ Register the design in the descriptor file
         Generate all the necessary functions for evaluating the performance of the 
@@ -286,6 +320,8 @@ class Design(object):
         """        
         #print(desp["compute"])        
         with open(py_f, 'w') as f:
+            f.write("from math import ceil\n\n")
+
             # Generate resource est func        
             self.print_resource_est_func(f, desp)
 
@@ -294,21 +330,26 @@ class Design(object):
 
             # Tuning parameters
             #self.params_config = desp["params"]
-            self.params_config = {"external": [], "tunable": [], "infer": []}
+            self.params_config = {"external": {}, "tunable": {}, "infer": {}}
             for param in desp["params"]:
                 if param["tunable"]:
-                    self.params_config["tunable"].append(param)
+                    self.params_config["tunable"][param["name"]] = param
                 else:
                     if "external" in param["tags"]:
-                        self.params_config["external"].append(param)
+                        self.params_config["external"][param["name"]] = param
                     elif "auto_infer" in param["tags"]:
-                        self.params_config["infer"].append(param)
+                        self.params_config["infer"][param["name"]] = param
         
+            # Generate infer parameter func
+            self.print_infer_params_func(f, desp)
+
         sys.path.append(os.path.dirname(py_f))
         basename = os.path.basename(py_f).split(".")[0]        
         module = __import__(basename)
         self.est_resource_func = module.est_resource
         self.est_latency_func = module.est_latency
+        self.infer_params_func = module.infer_params
+        self.desp = desp
 
     def est_latency(self, params):
         if not self.est_latency_func:
@@ -321,3 +362,9 @@ class Design(object):
             raise RuntimeError(f"Resource function for design {self.name} undefined")
         else:
             return self.est_resource_func(params)
+
+    def infer_params(self, params):
+        if not self.infer_params_func:
+            raise RuntimeError(f"Internal parameter inference function for design {self.name} undefined")
+        else:
+            return self.infer_params_func(params)

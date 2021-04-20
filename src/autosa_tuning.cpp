@@ -529,6 +529,7 @@ __isl_give isl_schedule_node *TuningProgram::tile(__isl_take isl_schedule_node *
         //point_ub->div = div;
         point_ub->bounds.push_back(std::make_shared<TPExpr>("literal", new TPConst(1)));
         TPParameter *tile_ub = (TPParameter *)(tile_iter->ub->ops[0]);
+        this->param_map[tile_ub->to_str()]->split_by = point_ub;
         point_ub->bounds.push_back(std::make_shared<TPExpr>("literal", new TPParameter(tile_ub)));        
         if (div) {
             point_ub->divisors.push_back(std::make_shared<TPExpr>("literal", new TPParameter(tile_ub)));
@@ -581,6 +582,7 @@ __isl_give isl_schedule_node *TuningProgram::tile(
     point_ub->tune = true;
     point_ub->bounds.push_back(std::make_shared<TPExpr>("literal", new TPConst(1)));
     TPParameter *tile_ub = (TPParameter *)(tile_iter->ub->ops[0]);
+    this->param_map[tile_ub->to_str()]->split_by = point_ub;
     point_ub->bounds.push_back(std::make_shared<TPExpr>("literal", new TPParameter(tile_ub)));    
     point_ub->attr = step + "_tiling_factor";
     for (auto tag : tags) {
@@ -630,7 +632,10 @@ void TuningProgram::dump(std::string dir)
     for (int i = 0; i < this->params.size(); i++) {
         json j_param;
         TPParameter *param = this->params[i];
-        j_param["name"] = param->name;        
+        j_param["name"] = param->name;       
+        if (param->split_by)  {
+            j_param["split_by"] = param->split_by->to_str();
+        }
         for (auto d : param->divisors) {
             j_param["divisors"].push_back(d->to_str());
         }        
