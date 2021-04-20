@@ -62,34 +62,41 @@ class GeneticTuner(Tuner):
                 param_cnt += 2
         if param_cnt != len(self.task.design.params_config["tunable"]):
             raise RuntimeError("Not all tuning parameters can be handled by crossover")
+        #print(param_deps)        
         for i in range(num_children):
             parents_idx = [i % pool.shape[0], np.random.randint(0, pool.shape[0])]
+            #print(parents_idx)
+            #print(pool[parents_idx[0]][:])
+            #print(pool[parents_idx[1]][:])
             for param in param_deps:
-                idx = np.random.randint(0, 1)
+                idx = np.random.randint(0, 2)
+                #print(idx)
                 children[i][self.param_idx_map[param]] = pool[parents_idx[idx]][self.param_idx_map[param]]
                 children[i][self.param_idx_map[param_deps[param]]] = pool[parents_idx[idx]][self.param_idx_map[param_deps[param]]]
-        
+            #print(children[i][:])
+            #exit(0)
+
         return children
 
     def mutation(self, pool):
         """ Perform mutation
         """
-        for p in range(pool.shape[0]):
+        for p_idx in range(pool.shape[0]):
             if random.random() < self.params["mutation_probability"]:
                 if random.random() < self.params["epsilon"]:
                     task_params = self.task.generate_random_sample()
                     for i in range(pool.shape[1]):
-                        pool[p][i] = task_params[self.idx_param_map[i]]
+                        pool[p_idx][i] = task_params[self.idx_param_map[i]]
                 else:
-                    idv = pool[p][:]
+                    idv = pool[p_idx][:]
                     task_params = {}                    
                     for p, param in self.task.design.params_config["tunable"].items():                
-                        task_params[param["name"]] = idv[self.param_idx_map[param["name"]]]                        
+                        task_params[param["name"]] = idv[self.param_idx_map[param["name"]]]
                     for p, param in self.task.design.params_config["external"].items():
-                        task_params[param["name"]] = self.task.task["params"][param["name"]]                    
+                        task_params[param["name"]] = self.task.task["params"][param["name"]]
                     # Build the chains
-                    # [{"params": [p0, p3, p7], "factors": [ceil(p0/p3), p3/p7, p7]}, {}]                     
-                    split_chains = []                    
+                    # [{"params": [p0, p3, p7], "factors": [ceil(p0/p3), p3/p7, p7]}, {}]
+                    split_chains = []
                     for p, param in self.task.design.params_config["external"].items():
                         chain = {"params": [param["name"]], "factors": []}
                         cur_param = param                                                
@@ -108,16 +115,17 @@ class GeneticTuner(Tuner):
                             chain["factors"].append(int(factor))                            
                             cur_param = self.task.design.params_config["tunable"][cur_param["split_by"]]                        
                         chain["factors"].append(int(task_params[cur_param["name"]]))
-
+                        split_chains.append(chain)
+                    
                     # Mutation
                     for chain in split_chains:
                         if len(chain["factors"]) <= 1:
                             continue
-                        src_idx, dst_idx = random.sample(chain["factors"], 2)
+                        src_idx, dst_idx = random.sample(range(0, len(chain["factors"])), 2)
                         mutation_policy_probs = [0.2, 0, 0.8]
                         mutation_policy_probs = np.cumsum(mutation_policy_probs)
                         if random.random() < mutation_policy_probs[0]:
-                            if chain["factor"][dst_idx] == 1:
+                            if chain["factors"][dst_idx] == 1:
                                 continue
                             inc_stride = max(1, int(chain["factors"][src_idx] * random.random() * 1.0))
                             dec_stride = max(1, int(chain["factors"][dst_idx] - chain["factors"][src_idx] * chain["factors"][dst_idx] / (chain["factors"][src_idx] + inc_stride)))
@@ -130,7 +138,7 @@ class GeneticTuner(Tuner):
                             factor = chain["factors"][src_idx]
                             if factor == 1:
                                 continue
-                            divs = utils.factorization(factor) # TODO
+                            divs = utils.factorization(factor)
                             div = random.choice(divs)
                             chain["factors"][src_idx] /= div
                             chain["factors"][dst_idx] *= div
@@ -139,14 +147,14 @@ class GeneticTuner(Tuner):
                     # [{"params": [p0, p3, p7], "factors": [ceil(p0/p3), p3/p7, p7]}, {}]
                     for chain in split_chains:
                         factor = chain["factors"][-1]
-                        param = chain["params"][-1]
+                        param = chain["params"][-1]                        
                         if param in self.param_idx_map:
-                            pool[p][self.param_idx_map[param]] = factor
+                            pool[p_idx][self.param_idx_map[param]] = factor
                         for idx in range(len(chain["factors"]) - 2, -1, -1):
                             param = chain["params"][idx]
                             factor *= chain["factors"][idx]
                             if param in self.param_idx_map:
-                                pool[p][self.param_idx_map[param]] = factor
+                                pool[p_idx][self.param_idx_map[param]] = factor
         
         return pool             
 
@@ -225,7 +233,9 @@ class GeneticTuner(Tuner):
                     task_params[param["name"]] = idv[self.param_idx_map[param["name"]]]                    
                 for p, param in self.task.design.params_config["external"].items():
                     task_params[param["name"]] = self.task.task["params"][param["name"]]
+                #print(task_params)
                 task_params = self.task.adjust_params(task_params)
+                #print(task_params)                
                 reward, used_constraint = self.task.evaluate(task_params, self.obj)
                 if self.overuse_constraint(used_constraint):                
                     reward = 0
@@ -237,6 +247,7 @@ class GeneticTuner(Tuner):
                     self.best_task_params = task_params
                     self.logger.info(f'Epoch {self.epoch}: new best reward: {self.best_reward} ({1/self.best_reward:.0f})')
                     self.best_search_record = utils.SearchRecord().extract_from_tuner(self)
+            #exit(0)
             self.epoch += num_pop
             if self.stop_criteria == "epoch" and epoch > self.max_epoch:
                 break

@@ -3,6 +3,10 @@
 
 #include "autosa_common.h"
 
+#if defined(__cplusplus)
+extern "C" {
+#endif   
+
 isl_stat sa_io_construct_optimize(struct autosa_kernel *kernel, struct autosa_gen *gen);
 enum autosa_group_access_type autosa_array_ref_group_type(
 	struct autosa_array_ref_group *group);
@@ -74,5 +78,9 @@ isl_bool is_io_module_valid(
   struct autosa_kernel *kernel, 
   struct autosa_array_ref_group *group, int read);  
 void print_io_grouping_info(FILE *fp, struct autosa_kernel *kernel);
+
+#if defined(__cplusplus)
+}
+#endif 
 
 #endif

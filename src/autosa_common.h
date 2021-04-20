@@ -40,8 +40,8 @@
 extern "C" {
 #endif  
 
-#define min(a, b) (((a) < (b)) ? (a) : (b))
-#define max(a, b) (((a) > (b)) ? (a) : (b))
+//#define min(a, b) (((a) < (b)) ? (a) : (b))
+//#define max(a, b) (((a) > (b)) ? (a) : (b))
 
 /* If enabled, use the default ISL sink API. */
 //#define ISL_SINK

@@ -3173,11 +3173,11 @@ static isl_stat compute_io_group_data_pack_sparse(
   for (int i = 0; i < group->io_level; i++) {
     struct autosa_io_buffer *buf = group->io_buffers[i];
     if (i == 0)
-      cur_max_n_lane = max(group->n_lane, data_pack_ubs[0] / (kernel->n_nzero * ele_size + 1));
+      cur_max_n_lane = std::max(group->n_lane, data_pack_ubs[0] / (kernel->n_nzero * ele_size + 1));
     else if (i > 0 && i < group->io_level - 1)
-      cur_max_n_lane = max(group->n_lane, data_pack_ubs[1] / (kernel->n_nzero * ele_size + 1));
+      cur_max_n_lane = std::max(group->n_lane, data_pack_ubs[1] / (kernel->n_nzero * ele_size + 1));
     else
-      cur_max_n_lane = max(group->n_lane, data_pack_ubs[2] / ((kernel->n_nzero + kernel->n_meta_data) * ele_size));
+      cur_max_n_lane = std::max(group->n_lane, data_pack_ubs[2] / ((kernel->n_nzero + kernel->n_meta_data) * ele_size));
     if (buf->tile) {      
       int n_lane = cur_n_lane;
       isl_val *size = isl_val_copy(buf->tile->bound[group->array->n_index - 1].size);
@@ -3246,6 +3246,27 @@ static isl_stat compute_io_group_data_pack(struct autosa_kernel *kernel,
    * compute the maximal data pack factor. */
   if (max_n_lane == -1)
     max_n_lane = 64 / ele_size;
+  /* Parse the data pack settings. */
+  /* For L1 buffers, we restrain the fifo widths to be no more than 256 bits 
+   * given hardware consideration (on Xilinx). 
+   * Specifically, for FIFOs with depth * width > 512bits, HLS will 
+   * use BRAM/SRL to implement FIFOs, which could potentially increase 
+   * the BRAM/LUT usage by a great scale and cause routing failure.
+   * 
+   * Furthermore, for L1 buffers reside at the io_L1 level (beside PEs), we 
+   * furtehr restrain the FIFO widths to be no more than 64 bits to mitigate 
+   * the potential routing congestion.
+   */  
+  sizes = extract_sizes_from_str(gen->ctx, gen->options->autosa->data_pack_sizes);  
+  data_pack_ubs = read_data_pack_sizes_array(sizes, group->array->name);  
+  if (!data_pack_ubs)
+  {
+    /* Use the default numbers. */
+    data_pack_ubs = isl_alloc_array(gen->ctx, int, 3);
+    data_pack_ubs[0] = 8;
+    data_pack_ubs[1] = 32;
+    data_pack_ubs[2] = 64;
+  }
 
   /* Examine if any of the array reference in the group is in used by SIMD loop.
    * The default SIMD lane for the group is 1. 
@@ -3288,7 +3309,17 @@ static isl_stat compute_io_group_data_pack(struct autosa_kernel *kernel,
           }
         }
         /* ub */
-        dp->bounds.push_back(std::shared_ptr<TPExpr>(buf->tuning_tile->sizes[buf->tuning_tile->sizes.size() - 1]->dup()));
+        int user_max_n_lane;
+        if (i == 0)
+          user_max_n_lane = data_pack_ubs[0] / ele_size;
+        else if (i > 0 && i < group->io_level - 1)
+          user_max_n_lane = data_pack_ubs[1] / ele_size;
+        else
+          user_max_n_lane = data_pack_ubs[2] / ele_size;
+        TPExpr *ub = buf->tuning_tile->sizes[buf->tuning_tile->sizes.size() - 1]->dup();
+        ub = ub->min(new TPExpr("literal", new TPConst(user_max_n_lane)));
+        dp->bounds.push_back(std::shared_ptr<TPExpr>(ub));
+        //dp->bounds.push_back(std::shared_ptr<TPExpr>(buf->tuning_tile->sizes[buf->tuning_tile->sizes.size() - 1]->dup()));
         dp->divisors.push_back(std::shared_ptr<TPExpr>(buf->tuning_tile->sizes[buf->tuning_tile->sizes.size() - 1]->dup()));
         assert(dp->bounds.size() == 2);    
         buf->tuning_tile->data_pack_factor = dp;        
@@ -3322,41 +3353,16 @@ static isl_stat compute_io_group_data_pack(struct autosa_kernel *kernel,
 
   int cur_n_lane = group->n_lane;
   int status = false;
-  /* For L1 buffers, we restrain the fifo widths to be no more than 256 bits 
-   * given hardware consideration (on Xilinx). 
-   * Specifically, for FIFOs with depth * width > 512bits, HLS will 
-   * use BRAM/SRL to implement FIFOs, which could potentially increase 
-   * the BRAM/LUT usage by a great scale and cause routing failure.
-   * 
-   * Furthermore, for L1 buffers reside at the io_L1 level (beside PEs), we 
-   * furtehr restrain the FIFO widths to be no more than 64 bits to mitigate 
-   * the potential routing congestion.
-   */
-  /* Parse the data pack settings. */
-  sizes = extract_sizes_from_str(gen->ctx, gen->options->autosa->data_pack_sizes);
-  //data_pack_ubs = read_data_pack_sizes(sizes, 3);
-  data_pack_ubs = read_data_pack_sizes_array(sizes, group->array->name);
-  //std::cout << group->array->name << std::endl;
-  //std::cout << data_pack_ubs[2] << std::endl;
-  if (!data_pack_ubs)
-  {
-    /* Use the default numbers. */
-    data_pack_ubs = isl_alloc_array(gen->ctx, int, 3);
-    data_pack_ubs[0] = 8;
-    data_pack_ubs[1] = 32;
-    data_pack_ubs[2] = 64;
-  }
-
   int cur_max_n_lane;
   for (int i = 0; i < group->io_level; i++)
   {
     struct autosa_io_buffer *buf = group->io_buffers[i];
     if (i == 0)
-      cur_max_n_lane = max(group->n_lane, data_pack_ubs[0] / ele_size);
+      cur_max_n_lane = std::max(group->n_lane, data_pack_ubs[0] / ele_size);
     else if (i > 0 && i < group->io_level - 1)
-      cur_max_n_lane = max(group->n_lane, data_pack_ubs[1] / ele_size);
+      cur_max_n_lane = std::max(group->n_lane, data_pack_ubs[1] / ele_size);
     else
-      cur_max_n_lane = max(group->n_lane, data_pack_ubs[2] / ele_size);
+      cur_max_n_lane = std::max(group->n_lane, data_pack_ubs[2] / ele_size);
     if (buf->tile && group->array->n_index > 0)
     {      
       size = isl_val_copy(buf->tile->bound[group->array->n_index - 1].size);
@@ -4831,8 +4837,8 @@ isl_stat sa_io_construct_optimize(struct autosa_kernel *kernel, struct autosa_ge
       }
     }
 
-    local_array->n_lane = max(1, n_lane);
-    local_array->array->n_lane = max(1, n_lane);
+    local_array->n_lane = std::max(1, n_lane);
+    local_array->array->n_lane = std::max(1, n_lane);
   }
 
   isl_union_map_free(data.host_sched);

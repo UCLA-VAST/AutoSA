@@ -53,7 +53,12 @@ class Design(object):
             if "data_pack_factor" in module_mem:
                 f.write(f"{module_mem['data_pack_factor']})\n")
             else:
-                f.write(f"1)\n")
+                f.write(f"1)\n")        
+        #f.write("\tprint(A_IO_L2_in_unit_memory)\n")
+        #f.write("\tprint(B_IO_L2_in_unit_memory)\n")        
+        #f.write("\tprint(PE_unit_memory)\n")
+        #f.write("\tprint(C_drain_IO_L1_out_unit_memory)\n")
+
         f.write("\tBRAM18K = ")
         is_first = True
         for module in desp["memory"]:
@@ -65,9 +70,13 @@ class Design(object):
                 f.write(f" * 2")
             else:
                 f.write(f" * 1")
-            f.write(f" * {module_mem['num']}")
+            f.write(f" * {module_mem['num']}")            
             is_first = False            
         f.write("\n\n")
+
+        #for module in desp["memory"]:
+        #    module_mem = desp["memory"][module]
+        #    f.write(f"\tprint({module_mem['num']})\n")
 
         f.write("\treturn {\"DSP\": DSP, \"BRAM18K\": BRAM18K}\n")
         f.write("\n")
@@ -147,10 +156,13 @@ class Design(object):
                         intra_expr = None
 
                     if inter_expr and intra_expr:
-                        if double_buffer:
-                            ret = f"max({inter_expr}, {intra_expr})"
+                        if info["in"] == 1 or info["in"] == 0:
+                            ret = inter_expr
                         else:
-                            ret = f"({inter_expr} + {intra_expr})"
+                            if double_buffer:
+                                ret = f"max({inter_expr}, {intra_expr})"
+                            else:
+                                ret = f"({inter_expr} + {intra_expr})"
                         info["has_for_child"] = 1
                     else:                        
                         ret = "1"                        
@@ -191,12 +203,16 @@ class Design(object):
             for module in desp["latency"]:
                 if desp["attr"][module]["in"] != 1:
                     continue
-                if "inter" in module or "intra" in module:
+                if "inter" in module or "intra" in module:                    
+                    # Keep all the latency AST under the mark.
                     info["valid"] = True
                     info["under_mark"] = None
+                    info["in"] = 1
                 else:
+                    # Only keep the latency AST under the mark.
                     info["valid"] = False
                     info["under_mark"] = "array"
+                    info["in"] = 1
                 module_lat = desp["latency"][module]  
                 info["name"] = module                
                 info["modules"][module] = extract_latency_expr(module_lat, info)
@@ -226,9 +242,11 @@ class Design(object):
                 if "inter" in module or "intra" in module:
                     info["valid"] = True
                     info["under_mark"] = None
+                    info["in"] = 0
                 else:
                     info["valid"] = False
                     info["under_mark"] = "array"
+                    info["in"] = 0
                 module_lat = desp["latency"][module]  
                 info["name"] = module                
                 info["modules"][module] = extract_latency_expr(module_lat, info)
@@ -258,6 +276,7 @@ class Design(object):
                 info["name"] = module
                 info["valid"] = True
                 info["under_mark"] = None
+                info["in"] = -1
                 info["modules"][module] = extract_latency_expr(module_lat, info)            
         for module in info["modules"]:
             if "inter" in module or "intra" in module:
@@ -275,6 +294,8 @@ class Design(object):
             f.write(f"{module}_latency")
             is_first = False
         f.write(")\n\n")
+
+        #f.write("\tprint(latency_prologue, latency_main, latency_epilogue)\n\n")
 
         f.write("\tlatency = latency_prologue + latency_main + latency_epilogue\n\n")
         
@@ -306,7 +327,7 @@ class Design(object):
 
         for p in desp["params"]:
             if "tags" in p and "auto_infer" in p["tags"]:
-                f.write(f"\t{p['name']}_choices = [n*{p['bounds'][0]} for n in range(1, min({p['bounds'][1]}//{p['bounds'][0]}, 256//{desp['memory']['PE']['ele_size']*8}//{p['bounds'][0]})+1) if {p['bounds'][1]}%(n*{p['bounds'][0]})==0]\n")
+                f.write(f"\t{p['name']}_choices = [n*{p['bounds'][0]} for n in range(1, {p['bounds'][1]}//{p['bounds'][0]}+1) if {p['bounds'][1]}%(n*{p['bounds'][0]})==0]\n")
                 f.write(f"\tif len({p['name']}_choices) == 0:\n")
                 f.write(f"\t\treturn None\n")
                 f.write(f"\tparams[\"{p['name']}\"] = max({p['name']}_choices)\n")

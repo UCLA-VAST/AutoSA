@@ -19,8 +19,9 @@ class SearchTask(object):
             return False
         
         # Making all factors to be even numbers to have more divisors
-        for param in params:
-            params[param] = int(np.ceil(params[param] / 2) * 2)
+        for param in self.design.params_config["tunable"]:
+            params[param] = int(np.ceil(params[param] / 2) * 2)        
+        
         # Making all divisor factors to be divisors of the dependent variable
         for param in self.design.params_config["tunable"]:
             if "divisors" in param:
@@ -84,12 +85,10 @@ class SearchTask(object):
                         simd_factor = task_params[param["name"]]
                 data_type = self.design.desp["memory"]["PE"]["ele_type"]
                 if data_type == "float":
-                    if latency_factors > simd_factor:
+                    if latency_factors > 8 * simd_factor:
                         break
                 else:
-                    raise RuntimeError(f"Unsupported data type in random sample generation: {data_type}")
-
-        #print(task_params)
+                    raise RuntimeError(f"Unsupported data type in random sample generation: {data_type}")        
 
         return task_params
 

@@ -34,10 +34,10 @@ def get_divisors(x, filter=None):
     large_divisors = []
     for i in range(1, int(math.sqrt(x) + 1)):
         if x % i == 0:
-            if filter and not filter(i) or not filter:
+            if (filter and not filter(i)) or not filter:
                 divisors.append(int(i))
             if i * i != x:
-                if filter and not filter(int(x / i)) or not filter:
+                if (filter and not filter(int(x / i))) or not filter:
                     large_divisors.append(int(x / i))
     for d in reversed(large_divisors):
         divisors.append(d)
