@@ -2423,10 +2423,10 @@ static __isl_give isl_schedule_node *core_child(
     __isl_take isl_schedule_node *node, __isl_keep isl_union_set *core)
 {
   int i, n;
-
+  
   if (isl_schedule_node_get_type(node) != isl_schedule_node_sequence)
     return isl_schedule_node_child(node, 0);
-
+  
   n = isl_schedule_node_n_children(node);
   for (i = 0; i < n; ++i)
   {
@@ -2441,7 +2441,7 @@ static __isl_give isl_schedule_node *core_child(
       return isl_schedule_node_child(node, 0);
 
     node = isl_schedule_node_parent(node);
-  }
+  }  
 
   isl_die(isl_schedule_node_get_ctx(node), isl_error_internal,
           "core child not found", return isl_schedule_node_free(node));
@@ -2672,7 +2672,7 @@ __isl_give isl_schedule_node *autosa_tree_move_down_to_io_mark(
 {
   int is_mark;
   isl_printer *p;
-  char *mark;
+  char *mark;  
 
   p = isl_printer_to_str(isl_schedule_node_get_ctx(node));
   p = isl_printer_print_str(p, "io_L");
@@ -2680,13 +2680,17 @@ __isl_give isl_schedule_node *autosa_tree_move_down_to_io_mark(
   mark = isl_printer_get_str(p);
   p = isl_printer_free(p);
 
-  while ((is_mark = node_is_mark(node, mark)) == 0)
+
+  while ((is_mark = node_is_mark(node, mark)) == 0) {
+    if (!isl_schedule_node_has_children(node))
+      break;
     node = core_child(node, core);
+  }
 
-  if (is_mark < 0)
-    node = isl_schedule_node_free(node);
-
+  if (is_mark <= 0)
+    node = isl_schedule_node_free(node);  
   free(mark);
+
   return node;
 }
 

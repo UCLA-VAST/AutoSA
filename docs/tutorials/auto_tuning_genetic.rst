@@ -63,6 +63,8 @@ printed in the screen.
 
 More Examples
 -------------
+Example 1
+^^^^^^^^^
 Generate design description.
 
 .. code:: bash
@@ -75,6 +77,114 @@ Generate design description.
     --simd-info=./autosa_tests/mm/simd_info.json \
     --host-serialize \
     --hls \
+    --tuning-method=1
+
+Run the auto-tuner.
+
+.. code:: bash
+
+    python main.py \
+    --designs=/curr/jaywang/research/autosa/AutoSA/autosa.tmp/output/tuning \
+    --stop-after-time=10 \
+    --cst=hw_cst \
+    --task=mm
+
+Example 2
+^^^^^^^^^    
+.. code:: bash
+
+    ./autosa ./autosa_tests/mm/kernel.c \
+    --config=./autosa_config/autosa_config.json \
+    --target=autosa_hls_c \
+    --output-dir=./autosa.tmp/output \
+    --sa-sizes="{kernel[]->space_time[1]}" \
+    --simd-info=./autosa_tests/mm/simd_info.json \
+    --host-serialize \
+    --hls \
+    --tuning-method=1
+
+Run the auto-tuner.
+
+.. code:: bash
+
+    python main.py \
+    --designs=/curr/jaywang/research/autosa/AutoSA/autosa.tmp/output/tuning \
+    --stop-after-time=10 \
+    --cst=hw_cst \
+    --task=mm
+
+Example 3
+^^^^^^^^^    
+.. code:: bash
+
+    ./autosa ./autosa_tests/mm/kernel.c \
+    --config=./autosa_config/autosa_config.json \
+    --target=autosa_hls_c \
+    --output-dir=./autosa.tmp/output \
+    --sa-sizes="{kernel[]->space_time[2]}" \
+    --simd-info=./autosa_tests/mm/simd_info.json \
+    --host-serialize \
+    --hls \
+    --local-reduce \
+    --reduce-op="+" \
+    --simd-touch-space \
+    --no-isl-sink \
+    --tuning-method=1
+
+Run the auto-tuner.
+
+.. code:: bash
+
+    python main.py \
+    --designs=/curr/jaywang/research/autosa/AutoSA/autosa.tmp/output/tuning \
+    --stop-after-time=10 \
+    --cst=hw_cst \
+    --task=mm    
+
+Example 4
+^^^^^^^^^    
+.. code:: bash
+
+    ./autosa ./autosa_tests/mm/kernel.c \
+    --config=./autosa_config/autosa_config.json \
+    --target=autosa_hls_c \
+    --output-dir=./autosa.tmp/output \
+    --sa-sizes="{kernel[]->space_time[4]}" \
+    --simd-info=./autosa_tests/mm/simd_info.json \
+    --host-serialize \
+    --hls \
+    --local-reduce \
+    --reduce-op="+" \
+    --simd-touch-space \
+    --no-isl-sink \
+    --tuning-method=1
+
+Run the auto-tuner.
+
+.. code:: bash
+
+    python main.py \
+    --designs=/curr/jaywang/research/autosa/AutoSA/autosa.tmp/output/tuning \
+    --stop-after-time=10 \
+    --cst=hw_cst \
+    --task=mm    
+
+Example 5
+^^^^^^^^^    
+.. code:: bash
+
+    ./autosa ./autosa_tests/mm/kernel.c \
+    --config=./autosa_config/autosa_config.json \
+    --target=autosa_hls_c \
+    --output-dir=./autosa.tmp/output \
+    --sa-sizes="{kernel[]->space_time[5]}" \
+    --simd-info=./autosa_tests/mm/simd_info.json \
+    --host-serialize \
+    --hls \
+    --local-reduce \
+    --reduce-op="+" \
+    --simd-touch-space \
+    --no-isl-sink \
     --tuning-method=1
 
 Run the auto-tuner.

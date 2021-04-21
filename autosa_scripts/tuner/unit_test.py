@@ -52,13 +52,23 @@ if __name__ == "__main__":
     # Start searching
     for task in tasks:
         search_record = utils.SearchRecord().reset()
-        for design in designs:
+        #for design in designs:
+        for design in [designs[0]]:
+            print(design.name)
             search_task = SearchTask(design , task)
+            #task_params = {
+            #    "p0": 1024, "p1": 1024, "p2": 1024,
+            #    "p3": 206, "p4": 172, "p5": 8,
+            #    "p6": 86, "p7": 2, "p8": 8
+            #}
             task_params = {
                 "p0": 1024, "p1": 1024, "p2": 1024,
-                "p3": 206, "p4": 172, "p5": 8,
-                "p6": 86, "p7": 2, "p8": 8
+                "p3": 342, "p4": 56, "p5": 148,
+                "p6": 19, "p7": 2, "p8": 8
             }
+            # i j k 
+            # i k j
+            # i j k 
             reward, resource = search_task.evaluate(task_params)
             print(1/reward)
             print(resource)

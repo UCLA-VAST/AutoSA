@@ -235,6 +235,9 @@ class GeneticTuner(Tuner):
                     task_params[param["name"]] = self.task.task["params"][param["name"]]
                 #print(task_params)
                 task_params = self.task.adjust_params(task_params)
+                #if task_params["p3"] % task_params["p7"] != 0:
+                #    print(task_params)
+                #    exit(0)
                 #print(task_params)                
                 reward, used_constraint = self.task.evaluate(task_params, self.obj)
                 if self.overuse_constraint(used_constraint):                

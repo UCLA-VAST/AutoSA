@@ -2638,13 +2638,10 @@ static __isl_give struct autosa_hw_module *generate_filter_buffer_io_module(
       tuning_sched = isl_schedule_dup(sched1);
     else
       tuning_sched = isl_schedule_dup(boundary_sched1);    
-    isl_schedule_node *root = isl_schedule_get_root(tuning_sched);
-    isl_schedule_free(tuning_sched);
-    //DBGSCHDNODE(stdout, root, isl_schedule_node_get_ctx(root));
-    //std::cout << io_level << std::endl;
+    isl_schedule_node *root = isl_schedule_get_root(tuning_sched);        
     if (io_level <= space_dim) {
-      root = autosa_tree_move_down_to_io_mark(root, kernel->core, io_level + 1);
-      while (isl_schedule_node_has_parent(root)) {
+      root = autosa_tree_move_down_to_io_mark(root, kernel->core, io_level + 1);      
+      while (root && isl_schedule_node_has_parent(root)) {
         root = isl_schedule_node_parent(root);
         if (isl_schedule_node_get_type(root) == isl_schedule_node_filter) {
           root = isl_schedule_node_delete(root);
@@ -2653,14 +2650,17 @@ static __isl_give struct autosa_hw_module *generate_filter_buffer_io_module(
           break;
       }
     }
-    tuning_sched = isl_schedule_node_get_schedule(root);
+    if (root) {
+      isl_schedule_free(tuning_sched);
+      tuning_sched = isl_schedule_node_get_schedule(root);
+    }
     isl_schedule_node_free(root);
     module->tuning_num_outer_sched = kernel->tuning_program->generate_tuning_schedule(tuning_sched);
   }
 
   //std::cout << module->name << std::endl;
   //DBGSCHD(stdout, sched1, isl_schedule_get_ctx(sched1));
-  //DBGSCHD(stdout, boundary_sched1, isl_schedule_get_ctx(sched1));  
+  //DBGSCHD(stdout, boundary_sched1, isl_schedule_get_ctx(sched1));    
 
   if (module->boundary)
   {

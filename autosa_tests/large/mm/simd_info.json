@@ -13,5 +13,8 @@
   },
   "kernel4": {
     "reduction": ["y"]
+  },
+  "kernel5": {
+    "reduction": ["y"]
   }
 }

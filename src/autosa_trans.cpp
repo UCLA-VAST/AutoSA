@@ -1162,10 +1162,6 @@ isl_stat sa_array_partitioning_optimize(struct autosa_kernel *sa,
                 "systolic array type not supported", return isl_stat_error);
     }
 
-//#ifdef _DEBUG
-//    DBGSCHDNODE(stdout, node, isl_schedule_node_get_ctx(node))
-//#endif
-
     if (!en)
     {
         /* Array partitioning is disabled, we will simply add an "array" mark before
@@ -1286,7 +1282,7 @@ isl_stat sa_array_partitioning_optimize(struct autosa_kernel *sa,
         id = isl_id_alloc(sa->ctx, "array", NULL);
         node = isl_schedule_node_insert_mark(node, id);
         node = isl_schedule_node_child(node, 0);
-        extract_sa_dims_from_node(node, sa->sa_dim, sa->n_sa_dim);
+        extract_sa_dims_from_node(node, sa->sa_dim, sa->n_sa_dim);        
 
         free(tile_size);
         isl_schedule_free(sa->schedule);
@@ -1323,6 +1319,8 @@ isl_stat sa_array_partitioning_optimize(struct autosa_kernel *sa,
     free(tile_size);
     node = isl_schedule_node_child(node, 0);
     extract_sa_dims_from_node(node, sa->sa_dim, sa->n_sa_dim);
+    //std::cout << sa->sa_dim[0] << std::endl;
+    //std::cout << sa->sa_dim[1] << std::endl;
     node = isl_schedule_node_parent(node);
 
     /* Reorder the array part loops based on the dependence distance. 
@@ -1790,11 +1788,12 @@ static __isl_give isl_schedule_node *autosa_latency_tile_band_loop(
         if (isl_schedule_node_band_member_get_pe_opt(node, i) == autosa_loop_latency)
         {
             int loop_tile_size;
-            if (reverse_visit) {
-                loop_tile_size = data->tile_size[data->tile_len - data->n_touched_loop - 1];            
-            } else {
-                loop_tile_size = data->tile_size[data->n_touched_loop];
-            }
+            //if (reverse_visit) {
+            //    loop_tile_size = data->tile_size[data->tile_len - data->n_touched_loop - 1];            
+            //} else {
+            //    loop_tile_size = data->tile_size[data->n_touched_loop];
+            //}
+            loop_tile_size = data->tile_size[data->n_touched_loop];
             (data->n_touched_loop)++;
             /* If latency hiding is applied on the space loops, we need to update
              * the SA dimensions. 
@@ -1808,7 +1807,8 @@ static __isl_give isl_schedule_node *autosa_latency_tile_band_loop(
                     if (isl_schedule_node_band_member_get_space_time(node, j) == autosa_loop_space)
                         touched_space_loop++;
                 }
-                data->sa->sa_dim[touched_space_loop] /= loop_tile_size;
+                //std::cout << "space: " << data->sa->sa_dim[touched_space_loop] << ", " << loop_tile_size << std::endl;
+                data->sa->sa_dim[touched_space_loop] /= loop_tile_size;                
                 if (data->sa->sa_dim[touched_space_loop] == 1) {
                     throw std::runtime_error("[AutoSA] Error: Array dimension as 1 is not supported!");
                 }
@@ -1870,42 +1870,95 @@ struct count_latency_hiding_loop_data
 /* Count the number of latency hiding candidate loops.
  * Extract the loop upper bounds of the candidate loops.
  */
-static isl_bool count_latency_hiding_loop(
-    __isl_keep isl_schedule_node *node, void *user)
+//static isl_bool count_latency_hiding_loop(
+//    __isl_keep isl_schedule_node *node, void *user)
+//{
+//    struct count_latency_hiding_loop_data *data =
+//        (struct count_latency_hiding_loop_data *)user;
+//    isl_schedule_node *node_copy;
+//
+//    if (isl_schedule_node_get_type(node) == isl_schedule_node_band)
+//    {
+//        int n = isl_schedule_node_band_n_member(node);
+//        for (int i = 0; i < n; i++)
+//        {
+//            if (isl_schedule_node_band_member_get_pe_opt(node, i) == autosa_loop_latency)
+//            {
+//                data->tile_len = data->tile_len + 1;
+//                /* Extract the loop upper bound */
+//                node_copy = isl_schedule_node_copy(node);
+//                if (i > 0)
+//                {
+//                    node_copy = isl_schedule_node_band_split(node_copy, i);
+//                    node_copy = isl_schedule_node_child(node_copy, 0);
+//                }
+//                if (n - i - 1 > 0)
+//                {
+//                    node_copy = isl_schedule_node_band_split(node_copy, 1);
+//                }
+//                int *ubs = extract_band_upper_bounds(node_copy);
+//                data->ubs = (int *)realloc(data->ubs, sizeof(int) * data->tile_len);
+//                data->ubs[data->tile_len - 1] = ubs[0];
+//                isl_schedule_node_free(node_copy);
+//                free(ubs);
+//            }
+//        }
+//    }
+//
+//    return isl_bool_true;
+//}
+
+static __isl_give isl_schedule_node *count_latency_hiding_loop(
+    __isl_take isl_schedule_node *node, void *user)
 {
     struct count_latency_hiding_loop_data *data =
-        (struct count_latency_hiding_loop_data *)user;
-    isl_schedule_node *node_copy;
-
-    if (isl_schedule_node_get_type(node) == isl_schedule_node_band)
-    {
-        int n = isl_schedule_node_band_n_member(node);
-        for (int i = 0; i < n; i++)
-        {
-            if (isl_schedule_node_band_member_get_pe_opt(node, i) == autosa_loop_latency)
+        (struct count_latency_hiding_loop_data *)user;    
+    if (isl_schedule_node_get_type(node) != isl_schedule_node_band)
+        return node;
+    
+    int n = isl_schedule_node_band_n_member(node);
+    int i;
+    int reverse_visit = 0;
+    if ((data->kernel->options->autosa->reverse_order && !data->kernel->options->autosa->isl_sink) ||
+       (!data->kernel->options->autosa->reverse_order && data->kernel->options->autosa->isl_sink)) {
+        i = 0;
+        reverse_visit = 0;
+    } else {
+        i = n - 1;
+        reverse_visit = 1;
+    }
+    while (1) {
+        if (isl_schedule_node_band_member_get_pe_opt(node, i) == autosa_loop_latency) {
+            data->tile_len = data->tile_len + 1;
+            /* Extract the loop upper bound */
+            isl_schedule_node *node_copy = isl_schedule_node_copy(node);
+            if (i > 0)
             {
-                data->tile_len = data->tile_len + 1;
-                /* Extract the loop upper bound */
-                node_copy = isl_schedule_node_copy(node);
-                if (i > 0)
-                {
-                    node_copy = isl_schedule_node_band_split(node_copy, i);
-                    node_copy = isl_schedule_node_child(node_copy, 0);
-                }
-                if (n - i - 1 > 0)
-                {
-                    node_copy = isl_schedule_node_band_split(node_copy, 1);
-                }
-                int *ubs = extract_band_upper_bounds(node_copy);
-                data->ubs = (int *)realloc(data->ubs, sizeof(int) * data->tile_len);
-                data->ubs[data->tile_len - 1] = ubs[0];
-                isl_schedule_node_free(node_copy);
-                free(ubs);
+                node_copy = isl_schedule_node_band_split(node_copy, i);
+                node_copy = isl_schedule_node_child(node_copy, 0);
             }
+            if (n - i - 1 > 0)
+            {
+                node_copy = isl_schedule_node_band_split(node_copy, 1);
+            }
+            int *ubs = extract_band_upper_bounds(node_copy);
+            data->ubs = (int *)realloc(data->ubs, sizeof(int) * data->tile_len);
+            data->ubs[data->tile_len - 1] = ubs[0];
+            isl_schedule_node_free(node_copy);
+            free(ubs);            
+        }        
+        if (reverse_visit) {
+            if (i == 0)
+                break;
+            i--;
+        } else {
+            if (i == n - 1)
+                break;
+            i++;
         }
     }
 
-    return isl_bool_true;
+    return node;
 }
 
 /* Perform the latency hiding in either "Manual" or "Auto" mode.
@@ -1926,8 +1979,9 @@ static __isl_give isl_schedule_node *autosa_latency_tile_loop(
     int i;
 
     /* Count the candidate loop number and extract the loop upper bounds. */
-    isl_schedule_node_foreach_descendant_top_down(
-        node, &count_latency_hiding_loop, &data);
+    //isl_schedule_node_foreach_descendant_top_down(
+    //    node, &count_latency_hiding_loop, &data);
+    node = isl_schedule_node_map_descendant_bottom_up(node, &count_latency_hiding_loop, &data);
     tile_len = data.tile_len;
 
     if (sa->scop->options->autosa->tuning_method == 1) {
@@ -2402,10 +2456,6 @@ static isl_schedule_node *detect_simd_vectorization_loop(
         return node;
 
     simd_touch_space = sa->options->autosa->simd_touch_space;    
-
-//#ifdef _DEBUG
-//    DBGSCHDNODE(stdout, node, ctx);
-//#endif
 
     if (isl_schedule_node_get_type(node) == isl_schedule_node_band)
     {
@@ -2892,16 +2942,11 @@ isl_stat sa_simd_vectorization_optimize(struct autosa_kernel *sa, char *mode)
         isl_printer_free(p);
     }
     isl_schedule_free(schedule);
-
-    //if (data.layout_trans)
-    //{
-    //    printf("[AutoSA] Warning: Layout transformation is required to proceed. SIMD vectorization is skipped.\n");
-    //}
+    
     if (data.n_legal_loops == 0) {
         printf("[AutoSA] No legal SIMD loop is fonud. SIMD vectorization is skipped.\n");
     }
-    else
-    {
+    else {
         /* Select the candidate loop with the highest score.
          * Tile the candidate loop and permute the point loop innermost. 
          * A SIMD vectorization marker is added. 
@@ -3064,24 +3109,10 @@ isl_stat compute_management(struct autosa_kernel *sa, bool pass_en[], char *pass
     /* Set the core */
     isl_union_set *domain = isl_schedule_get_domain(sa->schedule);
     sa->core = isl_union_set_universe(domain);
-
-//#ifdef _DEBUG
-//    DBGSCHD(stdout, sa->schedule, isl_schedule_get_ctx(sa->schedule));
-//#endif
     /* Array partitioning. */
     sa_array_partitioning_optimize(sa, pass_en[0], pass_mode[0], pass_en[1], pass_mode[1]);    
-
-//#ifdef _DEBUG
-//    DBGSCHD(stdout, sa->schedule, isl_schedule_get_ctx(sa->schedule));    
-//#endif
-
     /* Latency hiding. */
     sa_latency_hiding_optimize(sa, pass_en[2], pass_mode[2]);    
-
-//#ifdef _DEBUG
-//    DBGSCHD(stdout, sa->schedule, isl_schedule_get_ctx(sa->schedule));    
-//#endif
-
     /* SIMD vectorization. */
     if (pass_en[3])
         sa_simd_vectorization_optimize(sa, pass_mode[3]);    

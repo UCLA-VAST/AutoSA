@@ -67,9 +67,11 @@ if __name__ == "__main__":
                 desp = json.load(json_f)
             design = Design(f.split(".")[0])
             design.register(desp, f"{design_dir}/register/{design.name}.py")
+            #print(design.name)
             designs.append(design)
     if len(designs) == 0:
-        raise RuntimeError("No design found")
+        raise RuntimeError("No design found")        
+    #exit(0)
 
     # Load task
     with open(f'task/{args.task}.json') as f:
@@ -84,6 +86,7 @@ if __name__ == "__main__":
     all_records = []        
     for task in tasks:
         search_record = utils.SearchRecord().reset()
+        #for design in [designs[4]]:
         for design in designs:
             search_task = SearchTask(design , task)
             record = tuner.genetic_search(search_task, cst, search_obj, logger, max_epochs, max_time)            

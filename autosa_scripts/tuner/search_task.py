@@ -20,23 +20,24 @@ class SearchTask(object):
             return False
         
         # Making all factors to be even numbers to have more divisors
-        for param in self.design.params_config["tunable"]:
-            params[param] = int(np.ceil(params[param] / 2) * 2)        
+        for p, param in self.design.params_config["tunable"].items():
+            params[p] = int(np.ceil(params[p] / 2) * 2)        
         
         # Making all divisor factors to be divisors of the dependent variable
-        for param in self.design.params_config["tunable"]:
+        for p, param in self.design.params_config["tunable"].items():
+            #print(param)
             if "divisors" in param:
                 if "tags" in param and "power_of_two" in param["tags"]:
                     choices = utils.get_divisors(params[param["divisors"][0]], filter_non_power_of_two)
                 else:
                     choices = utils.get_divisors(params[param["divisors"][0]], None)
-                idx = bisect.bisect(choices, params[param])
+                idx = bisect.bisect(choices, params[p])
                 if idx >= len(choices):
                     idx -= 1
                 if idx > 1:
-                    if abs(choices[idx - 1] - params[param]) < abs(choices[idx] - params[param]):
+                    if abs(choices[idx - 1] - params[p]) < abs(choices[idx] - params[p]):
                         idx -= 1
-                params[param] = choices[idx]
+                params[p] = choices[idx]
 
         return params
 

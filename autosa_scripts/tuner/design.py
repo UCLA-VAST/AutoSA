@@ -56,9 +56,11 @@ class Design(object):
                 f.write(f"{module_mem['data_pack_factor']})\n")
             else:
                 f.write(f"1)\n")        
+        #f.write("\tprint(A_IO_L1_in_unit_memory)\n")
         #f.write("\tprint(A_IO_L2_in_unit_memory)\n")
         #f.write("\tprint(B_IO_L2_in_unit_memory)\n")        
         #f.write("\tprint(PE_unit_memory)\n")
+        #f.write("\tprint(C_1_IO_L2_out_unit_memory)\n")        
         #f.write("\tprint(C_drain_IO_L1_out_unit_memory)\n")
 
         f.write("\tBRAM18K = ")
@@ -258,7 +260,15 @@ class Design(object):
             f.write(f"\t{module}_single_latency = ")                        
             f.write(info["modules"][module])
             f.write(f"\n")        
-        f.write("\tlatency_epilogue = max(")
+        cnt = 0
+        for module in info["modules"]:
+            if "inter" in module or "intra" in module:
+                continue    
+            cnt += 1
+        if cnt == 1:
+            f.write("\tlatency_epilogue = ")
+        else:
+            f.write("\tlatency_epilogue = max(")
         is_first = True
         for module in info["modules"]:
             if "inter" in module or "intra" in module:
@@ -267,7 +277,10 @@ class Design(object):
                 f.write(", ")
             f.write(f"{module}_single_latency")
             is_first = False
-        f.write(")\n\n")
+        if cnt == 1:            
+            f.write("\n\n")
+        else:
+            f.write(")\n\n")
 
         # Latency main
         info = {"has_for_child": 0, "name": None, "modules": {}}
@@ -349,14 +362,23 @@ class Design(object):
         params_to_process = []
         for param in self.params_config["tunable"]:
             params_to_process.append(self.params_config["tunable"][param])
-        while len(params_to_process) > 0:
+        #while len(params_to_process) > 0:            
+        while True:
+            update = False
             for param in params_to_process:
-                if "divisors" not in param:                    
+                if "divisors" not in param: 
+                    #print("first ", param["name"])                   
                     f.write(f"\t\tsample = random.randint(int({param['bounds'][0]}), int({param['bounds'][1]}))\n")
                     f.write(f"\t\t{param['name']} = sample\n")
                     f.write(f"\t\tparams[\"{param['name']}\"] = sample\n")
                     params_to_process.remove(param)
+                    update = True
+            if not update:
+                break
+        while len(params_to_process) > 0:            
+            for param in params_to_process:                
                 if "divisors" in param and param["divisors"] not in params_to_process:                    
+                    #print("second ", param["name"])
                     if "tags" in param and "power_of_two" in param["tags"]:
                         f.write(f"\t\tsample = random.sample(utils.get_divisors(int({param['bounds'][1]}), filter_non_power_of_two), 1)[-1]\n")
                     else:
@@ -365,7 +387,7 @@ class Design(object):
                     f.write(f"\t\tparams[\"{param['name']}\"] = sample\n")
                     params_to_process.remove(param)
         # Latency hiding
-        if desp["memory"]["PE"]["buf_size"].isnumeric() and int(desp["memory"]["PE"]["buf_size"]) == 1:
+        if "PE" not in desp["memory"]:        
             f.write(f"\t\tbreak\n")
         else:
             f.write(f"\t\tlatency_factors = 1\n")
@@ -385,6 +407,10 @@ class Design(object):
 
     def print_bound_check_func(self, f, desp):
         f.write("def bound_check(params):\n")
+        f.write(f"\tdef filter_non_power_of_two(x):\n")
+        f.write(f"\t\tif np.log2(x) != int(np.log2(x)):\n")
+        f.write(f"\t\t\treturn True\n")
+        f.write(f"\t\treturn False\n\n")
         # Load parameters
         f.write("\t")
         is_first = True
@@ -407,6 +433,24 @@ class Design(object):
                 f.write(f"\t\treturn False\n")
                 f.write(f"\tif {p['name']} > {p['bounds'][1]}:\n")
                 f.write(f"\t\treturn False\n")
+            if "tags" in p and "power_of_two" in p["tags"]:
+                f.write(f"\tif filter_non_power_of_two({p['name']}):\n")
+                f.write(f"\t\treturn False\n")
+        # Latency hiding
+        if "PE" in desp["memory"]:
+            f.write(f"\tlatency_factors = 1\n")
+            for p, param in self.params_config["tunable"].items():
+                if param["attr"] == "latency_tiling_factor":
+                    f.write(f"\tlatency_factors *= {param['name']}\n")
+                if param["attr"] == "SIMD_tiling_factor":
+                    f.write(f"\tsimd_factor = {param['name']}\n")
+            data_type = desp["memory"]["PE"]["ele_type"]
+            if data_type == "float":
+                f.write(f"\tif latency_factors < 8 * simd_factor:\n")
+                f.write(f"\t\treturn False\n")
+            else:
+                raise RuntimeError(f"Unsupported data type in random sample generation: {data_type}")
+        
         f.write("\treturn True\n\n")        
 
     def register(self, desp, py_f):
