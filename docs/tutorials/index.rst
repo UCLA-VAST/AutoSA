@@ -11,7 +11,8 @@ architectures and the compilation process of AutoSA.
     optimize_array
     getting_started    
     matrix_multiplication
-    auto_tuning
+    auto_tuning_exhaustive
+    auto_tuning_genetic
     auto_bridge
     structural_sparsity    
     intel_backend

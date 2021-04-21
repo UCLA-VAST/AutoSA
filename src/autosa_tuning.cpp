@@ -654,7 +654,8 @@ void TuningProgram::dump(std::string dir)
     j["params"] = j_params;
 
     // loop struct - latency    
-    for (auto x: this->module_loop_info) {        
+    for (auto x: this->module_loop_info) {
+        //std::cout << x.first << std::endl;
         j["latency"][x.first] = *x.second;
     }
     

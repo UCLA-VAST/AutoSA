@@ -755,51 +755,6 @@ static __isl_give isl_schedule_node *add_io_copies_stmt_acc_single(
     map = isl_map_intersect_domain(map, set);
     domain = isl_union_set_from_set(isl_map_wrap(map));
   }
-  ///* Update the fifo bounds if needed. */
-  //if (data->kernel->options->target == AUTOSA_TARGET_CATAPULT_HLS_C) {
-  //  if (read) {
-  //    char *fifo_name;
-  //    isl_printer *p_tmp;
-  //    p_tmp = isl_printer_to_str(ctx);
-  //    p_tmp = autosa_array_ref_group_print_fifo_name(group, p_tmp);
-  //    if (data->module->is_serialized) {
-  //      p_tmp = isl_printer_print_str(p_tmp, "_serialize");
-  //    } else {
-  //      p_tmp = isl_printer_print_str(p_tmp, "_local_in");
-  //    }
-  //    fifo_name = isl_printer_get_str(p_tmp);
-  //    isl_printer_free(p_tmp);
-//
-  //    if (data->module_type == 0) {
-  //      data->module->n_fifo_default++;
-  //      data->module->fifo_bounds_default = (isl_pw_qpolynomial **)realloc(data->module->fifo_bounds_default,
-  //            sizeof(isl_pw_qpolynomial *) * data->module->n_fifo_default);
-  //      data->module->fifo_names_default = (char **)realloc(data->module->fifo_names_default,
-  //            sizeof(char *) * data->module->n_fifo_default);
-  //      data->module->fifo_bounds_default[data->module->n_fifo_default - 1] =
-  //            isl_set_card(isl_set_from_union_set(isl_union_set_copy(domain)));
-  //      data->module->fifo_names_default[data->module->n_fifo_default - 1] = fifo_name;      
-  //    } else if (data->module_type == 1) {
-  //      data->module->n_fifo_intra++;
-  //      data->module->fifo_bounds_intra = (isl_pw_qpolynomial **)realloc(data->module->fifo_bounds_intra,
-  //            sizeof(isl_pw_qpolynomial *) * data->module->n_fifo_intra);
-  //      data->module->fifo_names_intra = (char **)realloc(data->module->fifo_names_intra,
-  //            sizeof(char *) * data->module->n_fifo_intra);
-  //      data->module->fifo_bounds_intra[data->module->n_fifo_intra - 1] =
-  //            isl_set_card(isl_set_from_union_set(isl_union_set_copy(domain)));
-  //      data->module->fifo_names_intra[data->module->n_fifo_intra - 1] = fifo_name;
-  //    } else if (data->module_type == 2) {
-  //      data->module->n_fifo_inter++;
-  //      data->module->fifo_bounds_inter = (isl_pw_qpolynomial **)realloc(data->module->fifo_bounds_inter,
-  //            sizeof(isl_pw_qpolynomial *) * data->module->n_fifo_inter);
-  //      data->module->fifo_names_inter = (char **)realloc(data->module->fifo_names_inter,
-  //            sizeof(char *) * data->module->n_fifo_inter);
-  //      data->module->fifo_bounds_inter[data->module->n_fifo_inter - 1] =
-  //            isl_set_card(isl_set_from_union_set(isl_union_set_copy(domain)));
-  //      data->module->fifo_names_inter[data->module->n_fifo_inter - 1] = fifo_name;
-  //    }
-  //  }
-  //}
 
   /* read.fifoX[D -> A] */
   domain = isl_union_set_preimage_multi_aff(domain, from_access);
@@ -817,7 +772,6 @@ static __isl_give isl_schedule_node *add_io_copies_stmt_acc_single(
    * to only transfer the data at one loop since we will later insert a 
    * statement to handle the data transfer of the entire SIMD loop.
    */
-//#ifdef ISL_SINK    
   if (data->kernel->options->autosa->isl_sink) {
     if (n_lane >= 1 && is_simd)
     {
@@ -841,7 +795,6 @@ static __isl_give isl_schedule_node *add_io_copies_stmt_acc_single(
       node = isl_schedule_node_child(node, 0);
     }
   }
-//#endif
 
   /* Insert a "pipeline" mark under the band node. */
   hls_id = isl_id_alloc(ctx, "hls_pipeline", NULL);
@@ -2648,6 +2601,7 @@ static __isl_give struct autosa_hw_module *generate_filter_buffer_io_module(
   if (is_filter)
   {
     /* Add the boundary module schedule. */
+    //DBGSCHD(stdout, sched, gen->ctx);
     module->boundary = 1;
     boundary_sched1 = generate_io_module_outer(sched, module, group, kernel, gen,
                                                io_level, space_dim, read, 1);
@@ -2661,33 +2615,52 @@ static __isl_give struct autosa_hw_module *generate_filter_buffer_io_module(
   module->intra_sched = sched3;
   if (gen->options->autosa->tuning_method == 1) {
     module->tuning_sched = NULL;
-    module->tuning_inter_sched = kernel->tuning_program->generate_tuning_schedule(isl_schedule_dup(sched2));
+    if (sched2)
+      module->tuning_inter_sched = kernel->tuning_program->generate_tuning_schedule(isl_schedule_dup(sched2));
+    else
+      module->tuning_inter_sched = kernel->tuning_program->generate_tuning_schedule(isl_schedule_dup(boundary_sched2));
     module->tuning_intra_sched = kernel->tuning_program->generate_tuning_schedule(isl_schedule_dup(sched3));
     
     module->tuning_num_sched = NULL;
-    module->tuning_num_inter_sched = kernel->tuning_program->generate_tuning_schedule(isl_schedule_dup(sched2));
+    if (sched2)
+      module->tuning_num_inter_sched = kernel->tuning_program->generate_tuning_schedule(isl_schedule_dup(sched2));
+    else
+      module->tuning_num_inter_sched = kernel->tuning_program->generate_tuning_schedule(isl_schedule_dup(boundary_sched2));
     module->tuning_num_intra_sched = kernel->tuning_program->generate_tuning_schedule(isl_schedule_dup(sched3));
 
-    module->tuning_outer_sched = kernel->tuning_program->generate_tuning_schedule(isl_schedule_dup(sched1));
+    if (sched1)
+      module->tuning_outer_sched = kernel->tuning_program->generate_tuning_schedule(isl_schedule_dup(sched1));
+    else
+      module->tuning_outer_sched = kernel->tuning_program->generate_tuning_schedule(isl_schedule_dup(boundary_sched1));
     /* Remove the filter ids */
-    isl_schedule *tuning_sched = isl_schedule_dup(sched1);
-    //if (!module->in && is_filter == 1) 
-    //  DBGSCHD(stdout, tuning_sched, isl_schedule_get_ctx(tuning_sched));
+    isl_schedule *tuning_sched;
+    if (sched1)
+      tuning_sched = isl_schedule_dup(sched1);
+    else
+      tuning_sched = isl_schedule_dup(boundary_sched1);    
     isl_schedule_node *root = isl_schedule_get_root(tuning_sched);
     isl_schedule_free(tuning_sched);
-    root = autosa_tree_move_down_to_io_mark(root, kernel->core, io_level + 1);
-    while (isl_schedule_node_has_parent(root)) {
-      root = isl_schedule_node_parent(root);
-      if (isl_schedule_node_get_type(root) == isl_schedule_node_filter) {
-        root = isl_schedule_node_delete(root);
+    //DBGSCHDNODE(stdout, root, isl_schedule_node_get_ctx(root));
+    //std::cout << io_level << std::endl;
+    if (io_level <= space_dim) {
+      root = autosa_tree_move_down_to_io_mark(root, kernel->core, io_level + 1);
+      while (isl_schedule_node_has_parent(root)) {
+        root = isl_schedule_node_parent(root);
+        if (isl_schedule_node_get_type(root) == isl_schedule_node_filter) {
+          root = isl_schedule_node_delete(root);
+        }
+        if (autosa_tree_node_is_mark(root, "array"))
+          break;
       }
-      if (autosa_tree_node_is_mark(root, "array"))
-        break;
     }
     tuning_sched = isl_schedule_node_get_schedule(root);
     isl_schedule_node_free(root);
     module->tuning_num_outer_sched = kernel->tuning_program->generate_tuning_schedule(tuning_sched);
   }
+
+  //std::cout << module->name << std::endl;
+  //DBGSCHD(stdout, sched1, isl_schedule_get_ctx(sched1));
+  //DBGSCHD(stdout, boundary_sched1, isl_schedule_get_ctx(sched1));  
 
   if (module->boundary)
   {
@@ -9166,13 +9139,8 @@ static __isl_give isl_ast_node *create_io_leaf(struct autosa_kernel *kernel,
     p_str = isl_printer_to_str(kernel->ctx);
     p_str = autosa_array_ref_group_print_name(group, p_str);
     local_name = isl_printer_get_str(p_str);
-    isl_printer_free(p_str);    
-
-    //if (module->is_filter && kernel->options->target == AUTOSA_TARGET_CATAPULT_HLS_C) {
-    //  sprintf(buf, "%s_tmp.data", local_name);  
-    //} else {
-      sprintf(buf, "%s", local_name);
-    //}
+    isl_printer_free(p_str);        
+    sprintf(buf, "%s", local_name);    
     free(local_name);    
 
     id = isl_id_alloc(kernel->ctx, buf, NULL);
@@ -10700,22 +10668,7 @@ static isl_bool loop_guards_update(__isl_keep isl_ast_node *node, void *user)
 
       if (info && !data->start_updated) {
         data->start_updated = 1;
-        info->is_guard_start = 1;
-        /* Update the fifo information if needed. */
-        //if (data->module_type == 0 || data->module_type == 1) {
-        //  // default
-        //  info->n_fifo = data->module->n_fifo_default;
-        //  info->fifo_names = data->module->fifo_names_default;
-        //  info->bounds = data->module->fifo_bounds_default;
-        //} else if (data->module_type == 2) {
-        //  info->n_fifo = data->module->n_fifo_intra;
-        //  info->fifo_names = data->module->fifo_names_intra;
-        //  info->bounds = data->module->fifo_bounds_intra;
-        //} else if (data->module_type == 3) {
-        //  info->n_fifo = data->module->n_fifo_inter;
-        //  info->fifo_names = data->module->fifo_names_inter;
-        //  info->bounds = data->module->fifo_bounds_inter;
-        //}
+        info->is_guard_start = 1;        
       }
       if (info && info->is_infinitize_legal && !data->end_updated) {
         /* This is the first loop that can't be infinitized */        

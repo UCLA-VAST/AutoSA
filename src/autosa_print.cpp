@@ -240,17 +240,12 @@ __isl_give isl_printer *autosa_array_info_print_size(
  */
 __isl_give isl_printer *autosa_array_info_print_serialize_data_size(
     __isl_take isl_printer *p, struct autosa_array_info *array)
-{
-  //p = isl_printer_print_str(p, "(");
+{  
   p = isl_printer_print_pw_qpolynomial(p, array->local_array->serialize_bound);
   if (array->local_array->is_sparse) {
     p = isl_printer_print_str(p, " / ");
     p = isl_printer_print_double(p, (double)array->local_array->eff_compress_ratio);
   }
-  //p = isl_printer_print_str(p, ") * ");
-  //p = isl_printer_print_str(p, "sizeof(");
-  //p = isl_printer_print_str(p, array->type);
-  //p = isl_printer_print_str(p, ")");
 
   return p;
 }
@@ -1181,13 +1176,14 @@ __isl_give isl_printer *print_module_arguments(
   /* Arrays */
   if (module->type != PE_MODULE && module->to_mem)
   {
-    if (!module->is_serialized || (module->is_serialized && serialize && !prog->scop->options->autosa->axi_stream)) {
-      /* I/O module that accesses the external memory. */
+    if (!module->is_serialized || 
+       (module->is_serialized && serialize && !prog->scop->options->autosa->axi_stream)) {
+      /* If module satisfies any of the following constraints:
+       * 1. not serialized 
+       * 2. serialized and not using the AXI stream interface
+       * the I/O module will access the external memory through array pointer. */
       struct autosa_io_buffer *io_buffer =
-          module->io_groups[0]->io_buffers[module->io_groups[0]->io_level - 1];
-      //std::cout << io_buffer->n_lane << std::endl;
-      //std::cout << module->data_pack_inter << std::endl;
-      //int n_lane = (module->is_serialized)? module->data_pack_serialize : module->data_pack_inter;
+          module->io_groups[0]->io_buffers[module->io_groups[0]->io_level - 1];      
       int n_lane = (module->is_serialized)? module->data_pack_serialize : io_buffer->n_lane;
       if (!first)
       {
@@ -1212,7 +1208,8 @@ __isl_give isl_printer *print_module_arguments(
       }
       first = 0;
     } else if (module->is_serialized && serialize && prog->scop->options->autosa->axi_stream && inter == -1) {
-      /* Print a stream fifo */
+      /* The module is serialized and using the AXI stream interface,
+       * the I/O module will access the external memory via a stream fifo. */
       struct autosa_io_buffer *io_buffer =
           module->io_groups[0]->io_buffers[module->io_groups[0]->io_level - 1];
       int n_lane = (module->is_serialized)? module->data_pack_serialize : io_buffer->n_lane;
@@ -1233,7 +1230,8 @@ __isl_give isl_printer *print_module_arguments(
       }
       first = 0;
     } else if (inter == -1) {
-      /* Print a serialize fifo */
+      /* The module is serialized and connected to another stream header module,
+       * print a normal FIFO interface here. */
       int n_lane = module->data_pack_inter;
       if (!first) {
         p = isl_printer_print_str(p, ", ");
@@ -1243,17 +1241,20 @@ __isl_give isl_printer *print_module_arguments(
         }
       }
       if (types) {
+        //p = autosa_fifo_print_declaration_arguments(p,
+        //                                            module->io_groups[0], n_lane, "serialize", target);
         p = autosa_fifo_print_declaration_arguments(p,
-                                                    module->io_groups[0], n_lane, "serialize", target);
+                                                    module->io_groups[0], n_lane, (module->in)? "in" : "out", target);
       } else {
         p = isl_printer_print_str(p, "/* fifo */ ");
+        //p = autosa_fifo_print_call_argument(p,  
+        //                                    module->io_groups[0], "serialize", target);
         p = autosa_fifo_print_call_argument(p,  
-                                            module->io_groups[0], "serialize", target);
+                                            module->io_groups[0], (module->in)? "in" : "out", target);
       }
       first = 0;
     }
-  } else if (module->type == PE_MODULE)
-  {
+  } else if (module->type == PE_MODULE) {
     /* Scalars */
     for (int i = 0; i < prog->n_array; i++)
     {
@@ -1431,19 +1432,16 @@ __isl_give isl_printer *print_module_arguments(
       }
     }
   }
-  else
-  {
-    for (int i = 0; i < module->n_io_group; i++)
-    {
-      if (!module->to_mem && inter != 0)
-      {
-        if (!(!module->in && boundary))
-        {
-          if (!first)
-          {
+  else {
+    for (int i = 0; i < module->n_io_group; i++) {
+      //if (!module->to_mem && inter != 0) {
+      if (inter == 1 || (inter == -1 && !module->to_mem)) {
+        /* inter trans or outer module or default module. */
+        if (!(!module->in && boundary)) {
+          /* Print in fifo. */
+          if (!first) {
             p = isl_printer_print_str(p, ", ");
-            if (!types)
-            {
+            if (!types) {
               p = isl_printer_end_line(p);
               p = isl_printer_start_line(p);
             }
@@ -1452,8 +1450,7 @@ __isl_give isl_printer *print_module_arguments(
           if (types)
             p = autosa_fifo_print_declaration_arguments(p,
                                                         module->io_groups[i], module->data_pack_inter, "in", target);
-          else
-          {
+          else {
             p = isl_printer_print_str(p, "/* fifo */ ");
             p = autosa_fifo_print_call_argument(p,
                                                 module->io_groups[i], "in", target);
@@ -1461,14 +1458,12 @@ __isl_give isl_printer *print_module_arguments(
           first = 0;
         }
 
-        if (!(module->in && boundary))
-        {
+        if (!(module->in && boundary)) {
+          /* Print out fifo. */
           /* out */
-          if (!first)
-          {
+          if (!first) {
             p = isl_printer_print_str(p, ", ");
-            if (!types)
-            {
+            if (!types) {
               p = isl_printer_end_line(p);
               p = isl_printer_start_line(p);
             }
@@ -1476,8 +1471,7 @@ __isl_give isl_printer *print_module_arguments(
           if (types)
             p = autosa_fifo_print_declaration_arguments(p,
                                                         module->io_groups[i], module->data_pack_inter, "out", target);
-          else
-          {
+          else {
             p = isl_printer_print_str(p, "/* fifo */ ");
             p = autosa_fifo_print_call_argument(p,
                                                 module->io_groups[i], "out", target);
@@ -1486,13 +1480,10 @@ __isl_give isl_printer *print_module_arguments(
         }
       }
 
-      if (inter != 1)
-      {
-        if (!first)
-        {
+      if (inter != 1) {
+        if (!first) {
           p = isl_printer_print_str(p, ", ");
-          if (!types)
-          {
+          if (!types) {
             p = isl_printer_end_line(p);
             p = isl_printer_start_line(p);
           }
@@ -2820,10 +2811,7 @@ __isl_give isl_printer *autosa_kernel_print_module_call_inst(
       p = isl_printer_print_str(p, "_serialize");    
     p = isl_printer_print_str(p, "\");");
     p = isl_printer_end_line(p);
-
-    //p = print_str_new_line(p, "p = isl_printer_end_line(p);");
-
-    //p = print_str_new_line(p, "p = isl_printer_start_line(p);");
+    
     p = print_str_new_line(p, "p = isl_printer_print_str(p, \" \");");
     
     p = isl_printer_start_line(p);
@@ -3110,17 +3098,10 @@ __isl_give isl_printer *autosa_kernel_print_io(__isl_take isl_printer *p,
         p = isl_printer_print_str(p, group->array->name);
         p = isl_printer_print_str(p, "_s_t");
         p = isl_printer_print_int(p, data_pack);
-      } else {
-        //if (data_pack == 1)
-        //{
-        //  p = isl_printer_print_str(p, group->array->type);
-        //}
-        //else
-        //{
-          p = isl_printer_print_str(p, group->array->name);
-          p = isl_printer_print_str(p, "_t");
-          p = isl_printer_print_int(p, data_pack);
-        //}
+      } else {        
+        p = isl_printer_print_str(p, group->array->name);
+        p = isl_printer_print_str(p, "_t");
+        p = isl_printer_print_int(p, data_pack);        
       }
       p = isl_printer_print_str(p, " fifo_data;");
       p = isl_printer_end_line(p);
@@ -3142,14 +3123,10 @@ __isl_give isl_printer *autosa_kernel_print_io(__isl_take isl_printer *p,
     } else {
       /* Send zeros by default, might be buggy. */      
       /* [type] fifo_data = 0; */
-      p = isl_printer_start_line(p);
-      //if (data_pack == 1) {
-      //  p = isl_printer_print_str(p, group->array->type);
-      //} else {
-        p = isl_printer_print_str(p, group->array->name);
-        p = isl_printer_print_str(p, "_t");
-        p = isl_printer_print_int(p, data_pack);
-      //}
+      p = isl_printer_start_line(p);      
+      p = isl_printer_print_str(p, group->array->name);
+      p = isl_printer_print_str(p, "_t");
+      p = isl_printer_print_int(p, data_pack);      
       p = isl_printer_print_str(p, " fifo_data = 0;");
       p = isl_printer_end_line(p);
       
@@ -3581,12 +3558,6 @@ __isl_give isl_printer *autosa_kernel_print_io(__isl_take isl_printer *p,
         p = isl_printer_print_int(p, kernel->vec_len);
         p = isl_printer_print_str(p, "; m++) {");
         p = isl_printer_end_line(p);
-
-        //p = isl_printer_print_str(p, " * n; m < ");
-        //p = isl_printer_print_int(p, kernel->vec_len);
-        //p = isl_printer_print_str(p, " * n + ");
-        //p = isl_printer_print_int(p, kernel->vec_len);
-        //p = isl_printer_print_str(p, "; m++) {");
         
         if (hls->target == XILINX_HW) {
           p = print_str_new_line(p, "#pragma HLS UNROLL");
@@ -4269,16 +4240,12 @@ static __isl_give isl_printer *autosa_kernel_print_io_transfer_default(
   p = isl_printer_start_line(p);
   if (is_sparse) {
     p = autosa_print_array_type_with_lane_sparse(p, group->array, n_lane);
-  } else {
-    //if (n_lane == 1) {
-    //  p = isl_printer_print_str(p, stmt->u.i.array->type);
-    //} else {
-      p = isl_printer_print_str(p, stmt->u.i.array->name);
-      if (group->local_array->is_sparse)
-        p = isl_printer_print_str(p, "_s");
-      p = isl_printer_print_str(p, "_t");
-      p = isl_printer_print_int(p, n_lane);
-    //}
+  } else {    
+    p = isl_printer_print_str(p, stmt->u.i.array->name);
+    if (group->local_array->is_sparse)
+      p = isl_printer_print_str(p, "_s");
+    p = isl_printer_print_str(p, "_t");
+    p = isl_printer_print_int(p, n_lane);    
   }
   p = isl_printer_print_str(p, " fifo_data;");
   p = isl_printer_end_line(p);
@@ -5147,14 +5114,7 @@ static __isl_give isl_printer *autosa_kernel_print_io_transfer(
     p = isl_printer_end_line(p);    
   } else if (in == FIFO) {
     char *fifo_in_name;
-    fifo_in_name = concat(ctx, stmt->u.i.in_fifo_name, in_fifo_suffix);    
-    //isl_printer *p_str;    
-    //p_str = isl_printer_to_str(ctx);
-    //p_str = autosa_array_ref_group_print_fifo_name(group, p_str);
-    //p_str = isl_printer_print_str(p_str, "_");
-    //p_str = isl_printer_print_str(p_str, in_fifo_suffix);
-    //fifo_in_name = isl_printer_get_str(p_str);
-    //isl_printer_free(p_str);
+    fifo_in_name = concat(ctx, stmt->u.i.in_fifo_name, in_fifo_suffix);        
 
     /* in_data = fifo_in.read(); */
     p = isl_printer_start_line(p);  
@@ -5364,7 +5324,8 @@ static __isl_give isl_printer *autosa_kernel_print_io_transfer_wrapper(
     if (stmt->u.i.in) {
       if (module->is_serialized) {
         in = FIFO;
-        sprintf(in_fifo_suffix, "serialize");
+        //sprintf(in_fifo_suffix, "serialize");
+        sprintf(in_fifo_suffix, "in");
       } else {
         in = GLOBAL_BUF;
       }
@@ -5385,7 +5346,8 @@ static __isl_give isl_printer *autosa_kernel_print_io_transfer_wrapper(
 
       if (module->is_serialized) {
         out = FIFO;
-        sprintf(out_fifo_suffix, "serialize");
+        //sprintf(out_fifo_suffix, "serialize");
+        sprintf(out_fifo_suffix, "out");
       } else {
         out = GLOBAL_BUF;
       }

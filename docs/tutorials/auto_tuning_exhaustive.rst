@@ -1,6 +1,6 @@
 .. _auto-tuning-label:
 
-Auto-Tuning
+Auto-Tuning (Exhaustive Search)
 ===============================================================
 
 **Author**: Jie Wang (jiewang@cs.ucla.edu)

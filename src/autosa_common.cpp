@@ -1894,17 +1894,7 @@ struct autosa_ast_node_userinfo *alloc_ast_node_userinfo()
 
 void free_ast_node_userinfo(void *ptr)
 {
-  struct autosa_ast_node_userinfo *info = (struct autosa_ast_node_userinfo *)ptr;
-  //if (info->n_fifo > 0) {
-  //  for (int i = 0; i < info->n_fifo; i++) {
-  //    free(info->fifo_names[i]);
-  //    isl_pw_qpolynomial_free(info->bounds[i]);
-  //  }   
-  //  free(info->fifo_names);
-  //  free(info->bounds);
-  //}
-  //if (info->module_name)
-  //  free(info->module_name);
+  struct autosa_ast_node_userinfo *info = (struct autosa_ast_node_userinfo *)ptr;  
 
   free(info);
 }
@@ -2867,11 +2857,12 @@ isl_stat sa_extract_array_info(struct autosa_kernel *kernel)
 isl_stat TP_extract_loop_info(struct autosa_gen *gen, struct autosa_hw_module *module) {
   std::vector<isl_ast_node *> asts;  
   if (module->is_filter && module->is_buffer) {
-    //if (module->in) {
-    //  std::cout << module->name << std::endl;
-    //  DBGASTNODE(stdout, module->tuning_device_tree, gen->ctx);
-    ////  DBGASTNODE(stdout, module->device_tree, gen->ctx);
-    //}
+    if (module->in) {
+      //std::cout << module->name << std::endl;
+      //DBGASTNODE(stdout, module->tuning_device_tree, gen->ctx);
+      //DBGASTNODE(stdout, module->tuning_intra_tree, gen->ctx);
+      //DBGASTNODE(stdout, module->tuning_inter_tree, gen->ctx);
+    }
      asts.push_back(module->tuning_device_tree);
      asts.push_back(module->tuning_intra_tree);
      asts.push_back(module->tuning_inter_tree);              

@@ -8,8 +8,10 @@ about generating a systolic array design for Intel FPGAs.
 
 .. note:: 
 
-    The Intel OpenCL back-end is not performant currently due to the channel overheads.
-    This back-end is provided only for testing purpose.
+    The Intel OpenCL back-end is not performant currently due to the channel overheads
+    and may halt on-board for certain test cases.
+    This back-end is provided only for demo purpose. 
+    Please consider Xilinx or Catapult back-end for stable use.
 
 Generating the Design
 ---------------------

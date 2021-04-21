@@ -3718,11 +3718,9 @@ static void print_top_gen_host_code(
       p = isl_printer_print_str(p, "_serialize fifo */ ");      
       p = print_fifo_type_intel(p, group, module->data_pack_inter);
       p = isl_printer_print_str(p, " ");
-      p = isl_printer_print_str(p, fifo_name);      
-      //p = isl_printer_print_str(p, ";\");");      
+      p = isl_printer_print_str(p, fifo_name);            
       p = isl_printer_print_str(p, "\");");      
-      p = isl_printer_end_line(p);
-      //p = print_str_new_line(p, "p = isl_printer_end_line(p);");
+      p = isl_printer_end_line(p);      
 
       /* Resource pragma */
       p = isl_printer_start_line(p);
