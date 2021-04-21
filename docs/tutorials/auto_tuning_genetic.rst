@@ -63,15 +63,26 @@ printed in the screen.
 
 More Examples
 -------------
+Generate design description.
+
 .. code:: bash
 
     ./autosa ./autosa_tests/mm/kernel.c \
     --config=./autosa_config/autosa_config.json \
     --target=autosa_hls_c \
     --output-dir=./autosa.tmp/output \
-    --sa-sizes="{kernel[]->space_time[3]}" \
+    --sa-sizes="{kernel[]->space_time[0]}" \
     --simd-info=./autosa_tests/mm/simd_info.json \
     --host-serialize \
     --hls \
     --tuning-method=1
 
+Run the auto-tuner.
+
+.. code:: bash
+
+    python main.py \
+    --designs=/curr/jaywang/research/autosa/AutoSA/autosa.tmp/output/tuning \
+    --stop-after-time=10 \
+    --cst=hw_cst \
+    --task=mm

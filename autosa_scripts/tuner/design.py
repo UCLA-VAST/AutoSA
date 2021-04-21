@@ -10,6 +10,8 @@ class Design(object):
         self.est_resource_func = None
         self.est_latency_func = None
         self.infer_params_func = None
+        self.random_sampling_func = None
+        self.bound_check_func = None
         self.params_config = None      
         self.desp = None  
 
@@ -334,6 +336,79 @@ class Design(object):
         f.write("\n")                
         f.write("\treturn params\n\n")
 
+    def print_random_sampling_func(self, f, desp):
+        f.write("def random_sampling(params):\n")
+        f.write(f"\tdef filter_non_power_of_two(x):\n")
+        f.write(f"\t\tif np.log2(x) != int(np.log2(x)):\n")
+        f.write(f"\t\t\treturn True\n")
+        f.write(f"\t\treturn False\n\n")
+        # Print the task params
+        for p in self.params_config["external"]:
+            f.write(f"\t{p} = params[\"{p}\"]\n")
+        f.write("\twhile True:\n")
+        params_to_process = []
+        for param in self.params_config["tunable"]:
+            params_to_process.append(self.params_config["tunable"][param])
+        while len(params_to_process) > 0:
+            for param in params_to_process:
+                if "divisors" not in param:                    
+                    f.write(f"\t\tsample = random.randint(int({param['bounds'][0]}), int({param['bounds'][1]}))\n")
+                    f.write(f"\t\t{param['name']} = sample\n")
+                    f.write(f"\t\tparams[\"{param['name']}\"] = sample\n")
+                    params_to_process.remove(param)
+                if "divisors" in param and param["divisors"] not in params_to_process:                    
+                    if "tags" in param and "power_of_two" in param["tags"]:
+                        f.write(f"\t\tsample = random.sample(utils.get_divisors(int({param['bounds'][1]}), filter_non_power_of_two), 1)[-1]\n")
+                    else:
+                        f.write(f"\t\tsample = random.sample(utils.get_divisors(int({param['bounds'][1]}), None), 1)[-1]\n")
+                    f.write(f"\t\t{param['name']} = sample\n")
+                    f.write(f"\t\tparams[\"{param['name']}\"] = sample\n")
+                    params_to_process.remove(param)
+        # Latency hiding
+        if desp["memory"]["PE"]["buf_size"].isnumeric() and int(desp["memory"]["PE"]["buf_size"]) == 1:
+            f.write(f"\t\tbreak\n")
+        else:
+            f.write(f"\t\tlatency_factors = 1\n")
+            for p, param in self.params_config["tunable"].items():
+                if param["attr"] == "latency_tiling_factor":
+                    f.write(f"\t\tlatency_factors *= {param['name']}\n")
+                if param["attr"] == "SIMD_tiling_factor":
+                    f.write(f"\t\tsimd_factor = {param['name']}\n")
+            data_type = desp["memory"]["PE"]["ele_type"]
+            if data_type == "float":
+                f.write(f"\t\tif latency_factors >= 8 * simd_factor:\n")
+                f.write(f"\t\t\tbreak\n")
+            else:
+                raise RuntimeError(f"Unsupported data type in random sample generation: {data_type}")
+        f.write("\n")                
+        f.write("\treturn params\n\n")        
+
+    def print_bound_check_func(self, f, desp):
+        f.write("def bound_check(params):\n")
+        # Load parameters
+        f.write("\t")
+        is_first = True
+        for p in desp["params"]:
+            if not is_first:
+                f.write(", ")
+            f.write(p["name"])
+            is_first = False
+        f.write(" = ")
+        is_first = True
+        for p in desp["params"]:
+            if not is_first:
+                f.write(", ")
+            f.write(f'params[\"{p["name"]}\"]')
+            is_first = False
+        f.write("\n\n")
+        for p in desp["params"]:
+            if "bounds" in p:
+                f.write(f"\tif {p['name']} < {p['bounds'][0]}:\n")
+                f.write(f"\t\treturn False\n")
+                f.write(f"\tif {p['name']} > {p['bounds'][1]}:\n")
+                f.write(f"\t\treturn False\n")
+        f.write("\treturn True\n\n")        
+
     def register(self, desp, py_f):
         """ Register the design in the descriptor file
         Generate all the necessary functions for evaluating the performance of the 
@@ -341,7 +416,10 @@ class Design(object):
         """        
         #print(desp["compute"])        
         with open(py_f, 'w') as f:
-            f.write("from math import ceil\n\n")
+            f.write("from math import ceil\n")
+            f.write("import numpy as np\n")
+            f.write("import random\n")
+            f.write("import utils\n\n")
 
             # Generate resource est func        
             self.print_resource_est_func(f, desp)
@@ -364,12 +442,20 @@ class Design(object):
             # Generate infer parameter func
             self.print_infer_params_func(f, desp)
 
+            # Generate the random sampling func
+            self.print_random_sampling_func(f, desp)
+
+            # Generate the bound check func
+            self.print_bound_check_func(f, desp)
+
         sys.path.append(os.path.dirname(py_f))
         basename = os.path.basename(py_f).split(".")[0]        
         module = __import__(basename)
         self.est_resource_func = module.est_resource
         self.est_latency_func = module.est_latency
         self.infer_params_func = module.infer_params
+        self.random_sampling_func = module.random_sampling
+        self.bound_check_func = module.bound_check
         self.desp = desp
 
     def est_latency(self, params):
@@ -389,3 +475,15 @@ class Design(object):
             raise RuntimeError(f"Internal parameter inference function for design {self.name} undefined")
         else:
             return self.infer_params_func(params)
+
+    def random_sampling(self, params):
+        if not self.random_sampling_func:
+            raise RuntimeError(f"Random sampling function for design {self.name} undefined")
+        else:
+            return self.random_sampling_func(params)
+
+    def bound_check(self, params):
+        if not self.bound_check_func:
+            raise RuntimeError(f"Bound check function for design {self.name} undefined")
+        else:
+            return self.bound_check_func(params)            

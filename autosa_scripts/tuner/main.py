@@ -80,19 +80,26 @@ if __name__ == "__main__":
 
     # Start searching
     counter = utils.PerfCounter(logger)
-    counter.init_counter("Total Search Time")        
+    counter.init_counter("Total Search Time")
+    all_records = []        
     for task in tasks:
         search_record = utils.SearchRecord().reset()
         for design in designs:
             search_task = SearchTask(design , task)
-            search_record.update(tuner.genetic_search(search_task, cst, search_obj, logger, max_epochs, max_time)) # TODO
+            record = tuner.genetic_search(search_task, cst, search_obj, logger, max_epochs, max_time)            
+            all_records.append(record)
+            search_record.update(record)
         task["search results"] = search_record
 
     counter.update_counter("Total Search Time")
     counter.print_counter("Total Search Time")
 
+    print(all_records)
+
     # Display and dump the search history
-    for task in tasks:
-        logger.info(pprint.pformat(task, indent=4))
+    #for task in tasks:
+    #    logger.info(pprint.pformat(task, indent=4))
     with open(f"{outdir}/results.log", 'w') as f:
         f.write(pprint.pformat(task, indent=4))
+    with open(f"{outdir}/history.log", 'w') as f:
+        f.write(pprint.pformat(all_records, indent=4))

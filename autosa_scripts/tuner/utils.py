@@ -166,6 +166,7 @@ class SearchRecord(object):
         to_print += f"\nreward: {self.reward}"
         to_print += f"\ncst: {pprint.pformat(self.cst, indent=4)}"
         to_print += f"\nlatency: {self.latency}"
+        to_print += f"\ndesign: {self.design}"
         to_print += f"\ntask_name: {self.task_name}"
         to_print += f"\ntask_params: \n{pprint.pformat(self.task_params, indent=4)}"
         to_print += "\n"

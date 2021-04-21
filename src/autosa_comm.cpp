@@ -3318,6 +3318,7 @@ static isl_stat compute_io_group_data_pack(struct autosa_kernel *kernel,
           user_max_n_lane = data_pack_ubs[2] / ele_size;
         TPExpr *ub = buf->tuning_tile->sizes[buf->tuning_tile->sizes.size() - 1]->dup();
         ub = ub->min(new TPExpr("literal", new TPConst(user_max_n_lane)));
+        ub = ub->max(dp->bounds[0]->dup());
         dp->bounds.push_back(std::shared_ptr<TPExpr>(ub));
         //dp->bounds.push_back(std::shared_ptr<TPExpr>(buf->tuning_tile->sizes[buf->tuning_tile->sizes.size() - 1]->dup()));
         dp->divisors.push_back(std::shared_ptr<TPExpr>(buf->tuning_tile->sizes[buf->tuning_tile->sizes.size() - 1]->dup()));

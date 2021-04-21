@@ -572,7 +572,7 @@ __isl_give isl_schedule_node *TuningProgram::tile(__isl_take isl_schedule_node *
  * Dim "pos" in the band is tiled. Point band contains a single loop.
  */
 __isl_give isl_schedule_node *TuningProgram::tile(
-    __isl_take isl_schedule_node *node, int pos, int div, std::string step, std::unordered_set<std::string> tags)
+    __isl_take isl_schedule_node *node, int pos, int div, std::string step, std::unordered_set<std::string> tags, int bound)
 {    
     isl_schedule_node *tile_node = node;
     isl_schedule_node *point_node = isl_schedule_node_child(isl_schedule_node_copy(node), 0);    
@@ -584,6 +584,10 @@ __isl_give isl_schedule_node *TuningProgram::tile(
     TPParameter *tile_ub = (TPParameter *)(tile_iter->ub->ops[0]);
     this->param_map[tile_ub->to_str()]->split_by = point_ub;
     point_ub->bounds.push_back(std::make_shared<TPExpr>("literal", new TPParameter(tile_ub)));    
+    if (step == "SIMD") {
+        point_ub->bounds[1] = std::shared_ptr<TPExpr>(point_ub->bounds[1]->dup()->min(new TPExpr("literal", new TPConst(bound))));
+    }
+
     point_ub->attr = step + "_tiling_factor";
     for (auto tag : tags) {
         point_ub->tags.insert(tag);

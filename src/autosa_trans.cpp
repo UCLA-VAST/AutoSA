@@ -1831,7 +1831,7 @@ static __isl_give isl_schedule_node *autosa_latency_tile_band_loop(
                 node = isl_schedule_node_band_member_set_pe_opt(node, 0, autosa_loop_default);
                 if (data->sa->scop->options->autosa->tuning_method == 1) {
                     node = isl_schedule_node_parent(node);
-                    node = data->sa->tuning_program->tile(node, i, 1, "latency", {});
+                    node = data->sa->tuning_program->tile(node, i, 1, "latency", {}, -1);
                     node = isl_schedule_node_child(node, 0);
                 }
                 /* Move the single loop node to the bottom of the time band. */
@@ -2740,7 +2740,7 @@ static __isl_give isl_schedule_node *autosa_simd_tile_loop(
                 node = isl_schedule_node_band_member_set_pe_opt(node, 0, autosa_loop_default);                
                 if (data->kernel->scop->options->autosa->tuning_method == 1) {
                     node = isl_schedule_node_parent(node);
-                    node = data->kernel->tuning_program->tile(node, i, 1, "SIMD", {"power_of_two"});
+                    node = data->kernel->tuning_program->tile(node, i, 1, "SIMD", {"power_of_two"}, 32/data->kernel->array[0].array->size);
                     node = isl_schedule_node_child(node, 0);
                 }
                 /* Sink the point loop innermost */

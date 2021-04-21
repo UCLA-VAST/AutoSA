@@ -56,8 +56,8 @@ if __name__ == "__main__":
             search_task = SearchTask(design , task)
             task_params = {
                 "p0": 1024, "p1": 1024, "p2": 1024,
-                "p3": 350, "p4": 266, "p5": 64,
-                "p6": 38, "p7": 10, "p8": 8
+                "p3": 206, "p4": 172, "p5": 8,
+                "p6": 86, "p7": 2, "p8": 8
             }
             reward, resource = search_task.evaluate(task_params)
             print(1/reward)

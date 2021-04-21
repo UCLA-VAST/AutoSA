@@ -204,7 +204,7 @@ class TuningProgram {
         __isl_give isl_schedule *init_from_schedule(__isl_take isl_schedule *schedule);
         __isl_give isl_schedule_node *tile(__isl_take isl_schedule_node *node, int div, std::string step);
         __isl_give isl_schedule_node *tile(
-            __isl_take isl_schedule_node *node, int pos, int div, std::string step, std::unordered_set<std::string> tags);
+            __isl_take isl_schedule_node *node, int pos, int div, std::string step, std::unordered_set<std::string> tags, int bound);
         void dump(std::string dir);
         __isl_give isl_schedule *generate_tuning_schedule(__isl_take isl_schedule *schedule);
         __isl_give isl_schedule *generate_io_tuning_schedule(__isl_take isl_schedule *schedule, int io_level);
