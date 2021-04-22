@@ -380,7 +380,7 @@ add space loops into consideration in the previous command.
     --local-reduce \
     --reduce-op="+" \
     --simd-touch-space \
-    --no-isl-sink
+    --array-contraction
 
 This leads to a 1x2 1D array.
 
@@ -388,10 +388,10 @@ One more thing to notice here is that inside each PE, AutoSA only allocates a si
 ``local_C[1][1]`` for storing the local elements of array C. 
 This is based on the facts that all time loops are parallel loops which means that 
 the PE never works on the same element again. 
-In this case, AutoSA performs array contraction automatically to reduce the local buffer size.
-You may turn off this optimization by adding the argument ``--no-array-contraction`` 
-to the compilation command.
-When automatic array contraction is turned off, a local buffer ``local_C[32][32]``
+As we add the flag ``--array-contraction``, AutoSA will successfully apply the array 
+contraction to reduce the local buffer size.
+You may turn off this optimization by removing the argument ``--array-contraction``.
+When array contraction is turned off, a local buffer ``local_C[32][32]``
 is allocated inside each PE.
 
 Array 4: [i,j]
@@ -454,12 +454,12 @@ Note that we use ``kernel[]->space_time[4]`` to select the fifth design.
     --local-reduce \
     --reduce-op="+" \
     --simd-touch-space \
-    --no-isl-sink
+    --array-contraction
 
 This command leads to a 2x2 2D array.
 Similar as array 3, we add additional information about reduction properties of the application
 to the compiler. To let AutoSA explore the space loop as SIMD loop, we also add the flag 
-``--simd-touch-space``.
+``--simd-touch-space``. And we add ``--array-contraction`` to reduce the local buffer size.
 
 Array 6: [j,k]
 ^^^^^^^^^^^^^^
@@ -492,6 +492,6 @@ Note that we use ``kernel[]->space_time[5]`` to select the fifth design.
     --local-reduce \
     --reduce-op="+" \
     --simd-touch-space \
-    --no-isl-sink
+    --array-contraction
 
 This command leads to a 2x2 2D array.

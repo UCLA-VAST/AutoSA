@@ -87,7 +87,7 @@ ISL_ARGS_END
 ISL_ARGS_START(struct autosa_options, autosa_options_args)
 ISL_ARG_BOOL(struct autosa_options, autosa, 0, "autosa", 1,
 				"generate systolic arrays using AutoSA")
-ISL_ARG_BOOL(struct autosa_options, array_contraction, 0, "array-contraction", 1,
+ISL_ARG_BOOL(struct autosa_options, array_contraction, 0, "array-contraction", 0,
 				"apply array contraction")
 ISL_ARG_BOOL(struct autosa_options, axi_stream, 0, "axi-stream", 0,
 				"generate AXI stream interface, must be used together with host serialization.")
@@ -145,7 +145,7 @@ ISL_ARG_BOOL(struct autosa_options, non_block_fifo, 0, "non-blocking-fifo", 0,
 ISL_ARG_STR(struct autosa_options, output_dir, 0, "output-dir", "dir", "./autosa.tmp/output",
 				"AutoSA Output directory")
 ISL_ARG_BOOL(struct autosa_options, reverse_order, 0, "reverse-order", 1,
-			 	"reverse loop tiling order")				
+			 	"reverse latency hiding loop tiling order")				
 ISL_ARG_STR(struct autosa_options, sa_sizes, 0, "sa-sizes", "sizes", NULL,
 				"per kernel PE optimization tile sizes")
 ISL_ARG_INT(struct autosa_options, sa_tile_size, 0, "sa-tile-size", "size", 4,

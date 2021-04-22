@@ -1695,7 +1695,6 @@ __isl_give isl_schedule_node *autosa_latency_node_band_sink_time(
 {
     if (sa->type == AUTOSA_SA_TYPE_ASYNC)
     {
-//#ifdef ISL_SINK      
         if (sa->options->autosa->isl_sink) {
             node = isl_schedule_node_band_sink(node);
             /* Add the "latency" mark. */
@@ -1703,19 +1702,15 @@ __isl_give isl_schedule_node *autosa_latency_node_band_sink_time(
                 node, &add_latency_mark, NULL);
 
         } 
-//#else   
-        else {
-            //DBGSCHDNODE(stdout, node, isl_schedule_node_get_ctx(node));
-            node = autosa_node_sink_to_mark(node, "latency");
-            //DBGSCHDNODE(stdout, node, isl_schedule_node_get_ctx(node));            
+        else {         
+            node = autosa_node_sink_to_mark(node, "latency");            
         }
-//#endif
     }
     else if (sa->type == AUTOSA_SA_TYPE_SYNC)
     {
         /* Move up to the node that contains the space loop.
-     * The current node should be right below the space band.
-     */
+         * The current node should be right below the space band.
+         */
         node = isl_schedule_node_parent(node);
 
         /* Find the position of the first space loop. */
@@ -1768,31 +1763,35 @@ static __isl_give isl_schedule_node *autosa_latency_tile_band_loop(
     if (isl_schedule_node_get_type(node) != isl_schedule_node_band)
         return node;
 
-// Hack: For 2D GEMM, reverse the latency hiding order
     int n;
     isl_id *id;
     n = isl_schedule_node_band_n_member(node);
     int i;
     int reverse_visit = 0;
 
-    if ((data->sa->options->autosa->reverse_order && !data->sa->options->autosa->isl_sink) ||
-       (!data->sa->options->autosa->reverse_order && data->sa->options->autosa->isl_sink)) {
-        i = 0;
-        reverse_visit = 0;
+    if (data->sa->options->autosa->reverse_order) {        
+        if (data->sa->options->autosa->isl_sink) {
+            i = n - 1;
+            reverse_visit = 1;            
+        } else {
+            i = 0;
+            reverse_visit = 0;    
+        }
     } else {
-        i = n - 1;
-        reverse_visit = 1;
+        if (data->sa->options->autosa->isl_sink) {            
+            i = 0;
+            reverse_visit = 0;            
+        } else {            
+            i = n - 1;
+            reverse_visit = 1;
+        }
     }
+
     while (1)
     {        
         if (isl_schedule_node_band_member_get_pe_opt(node, i) == autosa_loop_latency)
         {
-            int loop_tile_size;
-            //if (reverse_visit) {
-            //    loop_tile_size = data->tile_size[data->tile_len - data->n_touched_loop - 1];            
-            //} else {
-            //    loop_tile_size = data->tile_size[data->n_touched_loop];
-            //}
+            int loop_tile_size;            
             loop_tile_size = data->tile_size[data->n_touched_loop];
             (data->n_touched_loop)++;
             /* If latency hiding is applied on the space loops, we need to update
@@ -2129,14 +2128,7 @@ isl_stat sa_latency_hiding_optimize(struct autosa_kernel *sa, bool en, char *mod
     node = isl_schedule_node_map_descendant_bottom_up(node,
                                                       &latency_opt_check, &data);
     if (!data.is_required)
-    {
-        //printf("[AutoSA] The innermost time loop is parallel. Latency hiding is skipped.\n");
-        //isl_schedule_free(schedule);
-        //schedule = isl_schedule_node_get_schedule(node);
-        //isl_schedule_node_free(node);
-        //sa->schedule = schedule;
-        //// TODO: this will make the latency hiding stuck in the auto-tuning, fix it.
-        //return isl_stat_ok;        
+    {             
         printf("[AutoSA] The innermost time loop is parallel. Latency hiding is optional.\n");
     }
 
@@ -4170,20 +4162,12 @@ static __isl_give isl_printer *generate(__isl_take isl_printer *p,
     /* Scheduling */
     schedule = get_schedule(gen);
 
-//#ifdef _DEBUG
-//    DBGSCHD(stdout, schedule, gen->ctx);
-//#endif
-
     /* The current ISL scheduler is limited and sometimes can't find the 
      * fully permutable loop band correctly.
      * As a temporary hack, here we will try a second time and to merge the 
      * outer band as much as possible.
      */    
     schedule = merge_outer_bands(schedule, gen);    
-
-//#ifdef _DEBUG
-//    DBGSCHD(stdout, schedule, gen->ctx);
-//#endif
 
     /* Legality check */
     isl_bool is_legal = sa_legality_check(schedule, scop);
@@ -4197,6 +4181,11 @@ static __isl_give isl_printer *generate(__isl_take isl_printer *p,
     }
     else
     {
+        if (gen->options->autosa->array_contraction) {
+            /* If array contraction is enabled, disable isl sink. */
+            gen->options->autosa->isl_sink = 0;
+        }
+
         /* Perform opt. stages:
          * Computation Management -> Communication Management     
          */        
