@@ -2547,30 +2547,30 @@ static __isl_give struct autosa_hw_module *generate_filter_buffer_io_module(
   if (gen->options->autosa->double_buffer && kernel->array_part_w > 0)
   {
     isl_union_map *double_buffer_assignment;
-    /* Check if the double buffer assignment exists. */
-    //printf("%s\n", gen->options->autosa->double_buffer_assignment);
-    double_buffer_assignment = extract_sizes_from_str(kernel->ctx, gen->options->autosa->double_buffer_assignment);
-    //DBGUMAP(stdout, double_buffer_assignment, kernel->ctx);
-    //exit(0);
+    /* Check if the double buffer assignment exists. */    
+    double_buffer_assignment = extract_sizes_from_str(kernel->ctx, gen->options->autosa->double_buffer_assignment);    
     if (!double_buffer_assignment) {
-      /* Use the default strategy.
-       * Only external array is set to double buffer.
-       */
-      if (group->local_array->array_type == AUTOSA_EXT_ARRAY && module->in) {
-        module->double_buffer = 1;
+      /* Use the default strategy:
+       * Set all the modules to double buffer except the drain module.       
+       */      
+      if (group->group_type == AUTOSA_DRAIN_GROUP) {
+        module->double_buffer = 0;
       } else {
-        if (gen->options->autosa->local_reduce)
-          module->double_buffer = 1;
-        else
-          module->double_buffer = 0;    
+        module->double_buffer = 1;
       }
+      //if (group->local_array->array_type == AUTOSA_EXT_ARRAY && module->in) {
+      //  module->double_buffer = 1;
+      //} else {
+      //  if (gen->options->autosa->local_reduce)
+      //    module->double_buffer = 1;
+      //  else
+      //    module->double_buffer = 0;    
+      //}
     } else {
       isl_set *tmp;
-      tmp = extract_sa_sizes(double_buffer_assignment, group->local_array->array->name);
-      //printf("here\n");
+      tmp = extract_sa_sizes(double_buffer_assignment, group->local_array->array->name);      
       
-      if (tmp) {
-        //printf("%s\n", module->io_groups[0]->local_array->array->name);
+      if (tmp) {        
         module->double_buffer = 1;        
       }
       isl_set_free(tmp);
@@ -3577,13 +3577,6 @@ static __isl_give struct autosa_hw_module *generate_io_module_by_type(
     struct autosa_gen *gen, int io_level, int space_dim,
     int is_filter, int is_buffer, int read)
 {
-//#ifdef _DEBUG
-//  printf("array_name: %s\n", group->array->name);
-//  printf("module name: %s\n", module->name);
-//  if (!strcmp(module->name, "A_IO_L3_in"))
-//    printf("here\n");
-//#endif
-
   if (is_filter && is_buffer)
   {
     module = generate_filter_buffer_io_module(module, node, group, kernel,
@@ -3662,8 +3655,7 @@ static int update_serialize_data_pack(struct autosa_gen *gen, struct autosa_hw_m
 static __isl_give struct autosa_hw_module **sa_io_module_gen(
     struct autosa_array_ref_group *group,
     struct autosa_gen *gen, int *n_modules, int in, int out)
-{
-  // TODO: Add the support for manual tuning.
+{  
   isl_schedule_node *node;
   isl_ctx *ctx;
   struct autosa_kernel *kernel;
@@ -3694,62 +3686,10 @@ static __isl_give struct autosa_hw_module **sa_io_module_gen(
   {
     if (is_flow_dep_carried_by_array_part_loops(group->io_schedule, group, kernel))
       credit = 1;
-
-    //    if (group->local_array->array_type == AUTOSA_INT_ARRAY) {
-    //      isl_bool carried = isl_bool_false;
-    //      isl_union_map *umap;
-    //
-    //      node = autosa_tree_move_down_to_array(node, kernel->core);
-    //      node = isl_schedule_node_parent(node);
-    //      umap = isl_schedule_node_band_get_partial_schedule_union_map(node);
-    //      for (int i = 0; i < group->n_ref; i++) {
-    //        struct autosa_stmt_access *ref = group->refs[i];
-    //        for (int j = 0; j < ref->n_io_info; j++) {
-    //          struct autosa_io_info *io_info = ref->io_info[j];
-    //          if (io_info->io_type == group->io_type &&
-    //                !isl_vec_cmp(io_info->dir, group->dir)) {
-    //            isl_map *test;
-    //            isl_map *schedule_dep;
-    //            int dim;
-    //            int is_parallel;
-    //            isl_union_map *dep = isl_union_map_from_map(
-    //                isl_map_factor_domain(
-    //                isl_map_from_basic_map(isl_basic_map_copy(io_info->dep->isl_dep))));
-    //            dep = isl_union_map_apply_range(dep, isl_union_map_copy(umap));
-    //            dep = isl_union_map_apply_domain(dep, isl_union_map_copy(umap));
-    //            if (isl_union_map_is_empty(dep)) {
-    //              isl_union_map_free(dep);
-    //              break;
-    //            }
-    //            schedule_dep = isl_map_from_union_map(dep);
-    //            test = isl_map_universe(isl_map_get_space(schedule_dep));
-    //            dim = isl_schedule_node_band_n_member(node);
-    //            for (int n = 0; n < dim; n++) {
-    //              test = isl_map_equate(test, isl_dim_in, n, isl_dim_out, n);
-    //            }
-    //            is_parallel = isl_map_is_subset(schedule_dep, test);
-    //            isl_map_free(schedule_dep);
-    //            isl_map_free(test);
-    //
-    //            if (!is_parallel) {
-    //              /* Dependence is carried by the array part loops. */
-    //              carried = isl_bool_true;
-    //              break;
-    //            }
-    //          }
-    //        }
-    //      }
-    //      isl_union_map_free(umap);
-    //      if (carried) {
-    //        credit = 1;
-    //      }
-    //      node = autosa_tree_move_up_to_kernel(node);
-    //    }
   }
 
   /* At each I/O level, generate one I/O module. */
-  /* Copy-in group. */
-  //if (in && is_io_module_valid(node, kernel, group, 1))
+  /* Copy-in group. */  
   if (in && group->copy_in)
   {    
     for (int i = io_level; i >= 1; i--)
@@ -3771,7 +3711,7 @@ static __isl_give struct autosa_hw_module **sa_io_module_gen(
 
       /* Since we perform I/O clustering automatically, all the I/O modules
        * except the outermost level will be in the filter mode:
-       * which means that they will pass data to downstreaming modules
+       * which means that they will pass data to downstream modules
        * and filter out the data that they need for the lower-level modules
        * they are connected to.
        */  
@@ -3783,37 +3723,45 @@ static __isl_give struct autosa_hw_module **sa_io_module_gen(
       } else
         is_filter = 1;
       
-      if (group->group_type == AUTOSA_DRAIN_GROUP)
-      {
-        if (i == innermost)
-          is_buffer = 1;
-        else
-          is_buffer = 0;
-      }
-      else if (group->group_type == AUTOSA_IO_GROUP)
-      {
-        if (group->local_array->array_type == AUTOSA_INT_ARRAY)
-        {
-          if (group->io_type == AUTOSA_EXT_IO)
-          {
-            if (i == innermost)
-              is_buffer = 1;
-            else
-              is_buffer = 0;
-          }
-          else if (group->io_type == AUTOSA_INT_IO)
-          {
-            is_buffer = 0;
-          }
-        }
-        else if (group->local_array->array_type == AUTOSA_EXT_ARRAY)
-        {
-          if (i == innermost)
-            is_buffer = 1;
-          else
-            is_buffer = 0;
-        }
-      }
+      /* All the innermost modules will be buffered to isolate the computation 
+       * and data communication. Otherwise, possible data hazards might cause 
+       * the design to stuck.
+       */
+      if (i == innermost) 
+        is_buffer = 1;
+      else
+        is_buffer = 0;
+      //if (group->group_type == AUTOSA_DRAIN_GROUP)
+      //{
+      //  if (i == innermost)
+      //    is_buffer = 1;
+      //  else
+      //    is_buffer = 0;
+      //}
+      //else if (group->group_type == AUTOSA_IO_GROUP)
+      //{
+      //  if (group->local_array->array_type == AUTOSA_INT_ARRAY)
+      //  {
+      //    if (group->io_type == AUTOSA_EXT_IO)
+      //    {
+      //      if (i == innermost)
+      //        is_buffer = 1;
+      //      else
+      //        is_buffer = 0;
+      //    }
+      //    else if (group->io_type == AUTOSA_INT_IO)
+      //    {
+      //      is_buffer = 0;
+      //    }
+      //  }
+      //  else if (group->local_array->array_type == AUTOSA_EXT_ARRAY)
+      //  {
+      //    if (i == innermost)
+      //      is_buffer = 1;
+      //    else
+      //      is_buffer = 0;
+      //  }
+      //}
 
       if (gen->options->autosa->two_level_buffer)
       {
@@ -3903,25 +3851,30 @@ static __isl_give struct autosa_hw_module **sa_io_module_gen(
         is_filter = 0;
       else
         is_filter = 1;
-      if (group->group_type == AUTOSA_DRAIN_GROUP)
-      {
-        if (i == innermost)
-          is_buffer = 1;
-        else
-          is_buffer = 0;
-      }
-      else if (group->group_type == AUTOSA_IO_GROUP)
-      {
-        if (group->io_type == AUTOSA_INT_IO)
-          is_buffer = 0;
-        else
-        {
-          if (i == innermost)
-            is_buffer = 1;
-          else
-            is_buffer = 0;
-        }
-      }
+      
+      if (i == innermost) 
+        is_buffer = 1;
+      else
+        is_buffer = 0;
+      //if (group->group_type == AUTOSA_DRAIN_GROUP)
+      //{
+      //  if (i == innermost)
+      //    is_buffer = 1;
+      //  else
+      //    is_buffer = 0;
+      //}
+      //else if (group->group_type == AUTOSA_IO_GROUP)
+      //{
+      //  if (group->io_type == AUTOSA_INT_IO)
+      //    is_buffer = 0;
+      //  else
+      //  {
+      //    if (i == innermost)
+      //      is_buffer = 1;
+      //    else
+      //      is_buffer = 0;
+      //  }
+      //}
 
       if (gen->options->autosa->two_level_buffer)
       {

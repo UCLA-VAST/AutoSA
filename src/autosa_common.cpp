@@ -380,12 +380,7 @@ isl_bool access_is_stride_one(__isl_keep isl_map *access, int pos)
 
   space = isl_map_get_space(access);
   space = isl_space_domain(space);
-  next_iter = next(space, isl_map_dim(access, isl_dim_in) - 1);
-  //#ifdef _DEBUG
-  //  isl_printer *pd = isl_printer_to_file(isl_map_get_ctx(access), stdout);
-  //  pd = isl_printer_print_map(pd, next_iter);
-  //  pd = isl_printer_end_line(pd);
-  //#endif
+  next_iter = next(space, isl_map_dim(access, isl_dim_in) - 1);  
   map = isl_map_apply_domain(next_iter, isl_map_copy(access));
   map = isl_map_apply_range(map, isl_map_copy(access));
   if (isl_map_is_empty(map))
@@ -395,13 +390,6 @@ isl_bool access_is_stride_one(__isl_keep isl_map *access, int pos)
     return isl_bool_false;
   }
   coalesced = isl_map_is_subset(map, next_element);
-  //#ifdef _DEBUG
-  //  pd = isl_printer_print_map(pd, map);
-  //  pd = isl_printer_end_line(pd);
-  //  pd = isl_printer_print_map(pd, next_element);
-  //  pd = isl_printer_end_line(pd);
-  //  isl_printer_free(pd);
-  //#endif
 
   isl_map_free(next_element);
   isl_map_free(map);

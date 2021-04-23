@@ -1546,10 +1546,6 @@ __isl_give isl_schedule_node *autosa_node_sink_to_mark(
  */
 __isl_give isl_schedule_node *reorder_band_by_dep_dis(__isl_take isl_schedule_node *node)
 {
-//#ifdef _DEBUG
-//  DBGSCHDNODE(stdout, node, isl_schedule_node_get_ctx(node))
-//#endif
-
   int n = isl_schedule_node_band_n_member(node);
   for (int i = 0; i < n; i++) {
     for (int j = 0; j < n; j++) {
@@ -1560,10 +1556,6 @@ __isl_give isl_schedule_node *reorder_band_by_dep_dis(__isl_take isl_schedule_no
       }
     }
   }
-
-//#ifdef _DEBUG
-//  DBGSCHDNODE(stdout, node, isl_schedule_node_get_ctx(node))
-//#endif
 
   return node;
 }

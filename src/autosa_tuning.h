@@ -199,7 +199,7 @@ class TPArrayTile {
 
 class TuningProgram {
     public:
-        TuningProgram(){};
+        TuningProgram(){id2 = -1;};
         /* Initialize the tuning program from an ISL schedule */
         __isl_give isl_schedule *init_from_schedule(__isl_take isl_schedule *schedule);
         __isl_give isl_schedule_node *tile(__isl_take isl_schedule_node *node, int div, std::string step);
@@ -225,8 +225,10 @@ class TuningProgram {
         std::vector<TPArray *> arrays;
         // Maps the parameter name to the point in "params"
         std::unordered_map<std::string, TPParameter *> param_map;        
-        // Unique id to the tuning program
+        // kernel id to the tuning program
         int id;
+        // second-level id for loop permutation
+        int id2;
         std::unordered_map<std::string, std::shared_ptr<json>> module_loop_info;        
         std::unordered_map<std::string, std::shared_ptr<json>> module_memory_info;
         std::unordered_map<std::string, std::shared_ptr<json>> module_compute_info;

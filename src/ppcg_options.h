@@ -112,6 +112,9 @@ extern "C"
 		int axi_stream;
 		/* Tuning method: [0: Exhaustive search 1: Others] */
 		int tuning_method;
+		/* Explore loop permutation in the array partitioning. */
+		int explore_loop_permute;
+		int loop_permute_order;
 	};	
 
 	struct ppcg_options

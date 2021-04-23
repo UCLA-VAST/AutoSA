@@ -109,6 +109,10 @@ ISL_ARG_STR(struct autosa_options, double_buffer_assignment, 0, "double-buffer-a
 				NULL, "assign arrays to be double bufferred (e.g., kernel[]->A[])")
 ISL_ARG_INT(struct autosa_options, double_buffer_style, 0, "double-buffer-style", "id", 1,
 				"change double-buffering logic coding style (0: while loop 1: for loop)")
+ISL_ARG_BOOL(struct autosa_options, explore_loop_permute, 0, "explore-loop-permute", 0,
+				"explore loop permutation in the step of array partitioning")
+ISL_ARG_INT(struct autosa_options, loop_permute_order, 0, "loop-permute-order", "order", 0,
+				"specify which loop ordering to be explored")
 ISL_ARG_INT(struct autosa_options, fifo_depth, 0, "fifo-depth", "depth", 2, "default FIFO depth")
 ISL_ARG_BOOL(struct autosa_options, hbm, 0, "hbm", 0,
 			 	"use multi-port DRAM/HBM")

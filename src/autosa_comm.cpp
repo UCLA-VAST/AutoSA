@@ -1688,11 +1688,6 @@ static isl_bool internal_group_in_out_overlap(
 
   /* Remove the local dependency first. */
   access = remove_local_accesses_group_flow(kernel, group, access, prefix, read);
-  
-//#ifdef _DEBUG
-//  DBGUMAP(stdout, access, kernel->ctx);
-//  DBGUMAP(stdout, prefix, kernel->ctx);
-//#endif
 
   /* Tagger maps the tagged iteration domain to untagged iteration domain.
    * Iteration domain is tagged to the access function.
@@ -1725,16 +1720,9 @@ static isl_bool internal_group_in_out_overlap(
   overlap = isl_union_map_apply_range(overlap, isl_union_map_reverse(prefix));
   overlap = isl_union_map_coalesce(overlap);
 
-//#ifdef _DEBUG
-//  DBGUMAP(stdout, overlap, isl_union_map_get_ctx(overlap));
-//  DBGUMAP(stdout, prog->scop->tagged_dep_flow, isl_union_map_get_ctx(overlap));
-//#endif
   /* Derive the overlapping set. */
   overlap = isl_union_map_intersect(overlap,
                                     isl_union_map_copy(prog->scop->tagged_dep_flow));
-//#ifdef _DEBUG
-//  DBGUMAP(stdout, overlap, isl_union_map_get_ctx(overlap));
-//#endif                                    
   empty = isl_union_map_is_empty(overlap);
 
   external = isl_union_map_copy(prog->scop->tagged_dep_flow);
@@ -1771,11 +1759,6 @@ static isl_bool internal_group_in_out_overlap(
     external = isl_union_map_free(external);
   else if (empty)
     external = isl_union_map_universe(external);
-
-//#ifdef _DEBUG
-//  DBGUMAP(stdout, external, isl_union_map_get_ctx(external))
-//  DBGUMAP(stdout, access, isl_union_map_get_ctx(access))
-//#endif
 
   access = isl_union_map_intersect(access, external);
   empty = isl_union_map_is_empty(access);
@@ -2009,12 +1992,6 @@ isl_bool is_io_module_valid(
       return isl_bool_false;
   }
 
-//#ifdef _DEBUG
-//  if (!strcmp(group->array->name, "C") && read) {
-//    DBGSCHDNODE(stdout, node, kernel->ctx);
-//  }
-//#endif
-
   /* Internal group */
   if (io_group_carried_by_array_loops(node, kernel, group, read)) {
     if (group->io_type == AUTOSA_INT_IO &&
@@ -2070,11 +2047,6 @@ static isl_stat compute_io_group_schedule(
   int space_dim;
   isl_schedule *schedule;
 
-//#ifdef _DEBUG
-//  if (!strcmp(group->array->name, "U_tmp"))
-//    printf("here\n");
-//#endif
-
   /* Sink to the space band */
   schedule = isl_schedule_dup(kernel->schedule);
   node = isl_schedule_get_root(schedule);
@@ -2106,8 +2078,7 @@ static isl_stat compute_io_group_schedule(
     isl_vec *dir;
     isl_mat *mat;
 
-    /* Perform space-time transformation on the current band. */
-    //if (i == space_dim - 1 && group->io_type == AUTOSA_EXT_IO)
+    /* Perform space-time transformation on the current band. */    
     if (i == space_dim - 1)
     {      
       dir = isl_vec_dup(group->dir);
@@ -2118,9 +2089,6 @@ static isl_stat compute_io_group_schedule(
       dir = isl_vec_zero(ctx, i + 1);
       dir = isl_vec_set_element_si(dir, 0, 1);
     }
-//#ifdef _DEBUG
-//    DBGVEC(stdout, dir, isl_schedule_node_get_ctx(node));
-//#endif
     node = io_cluster(node, dir, &io_trans_mat_i, &io_trans_ma_i);
     isl_vec_free(dir);
 
@@ -3944,13 +3912,7 @@ static isl_stat hoist_L2_io_buffer(
         compute_group_bounds_io_at_node(kernel, group, node_cp, cur_buffer);
       autosa_array_ref_group_compute_tiling(cur_buffer->tile, group);
       /* Test if the last dim is increased. */
-      cur_last_dim = cur_buffer->tile->bound[cur_buffer->tile->n - 1].size;
-      /* #ifdef _DEBUG
-      pd = isl_printer_to_file(gen->ctx, stdout);
-      pd = isl_printer_print_val(pd, cur_buffer->tile->bound[0].size);
-      pd = isl_printer_end_line(pd);
-      pd = isl_printer_free(pd);      
-#endif */
+      cur_last_dim = cur_buffer->tile->bound[cur_buffer->tile->n - 1].size;      
       is_last_dim_equal = isl_val_eq(cur_last_dim, nxt_last_dim);
       isl_schedule_node_free(node_cp);
       if (!is_last_dim_equal)
@@ -4630,6 +4592,161 @@ static isl_stat autosa_io_data_pack(struct autosa_kernel *kernel,
   return isl_stat_ok;
 }
 
+/* Construct a map from domain_space to domain_space that increments
+ * the dimension at position "pos" and leaves all other dimensions constant. 
+ */
+static __isl_give isl_map *next(__isl_take isl_space *domain_space, int pos)
+{
+  isl_space *space;
+  isl_aff *aff;
+  isl_multi_aff *next;
+
+  space = isl_space_map_from_set(domain_space);
+  next = isl_multi_aff_identity(space);
+  aff = isl_multi_aff_get_aff(next, pos);
+  aff = isl_aff_add_constant_si(aff, 1);
+  next = isl_multi_aff_set_aff(next, pos, aff);
+
+  return isl_map_from_multi_aff(next);
+}
+
+/* This function generates different possible loop orderings for the array partitioning loop band.
+ * For I/O groups with external array, we will select the loops that not appear in the 
+ * array indices, and select them as the innermost loop in the generated loop ordering.
+ * There are several considerations here.
+ * 1. Why consider loop index, but not data dependence?
+ * For external groups, we don't handle overlapping reuse. For example, when the 
+ * reuse factor is (1,-1). In the next iteration, we will only only part of the data
+ * and reuse some data left in the previous iteration. However, this brings additional 
+ * hardware overheads for indexing the new data and rearrange the old data. 
+ * Therefore, such overlapping reuse is not considered. In other words, only reuse 
+ * vectors that are in the shape of unit vectors are considered. 
+ * Therefore, we will only look for loop indices not showing the array index.
+ * 2. Why put them innermost?
+ * Placing reuse loops innermost maximizes the locality and minimizes the data communication.
+ * The relative order between reuse loops and non-reuse loops don't matter as overlapped reuse 
+ * is not supported. Therefore, we will only randomly pick one loop order for this group.
+ * 
+ * For I/O groups with internal array, simply, we choose to examine the array indexs.
+ * And select the loops that doesn't appear in these indices. This is due to the same 
+ * reason as argued above for the simplification of the architecture.
+ * 
+ * Drain I/O groups are not considered as the data communication volumn is fixed and 
+ * is not affected by the loop permutation.
+ */
+static void explore_loop_permute(struct autosa_kernel *kernel, struct autosa_gen *gen) {
+  /* Count the number of possible loop permutation. */
+  int n_order = 0;
+  std::vector<std::unordered_set<int>> loop_orderings;
+  isl_schedule_node *node = isl_schedule_get_root(kernel->schedule);
+  node = autosa_tree_move_down_to_array(node, kernel->core);
+  isl_union_map *prefix = isl_schedule_node_get_prefix_schedule_relation(node);
+  isl_schedule_node_free(node);
+  
+  for (int i = 0; i < kernel->n_array; i++) {
+    struct autosa_local_array_info *local = &kernel->array[i];
+    for (int j = 0; j < local->n_io_group; j++) {
+      struct autosa_array_ref_group *group = local->io_groups[j];      
+      for (int r = 0; r < group->n_ref; r++) {
+        struct autosa_stmt_access *ref = group->refs[r];
+        isl_map *acc = isl_map_from_union_map(isl_union_map_apply_domain(
+                          isl_union_map_from_map(isl_map_copy(ref->access)),
+                          isl_union_map_copy(prefix)));
+        int n_dim = isl_map_dim(acc, isl_dim_in);
+        std::unordered_set<int> reuse_loops;
+        for (int d = 0; d < n_dim; d++) {
+          /* We will test if the array elements accessed by the iterations that increased 
+           * at position "d" is the same as the original array elements.
+           */
+          isl_space *space = isl_map_get_space(acc);
+          space = isl_space_domain(space);
+          isl_map *next_iter = next(space, d);                    
+          isl_map *map = isl_map_apply_domain(next_iter, isl_map_copy(acc));
+          map = isl_map_apply_range(map, isl_map_copy(acc));
+          map = isl_map_coalesce(map);          
+          isl_set *domain = isl_map_domain(isl_map_copy(map));
+          isl_set *range = isl_map_range(isl_map_copy(map));          
+          isl_map_free(map);
+          if (isl_set_is_subset(domain, range) && isl_set_is_subset(range, domain)) {            
+            //std::cout << d << std::endl;
+            reuse_loops.insert(d);
+          }          
+          isl_set_free(domain);
+          isl_set_free(range);
+        }        
+        isl_map_free(acc);
+        if (reuse_loops.size() > 0) {
+          // Prune the duplicated ordering.
+          int d = 0;
+          for (d = 0; d < loop_orderings.size(); d++) {
+            if (loop_orderings[d] == reuse_loops) 
+              break;
+          }
+          if (d == loop_orderings.size())
+            loop_orderings.push_back(reuse_loops);
+        }
+      }
+    }
+  }  
+  isl_union_map_free(prefix);
+  n_order = loop_orderings.size();
+
+  /* When there is more than one loop permutation found,
+   * We will print a temp file named by the sequence of the next loop ordering to the 
+   * temporary directory. For example, when there are two orderings, 
+   * in the first-time compilation, we print a file named "permute_1" to the tmp directory.
+   * AutoSA wrapper script will then call the compilation again serving this index 
+   * as the next loop ordering to be selected.
+   * This process is iterated until all the orderings are explored.
+   * In the last ordering, we print "permute_done" instead, which will instruct the 
+   * wrapper script to stop calling the program.
+   */
+  if (n_order == 1)
+    return;
+  /* Print the tmp file. */
+  int cur_n_order = gen->options->autosa->loop_permute_order;
+  isl_printer *p_str = isl_printer_to_str(gen->ctx);
+  p_str = isl_printer_print_str(p_str, gen->options->autosa->output_dir);
+  p_str = isl_printer_print_str(p_str, "/permute_");
+  if (cur_n_order == n_order - 1) {
+    p_str = isl_printer_print_str(p_str, "_done");
+  } else {
+    p_str = isl_printer_print_int(p_str, cur_n_order + 1);
+  }
+  char *file_name = isl_printer_get_str(p_str);
+  isl_printer_free(p_str);
+  FILE *fp = fopen(file_name, "w");
+  fclose(fp);
+  
+  kernel->tuning_program->id2 = cur_n_order;
+
+  /* Modify the loop ordering. */
+  std::unordered_set<int> order = loop_orderings[cur_n_order];
+  node = isl_schedule_get_root(kernel->schedule);
+  node = autosa_tree_move_down_to_array(node, kernel->core);
+  node = isl_schedule_node_parent(node);
+  int n_dim = isl_schedule_node_band_n_member(node);
+  std::unordered_map<int, int> pos_map;
+  for (int p = 0; p < n_dim; p++) {
+    pos_map[p] = p;
+  }
+  int n_processed = 0;
+  for (auto o : order) {
+    std::cout << o << std::endl;
+    /* Move the "o"-th loop inside */    
+    node = loop_interchange_at_node(node, pos_map[o], n_dim - 1 - n_processed);
+    pos_map[n_dim - 1 - n_processed] = pos_map[o];
+    pos_map[o] = n_dim - 1 - n_processed;
+    n_processed++;
+  }
+  DBGSCHDNODE(stdout, node, gen->ctx);
+  isl_schedule_free(kernel->schedule);
+  kernel->schedule = isl_schedule_node_get_schedule(node);
+  isl_schedule_node_free(node);
+
+  // TODO: Test if we need to update anything else
+}
+
 /* Group references of all arrays in "kernel".
  * Each array is associated with three types of groups:
  * PE group: Assign the local buffers inside PEs.
@@ -4698,6 +4815,12 @@ isl_stat sa_io_construct_optimize(struct autosa_kernel *kernel, struct autosa_ge
     r = group_array_references_drain(kernel, &kernel->array[i], &data);
     if (r < 0)
       break;
+  }
+
+  if (kernel->scop->options->autosa->tuning_method == 1 &&
+      kernel->scop->options->autosa->explore_loop_permute == 1) {
+      /* Explore different loop orderings of the array partitioning band. */
+    explore_loop_permute(kernel, gen);
   }
 
   /* Perform I/O Optimization */  

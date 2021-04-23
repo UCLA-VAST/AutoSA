@@ -1318,13 +1318,10 @@ isl_stat sa_array_partitioning_optimize(struct autosa_kernel *sa,
 
     free(tile_size);
     node = isl_schedule_node_child(node, 0);
-    extract_sa_dims_from_node(node, sa->sa_dim, sa->n_sa_dim);
-    //std::cout << sa->sa_dim[0] << std::endl;
-    //std::cout << sa->sa_dim[1] << std::endl;
+    extract_sa_dims_from_node(node, sa->sa_dim, sa->n_sa_dim);    
     node = isl_schedule_node_parent(node);
 
-    /* Reorder the array part loops based on the dependence distance. 
-     */
+    /* Reorder the array part loops based on the dependence distance. */
     node = reorder_band_by_dep_dis(node);
 
     /* Add the array marker */
@@ -3558,10 +3555,6 @@ static __isl_give isl_schedule_node *compute_and_comm_optimize(
     /* Set up the sched_pos property */
     node = sched_pos_setup(node);
 
-//#ifdef _DEBUG
-//    DBGSCHDNODE(stdout, node, isl_schedule_node_get_ctx(node))
-//#endif
-
     /* Generate systolic arrays using space-time mapping. */
     schedule = isl_schedule_node_get_schedule(node);
     isl_schedule_node_free(node);
@@ -4240,8 +4233,7 @@ static __isl_give isl_printer *generate(__isl_take isl_printer *p,
         /* Extract design information for resource estimation */
         sa_extract_design_info(gen);
 
-        /* Code generation */
-        //p = ppcg_set_macro_names(p);
+        /* Code generation */        
         p = ppcg_print_exposed_declarations(p, prog->scop);
         p = gen->print(p, gen->prog, gen->tree, gen->hw_modules, gen->n_hw_modules,
                        gen->hw_top_module, gen->drain_merge_funcs, gen->n_drain_merge_funcs,
