@@ -2785,8 +2785,9 @@ static __isl_give isl_schedule_node *insert_io_module_ids(
       if (filter == NULL)
         filter = uset;
       else
-        filter = isl_union_set_union(filter, uset);
-
+        filter = isl_union_set_union(filter, uset);      
+      //node = isl_schedule_node_insert_filter(node, uset);
+      //node = isl_schedule_node_child(node, 0);      
       isl_id_list_free(ids);      
     }
     node = isl_schedule_node_child(node, 0);
@@ -3836,6 +3837,170 @@ static isl_stat insert_L2_io_buffer(
   return isl_stat_ok;
 }
 
+/* This function hoists the L1 I/O buffer to save the data communication.
+ * It tries to hoist up the buffer if the local buffer size is irrelavant to the outer loop.
+ */
+//static isl_stat hoist_L1_io_buffer(
+//  struct autosa_kernel *kernel, 
+//  struct autosa_array_ref_group *group,
+//  struct autosa_gen *gen,
+//  struct autosa_group_data *data  
+//) {
+//  struct autosa_io_buffer *cur_buffer;
+//  int io_level = group->io_level;
+//  isl_schedule_node *node, *node_cp;
+//  int n, i;
+//  //isl_val *cur_last_dim, *prev_last_dim;
+//  std::vector<isl_val *> cur_dims;
+//  std::vector<isl_val *> prev_dims;
+//
+//  struct autosa_array_tile *cur_tile, *prev_tile;
+//
+//  for (int i = io_level; i >= 1; i--) {
+//    cur_buffer = group->io_buffers[i - 1];
+//    if (cur_buffer->tile)
+//      break;
+//  }
+//
+//  for (int i = 0; i < cur_buffer->tile->n; i++) {
+//    prev_dims.push_back(cur_buffer->tile->bound[i].size);
+//  }
+//  //cur_last_dim = cur_buffer->tile->bound[cur_buffer->tile->n - 1].size;
+//  //prev_last_dim = cur_last_dim;
+//  //autosa_array_tile_free(cur_buffer->tile);
+//  prev_tile = cur_buffer->tile;
+//
+//  node = isl_schedule_get_root(group->io_schedule);
+//  /* Insert the filter ids. */
+//  node = autosa_tree_move_down_to_io_mark(node, kernel->core, cur_buffer->level);
+//  node = insert_io_module_ids(gen, kernel, node, group->space_dim, cur_buffer->level);
+//  node = autosa_tree_move_up_to_array(node);
+//  node = isl_schedule_node_parent(node);
+//  n = isl_schedule_node_band_n_member(node);
+//  for (i = n - 1; i > 0; i--) {
+//    node_cp = isl_schedule_node_copy(node);
+//    node_cp = isl_schedule_node_band_split(node_cp, i);
+//    node_cp = isl_schedule_node_child(node_cp, 0);
+//    if (group->group_type == AUTOSA_DRAIN_GROUP)
+//      compute_group_bounds_drain_at_node(kernel, group, node_cp, cur_buffer);
+//    else if (group->group_type == AUTOSA_IO_GROUP)
+//      compute_group_bounds_io_at_node(kernel, group, node_cp, cur_buffer);
+//    autosa_array_ref_group_compute_tiling(cur_buffer->tile, group);
+//    /* Test if the last dim is changed. */
+//    //cur_last_dim = cur_buffer->tile->bound[cur_buffer->tile->n - 1].size;
+//    bool is_equal = true;
+//    for (int d = 0; d < cur_buffer->tile->n; d++) {
+//      if (!isl_val_eq(cur_buffer->tile->bound[d].size, prev_dims[d])) {
+//        is_equal = false;
+//        break;
+//      }
+//    }
+//    //isl_val_eq(cur_last_dim, prev_last_dim);
+//    isl_schedule_node_free(node_cp);
+//    if (!is_equal) {
+//      autosa_array_tile_free(cur_buffer->tile);
+//      cur_buffer->tile = prev_tile;
+//      break;
+//    } else {
+//      //std::cout << group->array->name << std::endl;
+//      autosa_array_tile_free(prev_tile);
+//      prev_tile = cur_buffer->tile;      
+//    }
+//  }
+//
+//  return isl_stat_ok;
+//}
+
+/* This function hoists the L1 I/O buffer to save the data communication.
+ * It tries to hoist up the buffer if the local buffer size is irrelavant to the outer loop.
+ */
+static isl_stat hoist_L1_io_buffer(
+  struct autosa_kernel *kernel, 
+  struct autosa_array_ref_group *group,
+  struct autosa_gen *gen,
+  struct autosa_group_data *data  
+) {
+  struct autosa_io_buffer *cur_buffer;
+  int io_level = group->io_level;
+  isl_schedule_node *node, *node_cp;
+  int n, i;  
+  std::vector<isl_val *> cur_dims;
+  std::vector<isl_val *> prev_dims;
+  isl_union_set *L1_io_buffer_domain = NULL;
+  int L1_io_buffer_depth = -1;
+  
+  struct autosa_array_tile *cur_tile;
+
+  for (int i = io_level; i >= 1; i--) {
+    cur_buffer = group->io_buffers[i - 1];
+    if (cur_buffer->tile)
+      break;
+  }
+
+  for (int i = 0; i < cur_buffer->tile->n; i++) {
+    prev_dims.push_back(cur_buffer->tile->bound[i].size);
+  }    
+  cur_tile = cur_buffer->tile;
+
+  node = isl_schedule_get_root(group->io_schedule);
+  /* Insert the filter ids. */
+  node = autosa_tree_move_down_to_io_mark(node, kernel->core, cur_buffer->level);
+  node = insert_io_module_ids(gen, kernel, node, group->space_dim, cur_buffer->level);
+  node = autosa_tree_move_up_to_array(node);
+  node = isl_schedule_node_parent(node);
+  n = isl_schedule_node_band_n_member(node);
+  for (i = n - 1; i > 0; i--) {
+    node_cp = isl_schedule_node_copy(node);
+    node_cp = isl_schedule_node_band_split(node_cp, i);
+    node_cp = isl_schedule_node_child(node_cp, 0);
+    if (group->group_type == AUTOSA_DRAIN_GROUP)
+      compute_group_bounds_drain_at_node(kernel, group, node_cp, cur_buffer);
+    else if (group->group_type == AUTOSA_IO_GROUP)
+      compute_group_bounds_io_at_node(kernel, group, node_cp, cur_buffer);
+    autosa_array_ref_group_compute_tiling(cur_buffer->tile, group);
+    /* Test if the last dim is changed. */    
+    bool is_equal = true;
+    for (int d = 0; d < cur_buffer->tile->n; d++) {
+      if (!isl_val_eq(cur_buffer->tile->bound[d].size, prev_dims[d])) {
+        //DBGVAL(stdout, cur_buffer->tile->bound[d].size, gen->ctx);
+        //DBGVAL(stdout, prev_dims[d], gen->ctx);
+        is_equal = false;
+        break;
+      }
+    }    
+    autosa_array_tile_free(cur_buffer->tile);    
+    if (!is_equal) {            
+      isl_schedule_node_free(node_cp);
+      break;
+    } else {      
+      L1_io_buffer_depth = isl_schedule_node_get_schedule_depth(node_cp);
+      L1_io_buffer_domain = isl_union_set_free(L1_io_buffer_domain);
+      /* Compute the domain. */      
+      isl_union_map *partial = isl_schedule_node_band_get_partial_schedule_union_map(node_cp);
+      /* Delete the module id filter */
+      node_cp = autosa_tree_move_up_to_kernel(node_cp);
+      node_cp = isl_schedule_node_child(node_cp, 0); 
+      node_cp = isl_schedule_node_child(node_cp, 0); 
+      node_cp = isl_schedule_node_delete(node_cp);
+      node_cp = autosa_tree_move_down_to_array(node_cp, kernel->core);
+      node_cp = isl_schedule_node_parent(node_cp);
+      isl_union_set *domain = isl_schedule_node_get_domain(node_cp);
+      partial = isl_union_map_intersect_domain(partial, domain);
+      isl_union_set *range = isl_union_map_range(isl_union_map_copy(partial));      
+      range = isl_union_set_lexmin(range);      
+      partial = isl_union_map_intersect_range(partial, range);      
+      L1_io_buffer_domain = isl_union_map_domain(partial);
+      isl_schedule_node_free(node_cp);
+    }
+  }
+  isl_schedule_node_free(node);
+  cur_buffer->tile = cur_tile;
+  cur_buffer->hoist_depth = L1_io_buffer_depth;
+  cur_buffer->hoist_domain = L1_io_buffer_domain;
+
+  return isl_stat_ok;
+}
+
 /* This function tries to hoist the L2 I/O buffer to increase the memory 
  * coelescing. 
  * 
@@ -3896,9 +4061,7 @@ static isl_stat hoist_L2_io_buffer(
     /* Insert the filter ids. */
     node = autosa_tree_move_down_to_io_mark(node, kernel->core, io_level);
     node = insert_io_module_ids(gen, kernel, node, group->space_dim, io_level);    
-    node = autosa_tree_move_up_to_array(node);
-
-    //node = autosa_tree_move_down_to_array(node, kernel->core);
+    node = autosa_tree_move_up_to_array(node);    
     node = isl_schedule_node_parent(node);
     n = isl_schedule_node_band_n_member(node);
     for (i = n - 1; i > 0; i--)
@@ -4505,31 +4668,32 @@ static isl_stat autosa_io_buffer_allocate(struct autosa_kernel *kernel,
   {
     struct autosa_local_array_info *local = &kernel->array[i];
     for (int j = 0; j < local->n_io_group; j++)
-    {
-      //if (local->io_groups[j]->copy_in || local->io_groups[j]->copy_out) {
-        compute_io_group_buffer(kernel, local->io_groups[j], gen);      
-        if (gen->options->autosa->two_level_buffer)
-        {
-          /* Seek the opportunity to hoist up the L2 I/O buffers. */
-          hoist_L2_io_buffer(kernel, local->io_groups[j], gen, data);
-        }      
-        if (gen->options->autosa->local_reduce && local->io_groups[j]->attached_drain_group)
-        {
-          if (gen->options->autosa->two_level_buffer) {
-            /* At present, two-level buffer and local reduce can be enabled at the same time.
-             */
-            throw std::runtime_error("[AutoSA] Error: Two-level buffer and local reduce can't be used at the same time.");
-          }        
-        }
-        if (gen->options->autosa->lower_int_io_L1_buffer) {
-          /* Lower the L1 buffer for interior I/O module if possible. */
-          lower_int_io_L1_buffer(kernel, local->io_groups[j], gen);
-          /* Enable the second-level buffer for this array */
-          insert_L2_io_buffer(kernel, local->io_groups[j], gen);
-          /* Seek the opportunity to hoist up the L2 I/O buffers. */
-          //hoist_L2_io_buffer(kernel, local->io_groups[j], gen, data);
-        }
-      //}
+    {      
+      compute_io_group_buffer(kernel, local->io_groups[j], gen);      
+      if (!gen->options->autosa->lower_int_io_L1_buffer) {
+        // Hoist the L1 I/O buffer. */
+        hoist_L1_io_buffer(kernel, local->io_groups[j], gen, data);
+      }
+      if (gen->options->autosa->two_level_buffer)
+      {
+        /* Seek the opportunity to hoist up the L2 I/O buffers. */
+        hoist_L2_io_buffer(kernel, local->io_groups[j], gen, data);
+      }      
+      if (gen->options->autosa->local_reduce && local->io_groups[j]->attached_drain_group)
+      {
+        if (gen->options->autosa->two_level_buffer) {
+          /* At present, two-level buffer and local reduce can be enabled at the same time. */
+          throw std::runtime_error("[AutoSA] Error: Two-level buffer and local reduce can't be used at the same time.");
+        }        
+      }
+      if (gen->options->autosa->lower_int_io_L1_buffer) {
+        /* Lower the L1 buffer for interior I/O module if possible. */
+        lower_int_io_L1_buffer(kernel, local->io_groups[j], gen);
+        /* Enable the second-level buffer for this array */
+        insert_L2_io_buffer(kernel, local->io_groups[j], gen);
+        /* Seek the opportunity to hoist up the L2 I/O buffers. */
+        //hoist_L2_io_buffer(kernel, local->io_groups[j], gen, data);
+      }      
     }
     if (local->drain_group)
     {      
@@ -4732,14 +4896,14 @@ static void explore_loop_permute(struct autosa_kernel *kernel, struct autosa_gen
   }
   int n_processed = 0;
   for (auto o : order) {
-    std::cout << o << std::endl;
+    //std::cout << o << std::endl;
     /* Move the "o"-th loop inside */    
     node = loop_interchange_at_node(node, pos_map[o], n_dim - 1 - n_processed);
     pos_map[n_dim - 1 - n_processed] = pos_map[o];
     pos_map[o] = n_dim - 1 - n_processed;
     n_processed++;
   }
-  DBGSCHDNODE(stdout, node, gen->ctx);
+  //DBGSCHDNODE(stdout, node, gen->ctx);
   isl_schedule_free(kernel->schedule);
   kernel->schedule = isl_schedule_node_get_schedule(node);
   isl_schedule_node_free(node);
@@ -4900,6 +5064,25 @@ isl_stat sa_io_construct_optimize(struct autosa_kernel *kernel, struct autosa_ge
 
   /* Print the IO grouping information */
   print_io_grouping_info(stdout, kernel);
+
+  /* Test if there is any IO group with internal array and needs copy-in. 
+   * Such designs can't run due to the HLS limitation. 
+   * Code generation will proceeed as usual only for tuning purpose.
+   */
+  bool is_safe = true;
+  for (int i = 0; i < kernel->n_array; i++) {
+    struct autosa_local_array_info *local = &kernel->array[i];
+    for (int j = 0; j < local->n_io_group; j++) {
+      struct autosa_array_ref_group *group = local->io_groups[j];
+      if (group->copy_in && local->array_type == AUTOSA_INT_ARRAY) {
+        is_safe = false;
+      }
+    }
+  }
+  if (!is_safe) {
+    printf("[AutoSA] Warning: The generated program contains feedback loops and can't be synthesized by HLS.\n");
+    printf("The compilation flow will proceed as usual.\n");
+  }
 
   /* I/O buffer allocation */
   autosa_io_buffer_allocate(kernel, gen, &data);

@@ -421,6 +421,8 @@ struct autosa_io_buffer *autosa_io_buffer_alloc()
   io_buffer->sparse = -1;
   io_buffer->vec_len = -1;  
   io_buffer->tuning_tile = NULL;
+  io_buffer->hoist_depth = -1;
+  io_buffer->hoist_domain = NULL;
 
   return io_buffer;
 }
@@ -915,11 +917,13 @@ struct autosa_array_ref_group *autosa_array_ref_group_free(
   isl_ast_expr_free(group->io_L1_pe_expr);
   isl_ast_expr_free(group->io_pe_expr_boundary);
   isl_ast_expr_free(group->io_L1_pe_expr_boundary);
+  /* Free io buffers */
   for (int i = 0; i < group->n_io_buffer; i++)
   {        
     autosa_array_tile_free(group->io_buffers[i]->tile);
+    isl_union_set_free(group->io_buffers[i]->hoist_domain);
     if (group->io_buffers[i]->tuning_tile) {      
-      delete group->io_buffers[i]->tuning_tile;
+      delete group->io_buffers[i]->tuning_tile;      
     }
     free(group->io_buffers[i]);
   }

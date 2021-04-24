@@ -1799,10 +1799,6 @@ int *extract_band_upper_bounds(__isl_keep isl_schedule_node *node)
   umap = isl_union_map_intersect_domain(umap, uset);
   uset = isl_union_map_range(umap);
   set = isl_set_from_union_set(uset);
-  
-//#ifdef _DEBUG
-//  DBGSCHDNODE(stdout, node, isl_schedule_node_get_ctx(node));
-//#endif
 
   n = isl_schedule_node_band_n_member(node);
   ubs = (int *)malloc(n * sizeof(int));

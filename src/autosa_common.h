@@ -489,6 +489,9 @@ struct autosa_io_buffer
   int vec_len;
   /* Tuning array tile */
   TPArrayTile *tuning_tile;
+  /* Used for hoisting buffer */
+  int hoist_depth;
+  isl_union_set *hoist_domain;
 };
 
 /* A group of array references in a kernel that should be handled together. 

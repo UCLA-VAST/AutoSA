@@ -1335,29 +1335,29 @@ isl_stat sa_array_partitioning_optimize(struct autosa_kernel *sa,
      * force the possible data dependence between two array partitions. 
      * TODO: implement this feature. 
      */
-    if (!sa->options->autosa->credit_control)
-    {
-        for (int i = 0; i < isl_schedule_node_band_n_member(node); i++)
-        {
-            if (!isl_schedule_node_band_member_get_coincident(node, i))
-            {
-                printf("[AutoSA] Warning: Flow deps carried in the array partitioning band.\n");
-                printf("[AutoSA] Warning: Using simple task pipelining could lead to potential data hazards.\n");
-                printf("[AutoSA] Warning: The program will proceed as usual. You could consider enabling credit control.\n");
-                break;
-            }
-        }
-    }
-    else
-    {
-        printf("[AutoSA] Error: Credit control is not supported yet!\n");
-        exit(1);
-        // TODO: modify the schedule to add credit rd/wr for I/O modules
-        // TODO: modify the module decls and fifo decls for credit fifos
-        // TODO: disable double buffering.
-        //    /* Disable double-buffering */
-        //    sa->options->autosa->double_buffer = 0;
-    }
+    //if (!sa->options->autosa->credit_control)
+    //{
+    //    for (int i = 0; i < isl_schedule_node_band_n_member(node); i++)
+    //    {
+    //        if (!isl_schedule_node_band_member_get_coincident(node, i))
+    //        {
+    //            printf("[AutoSA] Warning: Flow deps carried in the array partitioning band.\n");
+    //            printf("[AutoSA] Warning: Using simple task pipelining could lead to potential data hazards.\n");
+    //            printf("[AutoSA] Warning: The program will proceed as usual. You could consider enabling credit control.\n");
+    //            break;
+    //        }
+    //    }
+    //}
+    //else
+    //{
+    //    printf("[AutoSA] Error: Credit control is not supported yet!\n");
+    //    exit(1);
+    //    // TODO: modify the schedule to add credit rd/wr for I/O modules
+    //    // TODO: modify the module decls and fifo decls for credit fifos
+    //    // TODO: disable double buffering.
+    //    //    /* Disable double-buffering */
+    //    //    sa->options->autosa->double_buffer = 0;
+    //}
 
     /* If two-level buffering is enabled, we will need to apply a second-level tiling
    * on the tile band from the previous array partitioning. 
