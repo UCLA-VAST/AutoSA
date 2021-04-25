@@ -162,8 +162,7 @@ struct autosa_kernel **sa_space_time_transform_at_dim_async(
                 sa->space_w = dim;
                 // TODO: incorrect, to fix.
                 sa->time_w = band_w - dim;
-                sa->tuning_program = tuning_program;
-                //sa->tuning_program->id = *num_sa;
+                sa->tuning_program = tuning_program;                
 
                 /* Add the new variant into the list. */
                 sas = (struct autosa_kernel **)realloc(sas, (*num_sa + 1) *
@@ -218,8 +217,7 @@ struct autosa_kernel **sa_space_time_transform_at_dim_async(
                         sa->space_w = dim;
                         // TODO: incorrect, to fix.
                         sa->time_w = band_w - dim;
-                        sa->tuning_program = tuning_program;  
-                        //sa->tuning_program->id = *num_sa;                      
+                        sa->tuning_program = tuning_program;                          
 
                         /* Add the new variant into the list. */
                         sas = (struct autosa_kernel **)realloc(sas, (*num_sa + 1) *
@@ -287,8 +285,7 @@ struct autosa_kernel **sa_space_time_transform_at_dim_async(
                                 sa->space_w = dim;
                                 // TODO: incorrect, to fix.
                                 sa->time_w = band_w - dim;
-                                sa->tuning_program = tuning_program;  
-                                //sa->tuning_program->id = *num_sa;                              
+                                sa->tuning_program = tuning_program;
 
                                 /* Add the new variant into the list. */
                                 sas = (struct autosa_kernel **)realloc(sas, (*num_sa + 1) *
@@ -557,10 +554,6 @@ struct autosa_kernel **sa_space_time_transform(__isl_take isl_schedule *schedule
 {
     struct autosa_kernel **sa_list = NULL;
     isl_size n_sa = 0;
-
-//#ifdef _DEBUG
-//    DBGSCHD(stdout, schedule, isl_schedule_get_ctx(schedule));
-//#endif
     isl_schedule_node *band = get_outermost_permutable_node(schedule);
     isl_size band_w = isl_schedule_node_band_n_member(band);
     if (band_w <= 0) {

@@ -675,18 +675,14 @@ void TuningProgram::dump(std::string dir)
         j["attr"][x.first] = *x.second;
     }
 
-    std::ofstream o(dir + "/kernel" + std::to_string(this->id) + ".json");
+    std::string file_name = dir + "/kernel" + std::to_string(this->id);
+    if (this->id2 >= 0) {
+        file_name += "_";        
+        file_name += std::to_string(this->id2);
+    }
+    std::ofstream o(file_name + ".json");
     o << std::setw(4) << j << std::endl;
-    o.close();
-
-    // Debug
-    //for (int i = 0; i < this->arrays.size(); i++) {
-    //    TPArray *arr = this->arrays[i];
-    //    for (int j = 0; j < arr->refs.size(); j++) {
-    //        TPArrayRef *ref = arr->refs[j];
-    //        std::cout << ref->to_str() << std::endl;            
-    //    }
-    //}
+    o.close();    
 
     return;
 }
@@ -883,6 +879,8 @@ std::shared_ptr<json> extract_loop_info(__isl_keep isl_ast_node *node, void *use
                     is_first = 0;
                 }
                 (*j_info)["size"] = size;
+                (*j_info)["ele_size"] = tile->ele_size;
+                (*j_info)["last_dim"] = tile->sizes[tile->sizes.size() - 1]->to_str();
             } else {
                 std::string mark_content(isl_id_get_name(id));
                 j_info = std::make_shared<json>();
@@ -941,12 +939,14 @@ void TuningProgram::extract_module_loop_info(std::string name, std::vector<isl_a
     return;
 }
 
-void TuningProgram::extract_module_attr(std::string name, int double_buffer, int in, int io) {
-    std::shared_ptr<json> j = std::make_shared<json>();
-    //(*j)["name"] = name;
+void TuningProgram::extract_module_attr(
+    std::string name, int double_buffer, int in, int io, int to_dram, int serialize) {
+    std::shared_ptr<json> j = std::make_shared<json>();    
     (*j)["double_buffer"] = double_buffer;
     (*j)["in"] = in;
     (*j)["io"] = io;
+    (*j)["to_dram"] = to_dram;
+    (*j)["serialize"] = serialize;
 
     this->module_attr[name] = j;
 

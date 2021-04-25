@@ -2875,14 +2875,17 @@ isl_stat TP_extract_loop_info(struct autosa_gen *gen, struct autosa_hw_module *m
 isl_stat TP_extract_module_attr(struct autosa_gen *gen, struct autosa_hw_module *module) {
   gen->kernel->tuning_program->extract_module_attr(      
       std::string(module->name), module->double_buffer, module->in, 
-      (module->type == IO_MODULE || module->type == DRAIN_MODULE)? 1 : 0);
+      (module->type == IO_MODULE || module->type == DRAIN_MODULE)? 1 : 0,
+      module->to_mem, module->is_serialized);
   if (module->is_filter && module->is_buffer) {
     gen->kernel->tuning_program->extract_module_attr(
       std::string(module->name) + std::string("_inter"),  module->double_buffer, module->in, 
-      (module->type == IO_MODULE || module->type == DRAIN_MODULE)? 1 : 0);
+      (module->type == IO_MODULE || module->type == DRAIN_MODULE)? 1 : 0,
+      module->to_mem, module->is_serialized);
     gen->kernel->tuning_program->extract_module_attr(
       std::string(module->name) + std::string("_intra"), module->double_buffer, module->in, 
-      (module->type == IO_MODULE || module->type == DRAIN_MODULE)? 1 : 0);  
+      (module->type == IO_MODULE || module->type == DRAIN_MODULE)? 1 : 0,
+      module->to_mem, module->is_serialized);  
   }
 
   return isl_stat_ok;

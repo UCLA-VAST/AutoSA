@@ -4867,22 +4867,25 @@ static void explore_loop_permute(struct autosa_kernel *kernel, struct autosa_gen
    */
   if (n_order == 1)
     return;
-  /* Print the tmp file. */
+
   int cur_n_order = gen->options->autosa->loop_permute_order;
-  isl_printer *p_str = isl_printer_to_str(gen->ctx);
-  p_str = isl_printer_print_str(p_str, gen->options->autosa->output_dir);
-  p_str = isl_printer_print_str(p_str, "/permute_");
-  if (cur_n_order == n_order - 1) {
-    p_str = isl_printer_print_str(p_str, "_done");
-  } else {
-    p_str = isl_printer_print_int(p_str, cur_n_order + 1);
+  if (gen->options->autosa->tuning_method == 1) {
+    /* Print the tmp file. */  
+    isl_printer *p_str = isl_printer_to_str(gen->ctx);
+    p_str = isl_printer_print_str(p_str, gen->options->autosa->output_dir);
+    p_str = isl_printer_print_str(p_str, "/permute_");
+    if (cur_n_order == n_order - 1) {
+      p_str = isl_printer_print_str(p_str, "done");
+    } else {
+      p_str = isl_printer_print_int(p_str, cur_n_order + 1);
+    }
+    char *file_name = isl_printer_get_str(p_str);
+    isl_printer_free(p_str);
+    FILE *fp = fopen(file_name, "w");
+    fclose(fp);    
+    
+    kernel->tuning_program->id2 = cur_n_order;
   }
-  char *file_name = isl_printer_get_str(p_str);
-  isl_printer_free(p_str);
-  FILE *fp = fopen(file_name, "w");
-  fclose(fp);
-  
-  kernel->tuning_program->id2 = cur_n_order;
 
   /* Modify the loop ordering. */
   std::unordered_set<int> order = loop_orderings[cur_n_order];
@@ -4981,8 +4984,7 @@ isl_stat sa_io_construct_optimize(struct autosa_kernel *kernel, struct autosa_ge
       break;
   }
 
-  if (kernel->scop->options->autosa->tuning_method == 1 &&
-      kernel->scop->options->autosa->explore_loop_permute == 1) {
+  if (kernel->scop->options->autosa->explore_loop_permute == 1) {
       /* Explore different loop orderings of the array partitioning band. */
     explore_loop_permute(kernel, gen);
   }
@@ -5081,7 +5083,7 @@ isl_stat sa_io_construct_optimize(struct autosa_kernel *kernel, struct autosa_ge
   }
   if (!is_safe) {
     printf("[AutoSA] Warning: The generated program contains feedback loops and can't be synthesized by HLS.\n");
-    printf("The compilation flow will proceed as usual.\n");
+    printf("                  The compilation flow will proceed as usual.\n");
   }
 
   /* I/O buffer allocation */

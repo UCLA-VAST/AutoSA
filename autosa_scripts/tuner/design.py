@@ -48,8 +48,34 @@ class Design(object):
         f.write("\tdef est_BRAM18K(ele_size, ele_num, pack):\n")
         f.write(f"\t\treturn ceil(ele_size*8*pack / 18) * ceil(ele_num/pack/1024)\n\n")
 
+        # Check if drain module can be merged.
+        # Note: It should be supported in the codegen of AutoSA. However, currently, 
+        # we move it here in the tuner.
+        out_module = {}
+        out_drain_module = {}
         for module in desp["memory"]:
             module_mem = desp["memory"][module]
+            if module.endswith('_out'):
+                item = {'buf_size': module_mem['buf_size'], 
+                        'num': module_mem['num']}
+                if module.find('drain') != -1:
+                    item['merged'] = 0
+                    out_drain_module[module_mem['array']] = item
+                else:                    
+                    if module_mem['array'] not in out_module:
+                        out_module[module_mem['array']] = [item]
+                    else:
+                        out_module[module_mem['array']].append(item)
+        for array in out_drain_module:
+            for m in out_module[array]:                
+                if m['buf_size'] == out_drain_module[array]['buf_size'] and \
+                   m['num'] == out_drain_module[array]['num']:
+                   out_drain_module[array]['merged'] = 1
+
+        for module in desp["memory"]:
+            module_mem = desp["memory"][module]
+            if module.find('drain') != -1 and out_drain_module[module_mem['array']]['merged'] == 1:
+                continue
             f.write(f"\t{module}_unit_memory = est_BRAM18K({module_mem['ele_size']}, ")
             f.write(f"{module_mem['buf_size']}, ")
             if "data_pack_factor" in module_mem:
@@ -66,6 +92,8 @@ class Design(object):
         f.write("\tBRAM18K = ")
         is_first = True
         for module in desp["memory"]:
+            if module.find('drain') != -1 and out_drain_module[module_mem['array']]['merged'] == 1:
+                continue
             if not is_first:
                 f.write(" + ")
             module_mem = desp["memory"][module]
@@ -194,8 +222,12 @@ class Design(object):
                 # Only examine the first child
                 child = lat["child"][0]
                 ret = extract_latency_expr(child, info)
-            elif lat["type"] == "array_tile":                
-                ret = "(" + lat["size"] + "/" + lat["data_pack_factor"] + ")"
+            elif lat["type"] == "array_tile":      
+                if info["module_attr"]["to_dram"] == 1 and info["module_attr"]["serialize"] == 0:
+                    # Consider the DRAM latency here.
+                    ret = "(" + f"{lat['size']}/{lat['last_dim']}*(20+{lat['last_dim']}/(512/8/{lat['ele_size']}))" + ")"
+                else:
+                    ret = "(" + lat["size"] + "/" + lat["data_pack_factor"] + ")"
             else:
                 raise RuntimeError(f"Unsupported latency node type {lat['type']}")
 
@@ -218,7 +250,8 @@ class Design(object):
                     info["under_mark"] = "array"
                     info["in"] = 1
                 module_lat = desp["latency"][module]  
-                info["name"] = module                
+                info["name"] = module     
+                info["module_attr"] = desp["attr"][module]
                 info["modules"][module] = extract_latency_expr(module_lat, info)
         for module in info["modules"]:
             if "inter" in module or "intra" in module:
@@ -253,6 +286,7 @@ class Design(object):
                     info["in"] = 0
                 module_lat = desp["latency"][module]  
                 info["name"] = module                
+                info["module_attr"] = desp["attr"][module]
                 info["modules"][module] = extract_latency_expr(module_lat, info)
         for module in info["modules"]:
             if "inter" in module or "intra" in module:
@@ -292,6 +326,7 @@ class Design(object):
                 info["valid"] = True
                 info["under_mark"] = None
                 info["in"] = -1
+                info["module_attr"] = desp["attr"][module]
                 info["modules"][module] = extract_latency_expr(module_lat, info)            
         for module in info["modules"]:
             if "inter" in module or "intra" in module:
