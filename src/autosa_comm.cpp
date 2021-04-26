@@ -3840,80 +3840,6 @@ static isl_stat insert_L2_io_buffer(
 /* This function hoists the L1 I/O buffer to save the data communication.
  * It tries to hoist up the buffer if the local buffer size is irrelavant to the outer loop.
  */
-//static isl_stat hoist_L1_io_buffer(
-//  struct autosa_kernel *kernel, 
-//  struct autosa_array_ref_group *group,
-//  struct autosa_gen *gen,
-//  struct autosa_group_data *data  
-//) {
-//  struct autosa_io_buffer *cur_buffer;
-//  int io_level = group->io_level;
-//  isl_schedule_node *node, *node_cp;
-//  int n, i;
-//  //isl_val *cur_last_dim, *prev_last_dim;
-//  std::vector<isl_val *> cur_dims;
-//  std::vector<isl_val *> prev_dims;
-//
-//  struct autosa_array_tile *cur_tile, *prev_tile;
-//
-//  for (int i = io_level; i >= 1; i--) {
-//    cur_buffer = group->io_buffers[i - 1];
-//    if (cur_buffer->tile)
-//      break;
-//  }
-//
-//  for (int i = 0; i < cur_buffer->tile->n; i++) {
-//    prev_dims.push_back(cur_buffer->tile->bound[i].size);
-//  }
-//  //cur_last_dim = cur_buffer->tile->bound[cur_buffer->tile->n - 1].size;
-//  //prev_last_dim = cur_last_dim;
-//  //autosa_array_tile_free(cur_buffer->tile);
-//  prev_tile = cur_buffer->tile;
-//
-//  node = isl_schedule_get_root(group->io_schedule);
-//  /* Insert the filter ids. */
-//  node = autosa_tree_move_down_to_io_mark(node, kernel->core, cur_buffer->level);
-//  node = insert_io_module_ids(gen, kernel, node, group->space_dim, cur_buffer->level);
-//  node = autosa_tree_move_up_to_array(node);
-//  node = isl_schedule_node_parent(node);
-//  n = isl_schedule_node_band_n_member(node);
-//  for (i = n - 1; i > 0; i--) {
-//    node_cp = isl_schedule_node_copy(node);
-//    node_cp = isl_schedule_node_band_split(node_cp, i);
-//    node_cp = isl_schedule_node_child(node_cp, 0);
-//    if (group->group_type == AUTOSA_DRAIN_GROUP)
-//      compute_group_bounds_drain_at_node(kernel, group, node_cp, cur_buffer);
-//    else if (group->group_type == AUTOSA_IO_GROUP)
-//      compute_group_bounds_io_at_node(kernel, group, node_cp, cur_buffer);
-//    autosa_array_ref_group_compute_tiling(cur_buffer->tile, group);
-//    /* Test if the last dim is changed. */
-//    //cur_last_dim = cur_buffer->tile->bound[cur_buffer->tile->n - 1].size;
-//    bool is_equal = true;
-//    for (int d = 0; d < cur_buffer->tile->n; d++) {
-//      if (!isl_val_eq(cur_buffer->tile->bound[d].size, prev_dims[d])) {
-//        is_equal = false;
-//        break;
-//      }
-//    }
-//    //isl_val_eq(cur_last_dim, prev_last_dim);
-//    isl_schedule_node_free(node_cp);
-//    if (!is_equal) {
-//      autosa_array_tile_free(cur_buffer->tile);
-//      cur_buffer->tile = prev_tile;
-//      break;
-//    } else {
-//      //std::cout << group->array->name << std::endl;
-//      autosa_array_tile_free(prev_tile);
-//      prev_tile = cur_buffer->tile;      
-//    }
-//  }
-//
-//  return isl_stat_ok;
-//}
-
-/* This function hoists the L1 I/O buffer to save the data communication.
- * It tries to hoist up the buffer if the local buffer size is irrelavant to the outer loop.
- */
 static isl_stat hoist_L1_io_buffer(
   struct autosa_kernel *kernel, 
   struct autosa_array_ref_group *group,
@@ -4883,7 +4809,7 @@ static void explore_loop_permute(struct autosa_kernel *kernel, struct autosa_gen
     isl_printer_free(p_str);
     FILE *fp = fopen(file_name, "w");
     fclose(fp);    
-    
+
     kernel->tuning_program->id2 = cur_n_order;
   }
 

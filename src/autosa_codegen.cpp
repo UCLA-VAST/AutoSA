@@ -1080,6 +1080,9 @@ static __isl_give isl_schedule_node *add_io_copies_stmt_tile(
   while (graft && isl_schedule_node_has_parent(graft))
     graft = isl_schedule_node_parent(graft);
 
+  //DBGSCHDNODE(stdout, graft, isl_schedule_node_get_ctx(graft));
+  //DBGSCHDNODE(stdout, node, isl_schedule_node_get_ctx(node));
+
   if (before)
   {
     node = isl_schedule_node_graft_before(node, graft);
@@ -1151,61 +1154,7 @@ static __isl_give isl_schedule_node *add_io_ids_filter(
 
   isl_union_set_free(core);
 
-  return node;
-
-  //int io_id = 0;
-  ////node = autosa_tree_move_down_to_array(node, kernel->core);  
-  //while (!isl_schedule_node_is_io_mark(node, io_level))
-  //{
-  //  if (isl_schedule_node_get_type(node) == isl_schedule_node_band)
-  //  {
-  //    isl_id *id;
-  //    isl_id_list *ids;
-  //    isl_union_set *uset;
-//
-  //    ids = isl_id_list_from_id(isl_id_list_get_id(io_ids, io_id));
-  //    if (io_id == n_io_ids - 1)
-  //    {
-  //      if (is_filter)
-  //      {
-  //        uset = set_schedule_ge(node, ids);
-  //      }
-  //      else
-  //      {
-  //        uset = set_schedule_eq(node, ids);
-  //      }
-  //    }
-  //    else
-  //    {
-  //      uset = set_schedule_eq(node, ids);
-  //    }
-  //    io_id++;
-  //    node = isl_schedule_node_insert_filter(node, uset);
-  //    isl_id_list_free(ids);
-  //    node = isl_schedule_node_child(node, 0);      
-  //  }
-  //  node = isl_schedule_node_child(node, 0);
-  //}
-  //if (to_pe && io_level > 1)
-  //{
-  //  /* Add filter to only send data to boundary PEs. */
-  //  while (!isl_schedule_node_is_io_mark(node, 2)) {
-  //    node = isl_schedule_node_child(node, 0);
-  //  }
-  //  node = isl_schedule_node_child(node, 0);
-  //  if (isl_schedule_node_get_type(node) == isl_schedule_node_band) {
-  //    isl_union_set *uset;
-//
-  //    if (read)
-  //      uset = schedule_eq_lb(node);
-  //    else
-  //      uset = schedule_eq_ub(node);
-  //    node = isl_schedule_node_insert_filter(node, uset);
-  //    node = isl_schedule_node_child(node, 0);
-  //  }
-  //}
-//
-  //return node;
+  return node; 
 }
 
 static __isl_give isl_printer *print_io_stmt_prefix(
@@ -1702,6 +1651,8 @@ static __isl_give isl_schedule_node *insert_io_stmts_tile(
                                  module->is_serialized,
                                  module, module_type, copy_buffer->tuning_tile);
 
+  //DBGSCHDNODE(stdout, node, isl_schedule_node_get_ctx(node));
+  
   if (cut) {
     node = isl_schedule_node_cut(node);
     /* Insert empty filter. */
@@ -1758,9 +1709,12 @@ static __isl_give isl_schedule_node *insert_filter_trans_stmts(
   isl_id_list_free(ids);
 
   upper_io_level = io_level + 1;
-  node = autosa_tree_move_down_to_io_mark(node, group_core, io_level);
+  node = autosa_tree_move_down_to_io_mark(node, group_core, io_level);  
   node = isl_schedule_node_child(node, 0);
+  //DBGSCHDNODE(stdout, node, ctx);
+  //DBGUSET(stdout, eq_filter, ctx);
   node = isl_schedule_node_order_before(node, eq_filter); // point to the second tree.  
+  //DBGSCHDNODE(stdout, node, ctx);
 
   /* Pass the data not filtered */  
   if (boundary) {
@@ -1785,6 +1739,7 @@ static __isl_give isl_schedule_node *insert_filter_trans_stmts(
 
   /* Keep the data filtered */
   node = autosa_tree_move_up_to_kernel(node);
+  //DBGSCHDNODE(stdout, node, ctx);
   node = autosa_tree_move_down_to_io_mark(node, group_core, io_level);
   node = isl_schedule_node_child(node, 0); // seqeuence
   node = isl_schedule_node_child(node, 0); // filter  
@@ -3690,7 +3645,7 @@ static __isl_give struct autosa_hw_module **sa_io_module_gen(
     node = isl_schedule_get_root(group->io_schedule);
   
   io_level = group->io_level;
-  space_dim = group->space_dim;
+  space_dim = group->space_dim;  
   kernel = gen->kernel;
   node = autosa_tree_move_down_to_kernel(node);
 

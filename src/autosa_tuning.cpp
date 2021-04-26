@@ -281,7 +281,7 @@ __isl_give TPExpr *TPExpr::replace(__isl_keep TPExpr *match, __isl_keep TPExpr *
         } else if (this->func == "NULL") {
             return this;
         } else {
-            std::cout << "[AutoSA] Error: unsupported TPExpr function type: " << this->func << std::endl;
+            std::cout << "[AutoSA] Error: Unsupported TPExpr function type: " << this->func << std::endl;
             exit(1);
         }
     }
@@ -362,7 +362,7 @@ std::string TPExpr::to_str() {
     } else if (this->func == "NULL") {
         return "";
     } else {
-        std::cout << "[AutoSA] Error: unsupported TPExpr function type: " << this->func << std::endl;
+        std::cout << "[AutoSA] Error: Unsupported TPExpr function type: " << this->func << std::endl;
         exit(1);
     }
     return "";
@@ -396,13 +396,13 @@ __isl_give TPExpr *TPExpr::infer_bound(
             return this->dup();
         }
     } else if (this->func == "floor") {
-        std::cout << "[AutoSA] Error: unsupported TPExpr function type: " << this->func << std::endl;
+        std::cout << "[AutoSA] Error: Unsupported TPExpr function type: " << this->func << std::endl;
         exit(1);
     } else if (this->func == "ceil") {
-        std::cout << "[AutoSA] Error: unsupported TPExpr function type: " << this->func << std::endl;
+        std::cout << "[AutoSA] Error: Unsupported TPExpr function type: " << this->func << std::endl;
         exit(1);
     } else if (this->func == "div") {
-        std::cout << "[AutoSA] Error: unsupported TPExpr function type: " << this->func << std::endl;
+        std::cout << "[AutoSA] Error: Unsupported TPExpr function type: " << this->func << std::endl;
         exit(1);
     } else if (this->func == "add") {
         TPExpr *left, *right;
@@ -442,7 +442,7 @@ __isl_give TPExpr *TPExpr::infer_bound(
         } else
             return new TPExpr("mul", left, right);
     } else {
-        std::cout << "[AutoSA] Error: unsupported TPExpr function type: " << this->func << std::endl;
+        std::cout << "[AutoSA] Error: Unsupported TPExpr function type: " << this->func << std::endl;
         exit(1);
     }
     return NULL;

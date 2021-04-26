@@ -3,8 +3,8 @@
 #include "math.h"
 
 //#define PC
-#define DC
-//#define FC
+//#define DC
+#define FC
 
 typedef float data_t;
 // point-wise conv

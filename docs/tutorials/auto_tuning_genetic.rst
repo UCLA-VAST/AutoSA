@@ -196,3 +196,40 @@ Run the auto-tuner.
     --stop-after-time=10 \
     --cst=hw_cst \
     --task=mm
+
+Exploring Loop Permutation
+--------------------------
+At the stage of array partitioning, different loop orderings will lead to different 
+on-chip memory usage and latency. By default, AutoSA will select the loop ordering
+by heuristics. Specially, loops are ordered based on the ascending order of the loop 
+dependence distances. Different loop orderings can also be explored through auto-tuning.
+To explore different loop orderings, use the following command.
+    
+.. code:: bash
+
+    ./autosa ./autosa_tests/mm/kernel.c \
+    --config=./autosa_config/autosa_config.json \
+    --target=autosa_hls_c \
+    --output-dir=./autosa.tmp/output \
+    --sa-sizes="{kernel[]->space_time[3]}" \
+    --simd-info=./autosa_tests/mm/simd_info.json \
+    --host-serialize \
+    --hls \
+    --tuning-method=1 \
+    --explore-loop-permute
+    
+The newly added flag "--explore-loop-permute" will instruct AutoSA to generate different 
+loop orderings that potentially lead to different performance.
+AutoSA will iteratively generate all potentially profitable loop orderings and dump 
+out their description files. In this example, you should find there new json files 
+``kernel3_0.json``, ``kernel3_1.json``, ``kernel3_2.json`` in the directory of 
+``./autosa.tmp/output/tuning``. These three designs correspond to loop orderings of 
+``i-k-j``, ``k-j-i``, and ``i-j-k`` of the array partitioning loops.
+
+Then, you could follow the above procedures as mentioned to use the auto-tuner to search
+the performance for these designs.
+
+Note that we are not simply generating all different loop orderings by enumeration, which
+could lead to 3!=6 different orderings. By proper analysis, some of orderings is either 
+equivalent to others or submit to inferior performance to others. AutoSA analyzes these 
+orderings and automatically prunes away the equivalent or inferior loop orderings.

@@ -67,10 +67,11 @@ class Design(object):
                     else:
                         out_module[module_mem['array']].append(item)
         for array in out_drain_module:
-            for m in out_module[array]:                
-                if m['buf_size'] == out_drain_module[array]['buf_size'] and \
-                   m['num'] == out_drain_module[array]['num']:
-                   out_drain_module[array]['merged'] = 1
+            if array in out_module:
+                for m in out_module[array]:                
+                    if m['buf_size'] == out_drain_module[array]['buf_size'] and \
+                       m['num'] == out_drain_module[array]['num']:
+                       out_drain_module[array]['merged'] = 1
 
         for module in desp["memory"]:
             module_mem = desp["memory"][module]
@@ -92,11 +93,11 @@ class Design(object):
         f.write("\tBRAM18K = ")
         is_first = True
         for module in desp["memory"]:
+            module_mem = desp["memory"][module]
             if module.find('drain') != -1 and out_drain_module[module_mem['array']]['merged'] == 1:
                 continue
             if not is_first:
-                f.write(" + ")
-            module_mem = desp["memory"][module]
+                f.write(" + ")            
             f.write(f"{module}_unit_memory")
             if module_mem["double_buffer"]:
                 f.write(f" * 2")
