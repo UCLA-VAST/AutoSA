@@ -4596,7 +4596,7 @@ static isl_stat autosa_io_buffer_allocate(struct autosa_kernel *kernel,
     for (int j = 0; j < local->n_io_group; j++)
     {      
       compute_io_group_buffer(kernel, local->io_groups[j], gen);      
-      if (!gen->options->autosa->lower_int_io_L1_buffer) {
+      if (!gen->options->autosa->lower_int_io_L1_buffer && !gen->options->autosa->local_reduce) {
         // Hoist the L1 I/O buffer. */
         hoist_L1_io_buffer(kernel, local->io_groups[j], gen, data);
       }
