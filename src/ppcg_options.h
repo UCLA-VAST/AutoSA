@@ -87,6 +87,8 @@ extern "C"
 		 * 0: set the first dim to 1 (default). 
 		 * 1: Set the last dim to 1.
 		 */
+		/* Select the RAR dependence candidate. */
+		char *select_rar_dep;
 		int int_io_dir;
 		/* Lower the interior I/O module L1 buffer */
 		int lower_int_io_L1_buffer;

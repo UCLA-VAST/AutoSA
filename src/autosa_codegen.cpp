@@ -2249,7 +2249,8 @@ static __isl_give isl_schedule *generate_io_module_outer(
   isl_id_list *io_ids;
   isl_id *id;
   isl_union_set *empty_filter = NULL;
-  const char *stmt_name1, *stmt_name2, *stmt_name3, *stmt_name4, *stmt_name5;  
+  const char *stmt_name1, *stmt_name2, *stmt_name5;  
+  char *stmt_name3, *stmt_name4;
   isl_schedule_node *node, *graft1, *graft2, *graft3, *graft4, *graft5;
   isl_schedule *new_sched;
   int upper_io_level;
@@ -2407,6 +2408,9 @@ OUTER_INSERT_STMT:
   space = isl_space_set_tuple_name(space, isl_dim_set, stmt_name5);
   domain = isl_union_set_from_set(isl_set_universe(space));
   graft5 = isl_schedule_node_from_domain(domain);
+
+  free(stmt_name3);
+  free(stmt_name4);
 
   if (read)
   {

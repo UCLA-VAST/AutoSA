@@ -107,8 +107,7 @@ static int populate_array_references_pe(struct autosa_local_array_info *local,
 
     map = isl_map_from_union_map(umap);
     map = isl_map_detect_equalities(map);
-
-    //group = isl_calloc_type(ctx, struct autosa_array_ref_group);
+    
     group = new autosa_array_ref_group;
     group = autosa_array_ref_group_init(group);
     if (!group)
@@ -709,12 +708,9 @@ static isl_stat compute_group_bounds_core_pe(struct autosa_kernel *kernel,
       contract_data.prefix_upma = NULL;
       contract_data.depth = -1;      
       node = isl_schedule_get_root(kernel->schedule);
-      node = autosa_tree_move_down_to_pe(node, kernel->core);
-      //DBGSCHDNODE(stdout, node, isl_schedule_node_get_ctx(node));
+      node = autosa_tree_move_down_to_pe(node, kernel->core);      
       node = isl_schedule_node_map_descendant_bottom_up(node, &check_contraction, &contract_data);
-      isl_schedule_node_free(node);      
-      //std::cout << contract_data.legal << std::endl;
-      //std::cout << contract_data.depth << std::endl;
+      isl_schedule_node_free(node);
     }
     
     if (contract_data.legal) {
@@ -726,6 +722,7 @@ static isl_stat compute_group_bounds_core_pe(struct autosa_kernel *kernel,
       group->copy_schedule = isl_union_pw_multi_aff_pullback_union_pw_multi_aff(group->copy_schedule,
                                                                                 isl_union_pw_multi_aff_copy(kernel->contraction));
     } else {
+      isl_union_pw_multi_aff_free(contract_data.prefix_upma);
       /* Map the domain to the outer scheduling dimensions */
       acc = local_access_pe(group, access, data);  
       node = isl_schedule_get_root(kernel->schedule);
@@ -4596,9 +4593,12 @@ static isl_stat autosa_io_buffer_allocate(struct autosa_kernel *kernel,
     for (int j = 0; j < local->n_io_group; j++)
     {      
       compute_io_group_buffer(kernel, local->io_groups[j], gen);      
-      if (!gen->options->autosa->lower_int_io_L1_buffer && !gen->options->autosa->local_reduce) {
-        // Hoist the L1 I/O buffer. */
-        hoist_L1_io_buffer(kernel, local->io_groups[j], gen, data);
+      if (!gen->options->autosa->lower_int_io_L1_buffer) {
+        /* Hoist the L1 I/O buffer. 
+         * Do not touch internal array when local reduce is enabled.
+         */
+        if (!(gen->options->autosa->local_reduce && local->array_type == AUTOSA_INT_ARRAY))
+          hoist_L1_io_buffer(kernel, local->io_groups[j], gen, data);
       }
       if (gen->options->autosa->two_level_buffer)
       {

@@ -822,7 +822,9 @@ static __isl_give isl_mat *get_acc_mat_from_tagged_acc(__isl_keep isl_map *map)
  * Temporary: We only allow one non-zero component in the reuse vector to simplify
  * the generation of hardware. We may relax it in the future.
  */
-static int rar_sol_smart_pick(__isl_keep isl_mat *mat, struct ppcg_scop *ps) {
+static int rar_sol_smart_pick(
+  __isl_keep isl_mat *mat, struct ppcg_scop *ps, int *n_candidates, int *n_default, int user_choice)
+{
   int score[isl_mat_cols(mat)];
   int depth = isl_mat_rows(mat);
   int pick_idx = -1;
@@ -854,7 +856,7 @@ static int rar_sol_smart_pick(__isl_keep isl_mat *mat, struct ppcg_scop *ps) {
   if (min_non_zero_cnt > 1) {
 	return pick_idx;
   }
-
+  
   for (int c = 0; c < isl_mat_cols(mat); c++) {
     score[c] = 0; 
     for (int r = 0; r < isl_mat_rows(mat); r++) {
@@ -871,15 +873,35 @@ static int rar_sol_smart_pick(__isl_keep isl_mat *mat, struct ppcg_scop *ps) {
       }
     }
     if (score[c] >= 0 && non_zero_cnts[c] == min_non_zero_cnt) {
-      if (pick_idx == -1) {
-        pick_idx = c;
-        min_score = score[c];
-      } else {
-        if (min_score > score[c]) {
+	  if (user_choice == -1) {
+	    printf("[AutoSA] Candidate %d: ", *n_candidates);
+	    isl_printer *p_tmp = isl_printer_to_file(isl_mat_get_ctx(mat), stdout);
+	    isl_vec *sol_tmp = isl_vec_alloc(isl_mat_get_ctx(mat), isl_mat_rows(mat));
+	    for (int r = 0; r < isl_mat_rows(mat); r++) {
+	  	  sol_tmp = isl_vec_set_element_val(sol_tmp, r, isl_mat_get_element_val(mat, r, c));
+	    }
+	    p_tmp = isl_printer_print_vec(p_tmp, sol_tmp);	  
+	    isl_printer_free(p_tmp);
+	    isl_vec_free(sol_tmp);
+	    printf("\n");
+		if (pick_idx == -1) {
           pick_idx = c;
           min_score = score[c];
+		  *n_default = *n_candidates;
+        } else {
+          if (min_score > score[c]) {
+            pick_idx = c;
+            min_score = score[c];
+		    *n_default = *n_candidates;
+          }
         }
-      }
+	  }	else {
+	    if (user_choice == *n_candidates) {
+		  pick_idx = c;
+	      break;
+		}
+	  }
+	  (*n_candidates)++;
     }
   }
 
@@ -943,6 +965,85 @@ static __isl_give isl_map *construct_dep_rar(__isl_keep isl_vec *sol,
   return dep_map;
 }
 
+struct autosa_extract_size_data
+{
+  const char *type;
+  isl_set *res;
+};
+
+/* This function is called for each set in a union_set.
+ * If the name of the set matches data->type, we store the
+ * set in data->res.
+ */
+static isl_stat extract_size_of_type(__isl_take isl_set *size, void *user)
+{
+  struct autosa_extract_size_data *data = (struct autosa_extract_size_data *)user;
+  const char *name;
+
+  name = isl_set_get_tuple_name(size);
+  if (name && !strcmp(name, data->type))
+  {
+    data->res = size;
+    return isl_stat_error;
+  }
+
+  isl_set_free(size);
+  return isl_stat_ok;
+}
+
+static __isl_give isl_set *extract_sa_sizes(__isl_keep isl_union_map *sizes,
+                                     const char *type)
+{
+  isl_space *space;
+  isl_set *dom;
+  isl_union_set *local_sizes;
+  struct autosa_extract_size_data data = {type, NULL};
+
+  if (!sizes)
+    return NULL;
+
+  space = isl_union_map_get_space(sizes);
+  space = isl_space_set_from_params(space);  
+  space = isl_space_set_tuple_name(space, isl_dim_set, "kernel");
+  dom = isl_set_universe(space);  
+
+  local_sizes = isl_union_set_apply(isl_union_set_from_set(dom),
+                                    isl_union_map_copy(sizes));
+  isl_union_set_foreach_set(local_sizes, &extract_size_of_type, &data);
+  isl_union_set_free(local_sizes);
+  return data.res;
+}
+
+static __isl_give isl_union_map *extract_sizes_from_str(isl_ctx *ctx, const char *str)
+{
+  if (!str)
+    return NULL;
+  return isl_union_map_read_from_str(ctx, str);
+}
+
+static int read_select_rar_dep_choices(struct ppcg_scop *ps, __isl_keep isl_map *map)
+{
+  /* Extract the reference name */
+  isl_set *domain = isl_map_domain(isl_map_copy(map));
+  isl_map *domain_map = isl_set_unwrap(domain);
+  isl_space *space = isl_map_get_space(domain_map);
+  isl_map_free(domain_map);  
+  const char *ref_name = isl_space_get_tuple_name(space, isl_dim_out);
+  isl_space_free(space);  
+  isl_union_map *sizes = extract_sizes_from_str(isl_map_get_ctx(map), ps->options->autosa->select_rar_dep);
+  isl_set *size = extract_sa_sizes(sizes, ref_name);
+  isl_union_map_free(sizes);
+  int ret = -1;
+  if (size) {
+    isl_val *v = isl_set_plain_get_val_if_fixed(size, isl_dim_set, 0);
+    ret = isl_val_get_num_si(v);
+	isl_val_free(v);	
+  }
+  isl_set_free(size);
+
+  return ret;	
+}
+
 /* Builds the RAR dependence for the given access "map".
  * First we examine the access is an external access (not assoiciated with
  * any flow dependence). Next, we compute the null space of the access matrix.
@@ -960,10 +1061,6 @@ static isl_stat build_rar_dep(__isl_take isl_map *map, void *user) {
     return isl_stat_ok;
   }
 
-//#ifdef _DEBUG
-//	DBGMAP(stdout, map, isl_map_get_ctx(map));
-//#endif
-
   /* Take the access function and compute the null space */
   isl_mat *acc_mat = get_acc_mat_from_tagged_acc(map); 
   isl_mat *acc_null_mat = isl_mat_right_kernel(acc_mat);
@@ -973,13 +1070,38 @@ static isl_stat build_rar_dep(__isl_take isl_map *map, void *user) {
    	 * TODO: Temporary solution. We will construnct the RAR dep
      * using one independent solution based on hueristics.
      */
-    int col = rar_sol_smart_pick(acc_null_mat, ps);
-    //assert(col >= 0);    
+	int n_candidates = 0;
+	{
+	  printf("[AutoSA] Extract RAR dep for the array access: ");
+	  isl_space *space = isl_map_get_space(map);
+	  isl_map *map_tmp = isl_map_universe(space);
+	  isl_printer *p_tmp = isl_printer_to_file(isl_map_get_ctx(map_tmp), stdout);
+	  p_tmp = isl_printer_print_map(p_tmp, map_tmp);
+	  isl_printer_free(p_tmp);
+	  isl_map_free(map_tmp);
+	  printf("\n");						
+	}
+	int default_candidate = -1;
+    int col = rar_sol_smart_pick(acc_null_mat, ps, &n_candidates, &default_candidate, -1);
 	if (col >= 0) {
+	  /* Check if users have specified any choice. */
+	  int user_choice = read_select_rar_dep_choices(ps, map);
+      if (n_candidates > 1) {
+		printf("[AutoSA] Found more than one legal RAR deps. ");
+		if (user_choice == -1)
+		  printf("Candidate %d is used by default.\n", default_candidate);
+		else {
+		  printf("Candidate %d is used.\n", user_choice);
+		  n_candidates = 0;
+		  col = rar_sol_smart_pick(acc_null_mat, ps, &n_candidates, &default_candidate, user_choice);
+		}
+	  }
+
       isl_vec *sol = isl_vec_alloc(isl_map_get_ctx(map), isl_mat_rows(acc_null_mat));
       for (int row = 0; row < isl_mat_rows(acc_null_mat); row++) {
         sol = isl_vec_set_element_val(sol, row, isl_mat_get_element_val(acc_null_mat, row, col));
       }
+	  //DBGVEC(stdout, sol, isl_vec_get_ctx(sol));
       tagged_dep_rar = construct_dep_rar(sol, map);
       isl_vec_free(sol);      
 
@@ -1028,9 +1150,6 @@ static void compute_tagged_rar_dep_only(struct ppcg_scop *ps)
    */
   isl_union_map *tagged_reads = ps->tagged_reads;
   isl_union_map_foreach_map(tagged_reads, &build_rar_dep, ps);
-//#ifdef _DEBUG
-//	DBGUMAP(stdout, ps->tagged_dep_rar, isl_union_map_get_ctx(tagged_reads));
-//#endif
 }
 
 /* Compute the RAR dependence for each externel read access.

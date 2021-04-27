@@ -149,7 +149,9 @@ ISL_ARG_BOOL(struct autosa_options, non_block_fifo, 0, "non-blocking-fifo", 0,
 ISL_ARG_STR(struct autosa_options, output_dir, 0, "output-dir", "dir", "./autosa.tmp/output",
 				"AutoSA Output directory")
 ISL_ARG_BOOL(struct autosa_options, reverse_order, 0, "reverse-order", 1,
-			 	"reverse latency hiding loop tiling order")				
+			 	"reverse latency hiding loop tiling order")			
+ISL_ARG_STR(struct autosa_options, select_rar_dep, 0, "select-rar-dep", "choice",
+				NULL, "select the RAR dependence for the array access. [example: kernel[]->__pet_ref_4[1]]")
 ISL_ARG_STR(struct autosa_options, sa_sizes, 0, "sa-sizes", "sizes", NULL,
 				"per kernel PE optimization tile sizes")
 ISL_ARG_INT(struct autosa_options, sa_tile_size, 0, "sa-tile-size", "size", 4,

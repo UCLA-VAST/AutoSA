@@ -3061,6 +3061,7 @@ isl_stat sa_simd_vectorization_optimize(struct autosa_kernel *sa, char *mode)
         fp = fopen(tuning_path, "w");
         content = cJSON_Print(tuning);
         fprintf(fp, "%s", content);
+        free(content);
         cJSON_Delete(tuning);
         free(tuning_path);
         isl_printer_free(p_str);

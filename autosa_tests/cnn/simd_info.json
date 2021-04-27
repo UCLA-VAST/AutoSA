@@ -1,8 +1,32 @@
 {
+  "kernel0": {
+    "reduction": ["y", "y", "y"]
+  },
+  "kernel1": {
+    "reduction": ["y", "y", "y"]
+  },
+  "kernel2": {
+    "reduction": ["y", "y", "y"]
+  },
+  "kernel3": {
+    "reduction": ["y", "y", "y"]
+  },
   "kernel4": {
     "reduction": ["y", "y", "y"]
   },
   "kernel5": {
     "reduction": ["y", "y", "y"]
-  } 
+  },
+  "kernel6": {
+    "reduction": ["y", "y", "y"]
+  },
+  "kernel7": {
+    "reduction": ["y", "y", "y"]
+  },
+  "kernel8": {
+    "reduction": ["y", "y", "y"]
+  },
+  "kernel9": {
+    "reduction": ["y", "y", "y"]
+  }
 }
