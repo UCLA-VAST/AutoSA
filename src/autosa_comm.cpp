@@ -728,7 +728,8 @@ static isl_stat compute_group_bounds_core_pe(struct autosa_kernel *kernel,
       acc = local_access_pe(group, access, data);  
       node = isl_schedule_get_root(kernel->schedule);
       node = autosa_tree_move_down_to_pe(node, kernel->core);
-      group->tuning_local_tile = TP_infer_tiled_array(data->gen, kernel, node, group, 1, 1);
+      if (kernel->options->autosa->tuning_method == 1)
+        group->tuning_local_tile = TP_infer_tiled_array(data->gen, kernel, node, group, 1, 1);
       isl_schedule_node_free(node);
     }
     if (contract_data.prefix) 
@@ -2858,7 +2859,7 @@ static isl_stat compute_io_group_buffer(struct autosa_kernel *kernel,
           if (gen->options->autosa->tuning_method == 1) {                        
             group->io_buffers[group->n_io_buffer - 1]->tuning_tile = TP_infer_tiled_array(gen, kernel, node, group, 0, 1);
             isl_schedule_node *new_node = isl_schedule_get_root(kernel->schedule);
-            new_node = autosa_tree_move_down_to_pe(new_node, kernel->core);
+            new_node = autosa_tree_move_down_to_pe(new_node, kernel->core);            
             group->tuning_pe_tile = TP_infer_tiled_array(gen, kernel, node, group, 0, 1); 
             isl_schedule_node_free(new_node);
           }
@@ -2886,7 +2887,7 @@ static isl_stat compute_io_group_buffer(struct autosa_kernel *kernel,
             group->io_buffers[group->n_io_buffer - 1]->tuning_tile = TP_infer_tiled_array(gen, kernel, node, group, 1, 1);
             if (group->io_type == AUTOSA_INT_IO && i == 1) {
               isl_schedule_node *new_node = isl_schedule_get_root(kernel->schedule);
-              new_node = autosa_tree_move_down_to_pe(new_node, kernel->core);
+              new_node = autosa_tree_move_down_to_pe(new_node, kernel->core);              
               group->tuning_pe_tile = TP_infer_tiled_array(gen, kernel, node, group, 1, 1); 
               isl_schedule_node_free(new_node);
             }

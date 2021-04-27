@@ -91,3 +91,22 @@ int main(int argc, char **argv) {
 
   return 0;
 }
+
+//#include <stdio.h>
+//int main(int argc, char **argv) {
+//
+//      float L2[1][10];
+//      float FL[1][64];
+//      float w2[64][10];
+//#pragma scop
+//      for (int j1 = 0; j1 < 10; ++j1) {
+//        L2[0][j1] = 0.000000e+00f;
+//        for (int k1 = 0; k1 < 64; ++k1) {
+//          L2[0][j1] = (L2[0][j1] + (FL[0][k1] * w2[k1][j1]));
+//        }
+//      }
+//#pragma endscop
+//      printf("%f", L2[0][0]);
+//      printf("%f", FL[0][0]);
+//      printf("%f", w2[0][0]);
+//}

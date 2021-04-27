@@ -281,7 +281,7 @@ __isl_give TPExpr *TPExpr::replace(__isl_keep TPExpr *match, __isl_keep TPExpr *
         } else if (this->func == "NULL") {
             return this;
         } else {
-            std::cout << "[AutoSA] Error: Unsupported TPExpr function type: " << this->func << std::endl;
+            std::cout << "[AutoSA] Error: TPExpr::replace(): Unsupported TPExpr function type: " << this->func << std::endl;
             exit(1);
         }
     }
@@ -362,7 +362,7 @@ std::string TPExpr::to_str() {
     } else if (this->func == "NULL") {
         return "";
     } else {
-        std::cout << "[AutoSA] Error: Unsupported TPExpr function type: " << this->func << std::endl;
+        std::cout << "[AutoSA] Error: TPExpr::to_str(): Unsupported TPExpr function type: " << this->func << std::endl;
         exit(1);
     }
     return "";
@@ -396,13 +396,13 @@ __isl_give TPExpr *TPExpr::infer_bound(
             return this->dup();
         }
     } else if (this->func == "floor") {
-        std::cout << "[AutoSA] Error: Unsupported TPExpr function type: " << this->func << std::endl;
+        std::cout << "[AutoSA] Error: TPExpr::infer_bound(): Unsupported TPExpr function type: " << this->func << std::endl;
         exit(1);
     } else if (this->func == "ceil") {
-        std::cout << "[AutoSA] Error: Unsupported TPExpr function type: " << this->func << std::endl;
+        std::cout << "[AutoSA] Error: TPExpr::infer_bound(): Unsupported TPExpr function type: " << this->func << std::endl;
         exit(1);
     } else if (this->func == "div") {
-        std::cout << "[AutoSA] Error: Unsupported TPExpr function type: " << this->func << std::endl;
+        std::cout << "[AutoSA] Error: TPExpr::infer_bound(): Unsupported TPExpr function type: " << this->func << std::endl;
         exit(1);
     } else if (this->func == "add") {
         TPExpr *left, *right;
@@ -442,7 +442,7 @@ __isl_give TPExpr *TPExpr::infer_bound(
         } else
             return new TPExpr("mul", left, right);
     } else {
-        std::cout << "[AutoSA] Error: Unsupported TPExpr function type: " << this->func << std::endl;
+        std::cout << "[AutoSA] Error: TPExpr::infer_bound(): Unsupported TPExpr function type: " << this->func << std::endl;
         exit(1);
     }
     return NULL;
@@ -1149,11 +1149,7 @@ std::vector<TPExpr *> TuningProgram::infer_tiled_array_bound_at_dim(int dim, std
  * Construct a array tile object and return it.
  */
 TPArrayTile *TuningProgram::infer_tiled_array_bounds(TPArrayTile *tile, std::vector<std::shared_ptr<TPArrayRef>> refs, std::vector<TPIterator *> fixed_iters)
-{    
-    //std::cout << "---------------" << std::endl;
-    //for (auto ref : refs) {
-    //    std::cout << ref->to_str() << std::endl;
-    //}
+{        
     std::vector<TPExpr *> lbs;
     std::vector<TPExpr *> sizes;
     int dim = refs[0]->index.size();
@@ -1161,11 +1157,7 @@ TPArrayTile *TuningProgram::infer_tiled_array_bounds(TPArrayTile *tile, std::vec
         std::vector<TPExpr *> ret = this->infer_tiled_array_bound_at_dim(i, refs, fixed_iters);
         lbs.push_back(ret[0]);
         sizes.push_back(ret[1]);        
-    }
-    //for (auto size : sizes) {
-    //    std::cout << size->to_str() << std::endl;
-    //}    
-    //std::cout << "---------------" << std::endl;
+    }    
 
     tile->lbs = lbs;
     tile->sizes = sizes;
