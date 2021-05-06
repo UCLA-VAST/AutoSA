@@ -595,9 +595,7 @@ static __isl_give isl_printer *declare_and_allocate_device_arrays_xilinx(
         p = isl_printer_print_str(p, "dev_");
         p = isl_printer_print_str(p, local_array->array->name);
         p = isl_printer_print_str(p, "_tmp");
-        p = isl_printer_print_str(p, "(");
-        // p = autosa_array_info_print_data_size(p, local_array->array); // TODO
-        //p = isl_printer_print_ast_expr(p, local_array->serialize_bound_expr);
+        p = isl_printer_print_str(p, "(");        
         p = isl_printer_print_pw_qpolynomial(p, local_array->serialize_bound);
         if (local_array->is_sparse) {
           p = isl_printer_print_str(p, " / ");

@@ -1271,17 +1271,14 @@ static __isl_give isl_printer *print_trans_stmt_coalesce(
                                        coalesce_bound_val);    
     }    
     if (buf->sparse) {
-      *coalesce_bound = isl_val_get_num_si(coalesce_bound_val) / (n_lane * buf->vec_len);
-      //*coalesce_bound = isl_val_get_num_si(coalesce_bound_val) / (buf->n_lane * buf->vec_len);
+      *coalesce_bound = isl_val_get_num_si(coalesce_bound_val) / (n_lane * buf->vec_len);      
     } else {
-      *coalesce_bound = isl_val_get_num_si(coalesce_bound_val) / n_lane;
-      //*coalesce_bound = isl_val_get_num_si(coalesce_bound_val) / buf->n_lane;
+      *coalesce_bound = isl_val_get_num_si(coalesce_bound_val) / n_lane;      
     }    
     isl_val_free(coalesce_bound_val);
   } else {
     coalesce_bound_val = buf->tile->bound[buf->tile->n - 1].size;  
-    *coalesce_bound = isl_val_get_num_si(coalesce_bound_val) / n_lane;    
-    //*coalesce_bound = isl_val_get_num_si(coalesce_bound_val) / buf->n_lane;    
+    *coalesce_bound = isl_val_get_num_si(coalesce_bound_val) / n_lane;        
   }
   if (*coalesce_bound <= 1)
     coalesce_depth = -1;
@@ -1626,8 +1623,7 @@ static __isl_give isl_schedule_node *insert_io_stmts_tile(
 
   p = isl_printer_print_str(p, ".");
   p = isl_printer_print_int(p, nxt_data_pack);  
-
-  //p = print_trans_stmt_coalesce(p, node, copy_buffer, &coalesce_bound, local_buffer? local_buffer->n_lane : nxt_data_pack);   
+  
   p = print_trans_stmt_coalesce(p, node, copy_buffer, &coalesce_bound, nxt_data_pack);   
   module->coalesce_bound = coalesce_bound;
   
@@ -1636,9 +1632,7 @@ static __isl_give isl_schedule_node *insert_io_stmts_tile(
 
   int insert_hls_dep = coalesce_bound > 1 && 
                        copy_buffer->n_lane != nxt_data_pack && 
-                       kernel->options->autosa->insert_hls_dependence;
-
-  //DBGSCHDNODE(stdout, node, isl_schedule_node_get_ctx(node));
+                       kernel->options->autosa->insert_hls_dependence;  
 
   node = add_io_copies_stmt_tile(kernel, group, node,
                                  local_buffer->tile? local_buffer->tile : NULL, copy_buffer->tile, 
@@ -3055,10 +3049,6 @@ static __isl_give isl_schedule_node *add_serialize_stmt_tile(
     domain = isl_union_set_from_set(isl_map_wrap(map));
   }
 
-#ifdef _DEBUG
-  //DBGSCHDNODE(stdout, node, isl_schedule_node_get_ctx(node));
-  //DBGUSET(stdout, domain, isl_schedule_node_get_ctx(node));
-#endif
   /* Extract the serialization bound. */
   group->local_array->serialize_bound = isl_set_card(
       isl_set_from_union_set(isl_union_set_copy(domain)));  
@@ -3599,10 +3589,23 @@ static int update_serialize_data_pack(struct autosa_gen *gen, struct autosa_hw_m
         break;
       }
     }
-  } else {
+  } else {    
+    isl_printer *p_str = isl_printer_to_str(gen->ctx);
+    p_str = isl_printer_set_output_format(p_str, ISL_FORMAT_C);    
+    p_str = isl_printer_print_pw_qpolynomial(p_str, module->io_groups[0]->local_array->serialize_bound);    
+    char *serialize_bound = isl_printer_get_str(p_str);
+    isl_printer_free(p_str);    
+    std::string serialize_bound_str(serialize_bound);    
+    int serialize_bound_int = stoi(serialize_bound_str);    
+    free(serialize_bound);
+
     for (int limit = dram_limit; limit >= ele_size * n_lane; limit -= ele_size * n_lane) 
     {
-      if (limit % (ele_size * n_lane) == 0 && module->coalesce_bound % (limit / (ele_size * n_lane)) == 0)
+      /* Limit should be a power of two. */
+      if (log2f((float)limit) != int(log2f((float)limit)))
+        continue;
+      //if (limit % (ele_size * n_lane) == 0 && module->coalesce_bound % (limit / (ele_size * n_lane)) == 0)
+      if (limit % (ele_size * n_lane) == 0 && serialize_bound_int % (limit / (ele_size * n_lane)) == 0)
       {
         host_pack = limit / ele_size;
         break;

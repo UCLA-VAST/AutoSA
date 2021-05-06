@@ -5,6 +5,7 @@
 typedef float data_t;
 #define O 512
 #define I 512
+//#define R 60
 #define R 56
 #define C 56
 #define K 3
