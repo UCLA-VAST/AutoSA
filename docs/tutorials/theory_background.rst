@@ -133,7 +133,7 @@ Space-Time transformation
 
 In the last section of this tutorial, we will touch another important topic that lays the foundation of AutoSA, 
 the space-time transformation.
-The space-time transformation applies oop transformations on the target program and assigns new semantics
+The space-time transformation applies loop transformations on the target program and assigns new semantics
 *space* and *time* to the generated loops. Space loops map loop instances to different PEs that execute concurrently, while time loops describe the computation inside each PE. 
 
 To generate a legal systolic array, the following constraints should be satisfied by the loop transformation: 
