@@ -27,6 +27,7 @@ Resources
 * `AutoSA Paper <https://vast.cs.ucla.edu/sites/default/files/publications/FPGA2021_AutoSA_camera.pdf>`_
 * `Github Project <https://github.com/UCLA-VAST/AutoSA>`_
 * `Docker Image <https://hub.docker.com/repository/docker/whbldhwj/autosa>`_
+* `FCCM 2021 Tutorial Slides <https://www.dropbox.com/s/pusu5htagdvvuch/autosa_fccm21_final.pdf?dl=0>`_
 
 Indices and tables
 ==================
