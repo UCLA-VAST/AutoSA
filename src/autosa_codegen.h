@@ -38,6 +38,8 @@ __isl_give isl_schedule_node *insert_io_group_domain(
   struct autosa_gen *gen,
   int read);
 
-void print_code(struct autosa_gen *gen, __isl_keep isl_schedule *schedule, const char *output_f);
+void print_code(struct autosa_gen *gen, __isl_take isl_schedule *schedule, const char *output_f);
+void dump_intermediate_code(
+  struct autosa_gen *gen, __isl_take isl_schedule *schedule, const char *stage);
 
 #endif

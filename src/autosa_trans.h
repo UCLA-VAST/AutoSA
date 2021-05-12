@@ -61,6 +61,7 @@ isl_stat sa_latency_hiding_optimize(
 isl_stat sa_simd_vectorization_optimize(
     struct autosa_kernel *sa, char *mode);
 isl_stat compute_management(
+    struct autosa_gen *gen,
     struct autosa_kernel *sa, bool pass_en[], char *pass_mode[]);
 
 isl_stat sa_loop_init(struct autosa_kernel *sa);

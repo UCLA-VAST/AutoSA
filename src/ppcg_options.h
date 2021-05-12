@@ -29,6 +29,8 @@ extern "C"
 		int double_buffer;
 		/* Double buffer assignment. */
 		char *double_buffer_assignment;
+		/* Dump the intermediate code. */
+		int dump_code;
 		/* Maximal systolic array dimension. */
 		int max_sa_dim;
 		/* Systolic array type. */

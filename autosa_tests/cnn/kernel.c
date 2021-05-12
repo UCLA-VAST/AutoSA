@@ -1,11 +1,6 @@
 #include "kernel.h"
 
 int main(int argc, char **argv){
-  // declarations
-//  data_t cin[I][R + K - 1][C + K - 1];
-//  data_t w[O][I][K][K];
-//  data_t cout[O][R][C];
-//  data_t cout_golden[O][R][C];
   data_t cin[R + K - 1][C + K - 1][I];
   data_t w[O][K][K][I];
   data_t cout[R][C][O];

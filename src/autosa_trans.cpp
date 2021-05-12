@@ -8,6 +8,7 @@
 #include "autosa_schedule_tree.h"
 #include "autosa_comm.h"
 #include "autosa_codegen.h"
+#include "autosa_print.h"
 #include "cpu.h"
 
 /* A program is legal to be transformed to systolic array if and only if 
@@ -3075,7 +3076,9 @@ isl_stat sa_simd_vectorization_optimize(struct autosa_kernel *sa, char *mode)
  * - SIMD vectorization
  * - array partitioning
  */
-isl_stat compute_management(struct autosa_kernel *sa, bool pass_en[], char *pass_mode[])
+isl_stat compute_management(
+    struct autosa_gen *gen,
+    struct autosa_kernel *sa, bool pass_en[], char *pass_mode[])
 {
     printf("[AutoSA] Appy compute management.\n");
 
@@ -3094,11 +3097,22 @@ isl_stat compute_management(struct autosa_kernel *sa, bool pass_en[], char *pass
     sa->core = isl_union_set_universe(domain);
     /* Array partitioning. */
     sa_array_partitioning_optimize(sa, pass_en[0], pass_mode[0], pass_en[1], pass_mode[1]);    
+    /* Dump out the intermediate code if needed */
+    if (gen->options->autosa->dump_code) {
+        dump_intermediate_code(gen, isl_schedule_copy(sa->schedule), "array_part");
+    }
     /* Latency hiding. */
     sa_latency_hiding_optimize(sa, pass_en[2], pass_mode[2]);    
+    if (gen->options->autosa->dump_code) {
+        dump_intermediate_code(gen, isl_schedule_copy(sa->schedule), "latency");
+    }
     /* SIMD vectorization. */
-    if (pass_en[3])
+    if (pass_en[3]) {
         sa_simd_vectorization_optimize(sa, pass_mode[3]);    
+        if (gen->options->autosa->dump_code) {
+            dump_intermediate_code(gen, isl_schedule_copy(sa->schedule), "simd");
+        }
+    }
 
     return isl_stat_ok;
 }
@@ -3480,7 +3494,7 @@ static struct autosa_kernel *optimize_single_array(struct autosa_kernel *kernel,
     pe_opt_mode[3] = simd_mode_json->valuestring;
 
     /* Compute Management */
-    compute_management(kernel, pe_opt_en, pe_opt_mode);
+    compute_management(gen, kernel, pe_opt_en, pe_opt_mode);
     /* Create the autosa_kernel object and attach to the schedule. */
     if (!kernel)    
         return NULL;    
@@ -3611,7 +3625,12 @@ static __isl_give isl_schedule_node *compute_and_comm_optimize(
             kernel = sa_candidates_manual_pick(sa_candidates, num_sa, kernel_id);
         }
     }
-    // Update the array information
+    /* Dump out the intermediate code if needed */
+    if (gen->options->autosa->dump_code) {
+        dump_intermediate_code(gen, isl_schedule_copy(kernel->schedule), "space_time");
+    }
+    
+    /* Update the array information */
     TP_extract_array_info(gen, kernel);
     kernel = optimize_single_array(kernel, gen);    
     gen->tuning_progs.push_back(kernel->tuning_program);

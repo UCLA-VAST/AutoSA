@@ -7758,3 +7758,24 @@ isl_stat print_host_serialize_funcs(
 
   return isl_stat_ok;
 }
+
+/* Print a user statement in the generated AST.
+ * The ppcg_stmt has been attached to the node in at_each_domain.
+ */
+__isl_give isl_printer *print_cpu_user(__isl_take isl_printer *p,
+	__isl_take isl_ast_print_options *print_options,
+	__isl_keep isl_ast_node *node, void *user)
+{
+	struct autosa_kernel_stmt *stmt;
+	isl_id *id;
+
+	id = isl_ast_node_get_annotation(node);
+	stmt = (struct autosa_kernel_stmt *)isl_id_get_user(id);
+	isl_id_free(id);
+
+	p = pet_stmt_print_body(stmt->u.d.stmt->stmt, p, stmt->u.d.ref2expr);
+
+	isl_ast_print_options_free(print_options);
+
+	return p;
+}

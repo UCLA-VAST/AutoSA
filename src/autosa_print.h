@@ -145,6 +145,10 @@ __isl_give isl_printer *print_module_serialize_body(
 __isl_give isl_printer *print_module_stmt(__isl_take isl_printer *p,
                                           __isl_take isl_ast_print_options *print_options,
                                           __isl_keep isl_ast_node *node, void *user);
+__isl_give isl_printer *print_cpu_user(
+    __isl_take isl_printer *p,
+	__isl_take isl_ast_print_options *print_options,
+	__isl_keep isl_ast_node *node, void *user);
 
 /* Xilinx-specific */
 __isl_give isl_printer *print_fifo_type_xilinx(__isl_take isl_printer *p,

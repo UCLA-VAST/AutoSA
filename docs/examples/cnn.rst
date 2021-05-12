@@ -368,7 +368,7 @@ Array 10: [c,i]
 This is an input stationary array. 
 Weights are reused vertically. Input feature maps are sent to each PE.
 
-.. image:: images/cnn8_array.png
+.. image:: images/cnn9_array.png
     :width: 300
     :align: center    
 

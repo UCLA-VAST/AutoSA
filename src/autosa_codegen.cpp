@@ -11571,12 +11571,7 @@ void print_code(struct autosa_gen *gen, __isl_take isl_schedule *schedule, const
   int depth;
   isl_ast_build *build;
   isl_id_list *iterators;
-
-//#ifdef _DEBUG
-//  DBGSCHD(stdout, schedule, ctx);
-//#endif
-
-  //tree = sa_generate_code(gen, isl_schedule_copy(schedule));
+  
   depth = 0;
   if (isl_schedule_foreach_schedule_node_top_down(schedule, &update_depth, &depth) < 0)
 		return;
@@ -11598,4 +11593,33 @@ void print_code(struct autosa_gen *gen, __isl_take isl_schedule *schedule, const
   isl_ast_node_free(tree);
   fclose(f);
   isl_printer_free(p);
+}
+
+/* Dump the intermediate code. */
+void dump_intermediate_code(
+  struct autosa_gen *gen, __isl_take isl_schedule *schedule, const char *stage)
+{
+  FILE *tmp_f;
+  isl_printer *p;
+  isl_ast_node *tree = sa_generate_code(gen, schedule);
+  
+  p = isl_printer_to_str(gen->ctx);
+  p = isl_printer_print_str(p, gen->options->autosa->output_dir);
+  p = isl_printer_print_str(p, "/src/tmp.");
+  p = isl_printer_print_str(p, stage);
+  p = isl_printer_print_str(p, ".cpp");
+  char *f_path = isl_printer_get_str(p)        ;
+  isl_printer_free(p);
+  tmp_f = fopen(f_path, "w");
+  free(f_path);
+  p = isl_printer_to_file(gen->ctx, tmp_f);
+  p = isl_printer_set_output_format(p, ISL_FORMAT_C);
+  isl_ast_print_options *print_options;
+  print_options = isl_ast_print_options_alloc(gen->ctx);
+  print_options = isl_ast_print_options_set_print_user(print_options,
+                                                       &print_cpu_user, NULL);
+  p = isl_ast_node_print(tree, p, print_options);
+  p = isl_printer_free(p);
+  fclose(tmp_f);
+  isl_ast_node_free(tree);  
 }
