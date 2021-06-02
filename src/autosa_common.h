@@ -188,6 +188,7 @@ struct autosa_kernel
 
   int n_sa_dim;
   int sa_dim[3];
+  int space_parallel[3];
   int space_time_id;
   int array_part_w;
   int space_w;

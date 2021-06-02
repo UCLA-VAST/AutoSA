@@ -1806,14 +1806,8 @@ static isl_bool io_group_carried_by_array_loops(
                                                             isl_union_pw_multi_aff_copy(kernel->contraction));
   isl_schedule_node_free(node);
   access = autosa_io_group_access_relation(group, kernel, read, !read);  
-//#ifdef _DEBUG
-//  DBGUMAP(stdout, access, kernel->ctx);
-//#endif  
   /* Remove the local dependence first. */
   access = remove_local_accesses_group_flow(kernel, group, access, prefix, read);
-//#ifdef _DEBUG
-//  DBGUMAP(stdout, access, kernel->ctx);
-//#endif
 
   tagged = group_tagged_access_relation(group);
   tagger = isl_union_pw_multi_aff_copy(prog->scop->tagger);
@@ -1822,19 +1816,10 @@ static isl_bool io_group_carried_by_array_loops(
                                                    isl_union_set_copy(domain));
 
   prefix = isl_union_map_preimage_domain_union_pw_multi_aff(prefix, tagger);  
-//#ifdef _DEBUG
-//  DBGUMAP(stdout, prefix, isl_union_map_get_ctx(prefix))
-//#endif  
   identity_sched = isl_union_map_apply_range(prefix, 
                                              isl_union_map_reverse(isl_union_map_copy(prefix)));
-//#ifdef _DEBUG
-//  DBGUMAP(stdout, identity_sched, isl_union_map_get_ctx(identity_sched))
-//#endif
   identity_sched = isl_union_map_intersect(identity_sched,
                                            isl_union_map_copy(prog->scop->tagged_dep_flow));
-//#ifdef _DEBUG
-//  DBGUMAP(stdout, identity_sched, kernel->ctx);
-//#endif
   empty = isl_union_map_is_empty(identity_sched);
 
   external = isl_union_map_copy(prog->scop->tagged_dep_flow);
@@ -1851,9 +1836,6 @@ static isl_bool io_group_carried_by_array_loops(
   external = isl_union_map_intersect_params(external,
                                             isl_set_copy(prog->scop->context));
   external = isl_union_map_subtract(external, identity_sched);
-///#ifdef _DEBUG
-///  DBGUMAP(stdout, external, kernel->ctx);
-///#endif
 
   if (read)
   {
@@ -3868,12 +3850,14 @@ static isl_stat hoist_L1_io_buffer(
   cur_tile = cur_buffer->tile;
 
   node = isl_schedule_get_root(group->io_schedule);
+  //DBGSCHDNODE(stdout, node, gen->ctx);  
   /* Insert the filter ids. */
-  node = autosa_tree_move_down_to_io_mark(node, kernel->core, cur_buffer->level);
-  node = insert_io_module_ids(gen, kernel, node, group->space_dim, cur_buffer->level);
+  node = autosa_tree_move_down_to_io_mark(node, kernel->core, cur_buffer->level);  
+  node = insert_io_module_ids(gen, kernel, node, group->space_dim, cur_buffer->level);  
   node = autosa_tree_move_up_to_array(node);
   node = isl_schedule_node_parent(node);
-  n = isl_schedule_node_band_n_member(node);
+  //DBGSCHDNODE(stdout, node, gen->ctx);  
+  n = isl_schedule_node_band_n_member(node);  
   for (i = n - 1; i > 0; i--) {
     node_cp = isl_schedule_node_copy(node);
     node_cp = isl_schedule_node_band_split(node_cp, i);
@@ -3917,7 +3901,7 @@ static isl_stat hoist_L1_io_buffer(
       L1_io_buffer_domain = isl_union_map_domain(partial);
       isl_schedule_node_free(node_cp);
     }
-  }
+  }  
   isl_schedule_node_free(node);
   cur_buffer->tile = cur_tile;
   cur_buffer->hoist_depth = L1_io_buffer_depth;
@@ -4401,22 +4385,23 @@ static int group_array_references_drain(struct autosa_kernel *kernel,
   int n;
   isl_ctx *ctx = isl_union_map_get_ctx(data->pe_sched);
   struct autosa_array_ref_group **groups = NULL;
-  isl_union_map *dep_waw = kernel->scop->tagged_dep_waw;
+  isl_union_map *dep_waw = kernel->scop->tagged_dep_waw;  
 
   /* Populate the groups. */
   n = 0;
   for (int i = 0; i < local->array->n_ref; ++i)
   {
-    struct autosa_stmt_access *access = local->array->refs[i];
-    if (access->read)
+    struct autosa_stmt_access *access = local->array->refs[i];    
+    if (!access->write)
       continue;
     isl_set *domain = isl_map_domain(isl_map_copy(access->access));
     isl_set *access_domain = isl_union_set_extract_set(
         kernel->expanded_domain,
         isl_set_get_space(domain));
     isl_set_free(domain);
+    
     struct extract_access_waw_domain_data drain_data = {access, access_domain};
-    isl_union_map_every_map(dep_waw, &extract_access_waw_domain_wrap, &drain_data);
+    isl_union_map_every_map(dep_waw, &extract_access_waw_domain_wrap, &drain_data);    
     if (!isl_set_is_empty(drain_data.drain_domain))
     {
       isl_map *map;
@@ -4594,26 +4579,28 @@ static isl_stat autosa_io_buffer_allocate(struct autosa_kernel *kernel,
     struct autosa_local_array_info *local = &kernel->array[i];
     for (int j = 0; j < local->n_io_group; j++)
     {      
-      compute_io_group_buffer(kernel, local->io_groups[j], gen);      
+      compute_io_group_buffer(kernel, local->io_groups[j], gen);            
       if (!gen->options->autosa->lower_int_io_L1_buffer) {
         /* Hoist the L1 I/O buffer. 
          * Do not touch internal array when local reduce is enabled.
          */
-        if (!(gen->options->autosa->local_reduce && local->array_type == AUTOSA_INT_ARRAY))
-          hoist_L1_io_buffer(kernel, local->io_groups[j], gen, data);
-      }
+        if (!(gen->options->autosa->local_reduce && local->array_type == AUTOSA_INT_ARRAY)) {
+          if (kernel->array_part_w > 0)
+            hoist_L1_io_buffer(kernel, local->io_groups[j], gen, data);
+        }
+      }      
       if (gen->options->autosa->two_level_buffer)
       {
         /* Seek the opportunity to hoist up the L2 I/O buffers. */
         hoist_L2_io_buffer(kernel, local->io_groups[j], gen, data);
-      }      
+      }            
       if (gen->options->autosa->local_reduce && local->io_groups[j]->attached_drain_group)
       {
         if (gen->options->autosa->two_level_buffer) {
           /* At present, two-level buffer and local reduce can be enabled at the same time. */
           throw std::runtime_error("[AutoSA] Error: Two-level buffer and local reduce can't be used at the same time.");
         }        
-      }
+      }      
       if (gen->options->autosa->lower_int_io_L1_buffer) {
         /* Lower the L1 buffer for interior I/O module if possible. */
         lower_int_io_L1_buffer(kernel, local->io_groups[j], gen);
@@ -4621,8 +4608,8 @@ static isl_stat autosa_io_buffer_allocate(struct autosa_kernel *kernel,
         insert_L2_io_buffer(kernel, local->io_groups[j], gen);
         /* Seek the opportunity to hoist up the L2 I/O buffers. */
         //hoist_L2_io_buffer(kernel, local->io_groups[j], gen, data);
-      }      
-    }
+      }            
+    }    
     if (local->drain_group)
     {      
       compute_io_group_buffer(kernel, local->drain_group, gen);
@@ -5013,11 +5000,11 @@ isl_stat sa_io_construct_optimize(struct autosa_kernel *kernel, struct autosa_ge
     printf("[AutoSA] Warning: The generated program contains feedback loops and can't be synthesized by HLS.\n");
     printf("                  The compilation flow will proceed as usual.\n");
   }
-
+    
   /* I/O buffer allocation */
-  autosa_io_buffer_allocate(kernel, gen, &data);
+  autosa_io_buffer_allocate(kernel, gen, &data);  
   /* I/O module data pack */
-  autosa_io_data_pack(kernel, gen, &data);
+  autosa_io_data_pack(kernel, gen, &data);    
 
   /* Since different I/O groups of the same array will access the DRAM with the 
    * same global array pointer. We will need to make sure the outermost 

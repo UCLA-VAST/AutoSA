@@ -140,7 +140,7 @@ struct autosa_kernel **sa_space_time_transform_at_dim_async(
             {                  
                 TuningProgram *tuning_program = new TuningProgram;
                 isl_schedule *new_schedule = isl_schedule_dup(schedule);
-                new_schedule = tuning_program->init_from_schedule(new_schedule); // TODO
+                new_schedule = tuning_program->init_from_schedule(new_schedule);
                 isl_schedule_node *band = get_outermost_permutable_node(new_schedule);
                 isl_schedule_free(new_schedule);
 
@@ -163,7 +163,7 @@ struct autosa_kernel **sa_space_time_transform_at_dim_async(
                 sa->space_w = dim;
                 // TODO: incorrect, to fix.
                 sa->time_w = band_w - dim;
-                sa->tuning_program = tuning_program;                
+                sa->tuning_program = tuning_program;                                
 
                 /* Add the new variant into the list. */
                 sas = (struct autosa_kernel **)realloc(sas, (*num_sa + 1) *
@@ -703,18 +703,24 @@ isl_stat sa_space_time_loop_setup(struct autosa_kernel *sa)
     if (sa->type == AUTOSA_SA_TYPE_SYNC)
     {
         node = get_innermost_permutable_node(sa->schedule);
+        int dim = 0;
         for (int i = isl_schedule_node_band_n_member(node) - sa->space_w;
              i < isl_schedule_node_band_n_member(node); i++)
         {
             node = isl_schedule_node_band_member_set_space_time(node, i, autosa_loop_space);
+            sa->space_parallel[dim] = isl_schedule_node_band_member_get_coincident(node, i);
+            dim++;
         }
     }
     else if (sa->type == AUTOSA_SA_TYPE_ASYNC)
     {
         node = get_outermost_permutable_node(sa->schedule);
+        int dim = 0;
         for (int i = 0; i < sa->space_w; i++)
         {
             node = isl_schedule_node_band_member_set_space_time(node, i, autosa_loop_space);
+            sa->space_parallel[dim] = isl_schedule_node_band_member_get_coincident(node, i);
+            dim++;
         }
     }
 
@@ -1291,6 +1297,7 @@ isl_stat sa_array_partitioning_optimize(struct autosa_kernel *sa,
     {
         if ((sa->type == AUTOSA_SA_TYPE_SYNC && tile_size[tile_len - sa->n_sa_dim + i] == 1) ||
            (sa->type == AUTOSA_SA_TYPE_ASYNC && tile_size[i] == 1)) {            
+            printf("[AutoSA] Tiling factor 1 for array partitioning is not supported. Array partitioning is skipped.\n");
             /* Skip the array partition. */
             id = isl_id_alloc(sa->ctx, "array", NULL);
             node = isl_schedule_node_insert_mark(node, id);
@@ -3068,6 +3075,15 @@ isl_stat sa_simd_vectorization_optimize(struct autosa_kernel *sa, char *mode)
         isl_printer_free(p_str);
     }
 
+    /* Check if any of the space dimension is one, which is not supported by the current AutoSA. */
+    for (int i = 0; i < sa->n_sa_dim; i++) {
+        //std::cout << sa->n_sa_dim << std::endl;
+        //std::cout << sa->sa_dim[i] << std::endl;
+        if (sa->sa_dim[i] == 1) {            
+            throw std::runtime_error("[AutoSA] Error: Array dimension as 1 is not supported!");
+        }
+    }
+
     return isl_stat_ok;
 }
 
@@ -3089,6 +3105,16 @@ isl_stat compute_management(
     sa_space_time_loop_setup(sa);    
     /* Extract the communication pairs. */
     sa_io_update(sa);    
+
+    /* If any of the space dimensions are not parallel, 
+     * check if local_reduce is enabled, otherwise error out.
+     */
+    for (int i = 0; i < sa->n_sa_dim; i++) {
+        //std::cout << sa->space_parallel[i] << std::endl;
+        if (sa->space_parallel[i] == 0 && !gen->options->autosa->local_reduce) {
+            throw std::runtime_error("[AutoSA] Error: Detected non-parallel space loops which is not supported unless local-reduce is specified.");
+        }
+    }
 
     /* Extract the tile sizes. */
     sa->sizes = extract_sizes_from_str(sa->ctx, sa->scop->options->autosa->sa_sizes);
@@ -3501,7 +3527,7 @@ static struct autosa_kernel *optimize_single_array(struct autosa_kernel *kernel,
 
     /* Process meta data */
     kernel = process_kernel_meta_data(kernel, gen);
-
+    
     /* Communication Management */
     comm_management(kernel, gen);    
 
@@ -3625,6 +3651,7 @@ static __isl_give isl_schedule_node *compute_and_comm_optimize(
             kernel = sa_candidates_manual_pick(sa_candidates, num_sa, kernel_id);
         }
     }
+        
     /* Dump out the intermediate code if needed */
     if (gen->options->autosa->dump_code) {
         dump_intermediate_code(gen, isl_schedule_copy(kernel->schedule), "space_time");
@@ -4061,14 +4088,14 @@ __isl_give isl_schedule *sa_map_to_device(struct autosa_gen *gen,
                                                               contraction);
 
     /* Perform compute and comm optimization. */
-    node = compute_and_comm_optimize(gen, node);
+    node = compute_and_comm_optimize(gen, node);    
 
     id = isl_schedule_node_mark_get_id(node);
     kernel = (struct autosa_kernel *)isl_id_get_user(id);
     isl_id_free(id);
     schedule = isl_schedule_node_get_schedule(node);    
-    /* Generate hw modules in the systolic array. */
-    generate_hw_modules(schedule, gen, kernel);
+    /* Generate hw modules in the systolic array. */    
+    generate_hw_modules(schedule, gen, kernel);        
 
     /* Add copy statements for the default schedule (used for correctness verification). */
     node = sa_add_copies(gen, node);
@@ -4324,21 +4351,9 @@ int generate_sa(isl_ctx *ctx, const char *input, FILE *out,
     gen.n_drain_merge_funcs = 0;
     gen.schedule = NULL;
     gen.kernel = NULL;
-    gen.tuning_config = NULL;
+    gen.tuning_config = NULL;    
 
-    //if (options->debug->dump_sizes)
-    //{
-    //    isl_space *space = isl_space_params_alloc(ctx, 0);
-    //    gen.used_sizes = isl_union_map_empty(space);
-    //}
-
-    r = ppcg_transform(ctx, input, out, options, &generate_wrap, &gen);
-
-    //if (options->debug->dump_sizes)
-    //{
-    //    isl_union_map_dump(gen.used_sizes);
-    //    isl_union_map_free(gen.used_sizes);
-    //}
+    r = ppcg_transform(ctx, input, out, options, &generate_wrap, &gen);    
 
     isl_union_map_free(gen.sizes);
     for (i = 0; i < gen.types.n; ++i)
