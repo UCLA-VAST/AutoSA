@@ -703,7 +703,7 @@ static __isl_give isl_printer *declare_and_allocate_device_arrays_xilinx(
       p = isl_printer_indent(p, -2);
       p = print_str_new_line(p, "}");
     }
-    else
+    else if (local_array->array->copy_in)
     {
       p = isl_printer_start_line(p);
       p = isl_printer_print_str(p, "std::copy(reinterpret_cast<");
@@ -1066,7 +1066,7 @@ static __isl_give isl_printer *declare_and_allocate_cpu_arrays_xilinx(
       p = isl_printer_indent(p, -2);
       p = print_str_new_line(p, "}");
     }
-    else
+    else if (local_array->array->copy_in)
     {
       p = isl_printer_start_line(p);
       p = isl_printer_print_str(p, "memcpy(dev_");
