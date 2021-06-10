@@ -31,6 +31,7 @@ struct print_hw_module_data
 static void print_tapa_host_header(FILE *fp)
 {
   fprintf(fp, "#include <tapa.h>\n");
+  fprintf(fp, "using tapa::aligned_allocator;");
 }
 
 /* Open the host .cpp file and the kernel .h and .cpp files for writing.
@@ -328,7 +329,7 @@ static isl_stat print_data_types_tapa(
         if (data_pack_factors[n] == 1 && kernel->n_nzero == 1) {
           p = isl_printer_print_str(p, "unsigned char");
         } else {
-          p = isl_printer_print_str(p, "tapa::vec<");
+          p = isl_printer_print_str(p, "tapa::vec_t<");
           p = isl_printer_print_int(p, 8 * data_pack_factors[n]);
           p = isl_printer_print_str(p, ">");
         }
@@ -350,7 +351,7 @@ static isl_stat print_data_types_tapa(
         if (data_pack_factors[n] != 1)
         {
           p = isl_printer_start_line(p);
-          p = isl_printer_print_str(p, "typedef tapa::vec<");
+          p = isl_printer_print_str(p, "typedef tapa::vec_t<");
           p = isl_printer_print_str(p, local->array->type);
           p = isl_printer_print_str(p, ", ");
           p = isl_printer_print_int(p, data_pack_factors[n]);
@@ -389,7 +390,7 @@ static __isl_give isl_printer *declare_and_allocate_arrays(
       p = isl_printer_start_line(p);
       p = isl_printer_print_str(p, "std::vector<std::vector<");
       p = isl_printer_print_str(p, local_array->array->type);
-      p = isl_printer_print_str(p, ", aligned_allocator<");
+      p = isl_printer_print_str(p, ", tapa::aligned_allocator<");
       p = isl_printer_print_str(p, local_array->array->type);
       p = isl_printer_print_str(p, ">>> ");
       p = isl_printer_print_str(p, "dev_");
@@ -409,7 +410,7 @@ static __isl_give isl_printer *declare_and_allocate_arrays(
       p = isl_printer_start_line(p);
       p = isl_printer_print_str(p, "std::vector<");
       p = isl_printer_print_str(p, local_array->array->type);
-      p = isl_printer_print_str(p, ", aligned_allocator<");
+      p = isl_printer_print_str(p, ", tapa::aligned_allocator<");
       p = isl_printer_print_str(p, local_array->array->type);
       p = isl_printer_print_str(p, ">> ");
       p = isl_printer_print_str(p, "dev_");
@@ -439,7 +440,7 @@ static __isl_give isl_printer *declare_and_allocate_arrays(
         p = isl_printer_start_line(p);
         p = isl_printer_print_str(p, "std::vector<std::vector<");
         p = isl_printer_print_str(p, local_array->array->type);
-        p = isl_printer_print_str(p, ", aligned_allocator<");
+        p = isl_printer_print_str(p, ", tapa::aligned_allocator<");
         p = isl_printer_print_str(p, local_array->array->type);
         p = isl_printer_print_str(p, ">>> ");
         p = isl_printer_print_str(p, "dev_");
@@ -458,7 +459,7 @@ static __isl_give isl_printer *declare_and_allocate_arrays(
         p = isl_printer_start_line(p);
         p = isl_printer_print_str(p, "std::vector<");
         p = isl_printer_print_str(p, local_array->array->type);
-        p = isl_printer_print_str(p, ", aligned_allocator<");
+        p = isl_printer_print_str(p, ", tapa::aligned_allocator<");
         p = isl_printer_print_str(p, local_array->array->type);
         p = isl_printer_print_str(p, ">> ");
         p = isl_printer_print_str(p, "dev_");
@@ -491,7 +492,7 @@ static __isl_give isl_printer *declare_and_allocate_arrays(
       p = isl_printer_start_line(p);
       p = isl_printer_print_str(p, "std::vector<");
       p = isl_printer_print_str(p, local_array->array->type);
-      p = isl_printer_print_str(p, ", aligned_allocator<");
+      p = isl_printer_print_str(p, ", tapa::aligned_allocator<");
       p = isl_printer_print_str(p, local_array->array->type);
       p = isl_printer_print_str(p, ">> ");
       p = isl_printer_print_str(p, "dev_");
@@ -508,7 +509,7 @@ static __isl_give isl_printer *declare_and_allocate_arrays(
         p = isl_printer_start_line(p);
         p = isl_printer_print_str(p, "std::vector<");
         p = isl_printer_print_str(p, local_array->array->type);
-        p = isl_printer_print_str(p, ", aligned_allocator<");
+        p = isl_printer_print_str(p, ", tapa::aligned_allocator<");
         p = isl_printer_print_str(p, local_array->array->type);
         p = isl_printer_print_str(p, ">> ");
         p = isl_printer_print_str(p, "dev_");
@@ -645,7 +646,7 @@ static __isl_give isl_printer *declare_and_allocate_arrays(
     p = isl_printer_start_line(p);
     p = isl_printer_print_str(p, "std::vector<tapa::mmap<");
     p = isl_printer_print_str(p, local_array->array->type);
-    p = isl_printer_print_str(p, "> > buffer_");
+    p = isl_printer_print_str(p, ">> buffer_");
     p = isl_printer_print_str(p, local_array->array->name);
     p = isl_printer_print_str(p, ";");
     p = isl_printer_end_line(p);
@@ -678,13 +679,13 @@ static __isl_give isl_printer *declare_and_allocate_arrays(
     p = isl_printer_print_str(p, local_array->array->type);
     p = isl_printer_print_str(p, "> buffer_");
     p = isl_printer_print_str(p, local_array->array->name);
-    p = isl_printer_print_str(p, "_tmp = ");
+    p = isl_printer_print_str(p, "_tmp(");
     p = isl_printer_print_str(p, "dev_");
     p = isl_printer_print_str(p, local_array->array->name);
     if (local_array->n_mem_ports > 1 && local_array->array->copy_in) {
       p = isl_printer_print_str(p, "[i]");
     }
-    p = isl_printer_print_str(p, ";");
+    p = isl_printer_print_str(p, ");");
     p = isl_printer_end_line(p);
 
     p = isl_printer_start_line(p);
