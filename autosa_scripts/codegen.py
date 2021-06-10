@@ -1391,5 +1391,7 @@ if __name__ == "__main__":
         intel_run(args.kernel_call, args.kernel_def, args.output, args.hcl)
     elif args.target == 'autosa_hls_c':
         xilinx_run(args.kernel_call, args.kernel_def, args.output, args.host, args.hcl)
+    elif args.target == 'autosa_tapa':
+        xilinx_run(args.kernel_call, args.kernel_def, args.output, args.host, args.hcl)
     elif args.target == 'autosa_catapult_c':
         catapult_run(args.kernel_call, args.kernel_def, args.tb, args.output, args.host)

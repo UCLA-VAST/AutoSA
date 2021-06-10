@@ -931,6 +931,34 @@ __isl_give isl_printer *print_fifo_type_intel(__isl_take isl_printer *p,
   return p;
 }
 
+/* Print out
+ * "tapa::stream<[type]>"
+ */
+__isl_give isl_printer *print_fifo_type_tapa(__isl_take isl_printer *p,
+                                             struct autosa_array_ref_group *group, int n_lane)
+{
+  struct autosa_array_info *array = group->array;
+
+  p = isl_printer_print_str(p, "tapa::stream<");
+  if (group->local_array->is_sparse) {
+    p = isl_printer_print_str(p, array->name);
+    p = isl_printer_print_str(p, "_s_t");
+    p = isl_printer_print_int(p, n_lane);
+  } else {
+    if (n_lane == 1) {
+      p = isl_printer_print_str(p, group->array->type);
+    } else {
+      p = isl_printer_print_str(p, array->name);
+      p = isl_printer_print_str(p, "_t");
+      p = isl_printer_print_int(p, n_lane);
+    }
+  }
+  p = isl_printer_print_str(p, ">");
+
+  return p;
+}
+
+
 /* If disable prefix is asserted, do not print "fifo" prefix. 
  */
 __isl_give isl_printer *autosa_fifo_print_declaration_arguments(

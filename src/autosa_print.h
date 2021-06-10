@@ -168,6 +168,9 @@ __isl_give isl_printer *print_fifo_type_catapult(__isl_take isl_printer *p,
 __isl_give isl_printer *print_fifo_rw_catapult(__isl_take isl_printer *p,
                                                const char *fifo_name, int read);                                                 
 
+__isl_give isl_printer *print_fifo_type_tapa(__isl_take isl_printer *p,
+                                             struct autosa_array_ref_group *group, int n_lane);
+
 /* Sparse */
 isl_stat print_sparse_macros(struct autosa_kernel *kernel, struct hls_info *hls);
 

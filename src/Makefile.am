@@ -63,6 +63,7 @@ autosa_SOURCES = \
 	autosa_utils.cpp \
 	autosa_xilinx_hls_c.cpp  \
 	autosa_catapult_hls_c.cpp \
+	autosa_tapa_cpp.cpp \
 	autosa_tuning.cpp \
 	json.hpp
 
