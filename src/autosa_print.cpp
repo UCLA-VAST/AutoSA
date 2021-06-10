@@ -380,6 +380,9 @@ __isl_give isl_printer *autosa_array_info_print_declaration_argument(
   if (array->n_index != 0 && !array->linearize)
     return print_non_linearized_declaration_argument(p, array, n_lane);
 
+  if (target == TAPA_HW)
+    p = isl_printer_print_str(p, "tapa::mmap<");
+
   //if (n_lane == 1)
   //  p = isl_printer_print_str(p, array->type);
   //else
@@ -388,11 +391,14 @@ __isl_give isl_printer *autosa_array_info_print_declaration_argument(
     p = isl_printer_print_str(p, "_t");
     p = isl_printer_print_int(p, n_lane);
   //}
+  if (target == TAPA_HW)
+    p = isl_printer_print_str(p, ">");
   p = isl_printer_print_str(p, " ");
-  if (target != CATAPULT_HW)
+  if (target != CATAPULT_HW && target != TAPA_HW)
     p = isl_printer_print_str(p, "*");
   if (target == INTEL_HW)
     p = isl_printer_print_str(p, "restrict ");
+
   p = isl_printer_print_str(p, array->name);
   if (n_ref >= 0)
   {
