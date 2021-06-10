@@ -979,7 +979,7 @@ static __isl_give isl_printer *print_module_header_tapa(
   if (boundary)
     p = isl_printer_print_str(p, "_boundary");
   p = isl_printer_print_str(p, "(");
-  p = print_module_arguments(p, prog, module->kernel, module, 1, XILINX_HW, inter, -1, boundary, 0);
+  p = print_module_arguments(p, prog, module->kernel, module, 1, TAPA_HW, inter, -1, boundary, 0);
   p = isl_printer_print_str(p, ")");
 
   return p;
@@ -1307,16 +1307,14 @@ static __isl_give isl_printer *autosa_print_intra_trans_module(
 
   print_module_headers_tapa(prog, module, hls, 0, boundary);
   fprintf(hls->kernel_c, " {\n");
-  if (hls->target == XILINX_HW) {
-    /* If double buffer is disabled, the module is then inlined to reduce the
-     * overheads.
-     * Double buffer module can't inlined, this might cause deadlocks.
-     */
-    if (module->double_buffer)
-      fprintf(hls->kernel_c, "#pragma HLS INLINE OFF\n");
-    else
-      fprintf(hls->kernel_c, "#pragma HLS INLINE\n");
-  }
+  /* If double buffer is disabled, the module is then inlined to reduce the
+   * overheads.
+   * Double buffer module can't inlined, this might cause deadlocks.
+   */
+  if (module->double_buffer)
+    fprintf(hls->kernel_c, "#pragma HLS INLINE OFF\n");
+  else
+    fprintf(hls->kernel_c, "#pragma HLS INLINE\n");
   p = isl_printer_indent(p, 2);
   p = print_str_new_line(p, "/* Variable Declaration */");
   if (!prog->scop->options->autosa->use_cplusplus_template) {
@@ -1344,11 +1342,8 @@ static __isl_give isl_printer *autosa_print_intra_trans_module(
   print_options = isl_ast_print_options_alloc(ctx);
   print_options = isl_ast_print_options_set_print_user(print_options,
                                                        &print_module_stmt, &hw_data);
-  if (hls->target == XILINX_HW)
-  {
-    print_options = isl_ast_print_options_set_print_for(print_options,
-                                                        &print_for_tapa, &hw_data);
-  }
+  print_options = isl_ast_print_options_set_print_for(print_options,
+                                                      &print_for_tapa, &hw_data);
 
   p = isl_ast_node_print(module->intra_tree, p, print_options);
   p = isl_printer_indent(p, -2);
@@ -1386,22 +1381,18 @@ static __isl_give isl_printer *autosa_print_inter_trans_module(
   p = isl_printer_print_str(p, "/* Module Definition */");
   p = isl_printer_end_line(p);
 
-  if (hls->target == XILINX_HW)
-    print_module_headers_tapa(prog, module, hls, 1, boundary);
+  print_module_headers_tapa(prog, module, hls, 1, boundary);
   fprintf(hls->kernel_c, " {\n");
-  if (hls->target == XILINX_HW) {
-    if (module->double_buffer)
-      fprintf(hls->kernel_c, "#pragma HLS INLINE OFF\n");
-    else
-      fprintf(hls->kernel_c, "#pragma HLS INLINE\n");
-  }
+  if (module->double_buffer)
+    fprintf(hls->kernel_c, "#pragma HLS INLINE OFF\n");
+  else
+    fprintf(hls->kernel_c, "#pragma HLS INLINE\n");
   p = isl_printer_indent(p, 2);
   p = print_str_new_line(p, "/* Variable Declaration */");
   if (!prog->scop->options->autosa->use_cplusplus_template) {
     p = print_module_iterators(p, hls->kernel_c, module);
   }
-  if (hls->target == XILINX_HW)
-    p = print_module_vars_tapa(p, module, 1);
+  p = print_module_vars_tapa(p, module, 1);
   p = print_str_new_line(p, "/* Variable Declaration */");
   p = isl_printer_end_line(p);
 
@@ -1416,11 +1407,8 @@ static __isl_give isl_printer *autosa_print_inter_trans_module(
   print_options = isl_ast_print_options_alloc(ctx);
   print_options = isl_ast_print_options_set_print_user(print_options,
                                                        &print_module_stmt, &hw_data);
-  if (hls->target == XILINX_HW)
-  {
-    print_options = isl_ast_print_options_set_print_for(print_options,
-                                                        &print_for_tapa, &hw_data);
-  }
+  print_options = isl_ast_print_options_set_print_for(print_options,
+                                                      &print_for_tapa, &hw_data);
 
   p = isl_ast_node_print((boundary == 0) ? module->inter_tree : module->boundary_inter_tree, p, print_options);
   p = isl_printer_indent(p, -2);
@@ -1484,7 +1472,7 @@ static __isl_give isl_printer *print_module_core_header_tapa(
     p = isl_printer_start_line(p);
   }
   p = print_module_arguments(p, prog, module->kernel, module, types,
-                             XILINX_HW, inter, -1, boundary, serialize);
+                             TAPA_HW, inter, -1, boundary, serialize);
   p = isl_printer_print_str(p, ")");
   if (!types) {
     p = isl_printer_indent(p, -2);
@@ -1534,7 +1522,7 @@ static __isl_give isl_printer *print_module_wrapper_header_tapa(
   p = isl_printer_print_str(p, "_wrapper");
   p = isl_printer_print_str(p, "(");
   p = print_module_arguments(p, prog, module->kernel, module, 1,
-                             XILINX_HW, inter, -1, boundary, 0);
+                             TAPA_HW, inter, -1, boundary, 0);
   p = isl_printer_print_str(p, ")");
 
   return p;
@@ -1579,8 +1567,7 @@ static __isl_give isl_printer *autosa_print_serialize_module(
   p = isl_printer_print_str(p, "/* Module Definition */");
   p = isl_printer_end_line(p);
 
-  if (hls->target == XILINX_HW)
-    p = print_module_core_headers_tapa(p, prog, module, hls, -1, boundary, 1, 1); // TODO
+  p = print_module_core_headers_tapa(p, prog, module, hls, -1, boundary, 1, 1); // TODO
   fprintf(hls->kernel_c, " {\n");
   fprintf(hls->kernel_c, "#pragma HLS INLINE OFF\n");
   p = isl_printer_indent(p, 2);
@@ -1670,22 +1657,16 @@ static __isl_give isl_printer *autosa_print_default_module(
 
   if (module->credit && !module->in)
   {
-    if (hls->target == XILINX_HW)
-    {
-      p = isl_printer_start_line(p);
-      p = isl_printer_print_str(p, "credit.write(1);");
-      p = isl_printer_end_line(p);
-    }
+    p = isl_printer_start_line(p);
+    p = isl_printer_print_str(p, "credit.write(1);");
+    p = isl_printer_end_line(p);
   }
 
   print_options = isl_ast_print_options_alloc(ctx);
   print_options = isl_ast_print_options_set_print_user(print_options,
                                                        &print_module_stmt, &hw_data);
-  if (hls->target == XILINX_HW)
-  {
-    print_options = isl_ast_print_options_set_print_for(print_options,
-                                                        &print_for_tapa, &hw_data);
-  }
+  print_options = isl_ast_print_options_set_print_for(print_options,
+                                                      &print_for_tapa, &hw_data);
 
   if (!boundary)
     p = isl_ast_node_print(module->device_tree, p, print_options);
@@ -1694,12 +1675,9 @@ static __isl_give isl_printer *autosa_print_default_module(
 
   if (module->credit && module->in)
   {
-    if (hls->target == XILINX_HW)
-    {
-      p = isl_printer_start_line(p);
-      p = isl_printer_print_str(p, "int token = credit.read();");
-      p = isl_printer_end_line(p);
-    }
+    p = isl_printer_start_line(p);
+    p = isl_printer_print_str(p, "int token = credit.read();");
+    p = isl_printer_end_line(p);
   }
 
   p = isl_printer_indent(p, -2);
@@ -1713,29 +1691,26 @@ static __isl_give isl_printer *autosa_print_default_module(
 
   if (wrapper) {
     /* Print wrapper. */
-    if (hls->target == XILINX_HW)
-    {
-      p = isl_printer_start_line(p);
-      p = isl_printer_print_str(p, "/* Module Definition */");
-      p = isl_printer_end_line(p);
+    p = isl_printer_start_line(p);
+    p = isl_printer_print_str(p, "/* Module Definition */");
+    p = isl_printer_end_line(p);
 
-      print_module_wrapper_headers_tapa(prog, module, hls, -1, boundary);
+    print_module_wrapper_headers_tapa(prog, module, hls, -1, boundary);
 
-      fprintf(hls->kernel_c, " {\n");
-      p = isl_printer_indent(p, 2);
+    fprintf(hls->kernel_c, " {\n");
+    p = isl_printer_indent(p, 2);
 
-      p = print_module_core_headers_tapa(p, prog, module, hls, -1, boundary, 0, 0);
-      p = isl_printer_print_str(p, ";");
-      p = isl_printer_end_line(p);
+    p = print_module_core_headers_tapa(p, prog, module, hls, -1, boundary, 0, 0);
+    p = isl_printer_print_str(p, ";");
+    p = isl_printer_end_line(p);
 
-      p = isl_printer_indent(p, -2);
-      fprintf(hls->kernel_c, "}\n");
-      p = isl_printer_start_line(p);
-      p = isl_printer_print_str(p, "/* Module Definition */");
-      p = isl_printer_end_line(p);
+    p = isl_printer_indent(p, -2);
+    fprintf(hls->kernel_c, "}\n");
+    p = isl_printer_start_line(p);
+    p = isl_printer_print_str(p, "/* Module Definition */");
+    p = isl_printer_end_line(p);
 
-      p = isl_printer_end_line(p);
-    }
+    p = isl_printer_end_line(p);
   }
 
   /* If the module serialization is enabled, we will print out an extra module
@@ -1775,7 +1750,7 @@ static __isl_give isl_printer *print_pe_dummy_module_core_header_tapa(
   p = isl_printer_print_str(p, module->in? "_in" : "_out");
   p = isl_printer_print_str(p, "(");
   p = print_pe_dummy_module_arguments(p, prog, module->module->kernel,
-                                      module, types, XILINX_HW);
+                                      module, types, TAPA_HW);
   p = isl_printer_print_str(p, ")");
 
   return p;
@@ -1818,7 +1793,7 @@ static __isl_give isl_printer *print_pe_dummy_module_wrapper_header_tapa(
   p = isl_printer_print_str(p, "_wrapper");
   p = isl_printer_print_str(p, "(");
   p = print_pe_dummy_module_arguments(p, prog, module->module->kernel,
-                                      module, 1, XILINX_HW);
+                                      module, 1, TAPA_HW);
   p = isl_printer_print_str(p, ")");
 
   return p;
@@ -1865,9 +1840,8 @@ static __isl_give isl_printer *autosa_print_default_pe_dummy_module(
   p = isl_printer_print_str(p, "/* Module Definition */");
   p = isl_printer_end_line(p);
 
-  if (hls->target == XILINX_HW)
-    p = print_pe_dummy_module_core_headers_tapa(p, prog,
-                                                  pe_dummy_module, hls, 1);
+  p = print_pe_dummy_module_core_headers_tapa(p, prog,
+                                              pe_dummy_module, hls, 1);
 
   fprintf(hls->kernel_c, " {\n");
   if (wrapper)
@@ -1885,11 +1859,8 @@ static __isl_give isl_printer *autosa_print_default_pe_dummy_module(
   print_options = isl_ast_print_options_alloc(ctx);
   print_options = isl_ast_print_options_set_print_user(print_options,
                                                        &print_module_stmt, &hw_data);
-  if (hls->target == XILINX_HW)
-  {
-    print_options = isl_ast_print_options_set_print_for(print_options,
-                                                        &print_for_tapa, &hw_data);
-  }
+  print_options = isl_ast_print_options_set_print_for(print_options,
+                                                      &print_for_tapa, &hw_data);
 
   p = isl_ast_node_print(pe_dummy_module->device_tree, p, print_options);
 
@@ -1904,27 +1875,24 @@ static __isl_give isl_printer *autosa_print_default_pe_dummy_module(
 
   /* Print wrapper. */
   if (wrapper) {
-    if (hls->target == XILINX_HW)
-    {
-      p = isl_printer_start_line(p);
-      p = isl_printer_print_str(p, "/* Module Definition */");
-      p = isl_printer_end_line(p);
+    p = isl_printer_start_line(p);
+    p = isl_printer_print_str(p, "/* Module Definition */");
+    p = isl_printer_end_line(p);
 
-      print_pe_dummy_module_wrapper_headers_tapa(prog, pe_dummy_module, hls);
+    print_pe_dummy_module_wrapper_headers_tapa(prog, pe_dummy_module, hls);
 
-      fprintf(hls->kernel_c, " {\n");
-      p = isl_printer_indent(p, 2);
-      p = print_pe_dummy_module_core_headers_tapa(p, prog, pe_dummy_module, hls, 0);
-      p = isl_printer_print_str(p, ";");
-      p = isl_printer_end_line(p);
-      p = isl_printer_indent(p, -2);
-      fprintf(hls->kernel_c, "}\n");
-      p = isl_printer_start_line(p);
-      p = isl_printer_print_str(p, "/* Module Definition */");
-      p = isl_printer_end_line(p);
+    fprintf(hls->kernel_c, " {\n");
+    p = isl_printer_indent(p, 2);
+    p = print_pe_dummy_module_core_headers_tapa(p, prog, pe_dummy_module, hls, 0);
+    p = isl_printer_print_str(p, ";");
+    p = isl_printer_end_line(p);
+    p = isl_printer_indent(p, -2);
+    fprintf(hls->kernel_c, "}\n");
+    p = isl_printer_start_line(p);
+    p = isl_printer_print_str(p, "/* Module Definition */");
+    p = isl_printer_end_line(p);
 
-      p = isl_printer_end_line(p);
-    }
+    p = isl_printer_end_line(p);
   }
 
   return p;
@@ -2659,12 +2627,6 @@ static __isl_give isl_printer *print_top_module_headers_tapa(
   p = print_str_new_line(p, "p = isl_printer_print_str(p, \"{\");");
   p = print_str_new_line(p, "p = isl_printer_end_line(p);");
 
-  /* Print out the dataflow pragma. */
-  p = print_str_new_line(p, "p = isl_printer_start_line(p);");
-  p = print_str_new_line(p, "p = isl_printer_print_str(p, \"#pragma HLS DATAFLOW\");");
-  p = print_str_new_line(p, "p = isl_printer_end_line(p);");
-  p = print_str_new_line(p, "p = isl_printer_end_line(p);");
-
   return p;
 }
 
@@ -2808,8 +2770,7 @@ static void print_top_gen_host_code(
   p = isl_printer_end_line(p);
   p = isl_printer_end_line(p);
 
-  if (hls->target == XILINX_HW)
-    p = print_top_module_headers_tapa(p, prog, top, hls);
+  p = print_top_module_headers_tapa(p, prog, top, hls);
   p = isl_printer_start_line(p);
   p = isl_printer_print_str(p, "p = isl_printer_indent(p, 2);");
   p = isl_printer_end_line(p);
@@ -2852,26 +2813,11 @@ static void print_top_gen_host_code(
       p = isl_printer_print_str(p, "p = isl_printer_print_str(p, \"/* ");
       p = isl_printer_print_str(p, module->name);
       p = isl_printer_print_str(p, "_serialize fifo */ ");
-      p = print_fifo_type_tapa(p, group, module->data_pack_inter);
+      p = print_fifo_type_tapa(p, group, module->data_pack_inter, fifo_depth);
       p = isl_printer_print_str(p, " ");
       p = isl_printer_print_str(p, fifo_name);
       p = isl_printer_print_str(p, ";\");");
       p = isl_printer_end_line(p);
-      p = print_str_new_line(p, "p = isl_printer_end_line(p);");
-
-      /* Resource pragma */
-      p = print_str_new_line(p, "p = isl_printer_start_line(p);");
-      p = isl_printer_start_line(p);
-      p = isl_printer_print_str(p, "p = isl_printer_print_str(p, \"#pragma HLS STREAM variable=");
-      p = isl_printer_print_str(p, fifo_name);
-      p = isl_printer_print_str(p, "\");");
-      p = isl_printer_end_line(p);
-      p = isl_printer_start_line(p);
-      p = isl_printer_print_str(p, "p = isl_printer_print_str(p, \" depth=");
-      p = isl_printer_print_int(p, fifo_depth);
-      p = isl_printer_print_str(p, "\");");
-      p = isl_printer_end_line(p);
-
       p = print_str_new_line(p, "p = isl_printer_end_line(p);");
 
       if (group->local_array->is_sparse) {
@@ -3147,7 +3093,7 @@ int generate_autosa_tapa_cpp(isl_ctx *ctx, struct ppcg_options *options,
   struct hls_info hls;
   int r;
 
-  hls.target = XILINX_HW;
+  hls.target = TAPA_HW;
   hls.hls = false;
   hls.hcl = false;
   hls.ctx = ctx;

@@ -432,6 +432,7 @@ __isl_give isl_printer *print_kernel_arguments(__isl_take isl_printer *p,
   unsigned nparam;
   isl_space *space;
   const char *type;
+  int fifo_depth = prog->scop->options->autosa->fifo_depth;
 
   /* Arrays */
   for (i = 0; i < kernel->n_array; ++i)
@@ -448,6 +449,7 @@ __isl_give isl_printer *print_kernel_arguments(__isl_take isl_printer *p,
     struct autosa_local_array_info *local_array = &kernel->array[i];
     n_lane = local_array->n_lane;
     if (hls->target == INTEL_HW || hls->target == CATAPULT_HW ||
+        hls->target == TAPA_HW ||
         (hls->target == XILINX_HW && local_array->n_io_group_refs == 1))
     {
       if (!first)
@@ -455,7 +457,7 @@ __isl_give isl_printer *print_kernel_arguments(__isl_take isl_printer *p,
 
       if (types) {
         if (prog->scop->options->autosa->axi_stream) {
-          p = autosa_fifo_print_declaration_arguments(p, local_array->io_groups[0], n_lane, NULL, hls->target);
+          p = autosa_fifo_print_declaration_arguments(p, local_array->io_groups[0], n_lane, NULL, hls->target, fifo_depth);
         } else {
           p = autosa_array_info_print_declaration_argument(
                 p, local_array->array, n_lane, NULL, -1, NULL, hls->target);
@@ -932,10 +934,11 @@ __isl_give isl_printer *print_fifo_type_intel(__isl_take isl_printer *p,
 }
 
 /* Print out
- * "tapa::stream<[type]>"
+ * "tapa::stream<[type], [depth]>"
  */
 __isl_give isl_printer *print_fifo_type_tapa(__isl_take isl_printer *p,
-                                             struct autosa_array_ref_group *group, int n_lane)
+                                             struct autosa_array_ref_group *group,
+                                             int n_lane, int fifo_depth)
 {
   struct autosa_array_info *array = group->array;
 
@@ -953,6 +956,8 @@ __isl_give isl_printer *print_fifo_type_tapa(__isl_take isl_printer *p,
       p = isl_printer_print_int(p, n_lane);
     }
   }
+  p = isl_printer_print_str(p, ", ");
+  p = isl_printer_print_int(p, fifo_depth);
   p = isl_printer_print_str(p, ">");
 
   return p;
@@ -963,11 +968,15 @@ __isl_give isl_printer *print_fifo_type_tapa(__isl_take isl_printer *p,
  */
 __isl_give isl_printer *autosa_fifo_print_declaration_arguments(
     __isl_take isl_printer *p, struct autosa_array_ref_group *group, int n_lane,
-    const char *suffix, enum platform target)
+    const char *suffix, enum platform target, int fifo_depth)
 {
   if (target == XILINX_HW)
   {
     p = print_fifo_type_xilinx(p, group, n_lane);
+    p = isl_printer_print_str(p, " &");
+  } else if (target == TAPA_HW)
+  {
+    p = print_fifo_type_tapa(p, group, n_lane, fifo_depth);
     p = isl_printer_print_str(p, " &");
   } else if (target == INTEL_HW)
   {
@@ -1042,7 +1051,7 @@ __isl_give isl_printer *autosa_print_var_initialization(
     p = isl_printer_indent(p, 2);
   }
   
-  if (target == XILINX_HW)
+  if (target == XILINX_HW || target == TAPA_HW)
     p = print_str_new_line(p, "// hls_pipeline");
 
   p = isl_printer_start_line(p);
@@ -1089,6 +1098,7 @@ __isl_give isl_printer *print_module_arguments(
   int nparam;
   int n;
   const char *type;
+  int fifo_depth = prog->scop->options->autosa->fifo_depth;
 
   type = isl_options_get_ast_iterator_type(prog->ctx);
   /* Module identifiers */
@@ -1250,7 +1260,7 @@ __isl_give isl_printer *print_module_arguments(
       }
       if (types) {
         p = autosa_fifo_print_declaration_arguments(p,
-                                                    module->io_groups[0], n_lane, NULL, target);
+                                                    module->io_groups[0], n_lane, NULL, target, fifo_depth);
       } else {
         p = isl_printer_print_str(p, "/* fifo */ ");
         p = autosa_fifo_print_call_argument(p,  
@@ -1270,9 +1280,9 @@ __isl_give isl_printer *print_module_arguments(
       }
       if (types) {
         //p = autosa_fifo_print_declaration_arguments(p,
-        //                                            module->io_groups[0], n_lane, "serialize", target);
+        //                                            module->io_groups[0], n_lane, "serialize", target, fifo_depth);
         p = autosa_fifo_print_declaration_arguments(p,
-                                                    module->io_groups[0], n_lane, (module->in)? "in" : "out", target);
+                                                    module->io_groups[0], n_lane, (module->in)? "in" : "out", target, fifo_depth);
       } else {
         p = isl_printer_print_str(p, "/* fifo */ ");
         //p = autosa_fifo_print_call_argument(p,  
@@ -1425,7 +1435,7 @@ __isl_give isl_printer *print_module_arguments(
         if (types)
         {
           p = autosa_fifo_print_declaration_arguments(p,
-                                                      module->io_groups[i], n_lane, "in", target);
+                                                      module->io_groups[i], n_lane, "in", target, fifo_depth);
         }
         else
         {
@@ -1449,7 +1459,7 @@ __isl_give isl_printer *print_module_arguments(
         }
         if (types)
           p = autosa_fifo_print_declaration_arguments(p,
-                                                      module->io_groups[i], n_lane, "out", target);
+                                                      module->io_groups[i], n_lane, "out", target, fifo_depth);
         else
         {
           p = isl_printer_print_str(p, "/* fifo */ ");
@@ -1477,7 +1487,7 @@ __isl_give isl_printer *print_module_arguments(
           /* in */
           if (types)
             p = autosa_fifo_print_declaration_arguments(p,
-                                                        module->io_groups[i], module->data_pack_inter, "in", target);
+                                                        module->io_groups[i], module->data_pack_inter, "in", target, fifo_depth);
           else {
             p = isl_printer_print_str(p, "/* fifo */ ");
             p = autosa_fifo_print_call_argument(p,
@@ -1498,7 +1508,7 @@ __isl_give isl_printer *print_module_arguments(
           }
           if (types)
             p = autosa_fifo_print_declaration_arguments(p,
-                                                        module->io_groups[i], module->data_pack_inter, "out", target);
+                                                        module->io_groups[i], module->data_pack_inter, "out", target, fifo_depth);
           else {
             p = isl_printer_print_str(p, "/* fifo */ ");
             p = autosa_fifo_print_call_argument(p,
@@ -1521,7 +1531,7 @@ __isl_give isl_printer *print_module_arguments(
           p = autosa_fifo_print_declaration_arguments(p,
                                                       module->io_groups[i], 
                                                       (module->is_serialized && serialize)? module->data_pack_inter : module->data_pack_intra,                                                      
-                                                      module->in ? "local_out" : "local_in", target);
+                                                      module->in ? "local_out" : "local_in", target, fifo_depth);
         } else {
           p = isl_printer_print_str(p, "/* fifo */ ");
           p = autosa_fifo_print_call_argument(p,
@@ -1549,6 +1559,10 @@ __isl_give isl_printer *print_module_arguments(
       if (target == XILINX_HW)
       {
         p = isl_printer_print_str(p, "hls::stream<int> &credit");
+      }
+      else if (target == TAPA_HW)
+      {
+        p = isl_printer_print_str(p, "tapa::stream<int> &credit");
       }
       else
       {
@@ -1616,6 +1630,7 @@ __isl_give isl_printer *print_pe_dummy_module_arguments(
   int n;
   const char *type;
   struct autosa_hw_module *module = pe_dummy_module->module;
+  int fifo_depth = prog->scop->options->autosa->fifo_depth;
 
   type = isl_options_get_ast_iterator_type(prog->ctx);
   /* module identifiers */
@@ -1714,7 +1729,7 @@ __isl_give isl_printer *print_pe_dummy_module_arguments(
   if (types)
   {
     p = autosa_fifo_print_declaration_arguments(p,
-                                                group, n_lane, pe_dummy_module->in? "in" : "out", target);
+                                                group, n_lane, pe_dummy_module->in? "in" : "out", target, fifo_depth);
   }
   else
     p = autosa_fifo_print_call_argument(p,
@@ -1978,6 +1993,8 @@ static __isl_give isl_printer *print_fifo_decl_single(
   n_lane = get_io_group_n_lane(module, NULL, group);
   if (hls->target == XILINX_HW)
     p = print_fifo_type_xilinx(p, group, n_lane);
+  else if (hls->target == TAPA_HW)
+    p = print_fifo_type_tapa(p, group, n_lane, fifo_depth);
   else if (hls->target == INTEL_HW)
     p = print_fifo_type_intel(p, group, n_lane);
   else if (hls->target == CATAPULT_HW)
@@ -2322,7 +2339,7 @@ __isl_give isl_printer *print_module_call_upper(__isl_take isl_printer *p,
     p = isl_printer_print_str(p, "_serialize");
   }  
 
-  if (target == XILINX_HW) {
+  if (target == XILINX_HW || target == TAPA_HW) {
     if (!dummy && module->type == PE_MODULE)
       p = isl_printer_print_str(p, "_wrapper");
     else if (module->type != PE_MODULE && module->level == 1)
@@ -3087,6 +3104,19 @@ __isl_give isl_printer *print_fifo_rw_intel(__isl_take isl_printer *p,
   return p;
 }
 
+__isl_give isl_printer *print_fifo_rw_tapa(
+  __isl_take isl_printer *p, const char *fifo_name, int read)
+{
+  if (read) {
+    p = isl_printer_print_str(p, fifo_name);
+    p = isl_printer_print_str(p, ".read()");
+  } else {
+    p = isl_printer_print_str(p, fifo_name);
+    p = isl_printer_print_str(p, ".write(");
+  }
+  return p;
+}
+
 /* Print an I/O statement.
  *
  * An in I/O statement is printed as
@@ -3139,6 +3169,8 @@ __isl_give isl_printer *autosa_kernel_print_io(__isl_take isl_printer *p,
       p = isl_printer_print_str(p, "fifo_data = ");
       if (hls->target == XILINX_HW)
         p = print_fifo_rw_xilinx(p, fifo_name, 1);
+      else if (hls->target == TAPA_HW)
+        p = print_fifo_rw_tapa(p, fifo_name, 1);
       else if (hls->target == INTEL_HW)
         p = print_fifo_rw_intel(p, fifo_name, 1);
       else if (hls->target == CATAPULT_HW)  
@@ -3162,6 +3194,8 @@ __isl_give isl_printer *autosa_kernel_print_io(__isl_take isl_printer *p,
       p = isl_printer_start_line(p);
       if (hls->target == XILINX_HW)
         p = print_fifo_rw_xilinx(p, fifo_name, 0);
+      else if (hls->target == TAPA_HW)
+        p = print_fifo_rw_tapa(p, fifo_name, 0);
       else if (hls->target == INTEL_HW)
         p = print_fifo_rw_intel(p, fifo_name, 0);
       else if (hls->target == CATAPULT_HW)
@@ -3201,6 +3235,8 @@ __isl_give isl_printer *autosa_kernel_print_io(__isl_take isl_printer *p,
       p = isl_printer_print_str(p, " = ");
       if (hls->target == XILINX_HW)
         p = print_fifo_rw_xilinx(p, fifo_name, 1);
+      else if (hls->target == TAPA_HW)
+        p = print_fifo_rw_tapa(p, fifo_name, 1);
       else if (hls->target == INTEL_HW)
         p = print_fifo_rw_intel(p, fifo_name, 1);
       else if (hls->target == CATAPULT_HW)
@@ -3211,6 +3247,8 @@ __isl_give isl_printer *autosa_kernel_print_io(__isl_take isl_printer *p,
       /* fifo.write(local[]) */
       if (hls->target == XILINX_HW)
         p = print_fifo_rw_xilinx(p, fifo_name, 0);
+      else if (hls->target == TAPA_HW)
+        p = print_fifo_rw_tapa(p, fifo_name, 0);
       else if (hls->target == INTEL_HW)
         p = print_fifo_rw_intel(p, fifo_name, 0);
       else if (hls->target == CATAPULT_HW)  
@@ -3245,7 +3283,7 @@ __isl_give isl_printer *autosa_kernel_print_io(__isl_take isl_printer *p,
       p = isl_printer_print_str(p, "];");
       p = isl_printer_end_line(p);
 
-      if (hls->target == XILINX_HW) {
+      if (hls->target == XILINX_HW || hls->target == TAPA_HW) {
         p = isl_printer_start_line(p);
         p = isl_printer_print_str(p, "#pragma HLS ARRAY_PARTITION variable=");
         p = isl_printer_print_str(p, group->array->name);
@@ -3266,6 +3304,8 @@ __isl_give isl_printer *autosa_kernel_print_io(__isl_take isl_printer *p,
       p = isl_printer_print_str(p, " = ");
       if (hls->target == XILINX_HW)
         p = print_fifo_rw_xilinx(p, fifo_name, 1);
+      else if (hls->target == TAPA_HW)
+        p = print_fifo_rw_tapa(p, fifo_name, 1);
       else if (hls->target == INTEL_HW)
         p = print_fifo_rw_intel(p, fifo_name, 1);
       else if (hls->target == CATAPULT_HW)
@@ -3295,7 +3335,7 @@ __isl_give isl_printer *autosa_kernel_print_io(__isl_take isl_printer *p,
         }
       }
 
-      if (hls->target == XILINX_HW)
+      if (hls->target == XILINX_HW || hls->target == TAPA_HW)
       {
         p = isl_printer_start_line(p);
         p = isl_printer_print_str(p, "for (int n = 0; n < ");
@@ -3508,7 +3548,7 @@ __isl_give isl_printer *autosa_kernel_print_io(__isl_take isl_printer *p,
 
         p = isl_printer_start_line(p);
         index_w = (int)log2f((float)group->n_lane);
-        if (hls->target == XILINX_HW) {
+        if (hls->target == XILINX_HW || hls->target == TAPA_HW) {
           p = isl_printer_print_str(p, "ap_uint<");
           p = isl_printer_print_int(p, index_w);
         } else if (hls->target == CATAPULT_HW) {
@@ -3522,7 +3562,7 @@ __isl_give isl_printer *autosa_kernel_print_io(__isl_take isl_printer *p,
         p = isl_printer_print_str(p, "];");
         p = isl_printer_end_line(p);
 
-        if (hls->target == XILINX_HW) {
+        if (hls->target == XILINX_HW || hls->target == TAPA_HW) {
           p = isl_printer_start_line(p);
           p = isl_printer_print_str(p, "#pragma HLS ARRAY_PARTITION variable=index dim=0 complete");
           p = isl_printer_end_line(p);
@@ -3548,7 +3588,7 @@ __isl_give isl_printer *autosa_kernel_print_io(__isl_take isl_printer *p,
 
         pos_w = (int)log2f((float)index_s);
         p = isl_printer_start_line(p);
-        if (hls->target == XILINX_HW) {
+        if (hls->target == XILINX_HW || hls->target == TAPA_HW) {
           p = isl_printer_print_str(p, "ap_uint<");
           p = isl_printer_print_int(p, pos_w);
         } else if (hls->target == CATAPULT_HW) {
@@ -3569,7 +3609,7 @@ __isl_give isl_printer *autosa_kernel_print_io(__isl_take isl_printer *p,
         p = isl_printer_print_str(p, "; n++) {");
         p = isl_printer_end_line(p);
 
-        if (hls->target == XILINX_HW) {
+        if (hls->target == XILINX_HW || hls->target == TAPA_HW) {
           p = print_str_new_line(p, "#pragma HLS UNROLL");
         }
 
@@ -3587,12 +3627,12 @@ __isl_give isl_printer *autosa_kernel_print_io(__isl_take isl_printer *p,
         p = isl_printer_print_str(p, "; m++) {");
         p = isl_printer_end_line(p);
         
-        if (hls->target == XILINX_HW) {
+        if (hls->target == XILINX_HW || hls->target == TAPA_HW) {
           p = print_str_new_line(p, "#pragma HLS UNROLL");
         }
         
         p = isl_printer_indent(p, 2);
-        if (hls->target == XILINX_HW) {
+        if (hls->target == XILINX_HW || hls->target == TAPA_HW) {
           p = print_str_new_line(p, "if ((ap_uint<1>)(offset & 1) == (ap_uint<1>)1) {");
         } else if (hls->target == CATAPULT_HW) {
           p = print_str_new_line(p, "if ((ac_int<1, false>)(offset & 1) == (ac_int<1, false>)1) {");
@@ -3625,7 +3665,7 @@ __isl_give isl_printer *autosa_kernel_print_io(__isl_take isl_printer *p,
         p = isl_printer_print_str(p, "; n++) {");
         p = isl_printer_end_line(p);
 
-        if (hls->target == XILINX_HW) {
+        if (hls->target == XILINX_HW || hls->target == TAPA_HW) {
           p = print_str_new_line(p, "#pragma HLS UNROLL");
         }
 
@@ -3664,11 +3704,14 @@ __isl_give isl_printer *autosa_kernel_print_io(__isl_take isl_printer *p,
     }
     else
     {
-      if (hls->target == XILINX_HW)
+      if (hls->target == XILINX_HW || hls->target == TAPA_HW)
       {
         if (kernel->sparse) {
           p = isl_printer_start_line(p);
-          p = print_fifo_rw_xilinx(p, fifo_name, 0);
+          if (hls->target == XILINX_HW)
+            p = print_fifo_rw_xilinx(p, fifo_name, 0);
+          else if (hls->target == TAPA_HW)
+            p = print_fifo_rw_tapa(p, fifo_name, 0);
           p = isl_printer_print_str(p, "fifo_data_");
           p = isl_printer_print_str(p, group->array->name);
           p = isl_printer_print_str(p, ");");
@@ -3776,7 +3819,10 @@ __isl_give isl_printer *autosa_kernel_print_io(__isl_take isl_printer *p,
           p = isl_printer_print_str(p, ");");
           p = isl_printer_end_line(p);
           p = isl_printer_start_line(p);
-          p = print_fifo_rw_xilinx(p, fifo_name, 0);
+          if (hls->target == XILINX_HW)
+            p = print_fifo_rw_xilinx(p, fifo_name, 0);
+          else if (hls->target == TAPA_HW)
+            p = print_fifo_rw_tapa(p, fifo_name, 0);
           p = isl_printer_print_str(p, "fifo_data);");
           p = isl_printer_end_line(p);
         }
@@ -3915,7 +3961,7 @@ __isl_give isl_printer *autosa_print_reduce_data_pack(
 {  
   p = print_str_new_line(p, "/* Local Reduction */");
 
-  if (target == XILINX_HW) {
+  if (target == XILINX_HW || target == TAPA_HW) {
     /* union {unsigned int ui; data_t uf;} uin_0, uin_1, ... uout_0, uout_1, ...; */
     p = isl_printer_start_line(p);
     p = isl_printer_print_str(p, "union {unsigned int ui; ");
@@ -4287,6 +4333,8 @@ static __isl_give isl_printer *autosa_kernel_print_io_transfer_default(
     p = isl_printer_print_str(p, " = ");
     if (hls->target == XILINX_HW)
       p = print_fifo_rw_xilinx(p, fifo_name, 1);
+    else if (hls->target == TAPA_HW)
+      p = print_fifo_rw_tapa(p, fifo_name, 1);
     else if (hls->target == INTEL_HW)
       p = print_fifo_rw_intel(p, fifo_name, 1);
     else if (hls->target == CATAPULT_HW)
@@ -4354,6 +4402,8 @@ static __isl_give isl_printer *autosa_kernel_print_io_transfer_default(
       p = isl_printer_start_line(p);
       if (hls->target == XILINX_HW)
         p = print_fifo_rw_xilinx(p, fifo_name, 0);
+      else if (hls->target == TAPA_HW)
+        p = print_fifo_rw_tapa(p, fifo_name, 0);
       else if (hls->target == INTEL_HW)
         p = print_fifo_rw_intel(p, fifo_name, 0);
       else if (hls->target == CATAPULT_HW)
@@ -4413,6 +4463,8 @@ static __isl_give isl_printer *autosa_kernel_print_io_transfer_default(
       p = isl_printer_print_str(p, "fifo_data = ");
       if (hls->target == XILINX_HW)
         p = print_fifo_rw_xilinx(p, fifo_name, 1);
+      else if (hls->target == TAPA_HW)
+        p = print_fifo_rw_tapa(p, fifo_name, 1);
       else if (hls->target == INTEL_HW)
         p = print_fifo_rw_intel(p, fifo_name, 1);
       else if (hls->target == CATAPULT_HW)
@@ -4427,6 +4479,8 @@ static __isl_give isl_printer *autosa_kernel_print_io_transfer_default(
     p = isl_printer_start_line(p);
     if (hls->target == XILINX_HW)
       p = print_fifo_rw_xilinx(p, fifo_name, 0);
+    else if (hls->target == TAPA_HW)
+      p = print_fifo_rw_tapa(p, fifo_name, 0);
     else if (hls->target == INTEL_HW)
       p = print_fifo_rw_intel(p, fifo_name, 0);
     else if (hls->target == CATAPULT_HW)
@@ -4533,7 +4587,8 @@ static __isl_give isl_printer *io_transfer_update_data_split(
   int n_lane = stmt->u.i.data_pack;
   int nxt_n_lane = stmt->u.i.nxt_data_pack;
 
-  if (hls->target == XILINX_HW || hls->target == CATAPULT_HW || 
+  if (hls->target == XILINX_HW || hls->target == TAPA_HW ||
+      hls->target == CATAPULT_HW ||
     (hls->target == INTEL_HW && nxt_n_lane > 1)) {
     if (stmt->u.i.reduce) {
       //if (n_lane == nxt_n_lane)
@@ -4541,7 +4596,7 @@ static __isl_give isl_printer *io_transfer_update_data_split(
       //else
       p = autosa_print_reduce_data_pack(p, stmt, nxt_n_lane, n_lane, group, hls->target); // TODO
     } else {
-      if (hls->target == XILINX_HW) {
+      if (hls->target == XILINX_HW || hls->target == TAPA_HW) {
         if (nxt_n_lane == 1) {
           p = isl_printer_start_line(p);
           p = isl_printer_print_str(p, "union {unsigned int ui; ");
@@ -4562,7 +4617,7 @@ static __isl_give isl_printer *io_transfer_update_data_split(
       }
       p = isl_printer_print_str(p, "= ");
 
-      if (hls->target == XILINX_HW) {
+      if (hls->target == XILINX_HW || hls->target == TAPA_HW) {
         if (nxt_n_lane == 1) {
           p = isl_printer_print_str(p, "ap_uint<");
           p = isl_printer_print_int(p, group->array->size * 8);
@@ -4590,7 +4645,7 @@ static __isl_give isl_printer *io_transfer_pack_out_data(
   int nxt_n_lane = stmt->u.i.nxt_data_pack;
 
   p = isl_printer_start_line(p);
-  if (hls->target == XILINX_HW) {
+  if (hls->target == XILINX_HW || hls->target == TAPA_HW) {
     int first = 1;
     p = isl_printer_print_str(p, "out_data = (");
     for (int i = n_lane / nxt_n_lane - 1; i >= 0; i--) {
@@ -4721,7 +4776,7 @@ static __isl_give isl_printer *io_transfer_parse_sparse_data(
 
   /* [type_n_lane] buf_data_i = buf_data.i; */
   p = isl_printer_start_line(p);
-  if (hls->target == XILINX_HW) {
+  if (hls->target == XILINX_HW || hls->target == TAPA_HW) {
     p = isl_printer_print_str(p, "ap_uint<");
     p = isl_printer_print_int(p, 8 * n_lane);
   } else if (hls->target == CATAPULT_HW) {
@@ -4752,7 +4807,7 @@ static __isl_give isl_printer *io_transfer_write_data_split(
   int n_meta_data = stmt->u.i.local_array->n_meta_data;
   float eff_compress_ratio = stmt->u.i.local_array->eff_compress_ratio;
 
-  if (hls->target == XILINX_HW) {    
+  if (hls->target == XILINX_HW || hls->target == TAPA_HW) {    
     p = isl_printer_start_line(p);
     p = isl_printer_print_str(p, "for (int n = 0; n < ");
     p = isl_printer_print_int(p, n_lane / nxt_n_lane);
@@ -4912,7 +4967,7 @@ static __isl_give isl_printer *io_transfer_read_data_split(
     p = isl_printer_print_str(p, "out_data = data_split[split_idx];");
     p = isl_printer_end_line(p);
   } else {
-    if (hls->target == XILINX_HW) {
+    if (hls->target == XILINX_HW || hls->target == TAPA_HW) {
       if (nxt_n_lane == 1) {
         p = isl_printer_start_line(p);
         p = isl_printer_print_str(p, "union {unsigned int ui; ");
@@ -4927,7 +4982,7 @@ static __isl_give isl_printer *io_transfer_read_data_split(
 
     p = isl_printer_start_line(p);
     p = isl_printer_print_str(p, "out_data = ");
-    if (hls->target == XILINX_HW) {
+    if (hls->target == XILINX_HW || hls->target == TAPA_HW) {
       if (nxt_n_lane == 1) {
         p = isl_printer_print_str(p, "u.ut");
       } else {
@@ -5034,14 +5089,15 @@ static __isl_give isl_printer *autosa_kernel_print_io_transfer(
 
   if (n_lane != nxt_n_lane) {
     /* [type_nxt_n_lane] data_split[]; */
-    if (hls->target == XILINX_HW || hls->target == CATAPULT_HW ||
+    if (hls->target == XILINX_HW || hls->target == TAPA_HW ||
+        hls->target == CATAPULT_HW ||
       (hls->target == INTEL_HW && nxt_n_lane > 1)) {
       p = isl_printer_start_line(p);
       if (is_sparse) {
         p = autosa_print_array_type_with_lane_sparse(p, group->array, nxt_n_lane);
       } else {
         if (nxt_n_lane == 1) {
-          if (hls->target == XILINX_HW) {
+          if (hls->target == XILINX_HW || hls->target == TAPA_HW) {
             p = isl_printer_print_str(p, "ap_uint<");
             p = isl_printer_print_int(p, group->array->size * 8);
             p = isl_printer_print_str(p, ">");
@@ -5063,7 +5119,7 @@ static __isl_give isl_printer *autosa_kernel_print_io_transfer(
       p = isl_printer_print_str(p, "];");
       p = isl_printer_end_line(p);
 
-      if (hls->target == XILINX_HW)
+      if (hls->target == XILINX_HW || hls->target == TAPA_HW)
       {
         p = isl_printer_start_line(p);
         p = isl_printer_print_str(p, "#pragma HLS ARRAY_PARTITION variable=data_split complete");
@@ -5149,6 +5205,8 @@ static __isl_give isl_printer *autosa_kernel_print_io_transfer(
     p = isl_printer_print_str(p, "in_data = ");
     if (hls->target == XILINX_HW)
       p = print_fifo_rw_xilinx(p, fifo_in_name, 1);
+    else if (hls->target == TAPA_HW)
+      p = print_fifo_rw_tapa(p, fifo_in_name, 1);
     else if (hls->target == INTEL_HW)
       p = print_fifo_rw_intel(p, fifo_in_name, 1);      
     else if (hls->target == CATAPULT_HW)
@@ -5309,6 +5367,8 @@ static __isl_give isl_printer *autosa_kernel_print_io_transfer(
     p = isl_printer_start_line(p);
     if (hls->target == XILINX_HW)
       p = print_fifo_rw_xilinx(p, fifo_out_name, 0);
+    else if (hls->target == TAPA_HW)
+      p = print_fifo_rw_tapa(p, fifo_out_name, 0);
     else if (hls->target == INTEL_HW)
       p = print_fifo_rw_intel(p, fifo_out_name, 0);
     else if (hls->target == CATAPULT_HW)
@@ -5508,7 +5568,8 @@ static __isl_give isl_printer *autosa_kernel_print_io_transfer_data_pack(
   p = isl_printer_end_line(p);
 
   /* [type] buf_data_split[]; */  
-  if (hls->target == XILINX_HW || hls->target == CATAPULT_HW ||
+  if (hls->target == XILINX_HW || hls->target == TAPA_HW ||
+      hls->target == CATAPULT_HW ||
       (hls->target == INTEL_HW && nxt_n_lane > 1)) {
     p = isl_printer_start_line(p);
     if (is_sparse) {
@@ -5516,7 +5577,7 @@ static __isl_give isl_printer *autosa_kernel_print_io_transfer_data_pack(
     } else {
       if (nxt_n_lane == 1)
       {
-        if (hls->target == XILINX_HW)
+        if (hls->target == XILINX_HW || hls->target == TAPA_HW)
         {
           p = isl_printer_print_str(p, "ap_uint<");
           p = isl_printer_print_int(p, group->array->size * 8);
@@ -5544,7 +5605,7 @@ static __isl_give isl_printer *autosa_kernel_print_io_transfer_data_pack(
     p = isl_printer_print_int(p, n_lane / nxt_n_lane);
     p = isl_printer_print_str(p, "];");
     p = isl_printer_end_line(p);
-    if (hls->target == XILINX_HW)
+    if (hls->target == XILINX_HW || hls->target == TAPA_HW)
     {
       p = isl_printer_start_line(p);
       p = isl_printer_print_str(p, "#pragma HLS ARRAY_PARTITION variable=buf_data_split complete");
@@ -5616,7 +5677,7 @@ static __isl_give isl_printer *autosa_kernel_print_io_transfer_data_pack(
 
     /* [type] buf_data_i = buf_data.i; */
     p = isl_printer_start_line(p);
-    if (hls->target == XILINX_HW) {
+    if (hls->target == XILINX_HW || hls->target == TAPA_HW) {
       p = isl_printer_print_str(p, "ap_uint<");
       p = isl_printer_print_int(p, 8 * n_lane);
     } else if (hls->target == CATAPULT_HW) {
@@ -5628,7 +5689,7 @@ static __isl_give isl_printer *autosa_kernel_print_io_transfer_data_pack(
     p = isl_printer_end_line(p);      
   }
 
-  if (hls->target == XILINX_HW)
+  if (hls->target == XILINX_HW || hls->target == TAPA_HW)
   {    
     p = isl_printer_start_line(p);
     p = isl_printer_print_str(p, "for (int n = 0; n < ");
@@ -5778,6 +5839,8 @@ static __isl_give isl_printer *autosa_kernel_print_io_transfer_data_pack(
     p = isl_printer_print_str(p, "fifo_data = ");
     if (hls->target == XILINX_HW)
       p = print_fifo_rw_xilinx(p, fifo_name, 1);
+    else if (hls->target == TAPA_HW)
+      p = print_fifo_rw_tapa(p, fifo_name, 1);
     else if (hls->target == INTEL_HW)
       p = print_fifo_rw_intel(p, fifo_name, 1);
     else if (hls->target == CATAPULT_HW)
@@ -5785,12 +5848,13 @@ static __isl_give isl_printer *autosa_kernel_print_io_transfer_data_pack(
     p = isl_printer_print_str(p, ";");
     p = isl_printer_end_line(p);
       /* buf_data_split[...] = Reinterpret<>(fifo_data); */
-    if (hls->target == XILINX_HW || hls->target == CATAPULT_HW || 
+    if (hls->target == XILINX_HW || hls->target == TAPA_HW ||
+        hls->target == CATAPULT_HW || 
         (hls->target == INTEL_HW && nxt_n_lane > 1)) {
       if (stmt->u.i.reduce) {
         p = autosa_print_reduce_data_pack(p, stmt, nxt_n_lane, n_lane, group, hls->target); // TODO
       } else {      
-        if (hls->target == XILINX_HW)
+        if (hls->target == XILINX_HW || hls->target == TAPA_HW)
         {
           if (nxt_n_lane == 1)
           {
@@ -5813,7 +5877,7 @@ static __isl_give isl_printer *autosa_kernel_print_io_transfer_data_pack(
         }
         p = isl_printer_print_str(p, "= ");
   
-        if (hls->target == XILINX_HW)
+        if (hls->target == XILINX_HW || hls->target == TAPA_HW)
         {
           if (nxt_n_lane == 1)
           {
@@ -5858,7 +5922,7 @@ static __isl_give isl_printer *autosa_kernel_print_io_transfer_data_pack(
     }
     /* buf_data = (buf_data_split[1], ...); */
     p = isl_printer_start_line(p);
-    if (hls->target == XILINX_HW)
+    if (hls->target == XILINX_HW || hls->target == TAPA_HW)
     {
       int first = 1;
       p = isl_printer_print_str(p, "buf_data = (");
@@ -5970,6 +6034,8 @@ static __isl_give isl_printer *autosa_kernel_print_io_transfer_data_pack(
       p = isl_printer_start_line(p);
       if (hls->target == XILINX_HW)
         p = print_fifo_rw_xilinx(p, fifo_name, 0);
+      else if (hls->target == TAPA_HW)
+        p = print_fifo_rw_tapa(p, fifo_name, 0);
       else if (hls->target == CATAPULT_HW)
         p = print_fifo_rw_catapult(p, fifo_name, 0);
       else if (hls->target == INTEL_HW)
@@ -5979,7 +6045,7 @@ static __isl_give isl_printer *autosa_kernel_print_io_transfer_data_pack(
       free(fifo_name);
     } else {
       fifo_name = concat(ctx, stmt->u.i.out_fifo_name, "out");
-      if (hls->target == XILINX_HW)
+      if (hls->target == XILINX_HW || hls->target == TAPA_HW)
       {
         if (nxt_n_lane == 1)
         {
@@ -5996,7 +6062,7 @@ static __isl_give isl_printer *autosa_kernel_print_io_transfer_data_pack(
       /* fifo_data = Reinterpret<>(buf_data_split[...]); */    
       p = isl_printer_start_line(p);
       p = isl_printer_print_str(p, "fifo_data = ");
-      if (hls->target == XILINX_HW)
+      if (hls->target == XILINX_HW || hls->target == TAPA_HW)
       {
         if (nxt_n_lane == 1)
         {
@@ -6024,6 +6090,8 @@ static __isl_give isl_printer *autosa_kernel_print_io_transfer_data_pack(
       p = isl_printer_start_line(p);
       if (hls->target == XILINX_HW)
         p = print_fifo_rw_xilinx(p, fifo_name, 0);
+      else if (hls->target == TAPA_HW)
+        p = print_fifo_rw_tapa(p, fifo_name, 0);
       else if (hls->target == INTEL_HW)
         p = print_fifo_rw_intel(p, fifo_name, 0);
       else if (hls->target == CATAPULT_HW)
@@ -6275,6 +6343,8 @@ __isl_give isl_printer *autosa_kernel_print_io_dram(
     if (module->is_serialized) {
       if (hls->target == XILINX_HW)
         p = print_fifo_rw_xilinx(p, serialize_fifo_name, 1);
+      else if (hls->target == TAPA_HW)
+        p = print_fifo_rw_tapa(p, serialize_fifo_name, 1);
       else if (hls->target == INTEL_HW)
         p = print_fifo_rw_intel(p, serialize_fifo_name, 1);      
       else if (hls->target == CATAPULT_HW)
@@ -6292,6 +6362,8 @@ __isl_give isl_printer *autosa_kernel_print_io_dram(
       p = isl_printer_start_line(p);
       if (hls->target == XILINX_HW)
         p = print_fifo_rw_xilinx(p, fifo_name, 0);
+      else if (hls->target == TAPA_HW)
+        p = print_fifo_rw_tapa(p, fifo_name, 0);
       else if (hls->target == INTEL_HW)
         p = print_fifo_rw_intel(p, fifo_name, 0);
       else if (hls->target == CATAPULT_HW)
@@ -6317,6 +6389,8 @@ __isl_give isl_printer *autosa_kernel_print_io_dram(
       fifo_name = concat(ctx, stmt->u.i.in_fifo_name, "in");      
       if (hls->target == XILINX_HW)
         p = print_fifo_rw_xilinx(p, fifo_name, 1);
+      else if (hls->target == TAPA_HW)
+        p = print_fifo_rw_tapa(p, fifo_name, 1);
       else if (hls->target == INTEL_HW)
         p = print_fifo_rw_intel(p, fifo_name, 1);
       else if (hls->target == CATAPULT_HW)
@@ -6347,6 +6421,8 @@ __isl_give isl_printer *autosa_kernel_print_io_dram(
 
       if (hls->target == XILINX_HW)
         p = print_fifo_rw_xilinx(p, serialize_fifo_name, 0);
+      else if (hls->target == TAPA_HW)
+        p = print_fifo_rw_tapa(p, serialize_fifo_name, 0);
       else if (hls->target == INTEL_HW)
         p = print_fifo_rw_intel(p, serialize_fifo_name, 0);
       else if (hls->target == CATAPULT_HW)
@@ -6730,7 +6806,7 @@ __isl_give isl_printer *print_module_serialize_body(
       p = isl_printer_print_str(p, "; i++) {");
       p = isl_printer_end_line(p);
           
-      if (hls->target == XILINX_HW)
+      if (hls->target == XILINX_HW || hls->target == TAPA_HW)
         p = print_str_new_line(p, "#pragma HLS PIPELINE II=1");
 
       p = isl_printer_indent(p, 2);
@@ -6752,6 +6828,8 @@ __isl_give isl_printer *print_module_serialize_body(
 
         if (hls->target == XILINX_HW)
           p = print_fifo_rw_xilinx(p, fifo_name, 1);
+        else if (hls->target == TAPA_HW)
+          p = print_fifo_rw_tapa(p, fifo_name, 1);
         else if (hls->target == INTEL_HW)
           p = print_fifo_rw_intel(p, fifo_name, 1);
         else if (hls->target == CATAPULT_HW)
@@ -6769,6 +6847,8 @@ __isl_give isl_printer *print_module_serialize_body(
       p = isl_printer_start_line(p);
       if (hls->target == XILINX_HW)
         p = print_fifo_rw_xilinx(p, new_fifo_name, 0);
+      else if (hls->target == TAPA_HW)
+        p = print_fifo_rw_tapa(p, new_fifo_name, 0);
       else if (hls->target == INTEL_HW)
         p = print_fifo_rw_intel(p, new_fifo_name, 0);          
       else if (hls->target == CATAPULT_HW)
@@ -6794,7 +6874,7 @@ __isl_give isl_printer *print_module_serialize_body(
       p = isl_printer_print_str(p, "; i++) {");
       p = isl_printer_end_line(p);
 
-      if (hls->target == XILINX_HW)
+      if (hls->target == XILINX_HW || hls->target == TAPA_HW)
         p = print_str_new_line(p, "#pragma HLS PIPELINE II=1");
 
       p = isl_printer_indent(p, 2);
@@ -6808,6 +6888,8 @@ __isl_give isl_printer *print_module_serialize_body(
       p = isl_printer_print_str(p, "fifo_data = ");
       if (hls->target == XILINX_HW)
         p = print_fifo_rw_xilinx(p, new_fifo_name, 1);
+      else if (hls->target == TAPA_HW)
+        p = print_fifo_rw_tapa(p, new_fifo_name, 1);
       else if (hls->target == INTEL_HW)
         p = print_fifo_rw_intel(p, new_fifo_name, 1);
       else if (hls->target == CATAPULT_HW)
@@ -6827,6 +6909,8 @@ __isl_give isl_printer *print_module_serialize_body(
         
         if (hls->target == XILINX_HW)
           p = print_fifo_rw_xilinx(p, fifo_name, 0);
+        else if (hls->target == TAPA_HW)
+          p = print_fifo_rw_tapa(p, fifo_name, 0);
         else if (hls->target == INTEL_HW)
           p = print_fifo_rw_intel(p, fifo_name, 0);
         else if (hls->target == CATAPULT_HW)
@@ -6865,7 +6949,7 @@ __isl_give isl_printer *print_module_serialize_body(
       p = isl_printer_print_str(p, " mem_data;");
       p = isl_printer_end_line(p);
       
-      if (hls->target == XILINX_HW) {        
+      if (hls->target == XILINX_HW || hls->target == TAPA_HW) {
         if (data_pack_out == 1 && !is_sparse) {
           /* union {unsigned int ui; [type] ut;} u; */
           p = isl_printer_start_line(p);        
@@ -6901,6 +6985,8 @@ __isl_give isl_printer *print_module_serialize_body(
 
           if (hls->target == XILINX_HW)
             p = print_fifo_rw_xilinx(p, fifo_name, 1);
+          else if (hls->target == TAPA_HW)
+            p = print_fifo_rw_tapa(p, fifo_name, 1);
           else if (hls->target == INTEL_HW)
             p = print_fifo_rw_intel(p, fifo_name, 1);
           else if (hls->target == CATAPULT_HW)
@@ -7210,7 +7296,7 @@ __isl_give isl_printer *print_module_serialize_body(
       p = isl_printer_print_str(p, "; i++) {");
       p = isl_printer_end_line(p);
           
-      if (hls->target == XILINX_HW)
+      if (hls->target == XILINX_HW || hls->target == TAPA_HW)
         p = print_str_new_line(p, "#pragma HLS PIPELINE II=1");
       p = isl_printer_indent(p, 2);
 
@@ -7232,7 +7318,7 @@ __isl_give isl_printer *print_module_serialize_body(
       
       p = isl_printer_start_line(p);      
       if (data_pack_out == 1) {
-        if (hls->target == XILINX_HW) {
+        if (hls->target == XILINX_HW || hls->target == TAPA_HW) {
           p = isl_printer_print_str(p, "ap_uint<");
           p = isl_printer_print_int(p, module->io_groups[0]->array->size * 8);
           p = isl_printer_print_str(p, ">");
@@ -7251,7 +7337,7 @@ __isl_give isl_printer *print_module_serialize_body(
       p = isl_printer_print_str(p, "];");
       p = isl_printer_end_line(p);
 
-      if (hls->target == XILINX_HW)
+      if (hls->target == XILINX_HW || hls->target == TAPA_HW)
         p = print_str_new_line(p, "#pragma HLS ARRAY_PARTITION variable=mem_data_split complete");
       
       p = isl_printer_start_line(p);
@@ -7266,6 +7352,8 @@ __isl_give isl_printer *print_module_serialize_body(
       p = isl_printer_print_str(p, "fifo_data = ");
       if (hls->target == XILINX_HW)
         p = print_fifo_rw_xilinx(p, new_fifo_name, 1);
+      else if (hls->target == TAPA_HW)
+        p = print_fifo_rw_tapa(p, new_fifo_name, 1);
       else if (hls->target == INTEL_HW) 
         p = print_fifo_rw_intel(p, new_fifo_name, 1);
       else if (hls->target == CATAPULT_HW)
@@ -7273,7 +7361,7 @@ __isl_give isl_printer *print_module_serialize_body(
       p = isl_printer_print_str(p, ";");
       p = isl_printer_end_line(p);
 
-      if (hls->target == XILINX_HW) {
+      if (hls->target == XILINX_HW || hls->target == TAPA_HW) {
         if (data_pack_out == 1) {
           /* union {unsigned int ui; [type] ut;} u; */
           p = isl_printer_start_line(p);
@@ -7301,7 +7389,7 @@ __isl_give isl_printer *print_module_serialize_body(
       p = isl_printer_indent(p, -2);
       p = print_str_new_line(p, "}");
 
-      if (hls->target == XILINX_HW) {
+      if (hls->target == XILINX_HW || hls->target == TAPA_HW) {
         p = isl_printer_start_line(p);
         p = isl_printer_print_str(p, "mem_data = (");
         for (int i = data_pack_in / data_pack_out - 1; i >= 0; i--) {
@@ -7353,7 +7441,8 @@ __isl_give isl_printer *print_module_serialize_body(
         }
       }
 
-      if (hls->target == XILINX_HW || hls->target == CATAPULT_HW) {
+      if (hls->target == XILINX_HW || hls->target == TAPA_HW ||
+          hls->target == CATAPULT_HW) {
         p = isl_printer_start_line(p);
         if (axi_stream) {
           //char *fifo_name;
@@ -7366,6 +7455,8 @@ __isl_give isl_printer *print_module_serialize_body(
 
           if (hls->target == XILINX_HW)
             p = print_fifo_rw_xilinx(p, fifo_name, 0);
+          else if (hls->target == TAPA_HW)
+            p = print_fifo_rw_tapa(p, fifo_name, 0);
           else if (hls->target == INTEL_HW)
             p = print_fifo_rw_intel(p, fifo_name, 0);
           else if (hls->target == CATAPULT_HW)
