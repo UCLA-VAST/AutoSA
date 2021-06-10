@@ -475,6 +475,11 @@ __isl_give isl_printer *print_kernel_arguments(__isl_take isl_printer *p,
         } else {
           p = autosa_array_info_print_call_argument(p,
                                                     local_array->array, 0, "buffer");
+          if (hls->target == TAPA_HW) {
+            p = isl_printer_print_str(p, ".vectorized<");
+            p = isl_printer_print_int(p, n_lane);
+            p = isl_printer_print_str(p, ">()");
+          }
         }
       }
 
