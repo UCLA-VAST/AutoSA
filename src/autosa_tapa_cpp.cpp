@@ -2976,6 +2976,9 @@ static void print_top_gen_host_code(
     p = isl_printer_end_line(p);
   }
 
+  p = print_str_new_line(p, "p = isl_printer_print_str(p, \"  tapa::task()\");");
+  p = print_str_new_line(p, "p = isl_printer_end_line(p);");
+
   /* Print module calls. */
   for (int i = 0; i < top->n_module_calls; i++)
   {
@@ -2987,6 +2990,9 @@ static void print_top_gen_host_code(
     p = isl_ast_node_print(top->module_call_wrapped_trees[i],
                            p, print_options);
   }
+
+  p = print_str_new_line(p, "p = isl_printer_print_str(p, \"  ;\");");
+  p = print_str_new_line(p, "p = isl_printer_end_line(p);");
 
   /* module:module_name:module_cnt. */
   for (int i = 0; i < n_module_names; i++)

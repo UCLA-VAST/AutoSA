@@ -2340,6 +2340,9 @@ __isl_give isl_printer *print_module_call_upper(__isl_take isl_printer *p,
   p = isl_printer_print_str(p, "p = isl_printer_start_line(p);");
   p = isl_printer_end_line(p);
 
+  if (target == TAPA_HW)
+    p = print_str_new_line(p, "p = isl_printer_print_str(p, \".invoke(\");");
+
   p = isl_printer_start_line(p);
   p = isl_printer_print_str(p, "p = isl_printer_print_str(p, \"");
   p = isl_printer_print_str(p, module_name);
@@ -2407,7 +2410,11 @@ __isl_give isl_printer *print_module_call_upper(__isl_take isl_printer *p,
     }
     p = print_str_new_line(p, "p = isl_printer_print_str(p, \">\");");
   }
-  p = print_str_new_line(p, "p = isl_printer_print_str(p, \"(\");");  
+
+  if (target != TAPA_HW)
+    p = print_str_new_line(p, "p = isl_printer_print_str(p, \"(\");");  
+  else
+    p = print_str_new_line(p, "p = isl_printer_print_str(p, \",\");");
 
   p = isl_printer_start_line(p);
   p = isl_printer_print_str(p, "p = isl_printer_end_line(p);");
@@ -2751,7 +2758,7 @@ static __isl_give isl_printer *print_fifo_prefix_lower(
  * fifos to the lower-level modules.
  */
 static __isl_give isl_printer *print_module_call_lower(__isl_take isl_printer *p,
-                                                       struct autosa_kernel_stmt *stmt, struct autosa_prog *prog)
+                                                       struct autosa_kernel_stmt *stmt, struct autosa_prog *prog, enum platform target)
 {
   struct autosa_hw_module *module = stmt->u.m.module;
   int lower = stmt->u.m.lower;
@@ -2810,20 +2817,27 @@ static __isl_give isl_printer *print_module_call_lower(__isl_take isl_printer *p
     }
   }
 
-  p = isl_printer_start_line(p);
-  p = isl_printer_print_str(p, "p = isl_printer_end_line(p);");
-  p = isl_printer_end_line(p);
+  if (target != TAPA_HW) {
+    p = isl_printer_start_line(p);
+    p = isl_printer_print_str(p, "p = isl_printer_end_line(p);");
+    p = isl_printer_end_line(p);
+  }
 
   p = isl_printer_start_line(p);
   p = isl_printer_print_str(p, "p = isl_printer_indent(p, -2);");
   p = isl_printer_end_line(p);
 
-  p = isl_printer_start_line(p);
-  p = isl_printer_print_str(p, "p = isl_printer_start_line(p);");
-  p = isl_printer_end_line(p);
+  if (target != TAPA_HW) {
+    p = isl_printer_start_line(p);
+    p = isl_printer_print_str(p, "p = isl_printer_start_line(p);");
+    p = isl_printer_end_line(p);
+  }
 
   p = isl_printer_start_line(p);
-  p = isl_printer_print_str(p, "p = isl_printer_print_str(p, \");\");");
+  if (target != TAPA_HW)
+    p = isl_printer_print_str(p, "p = isl_printer_print_str(p, \");\");");
+  else
+    p = isl_printer_print_str(p, "p = isl_printer_print_str(p, \")\");");
   p = isl_printer_end_line(p);
 
   p = isl_printer_start_line(p);
@@ -2966,7 +2980,7 @@ __isl_give isl_printer *autosa_kernel_print_module_call(
     p = isl_printer_end_line(p);
 
     p = print_module_call_upper(p, stmt, prog, target);
-    p = print_module_call_lower(p, stmt, prog);
+    p = print_module_call_lower(p, stmt, prog, target);
 
     p = isl_printer_start_line(p);
     p = isl_printer_print_str(p, "p = isl_printer_start_line(p);");
@@ -3033,7 +3047,7 @@ __isl_give isl_printer *autosa_kernel_print_module_call(
     }
     else
     {
-      p = print_module_call_lower(p, stmt, prog);
+      p = print_module_call_lower(p, stmt, prog, target);
 
       p = isl_printer_start_line(p);
       p = isl_printer_print_str(p, "p = isl_printer_start_line(p);");
