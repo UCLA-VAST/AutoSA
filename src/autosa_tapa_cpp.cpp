@@ -930,17 +930,12 @@ static __isl_give isl_printer *print_host_user_tapa(__isl_take isl_printer *p,
   if (is_user)
     return autosa_kernel_print_domain(p, stmt);
 
-  /* Print HLS host. */
-  p = ppcg_start_block(p);
-
   p = print_str_new_line(p, "// Launch the kernel");
   p = isl_printer_start_line(p);
   p = isl_printer_print_str(p, "tapa::task().invoke(kernel0, ");
   p = print_kernel_arguments(p, data->prog, kernel, 0, hls);
   p = isl_printer_print_str(p, ");");
   p = isl_printer_end_line(p);
-
-  p = ppcg_end_block(p);
 
   /* Print the top kernel header. */
   print_kernel_headers_tapa(data->prog, kernel, data->hls);
