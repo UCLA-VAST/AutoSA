@@ -463,7 +463,7 @@ __isl_give isl_printer *print_kernel_arguments(__isl_take isl_printer *p,
 
       if (types) {
         if (prog->scop->options->autosa->axi_stream) {
-          p = autosa_fifo_print_declaration_arguments(p, local_array->io_groups[0], n_lane, NULL, hls->target, fifo_depth);
+          p = autosa_fifo_print_declaration_arguments(p, local_array->io_groups[0], n_lane, NULL, hls->target, fifo_depth, NULL);
         } else {
           p = autosa_array_info_print_declaration_argument(
                 p, local_array->array, n_lane, NULL, -1, NULL, hls->target);
@@ -945,15 +945,19 @@ __isl_give isl_printer *print_fifo_type_intel(__isl_take isl_printer *p,
 }
 
 /* Print out
- * "tapa::stream<[type], [depth]>"
+ * "tapa::[i/o]stream<[type], [depth]>"
  */
 __isl_give isl_printer *print_fifo_type_tapa(__isl_take isl_printer *p,
                                              struct autosa_array_ref_group *group,
-                                             int n_lane, int fifo_depth)
+                                             int n_lane, int fifo_depth, const char *direction)
 {
   struct autosa_array_info *array = group->array;
 
-  p = isl_printer_print_str(p, "tapa::stream<");
+  p = isl_printer_print_str(p, "tapa::");
+  if (direction) {
+    p = isl_printer_print_str(p, direction);
+  }
+  p = isl_printer_print_str(p, "stream<");
   if (group->local_array->is_sparse) {
     p = isl_printer_print_str(p, array->name);
     p = isl_printer_print_str(p, "_s_t");
@@ -967,8 +971,10 @@ __isl_give isl_printer *print_fifo_type_tapa(__isl_take isl_printer *p,
       p = isl_printer_print_int(p, n_lane);
     }
   }
-  p = isl_printer_print_str(p, ", ");
-  p = isl_printer_print_int(p, fifo_depth);
+  if (!direction) {
+    p = isl_printer_print_str(p, ", ");
+    p = isl_printer_print_int(p, fifo_depth);
+  }
   p = isl_printer_print_str(p, ">");
 
   return p;
@@ -979,7 +985,7 @@ __isl_give isl_printer *print_fifo_type_tapa(__isl_take isl_printer *p,
  */
 __isl_give isl_printer *autosa_fifo_print_declaration_arguments(
     __isl_take isl_printer *p, struct autosa_array_ref_group *group, int n_lane,
-    const char *suffix, enum platform target, int fifo_depth)
+    const char *suffix, enum platform target, int fifo_depth, const char *direction)
 {
   if (target == XILINX_HW)
   {
@@ -987,7 +993,7 @@ __isl_give isl_printer *autosa_fifo_print_declaration_arguments(
     p = isl_printer_print_str(p, " &");
   } else if (target == TAPA_HW)
   {
-    p = print_fifo_type_tapa(p, group, n_lane, fifo_depth);
+    p = print_fifo_type_tapa(p, group, n_lane, fifo_depth, direction);
     p = isl_printer_print_str(p, " &");
   } else if (target == INTEL_HW)
   {
@@ -1271,7 +1277,7 @@ __isl_give isl_printer *print_module_arguments(
       }
       if (types) {
         p = autosa_fifo_print_declaration_arguments(p,
-                                                    module->io_groups[0], n_lane, NULL, target, fifo_depth);
+                                                    module->io_groups[0], n_lane, NULL, target, fifo_depth, NULL);
       } else {
         p = isl_printer_print_str(p, "/* fifo */ ");
         p = autosa_fifo_print_call_argument(p,  
@@ -1293,7 +1299,8 @@ __isl_give isl_printer *print_module_arguments(
         //p = autosa_fifo_print_declaration_arguments(p,
         //                                            module->io_groups[0], n_lane, "serialize", target, fifo_depth);
         p = autosa_fifo_print_declaration_arguments(p,
-                                                    module->io_groups[0], n_lane, (module->in)? "in" : "out", target, fifo_depth);
+                                                    module->io_groups[0], n_lane, (module->in)? "in" : "out", target, fifo_depth,
+                                                    (module->in)? "i" : "o");
       } else {
         p = isl_printer_print_str(p, "/* fifo */ ");
         //p = autosa_fifo_print_call_argument(p,  
@@ -1446,7 +1453,7 @@ __isl_give isl_printer *print_module_arguments(
         if (types)
         {
           p = autosa_fifo_print_declaration_arguments(p,
-                                                      module->io_groups[i], n_lane, "in", target, fifo_depth);
+                                                      module->io_groups[i], n_lane, "in", target, fifo_depth, "i");
         }
         else
         {
@@ -1470,7 +1477,7 @@ __isl_give isl_printer *print_module_arguments(
         }
         if (types)
           p = autosa_fifo_print_declaration_arguments(p,
-                                                      module->io_groups[i], n_lane, "out", target, fifo_depth);
+                                                      module->io_groups[i], n_lane, "out", target, fifo_depth, "o");
         else
         {
           p = isl_printer_print_str(p, "/* fifo */ ");
@@ -1498,7 +1505,7 @@ __isl_give isl_printer *print_module_arguments(
           /* in */
           if (types)
             p = autosa_fifo_print_declaration_arguments(p,
-                                                        module->io_groups[i], module->data_pack_inter, "in", target, fifo_depth);
+                                                        module->io_groups[i], module->data_pack_inter, "in", target, fifo_depth, "i");
           else {
             p = isl_printer_print_str(p, "/* fifo */ ");
             p = autosa_fifo_print_call_argument(p,
@@ -1519,7 +1526,7 @@ __isl_give isl_printer *print_module_arguments(
           }
           if (types)
             p = autosa_fifo_print_declaration_arguments(p,
-                                                        module->io_groups[i], module->data_pack_inter, "out", target, fifo_depth);
+                                                        module->io_groups[i], module->data_pack_inter, "out", target, fifo_depth, "o");
           else {
             p = isl_printer_print_str(p, "/* fifo */ ");
             p = autosa_fifo_print_call_argument(p,
@@ -1542,7 +1549,8 @@ __isl_give isl_printer *print_module_arguments(
           p = autosa_fifo_print_declaration_arguments(p,
                                                       module->io_groups[i], 
                                                       (module->is_serialized && serialize)? module->data_pack_inter : module->data_pack_intra,                                                      
-                                                      module->in ? "local_out" : "local_in", target, fifo_depth);
+                                                      module->in ? "local_out" : "local_in", target, fifo_depth,
+                                                      module->in ? "o" : "i");
         } else {
           p = isl_printer_print_str(p, "/* fifo */ ");
           p = autosa_fifo_print_call_argument(p,
@@ -1740,7 +1748,8 @@ __isl_give isl_printer *print_pe_dummy_module_arguments(
   if (types)
   {
     p = autosa_fifo_print_declaration_arguments(p,
-                                                group, n_lane, pe_dummy_module->in? "in" : "out", target, fifo_depth);
+                                                group, n_lane, pe_dummy_module->in? "in" : "out", target, fifo_depth,
+                                                pe_dummy_module->in? "i" : "o");
   }
   else
     p = autosa_fifo_print_call_argument(p,
@@ -2005,7 +2014,7 @@ static __isl_give isl_printer *print_fifo_decl_single(
   if (hls->target == XILINX_HW)
     p = print_fifo_type_xilinx(p, group, n_lane);
   else if (hls->target == TAPA_HW)
-    p = print_fifo_type_tapa(p, group, n_lane, fifo_depth);
+    p = print_fifo_type_tapa(p, group, n_lane, fifo_depth, NULL);
   else if (hls->target == INTEL_HW)
     p = print_fifo_type_intel(p, group, n_lane);
   else if (hls->target == CATAPULT_HW)

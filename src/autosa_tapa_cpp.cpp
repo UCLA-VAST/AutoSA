@@ -2813,7 +2813,7 @@ static void print_top_gen_host_code(
       p = isl_printer_print_str(p, "p = isl_printer_print_str(p, \"/* ");
       p = isl_printer_print_str(p, module->name);
       p = isl_printer_print_str(p, "_serialize fifo */ ");
-      p = print_fifo_type_tapa(p, group, module->data_pack_inter, fifo_depth);
+      p = print_fifo_type_tapa(p, group, module->data_pack_inter, fifo_depth, NULL);
       p = isl_printer_print_str(p, " ");
       p = isl_printer_print_str(p, fifo_name);
       p = isl_printer_print_str(p, ";\");");
