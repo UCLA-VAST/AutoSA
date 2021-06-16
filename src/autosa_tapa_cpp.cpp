@@ -105,6 +105,7 @@ static void hls_open_files(struct hls_info *info, const char *input)
   fprintf(info->top_gen_c, "#include \"%s\"\n", name);
 
   fprintf(info->kernel_h, "#include <tapa.h>\n");
+  fprintf(info->kernel_h, "#include <ap_int.h>\n");
   fprintf(info->kernel_h, "\n");
 
   fprintf(info->kernel_h, "#define min(x,y) ((x < y) ? x : y)\n");
