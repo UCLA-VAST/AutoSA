@@ -604,7 +604,7 @@ static __isl_give isl_printer *declare_and_allocate_arrays(
     if (module->serialize_tree && module->in) {
       struct autosa_array_ref_group *group = module->io_groups[0];
       struct autosa_local_array_info *local_array = group->local_array;
-      if (local_array->n_mem_ports > 1 && local_array->array->copy_out)
+      if (local_array->n_mem_ports > 1 && local_array->array->copy_in)
       {
         p = isl_printer_start_line(p);
         p = isl_printer_print_str(p, "for (int i = 0; i < ");
