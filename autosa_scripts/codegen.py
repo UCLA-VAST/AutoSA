@@ -1383,15 +1383,6 @@ def tapa_run(
     print("Please find the generated file: " + kernel)
 
     with open(kernel, 'w') as f:
-        # Merge kernel header file
-        kernel_header = kernel.split('.')
-        kernel_header[-1] = 'h'
-        kernel_header = ".".join(kernel_header)
-        with open(kernel_header, 'r') as f2:
-            header_lines = f2.readlines()
-            f.writelines(header_lines)
-        f.write('\n')
-
         f.writelines(lines)
         f.writelines(call_lines)
 
