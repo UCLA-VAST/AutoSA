@@ -4100,6 +4100,7 @@ __isl_give isl_printer *autosa_kernel_print_io(__isl_take isl_printer *p,
               p = isl_printer_print_str(p, ", f");
               p = isl_printer_print_int(p, i);
               p = isl_printer_print_str(p, ");");
+              p = isl_printer_end_line(p);
             } else {
               for (int j = 0; j < nxt_data_pack; j++) {
                 p = isl_printer_start_line(p);
