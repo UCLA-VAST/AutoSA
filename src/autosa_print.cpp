@@ -456,7 +456,7 @@ __isl_give isl_printer *print_kernel_arguments(__isl_take isl_printer *p,
     n_lane = local_array->n_lane;
     if (hls->target == INTEL_HW ||
         hls->target == CATAPULT_HW ||
-        hls->target == TAPA_HW ||
+        (hls->target == TAPA_HW && local_array->n_io_group_refs == 1) ||
         (hls->target == XILINX_HW && local_array->n_io_group_refs == 1))
     {
       if (!first)
@@ -500,6 +500,11 @@ __isl_give isl_printer *print_kernel_arguments(__isl_take isl_printer *p,
         {
           p = autosa_array_info_print_call_argument(p,
                                                     local_array->array, j, "buffer");
+          if (hls->target == TAPA_HW) {
+            p = isl_printer_print_str(p, ".vectorized<");
+            p = isl_printer_print_int(p, n_lane);
+            p = isl_printer_print_str(p, ">()");
+          }
         }
 
         first = 0;

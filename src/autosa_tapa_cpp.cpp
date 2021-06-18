@@ -385,7 +385,7 @@ static __isl_give isl_printer *declare_and_allocate_arrays(
     if (!autosa_array_requires_device_allocation(local_array->array))
       continue;
 
-    if (local_array->n_mem_ports > 1 && local_array->array->copy_in)
+    if (local_array->n_mem_ports > 1)
     {
       /* Create multiple host buffers. */
       p = isl_printer_start_line(p);
@@ -683,7 +683,7 @@ static __isl_give isl_printer *declare_and_allocate_arrays(
     p = isl_printer_print_str(p, "_tmp(");
     p = isl_printer_print_str(p, "dev_");
     p = isl_printer_print_str(p, local_array->array->name);
-    if (local_array->n_mem_ports > 1 && local_array->array->copy_in) {
+    if (local_array->n_mem_ports > 1) {
       p = isl_printer_print_str(p, "[i]");
     }
     p = isl_printer_print_str(p, ");");
