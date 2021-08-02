@@ -87,7 +87,7 @@ ISL_ARGS_END
 ISL_ARGS_START(struct autosa_options, autosa_options_args)
 ISL_ARG_BOOL(struct autosa_options, autosa, 0, "autosa", 1,
 				"generate systolic arrays using AutoSA")
-ISL_ARG_BOOL(struct autosa_options, array_contraction, 0, "array-contraction", 0,
+ISL_ARG_BOOL(struct autosa_options, array_contraction, 0, "array-contraction", 1,
 				"apply array contraction")
 ISL_ARG_BOOL(struct autosa_options, axi_stream, 0, "axi-stream", 0,
 				"generate AXI stream interface, must be used together with host serialization.")
@@ -140,6 +140,8 @@ ISL_ARG_STR(struct autosa_options, reduce_op, 0, "reduce-op", "op",
 				NULL, "reduction operator (must be used with local-reduce together)")			 
 ISL_ARG_BOOL(struct autosa_options, lower_int_io_L1_buffer, 0, "lower-int-io-L1-buffer", 0,
 			 	"lower the L1 buffer for interior I/O modules")
+ISL_ARG_BOOL(struct autosa_options, lower_if_branch, 0, "lower-if-branch", 0,
+				"lower if branch in the I/O module")
 ISL_ARG_INT(struct autosa_options, max_local_memory, 0,
 				"max-local-memory", "size", 8192, "maximal amount of local memory")
 ISL_ARG_INT(struct autosa_options, max_sa_dim, 0,
@@ -172,6 +174,8 @@ ISL_ARG_BOOL(struct autosa_options, t2s_tile, 0, "t2s-tile", 0,
 			 	"generate T2S code from tiled code")
 ISL_ARG_INT(struct autosa_options, t2s_tile_phase, 0,
 				"t2s-tile-phase", "phase", 0, "T2S tiled URE codegen phase")
+ISL_ARG_STR(struct autosa_options, param_names, 0, "param-names", "name", NULL,
+				"customized parameter names (for tuning)")
 ISL_ARG_BOOL(struct autosa_options, uram, 0, "uram", 0,
 			 	"use Xilinx FPGA URAM")
 ISL_ARG_BOOL(struct autosa_options, use_local_memory, 0, "local-memory", 1,
@@ -227,10 +231,10 @@ ISL_ARG_BOOL(struct ppcg_options, linearize_device_arrays, 0,
 //ISL_ARG_BOOL(struct ppcg_options, allow_gnu_extensions, 0,
 //			 "allow-gnu-extensions", 1,
 //			 "allow the use of GNU extensions in generated code")
-//ISL_ARG_BOOL(struct ppcg_options, live_range_reordering, 0,
-//			 "live-range-reordering", 1,
-//			 "allow successive live ranges on the same memory element "
-//			 "to be reordered")
+ISL_ARG_BOOL(struct ppcg_options, live_range_reordering, 0,
+			 "live-range-reordering", 0,
+			 "allow successive live ranges on the same memory element "
+			 "to be reordered")
 //ISL_ARG_BOOL(struct ppcg_options, hybrid, 0, "hybrid", 0,
 //			 "apply hybrid tiling whenever a suitable input pattern is found "
 //			 "(GPU targets)")

@@ -119,6 +119,10 @@ extern "C"
 		/* Explore loop permutation in the array partitioning. */
 		int explore_loop_permute;
 		int loop_permute_order;
+		/* Parameter names */
+		char *param_names;
+		/* Lowering if-branch in inter-trans I/O module. */
+		int lower_if_branch;
 	};	
 
 	struct ppcg_options

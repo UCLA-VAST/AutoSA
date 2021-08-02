@@ -96,9 +96,22 @@ class TPParameter: public TPExpr {
             type = "param";        
             tune = false;
             split_by = NULL;
-        }     
+        }
+        TPParameter(std::string n_prefix, int cnt) {
+            if (cnt == 0) {
+                name = n_prefix;
+            } else {
+                /* Tiling factors. */
+                name = n_prefix + "_t" + std::to_string(cnt);
+            }
+            name_prefix = n_prefix;
+            type = "param";        
+            tune = false;
+            split_by = NULL;
+        }
         TPParameter(TPParameter *p) {
             name = p->name;
+            name_prefix = p->name_prefix;
             type = p->type;            
             tune = p->tune;
             attr = p->attr;                        
@@ -108,6 +121,7 @@ class TPParameter: public TPExpr {
         std::string to_str();
 
         std::string name;
+        std::string name_prefix;
         std::string type;        
         std::vector<std::shared_ptr<TPExpr>> bounds;        
         bool tune;
@@ -179,13 +193,14 @@ class TPArray {
 
 class TPArrayTile {
     public:
-        TPArrayTile(){data_pack_factor = NULL;}
+        TPArrayTile(){data_pack_factor_inter = NULL; data_pack_factor_intra = NULL;}
         std::string name;
         std::string type;
         int ele_size; 
         std::vector<TPExpr *> lbs;
         std::vector<TPExpr *> sizes;
-        TPParameter *data_pack_factor;
+        TPParameter *data_pack_factor_inter;
+        std::shared_ptr<TPExpr> data_pack_factor_intra;
         std::shared_ptr<TPExpr> compute_size();
         ~TPArrayTile() {
             for (auto lb : lbs) {
@@ -210,15 +225,20 @@ class TuningProgram {
         __isl_give isl_schedule *generate_io_tuning_schedule(__isl_take isl_schedule *schedule, int io_level);
         void extract_module_loop_info(std::string name, std::vector<isl_ast_node *> &tree);
         std::shared_ptr<TPExpr> extract_module_num(isl_ast_node *tree);
+        //std::shared_ptr<TPExpr> extract_io_module_num(isl_ast_node *tree, int io_level);
+        std::vector<std::shared_ptr<TPExpr>> extract_module_dims(isl_ast_node *tree);
+        std::vector<std::shared_ptr<TPExpr>> extract_module_dims_io(isl_ast_node *tree, int io_level);
         void extract_module_memory_info(std::string name, int double_buffer, TPArrayTile *tile, std::vector<isl_ast_node *> &tree);
         void extract_module_compute_info(std::string name, std::string arr_type, isl_ast_node *tree);
-        void extract_module_attr(std::string name, int double_buffer, int in, int io, int to_dram, int serialize);
+        void extract_module_io_info(std::string name, int io_level, std::vector<isl_ast_node *> &tree);
+        void extract_module_attr(std::string name, int double_buffer, int in, int io, int to_dram, int serialize, int to_pe, int filter);
         std::shared_ptr<TPArrayRef> build_array_ref(std::string name, __isl_keep isl_map *ref, __isl_keep isl_schedule *);
         void update_tiled_arrays(TPIterator *tile_iter, TPIterator *point_iter, TPParameter *tile_factor);
         TPArrayTile *infer_tiled_array_bounds(TPArrayTile *tile, std::vector<std::shared_ptr<TPArrayRef>> refs, std::vector<TPIterator *> fixed_iters);
         std::vector<TPExpr *> infer_tiled_array_bound_at_dim(int dim, std::vector<std::shared_ptr<TPArrayRef>> refs, std::vector<TPIterator *> fixed_iters);
         TPExpr *infer_array_index_lb(TPExpr *, std::vector<TPIterator *> fixed_iters);
         TPExpr *infer_array_index_ub(TPExpr *, std::vector<TPIterator *> fixed_iters);
+        void load_param_names(char *path);
 
         std::vector<TPIterator *> iters;        
         std::vector<TPParameter *> params;                
@@ -232,7 +252,10 @@ class TuningProgram {
         std::unordered_map<std::string, std::shared_ptr<json>> module_loop_info;        
         std::unordered_map<std::string, std::shared_ptr<json>> module_memory_info;
         std::unordered_map<std::string, std::shared_ptr<json>> module_compute_info;
+        std::unordered_map<std::string, std::shared_ptr<json>> module_io_info;
         std::unordered_map<std::string, std::shared_ptr<json>> module_attr;
+        std::vector<std::string> param_names;
+        std::unordered_map<std::string, int> param_names_cnt;
 
         ~TuningProgram() {                        
             for (int i = 0; i < iters.size(); i++)

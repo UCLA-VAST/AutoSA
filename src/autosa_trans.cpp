@@ -91,7 +91,7 @@ static cJSON *load_tuning_config(char *config_file)
  */
 struct autosa_kernel **sa_space_time_transform_at_dim_async(
     __isl_keep isl_schedule *schedule, struct ppcg_scop *scop,
-    isl_size dim, isl_size *num_sa)
+    isl_size dim, isl_size *num_sa, isl_size num_sa_offset)
 {
     struct autosa_kernel **sas = NULL;
 
@@ -138,7 +138,9 @@ struct autosa_kernel **sa_space_time_transform_at_dim_async(
         {
             if (is_space_loop[i])
             {                  
-                TuningProgram *tuning_program = new TuningProgram;
+                TuningProgram *tuning_program = new TuningProgram;      
+                tuning_program->id = *num_sa + num_sa_offset;
+                tuning_program->load_param_names(scop->options->autosa->param_names);
                 isl_schedule *new_schedule = isl_schedule_dup(schedule);
                 new_schedule = tuning_program->init_from_schedule(new_schedule);
                 isl_schedule_node *band = get_outermost_permutable_node(new_schedule);
@@ -183,25 +185,21 @@ struct autosa_kernel **sa_space_time_transform_at_dim_async(
                 {
                     if (is_space_loop[j])
                     {
-                        TuningProgram *tuning_program = new TuningProgram;
+                        TuningProgram *tuning_program = new TuningProgram;                        
+                        tuning_program->id = *num_sa + num_sa_offset;
+                        tuning_program->load_param_names(scop->options->autosa->param_names);                        
                         isl_schedule *new_schedule = isl_schedule_dup(schedule);
-                        new_schedule = tuning_program->init_from_schedule(new_schedule); // TODO
-                        isl_schedule_node *band = get_outermost_permutable_node(new_schedule);
+                        new_schedule = tuning_program->init_from_schedule(new_schedule);
+                        isl_schedule_node *band = get_outermost_permutable_node(new_schedule);                        
                         isl_schedule_free(new_schedule);
 
                         /* Make the loop i, j the outermost loops. */
                         for (int d = j; d > 0; d--)
-                        {
-                            //isl_schedule_node *band = get_outermost_permutable_node(new_schedule);
-                            //isl_schedule_free(new_schedule);
-                            //new_schedule = loop_interchange_at_node(band, d, d - 1);
+                        {                            
                             band = loop_interchange_at_node(band, d, d - 1);
                         }
                         for (int d = i + 1; d > 0; d--)
-                        {
-                            //isl_schedule_node *band = get_outermost_permutable_node(new_schedule);
-                            //isl_schedule_free(new_schedule);
-                            //new_schedule = loop_interchange_at_node(band, d, d - 1);
+                        {                         
                             band = loop_interchange_at_node(band, d, d - 1);
                         }
                         new_schedule = isl_schedule_node_get_schedule(band);
@@ -218,7 +216,7 @@ struct autosa_kernel **sa_space_time_transform_at_dim_async(
                         sa->space_w = dim;
                         // TODO: incorrect, to fix.
                         sa->time_w = band_w - dim;
-                        sa->tuning_program = tuning_program;                          
+                        sa->tuning_program = tuning_program;
 
                         /* Add the new variant into the list. */
                         sas = (struct autosa_kernel **)realloc(sas, (*num_sa + 1) *
@@ -244,32 +242,25 @@ struct autosa_kernel **sa_space_time_transform_at_dim_async(
                         {
                             if (is_space_loop[k])
                             {
-                                TuningProgram *tuning_program = new TuningProgram;
+                                TuningProgram *tuning_program = new TuningProgram;                                
+                                tuning_program->id = *num_sa + num_sa_offset;
+                                tuning_program->load_param_names(scop->options->autosa->param_names);                                
                                 isl_schedule *new_schedule = isl_schedule_dup(schedule);
-                                new_schedule = tuning_program->init_from_schedule(new_schedule); // TODO
+                                new_schedule = tuning_program->init_from_schedule(new_schedule);
                                 isl_schedule_node *band = get_outermost_permutable_node(new_schedule);
                                 isl_schedule_free(new_schedule);
 
                                 /* Make the loop i, j, k the outermost loops. */
                                 for (int d = k; d > 0; d--)
-                                {
-                                    //isl_schedule_node *band = get_outermost_permutable_node(new_schedule);
-                                    //isl_schedule_free(new_schedule);
-                                    //new_schedule = loop_interchange_at_node(band, d, d - 1);
+                                {                                    
                                     band = loop_interchange_at_node(band, d, d - 1);
                                 }
                                 for (int d = j + 1; d > 0; d--)
-                                {
-                                    //isl_schedule_node *band = get_outermost_permutable_node(new_schedule);
-                                    //isl_schedule_free(new_schedule);
-                                    //new_schedule = loop_interchange_at_node(band, d, d - 1);
+                                {                                    
                                     band = loop_interchange_at_node(band, d, d - 1);
                                 }
                                 for (int d = i + 2; d > 0; d--)
-                                {
-                                    //isl_schedule_node *band = get_outermost_permutable_node(new_schedule);
-                                    //isl_schedule_free(new_schedule);
-                                    //new_schedule = loop_interchange_at_node(band, d, d - 1);
+                                {                                 
                                     band = loop_interchange_at_node(band, d, d - 1);
                                 }
                                 new_schedule = isl_schedule_node_get_schedule(band);
@@ -535,11 +526,11 @@ struct autosa_kernel **sa_space_time_transform_at_dim_sync(
  */
 struct autosa_kernel **sa_space_time_transform_at_dim(
     __isl_keep isl_schedule *schedule, struct ppcg_scop *scop,
-    isl_size dim, isl_size *num_sa)
+    isl_size dim, isl_size *num_sa, isl_size num_sa_offset)
 {
     if (scop->options->autosa->sa_type == AUTOSA_SA_TYPE_ASYNC)
     {
-        return sa_space_time_transform_at_dim_async(schedule, scop, dim, num_sa);
+        return sa_space_time_transform_at_dim_async(schedule, scop, dim, num_sa, num_sa_offset);
     }
     else if (scop->options->autosa->sa_type == AUTOSA_SA_TYPE_SYNC)
     {
@@ -572,7 +563,7 @@ struct autosa_kernel **sa_space_time_transform(__isl_take isl_schedule *schedule
         }
         isl_size n_sa_dim = 0;
         struct autosa_kernel **sa_dim_list = sa_space_time_transform_at_dim(
-            schedule, scop, 1, &n_sa_dim);
+            schedule, scop, 1, &n_sa_dim, n_sa);
         if (scop->options->autosa->verbose)
         {
             printf("[AutoSA] %d candidates generated.\n", n_sa_dim);
@@ -582,8 +573,7 @@ struct autosa_kernel **sa_space_time_transform(__isl_take isl_schedule *schedule
         for (int i = 0; i < n_sa_dim; i++)
         {
             sa_list[n_sa + i] = sa_dim_list[i];
-            sa_list[n_sa + i]->space_time_id = n_sa + i;
-            sa_list[n_sa + i]->tuning_program->id = n_sa + i;
+            sa_list[n_sa + i]->space_time_id = n_sa + i;            
         }
         free(sa_dim_list);
         n_sa += n_sa_dim;
@@ -597,7 +587,7 @@ struct autosa_kernel **sa_space_time_transform(__isl_take isl_schedule *schedule
         }
         isl_size n_sa_dim = 0;
         struct autosa_kernel **sa_dim_list = sa_space_time_transform_at_dim(
-            schedule, scop, 2, &n_sa_dim);
+            schedule, scop, 2, &n_sa_dim, n_sa);
         if (scop->options->autosa->verbose)
         {
             printf("[AutoSA] %d candidates generated.\n", n_sa_dim);
@@ -607,8 +597,7 @@ struct autosa_kernel **sa_space_time_transform(__isl_take isl_schedule *schedule
         for (int i = 0; i < n_sa_dim; i++)
         {
             sa_list[n_sa + i] = sa_dim_list[i];
-            sa_list[n_sa + i]->space_time_id = n_sa + i;
-            sa_list[n_sa + i]->tuning_program->id = n_sa + i;
+            sa_list[n_sa + i]->space_time_id = n_sa + i;            
         }
         free(sa_dim_list);
         n_sa += n_sa_dim;
@@ -622,7 +611,7 @@ struct autosa_kernel **sa_space_time_transform(__isl_take isl_schedule *schedule
         }
         isl_size n_sa_dim = 0;
         struct autosa_kernel **sa_dim_list = sa_space_time_transform_at_dim(
-            schedule, scop, 3, &n_sa_dim);
+            schedule, scop, 3, &n_sa_dim, n_sa);
         if (scop->options->autosa->verbose)
         {
             printf("[AutoSA] %d candidates generated.\n", n_sa_dim);
@@ -632,8 +621,7 @@ struct autosa_kernel **sa_space_time_transform(__isl_take isl_schedule *schedule
         for (int i = 0; i < n_sa_dim; i++)
         {
             sa_list[n_sa + i] = sa_dim_list[i];
-            sa_list[n_sa + i]->space_time_id = n_sa + i;
-            sa_list[n_sa + i]->tuning_program->id = n_sa + i;
+            sa_list[n_sa + i]->space_time_id = n_sa + i;            
         }
         free(sa_dim_list);
         n_sa += n_sa_dim;
@@ -904,7 +892,6 @@ struct autosa_kernel *sa_candidates_manual_pick(struct autosa_kernel **sa_list,
                                                 isl_size num_sa, int sa_id)
 {
     struct autosa_kernel *sa_opt = sa_list[sa_id];
-    //struct autosa_kernel *sa_opt = autosa_kernel_copy(sa_list[sa_id]);
 
     for (int i = 0; i < num_sa; i++) {        
         if (sa_id == i)
@@ -935,6 +922,7 @@ static struct autosa_kernel *autosa_kernel_create_local_arrays(
     ctx = isl_set_get_ctx(prog->context);
     //kernel->array = isl_calloc_array(ctx,
     //                                 struct autosa_local_array_info, prog->n_array);
+    /* Initialize local_array_info */
     kernel->array = new autosa_local_array_info[prog->n_array];
     if (!kernel->array)
         return (struct autosa_kernel *)autosa_kernel_free(kernel);
@@ -956,6 +944,7 @@ static struct autosa_kernel *autosa_kernel_create_local_arrays(
         kernel->array[i].compress_ratio = 0.0f;
         kernel->array[i].n_meta_data = 0;
         kernel->array[i].eff_compress_ratio = 0.0f;
+        kernel->array[i].global = 0;
     }
 
     return kernel;
@@ -1085,6 +1074,7 @@ static isl_stat sa_io_update(struct autosa_kernel *sa)
     for (int i = 0; i < sa->n_array; i++)
     {
         local_array = &sa->array[i];
+        local_array->array_type = AUTOSA_UNKNOWN_ARRAY;
         for (int j = 0; j < local_array->array->n_ref; j++)
         {
             struct autosa_stmt_access *access = local_array->array->refs[j];
@@ -1312,7 +1302,7 @@ isl_stat sa_array_partitioning_optimize(struct autosa_kernel *sa,
         }
     }
         
-    sa->array_part_w = tile_len;    
+    sa->array_part_w = tile_len;
     node = autosa_tile_band(node, tile_size);
     if (sa->scop->options->autosa->tuning_method == 1)
         node = sa->tuning_program->tile(node, 0, "array_part");
@@ -1322,7 +1312,7 @@ isl_stat sa_array_partitioning_optimize(struct autosa_kernel *sa,
     extract_sa_dims_from_node(node, sa->sa_dim, sa->n_sa_dim);    
     node = isl_schedule_node_parent(node);
 
-    /* Reorder the array part loops based on the dependence distance. */
+    /* Reorder the array part loops based on the dependence distance. */    
     node = reorder_band_by_dep_dis(node);
 
     /* Add the array marker */
@@ -1766,7 +1756,7 @@ static __isl_give isl_schedule_node *autosa_latency_tile_band_loop(
     n = isl_schedule_node_band_n_member(node);
     int i;
     int reverse_visit = 0;
-
+    
     if (data->sa->options->autosa->reverse_order) {        
         if (data->sa->options->autosa->isl_sink) {
             i = n - 1;
@@ -1778,10 +1768,10 @@ static __isl_give isl_schedule_node *autosa_latency_tile_band_loop(
     } else {
         if (data->sa->options->autosa->isl_sink) {            
             i = 0;
-            reverse_visit = 0;            
+            reverse_visit = 0;   
         } else {            
             i = n - 1;
-            reverse_visit = 1;
+            reverse_visit = 1;            
         }
     }
 
@@ -3096,7 +3086,7 @@ isl_stat compute_management(
     struct autosa_gen *gen,
     struct autosa_kernel *sa, bool pass_en[], char *pass_mode[])
 {
-    printf("[AutoSA] Appy compute management.\n");
+    printf("[AutoSA] Apply compute management.\n");    
 
     /* Prepartion before the optimization. */
     /* Initialize the autosa_loop_types. */
@@ -3109,12 +3099,13 @@ isl_stat compute_management(
     /* If any of the space dimensions are not parallel, 
      * check if local_reduce is enabled, otherwise error out.
      */
-    for (int i = 0; i < sa->n_sa_dim; i++) {
-        //std::cout << sa->space_parallel[i] << std::endl;
-        if (sa->space_parallel[i] == 0 && !gen->options->autosa->local_reduce) {
-            throw std::runtime_error("[AutoSA] Error: Detected non-parallel space loops which is not supported unless local-reduce is specified.");
-        }
-    }
+    //if (gen->options->autosa->tuning_method != 1) {
+    //    for (int i = 0; i < sa->n_sa_dim; i++) {        
+    //        if (sa->space_parallel[i] == 0 && !gen->options->autosa->local_reduce) {
+    //            throw std::runtime_error("[AutoSA] Error: Detected non-parallel space loops which is not supported unless local-reduce is specified.");
+    //        }
+    //    }
+    //}
 
     /* Extract the tile sizes. */
     sa->sizes = extract_sizes_from_str(sa->ctx, sa->scop->options->autosa->sa_sizes);
@@ -3658,8 +3649,8 @@ static __isl_give isl_schedule_node *compute_and_comm_optimize(
     }
     
     /* Update the array information */
-    TP_extract_array_info(gen, kernel);
-    kernel = optimize_single_array(kernel, gen);    
+    TP_extract_array_info(gen, kernel);    
+    kernel = optimize_single_array(kernel, gen);
     gen->tuning_progs.push_back(kernel->tuning_program);
 
     if (kernel) {
@@ -4193,7 +4184,7 @@ static __isl_give isl_printer *generate(__isl_take isl_printer *p,
 
     gen->prog = prog;
     /* Scheduling */
-    schedule = get_schedule(gen);
+    schedule = get_schedule(gen);    
 
     /* The current ISL scheduler is limited and sometimes can't find the 
      * fully permutable loop band correctly.
@@ -4201,6 +4192,7 @@ static __isl_give isl_printer *generate(__isl_take isl_printer *p,
      * outer band as much as possible.
      */    
     schedule = merge_outer_bands(schedule, gen);    
+    //DBGSCHD(stdout, schedule, isl_schedule_get_ctx(schedule));
 
     /* Legality check */
     isl_bool is_legal = sa_legality_check(schedule, scop);

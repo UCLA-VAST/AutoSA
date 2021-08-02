@@ -88,8 +88,8 @@ if __name__ == "__main__":
         search_record = utils.SearchRecord().reset()
         #for design in [designs[4]]:
         for design in designs:
-            search_task = SearchTask(design , task)
-            record = tuner.genetic_search(search_task, cst, search_obj, logger, max_epochs, max_time)            
+            search_task = SearchTask(design, task)
+            record = tuner.genetic_search(search_task, cst, search_obj, logger, max_epochs, max_time)
             all_records.append(record)
             search_record.update(record)
         task["search results"] = search_record

@@ -1433,9 +1433,9 @@ __isl_give isl_printer *print_module_arguments(
     }
   }
   else {
-    for (int i = 0; i < module->n_io_group; i++) {
-      //if (!module->to_mem && inter != 0) {
-      if (inter == 1 || (inter == -1 && !module->to_mem)) {
+    for (int i = 0; i < module->n_io_group; i++) {      
+      //if (inter == 1 || (inter == -1 && !module->to_mem)) {
+      if (!module->to_mem && (inter == 1 || inter == -1)) {
         /* inter trans or outer module or default module. */
         if (!(!module->in && boundary)) {
           /* Print in fifo. */
@@ -5072,7 +5072,7 @@ static __isl_give isl_printer *autosa_kernel_print_io_transfer(
     p = io_stmt_print_global_index(p, stmt, stmt->u.i.serialize);
     p = isl_printer_print_str(p, ";");
     p = isl_printer_end_line(p);
-  } else if (in == LOCAL_BUF) {
+  } else if (in == LOCAL_BUF) {    
     /* in_data = local_buf[]; */
     p = isl_printer_start_line(p);   
     p = isl_printer_print_str(p, "in_data = ");
@@ -5111,11 +5111,11 @@ static __isl_give isl_printer *autosa_kernel_print_io_transfer(
     }
     
     p = isl_printer_print_str(p, ";");
-    p = isl_printer_end_line(p);    
+    p = isl_printer_end_line(p);
   } else if (in == FIFO) {
     char *fifo_in_name;
     fifo_in_name = concat(ctx, stmt->u.i.in_fifo_name, in_fifo_suffix);        
-
+    
     /* in_data = fifo_in.read(); */
     p = isl_printer_start_line(p);  
     p = isl_printer_print_str(p, "in_data = ");

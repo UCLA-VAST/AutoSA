@@ -514,7 +514,7 @@ static __isl_give isl_printer *declare_and_allocate_device_arrays_xilinx(
     if (!autosa_array_requires_device_allocation(local_array->array))
       continue;
 
-    if (local_array->n_mem_ports > 1 && local_array->array->copy_out)
+    if (local_array->n_mem_ports > 1 && local_array->array->copy_in)
     {
       /* Create multiple host buffers. */
       p = isl_printer_start_line(p);

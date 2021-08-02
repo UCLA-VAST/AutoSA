@@ -697,12 +697,14 @@ static isl_stat extract_array_info(struct autosa_prog *prog,
   info->declare_local = 0;
   info->dep_order = NULL;
   info->declared_size = NULL;
+  info->global = 0;
+  info->bound_expr = NULL;
 
   /* AutoSA Extended */
   info->n_lane = 0;
   info->local_array = NULL;
   info->copy_in = 0;
-  info->copy_out = 0;
+  info->copy_out = 0;  
   /* AutoSA Extended */
 
   return isl_stat_ok;
@@ -2876,16 +2878,16 @@ isl_stat TP_extract_module_attr(struct autosa_gen *gen, struct autosa_hw_module 
   gen->kernel->tuning_program->extract_module_attr(      
       std::string(module->name), module->double_buffer, module->in, 
       (module->type == IO_MODULE || module->type == DRAIN_MODULE)? 1 : 0,
-      module->to_mem, module->is_serialized);
+      module->to_mem, module->is_serialized, module->to_pe, module->is_filter);
   if (module->is_filter && module->is_buffer) {
     gen->kernel->tuning_program->extract_module_attr(
       std::string(module->name) + std::string("_inter"),  module->double_buffer, module->in, 
       (module->type == IO_MODULE || module->type == DRAIN_MODULE)? 1 : 0,
-      module->to_mem, module->is_serialized);
+      module->to_mem, module->is_serialized, module->to_pe, module->is_filter);
     gen->kernel->tuning_program->extract_module_attr(
       std::string(module->name) + std::string("_intra"), module->double_buffer, module->in, 
       (module->type == IO_MODULE || module->type == DRAIN_MODULE)? 1 : 0,
-      module->to_mem, module->is_serialized);  
+      module->to_mem, module->is_serialized, module->to_pe, module->is_filter);  
   }
 
   return isl_stat_ok;
@@ -2895,7 +2897,7 @@ isl_stat TP_extract_module_attr(struct autosa_gen *gen, struct autosa_hw_module 
  * resource estimation in the auto-tuner.
  */
 isl_stat TP_extract_resource_info(struct autosa_gen *gen, struct autosa_hw_module *module) {
-  /* BRAM */
+  /* memory */
   //std::cout << module->name << ": " << module->is_buffer << std::endl;
   if ((module->type == IO_MODULE || module->type == DRAIN_MODULE) && module->is_buffer) {    
     int double_buffer = module->double_buffer;
@@ -2915,26 +2917,43 @@ isl_stat TP_extract_resource_info(struct autosa_gen *gen, struct autosa_hw_modul
         }
       }
     }    
-  } else if (module->type == PE_MODULE) {
-    for (int i = 0; i < gen->kernel->n_array; i++) {
-      struct autosa_local_array_info *array = &(gen->kernel->array[i]);
-      for (int j = 0; j < array->n_pe_group; j++) {
-        struct autosa_array_ref_group *group = array->pe_groups[j];
-        if (group->tuning_local_tile) {
-          std::vector<isl_ast_node *> asts;
-          asts.push_back(module->tuning_num_device_tree);
-          gen->kernel->tuning_program->extract_module_memory_info(
-              std::string(module->name), 0, group->tuning_local_tile, asts);
+  } else if (module->type == PE_MODULE) {    
+    //if (!((gen->kernel->options->autosa->local_reduce && gen->kernel->options->autosa->array_contraction) ||         
+    //      (gen->kernel->options->autosa->tuning_method == 1 && gen->kernel->options->autosa->array_contraction))) {
+      for (int i = 0; i < gen->kernel->n_array; i++) {
+        struct autosa_local_array_info *array = &(gen->kernel->array[i]);
+        for (int j = 0; j < array->n_pe_group; j++) {
+          struct autosa_array_ref_group *group = array->pe_groups[j];
+          if (group->tuning_local_tile) {
+            std::vector<isl_ast_node *> asts;
+            asts.push_back(module->tuning_num_device_tree);
+            gen->kernel->tuning_program->extract_module_memory_info(
+                std::string(module->name), 0, group->tuning_local_tile, asts);
+          }
         }
       }
-    }
+    //}    
   }
 
-  /* DSP */
+  /* compute */
   if (module->type == PE_MODULE) {
     std::string ele_type = std::string(module->io_groups[0]->array->type);
     gen->kernel->tuning_program->extract_module_compute_info(
         std::string(module->name), ele_type, module->tuning_num_device_tree);
+  }  
+
+  /* io */
+  if ((module->type == IO_MODULE || module->type == DRAIN_MODULE)) {    
+    struct autosa_array_ref_group *group = module->io_groups[0];
+    std::vector<isl_ast_node *> asts;
+    if (module->is_filter) {
+      asts.push_back(module->tuning_num_device_tree);
+      asts.push_back(module->tuning_num_inter_tree);         
+    } else {
+      asts.push_back(module->tuning_num_device_tree);      
+    }
+    gen->kernel->tuning_program->extract_module_io_info(
+      std::string(module->name), module->level, asts);
   }
 
   return isl_stat_ok;
@@ -3048,36 +3067,6 @@ int extract_memory_type(struct autosa_hw_module *module,
     bram_util = (float)var_size / 1024;
   else
     bram_util = (float)var_size / 512;
-
-  //if (module->type == PE_MODULE) {
-  //  if (var->n_lane == 1 && var_size <= 32)
-  //    use_memory = 0;
-  //  else
-  //    use_memory = 2;    
-  //} else if (module->type != PE_MODULE && module->level == 1) {
-  //  if (var->n_lane == 1 && var_size <= 32)
-  //    use_memory = 0;
-  //  else {
-  //    //use_memory = 2;
-  //    if (bram_util > 0.2)
-  //      use_memory = 2;
-  //    else
-  //      use_memory = 0;      
-  //  }      
-  //} else {
-  //  if (module->to_mem == 1) {
-  //    if (uram)
-  //      use_memory = 3;
-  //    else
-  //      use_memory = 2;
-  //  } else {
-  //    if (bram_util > 0.2)
-  //      use_memory = 2;
-  //    else
-  //      use_memory = 0;
-  //      //use_memory = 1;        
-  //  }
-  //}
   
   if (module->type != PE_MODULE && module->to_mem == 1) {
     if (uram)
@@ -3085,14 +3074,18 @@ int extract_memory_type(struct autosa_hw_module *module,
     else
       use_memory = 2;
   } else {    
-    if (module->type == IO_MODULE && module->level == 1) {          
-      use_memory = 1;      
-    } else {
-      if (var->n_lane == 1 && var_size <= 64)
+    //if (module->type == IO_MODULE && module->level == 1) {          
+    //  use_memory = 1;      
+    //} else {
+    //  if (var->n_lane == 1 && var_size <= 8)
+    //    use_memory = 0;
+    //  else
+    //    use_memory = 2;    
+    //}    
+    if (var->n_lane == 1 && var_size <= 8)
         use_memory = 0;
       else
         use_memory = 2;
-    }    
   }  
 
   if (use_memory == 0) 

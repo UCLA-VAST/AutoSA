@@ -1103,6 +1103,7 @@ static isl_stat build_rar_dep(__isl_take isl_map *map, void *user) {
       }
 	  //DBGVEC(stdout, sol, isl_vec_get_ctx(sol));
       tagged_dep_rar = construct_dep_rar(sol, map);
+//	  DBGMAP(stdout, tagged_dep_rar, isl_map_get_ctx(tagged_dep_rar));
       isl_vec_free(sol);      
 
 	  /* Test if the dependence is empty. In such case, we will build an identity map 

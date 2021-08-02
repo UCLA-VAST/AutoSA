@@ -11,6 +11,8 @@ import concurrent.futures
 import queue
 
 def factorization(x):
+    if x == 0:
+        raise RuntimeError(f"Factorization of 0")
     prime_factors = []
     while x % 2 == 0:
         prime_factors.append(2)

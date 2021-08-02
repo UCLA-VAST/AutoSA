@@ -5,6 +5,7 @@
 
 int autosa_tree_node_is_kernel(__isl_keep isl_schedule_node *node);
 int autosa_tree_node_is_mark(__isl_keep isl_schedule_node *node, const char *mark);
+isl_bool isl_schedule_node_is_io_mark(__isl_keep isl_schedule_node *node, int io_level);
 
 __isl_give isl_schedule_node *autosa_tree_move_down_to_depth(
     __isl_take isl_schedule_node *node, int depth,

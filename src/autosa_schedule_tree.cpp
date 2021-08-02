@@ -2233,6 +2233,7 @@ static isl_bool is_dep_non_neg_at_node(
   domain = isl_union_set_preimage_union_pw_multi_aff(domain, contraction);
   validity = isl_union_map_intersect_domain(validity, isl_union_set_copy(domain));
   validity = isl_union_map_intersect_range(validity, domain);
+  //DBGUMAP(stdout, validity, isl_schedule_node_get_ctx(node));
 
   partial = isl_schedule_node_band_get_partial_schedule(node);
   contraction = isl_schedule_node_get_subtree_contraction(node);
@@ -2286,6 +2287,7 @@ __isl_give isl_schedule *merge_outer_bands(__isl_take isl_schedule *schedule, st
   while (isl_schedule_node_get_type(node) == isl_schedule_node_band) {
     /* Examine if all dependence distances at this band are non-negative */    
     isl_bool nneg = is_dep_non_neg_at_node(node, sc);
+    //std::cout << nneg << std::endl;
     if (nneg) {
       if (is_first_band)
         is_first_band = isl_bool_false;

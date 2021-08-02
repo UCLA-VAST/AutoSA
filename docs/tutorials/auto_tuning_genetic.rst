@@ -26,7 +26,8 @@ format. For the matrix multiplication example, use the following command.
     --simd-info=./autosa_tests/mm/simd_info.json \
     --host-serialize \
     --hls \
-    --tuning-method=1
+    --tuning-method=1 \
+    --param-names=./autosa_tests/mm/param_names.json
 
 Note that we will only need to specify the array to be explored using the argument 
 ``--sa-sizes="{kernel[]->space_time[3]}"``, and we add a new flag ``--tuning-method=1``

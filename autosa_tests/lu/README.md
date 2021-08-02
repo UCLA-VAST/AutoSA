@@ -15,7 +15,7 @@ autosa_tests/lu/connectivity.cfg
 
 __Command__:
 ```bash
-./autosa ./autosa_tests/lu/kernel.c --config=./autosa_config/autosa_config.json --target=autosa_hls_c --output-dir=./autosa.tmp/output --sa-sizes="{kernel[]->space_time[3];kernel[]->array_part[-1,-1,-1];kernel[]->latency[]}" --simd-info=./autosa_tests/lu/simd_info.json --use-cplusplus-template --no-reschedule
+./autosa ./autosa_tests/lu/kernel.c --config=./autosa_config/autosa_config.json --target=autosa_hls_c --output-dir=./autosa.tmp/output --sa-sizes="{kernel[]->space_time[3];kernel[]->array_part[-1,-1,-1];kernel[]->latency[]}" --simd-info=./autosa_tests/lu/simd_info.json --use-cplusplus-template --no-reschedule --live-range-reordering
 ```
 
 After compilation, you will find all generated files under the directory `autosa.tmp/output/src`. Copy the `Makefile` and `connectivity.cfg` to the directory `autosa.tmp/output`.

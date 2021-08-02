@@ -8,3 +8,9 @@ typedef float data_t;
 #define R 8
 #define C 8
 #define K 3
+
+//#define O 6
+//#define I 1
+//#define R 5
+//#define C 5
+//#define K 3

@@ -701,7 +701,8 @@ static isl_stat compute_group_bounds_core_pe(struct autosa_kernel *kernel,
                                                  group->array->n_index);
 
     /* Check if array contraction is possible. */
-    if (kernel->options->autosa->local_reduce && kernel->options->autosa->array_contraction) {      
+    if ((kernel->options->autosa->local_reduce && kernel->options->autosa->array_contraction) ||
+       (kernel->options->autosa->tuning_method == 1 && kernel->options->autosa->array_contraction)) {      
       contract_data.group = group;
       contract_data.kernel = kernel;
       contract_data.legal = true;
@@ -711,11 +712,11 @@ static isl_stat compute_group_bounds_core_pe(struct autosa_kernel *kernel,
       node = isl_schedule_get_root(kernel->schedule);
       node = autosa_tree_move_down_to_pe(node, kernel->core);      
       node = isl_schedule_node_map_descendant_bottom_up(node, &check_contraction, &contract_data);
-      isl_schedule_node_free(node);
+      isl_schedule_node_free(node);      
     }
     
     if (contract_data.legal) {
-      /* We are able to create a register tiling. */
+      /* We are able to create a register tiling. */      
       acc = isl_map_from_union_map(isl_union_map_apply_domain(isl_union_map_copy(access), 
                                                               isl_union_map_copy(contract_data.prefix)));
       group->copy_schedule_dim = contract_data.depth;
@@ -2035,7 +2036,8 @@ static isl_stat compute_io_group_schedule(
 
   node = autosa_tree_move_down_to_array(node, kernel->core);
   node = isl_schedule_node_child(node, 0);
-  space_dim = isl_schedule_node_band_n_member(node);
+  //DBGSCHDNODE(stdout, node, isl_schedule_node_get_ctx(node));
+  space_dim = isl_schedule_node_band_n_member(node);  
   group->space_dim = space_dim;
 
   /* Insert the IO_L1 mark. */
@@ -3213,10 +3215,14 @@ static isl_stat compute_io_group_data_pack(struct autosa_kernel *kernel,
   {
     /* Use the default numbers. */
     data_pack_ubs = isl_alloc_array(gen->ctx, int, 3);
-    data_pack_ubs[0] = 8;
-    data_pack_ubs[1] = 32;
+    data_pack_ubs[0] = 16;
+    //data_pack_ubs[1] = 32;
+    data_pack_ubs[1] = 64;
     data_pack_ubs[2] = 64;
   }
+  //std::cout << data_pack_ubs[0] << std::endl;
+  //std::cout << data_pack_ubs[1] << std::endl;
+  //std::cout << data_pack_ubs[2] << std::endl;
 
   /* Examine if any of the array reference in the group is in used by SIMD loop.
    * The default SIMD lane for the group is 1. 
@@ -3236,24 +3242,22 @@ static isl_stat compute_io_group_data_pack(struct autosa_kernel *kernel,
     /* Update the data packing factor */
     for (int i = 0; i < group->io_level; i++) {
       struct autosa_io_buffer *buf = group->io_buffers[i];
-      if (buf->tuning_tile && buf->tuning_tile->data_pack_factor == NULL) {        
+      if (buf->tuning_tile && buf->tuning_tile->data_pack_factor_inter == NULL) {        
+        /* Inter */
         class TPParameter *dp = new TPParameter("p" + std::to_string(kernel->tuning_program->params.size()));
-        //std::cout << "dp_factor: " << dp->to_str() << std::endl;
         dp->tune = false;
         dp->attr = "data_pack_factor";
         dp->tags.insert("auto_infer");
+        dp->tags.insert("power_of_two");
         /* Update the bounds */
         /* lb */
-        if (data.updated == 0) {
-          //dp->bounds.push_back(new TPExpr("literal", new TPConst(1)));
+        if (data.updated == 0) {          
           dp->bounds.push_back(std::make_shared<TPExpr>("literal", new TPConst(1)));
         } else {
           /* Find the SIMD tiling factor */
           for (auto param : kernel->tuning_program->params) {
-            if (param->attr == "SIMD_tiling_factor") {
-              //dp->bounds.push_back(new TPExpr("literal", param->dup()));
+            if (param->attr == "SIMD_tiling_factor") {              
               dp->bounds.push_back(std::make_shared<TPExpr>("literal", param->dup()));
-              //dp->multiples.push_back(new TPExpr("literal", param->dup()));
               dp->multiples.push_back(std::make_shared<TPExpr>("literal", param->dup()));
             }
           }
@@ -3269,14 +3273,25 @@ static isl_stat compute_io_group_data_pack(struct autosa_kernel *kernel,
         TPExpr *ub = buf->tuning_tile->sizes[buf->tuning_tile->sizes.size() - 1]->dup();
         ub = ub->min(new TPExpr("literal", new TPConst(user_max_n_lane)));
         ub = ub->max(dp->bounds[0]->dup());
-        dp->bounds.push_back(std::shared_ptr<TPExpr>(ub));
-        //dp->bounds.push_back(std::shared_ptr<TPExpr>(buf->tuning_tile->sizes[buf->tuning_tile->sizes.size() - 1]->dup()));
+        dp->bounds.push_back(std::shared_ptr<TPExpr>(ub));        
         dp->divisors.push_back(std::shared_ptr<TPExpr>(buf->tuning_tile->sizes[buf->tuning_tile->sizes.size() - 1]->dup()));
         assert(dp->bounds.size() == 2);    
-        buf->tuning_tile->data_pack_factor = dp;        
-        //std::cout << "dp_factor: " << dp->to_str() << std::endl;
+        buf->tuning_tile->data_pack_factor_inter = dp;
         kernel->tuning_program->params.push_back(dp);
         kernel->tuning_program->param_map[dp->name] = dp;
+
+        /* Intra */
+        if (data.updated == 0) {
+          buf->tuning_tile->data_pack_factor_intra = std::make_shared<TPExpr>("literal", new TPConst(1));          
+        } else {
+          /* Find the SIMD tiling factor */
+          for (auto param : kernel->tuning_program->params) {
+            if (param->attr == "SIMD_tiling_factor") {              
+              buf->tuning_tile->data_pack_factor_intra = std::make_shared<TPExpr>("literal", param->dup());              
+            }
+          }
+        }
+
         break;
       }
     }            
@@ -4378,6 +4393,7 @@ static int compute_group_bounds_drain(struct autosa_kernel *kernel,
 static int group_array_references_drain(struct autosa_kernel *kernel,
                                         struct autosa_local_array_info *local, struct autosa_group_data *data)
 {
+  local->drain_group = NULL;
   if (local->array->local)
     return 0;
 
@@ -4690,20 +4706,20 @@ static __isl_give isl_map *next(__isl_take isl_space *domain_space, int pos)
 }
 
 /* This function generates different possible loop orderings for the array partitioning loop band.
- * For I/O groups with external array, we will select the loops that not appear in the 
+ * For I/O groups with external array, we will select the loops that do not appear in the 
  * array indices, and select them as the innermost loop in the generated loop ordering.
  * There are several considerations here.
  * 1. Why consider loop index, but not data dependence?
  * For external groups, we don't handle overlapping reuse. For example, when the 
- * reuse factor is (1,-1). In the next iteration, we will only only part of the data
+ * reuse factor is (1,-1). In the next iteration, we will only load part of the data
  * and reuse some data left in the previous iteration. However, this brings additional 
- * hardware overheads for indexing the new data and rearrange the old data. 
+ * hardware overheads for indexing the new data and rearranging the old data. 
  * Therefore, such overlapping reuse is not considered. In other words, only reuse 
- * vectors that are in the shape of unit vectors are considered. 
+ * vectors that are in the form of unit vectors are considered. 
  * Therefore, we will only look for loop indices not showing the array index.
  * 2. Why put them innermost?
  * Placing reuse loops innermost maximizes the locality and minimizes the data communication.
- * The relative order between reuse loops and non-reuse loops don't matter as overlapped reuse 
+ * The relative order between reuse loops and non-reuse loops doesn't matter as overlapped reuse 
  * is not supported. Therefore, we will only randomly pick one loop order for this group.
  * 
  * For I/O groups with internal array, simply, we choose to examine the array indexs.

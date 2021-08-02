@@ -122,7 +122,8 @@ enum autosa_group_type
 enum autosa_array_type
 {
   AUTOSA_EXT_ARRAY,
-  AUTOSA_INT_ARRAY
+  AUTOSA_INT_ARRAY,
+  AUTOSA_UNKNOWN_ARRAY
 };
 
 enum platform
@@ -1026,6 +1027,7 @@ struct autosa_kernel_stmt
       struct autosa_array_ref_group *group;
       struct autosa_hw_module *module;      
       int simd_depth;
+      int if_depth;
     } i;
     struct
     {
@@ -1211,7 +1213,7 @@ __isl_give isl_schedule_node *autosa_node_interchange_up(
     __isl_take isl_schedule_node *node);
 isl_bool no_permutable_node(__isl_keep isl_schedule_node *node, void *user);
 isl_bool all_parallel_node(__isl_keep isl_schedule_node *node, void *user);
-isl_bool isl_schedule_node_is_io_mark(__isl_keep isl_schedule_node *node, int io_level);
+//isl_bool isl_schedule_node_is_io_mark(__isl_keep isl_schedule_node *node, int io_level);
 int is_node_under_simd(__isl_keep isl_schedule_node *node);
 int is_node_under_latency(__isl_keep isl_schedule_node *node);
 int *extract_band_upper_bounds(__isl_keep isl_schedule_node *node);

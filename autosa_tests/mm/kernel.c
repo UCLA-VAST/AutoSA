@@ -16,7 +16,7 @@ int main(int argc, char **argv) {
 #pragma scop
   for (int i = 0; i < I; i++)
     for (int j = 0; j < J; j++) {
-      C[i][j] = 0;
+      //C[i][j] = 0;
       for (int k = 0; k < K; k++) {        
         C[i][j] = C[i][j] + A[i][k] * B[j][k];
       }

@@ -2,7 +2,7 @@ import json
 import random
 import numpy as np
 import bisect
-from sympy import *
+#from sympy import *
 
 import utils
 

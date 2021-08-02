@@ -24,7 +24,7 @@ int main(int argc, char **argv){
   for (int o = 0; o < O; o++)
     for (int r = 0; r < R; r++)
       for (int c = 0; c < C; c++) {
-        cout[r][c][o] = 0;
+        //cout[r][c][o] = 0;
         for (int i = 0; i < I; i++)
           for (int p = 0; p < K; p++)
             for (int q = 0; q < K; q++) {
