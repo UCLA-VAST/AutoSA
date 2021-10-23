@@ -1434,8 +1434,8 @@ __isl_give isl_printer *print_module_arguments(
   }
   else {
     for (int i = 0; i < module->n_io_group; i++) {      
-      //if (inter == 1 || (inter == -1 && !module->to_mem)) {
-      if (!module->to_mem && (inter == 1 || inter == -1)) {
+      if (inter == 1 || (inter == -1 && !module->to_mem)) {
+      //if (!module->to_mem && (inter == 1 || inter == -1)) {
         /* inter trans or outer module or default module. */
         if (!(!module->in && boundary)) {
           /* Print in fifo. */

@@ -22,7 +22,6 @@ if __name__ == "__main__":
     # Parse and update the arguments
     n_arg = len(sys.argv)
     argv = sys.argv
-    argv[0] = './src/autosa'
     tuning_idx = -1
     insert_isl_flag = True
     assign_loop_permute = False
@@ -56,7 +55,12 @@ if __name__ == "__main__":
         for arg in argv:
             if '--hcl' in arg:
                 hcl = True    
-    
+   
+    # Cache the AutoSA command
+    autosa_cmd = ' '.join(argv)
+    exec_sys_cmd(f'echo "{autosa_cmd}" > {output_dir}/src/cmd')
+
+    argv[0] = './src/autosa'
     if insert_isl_flag:
         argv.append(isl_flag)
 

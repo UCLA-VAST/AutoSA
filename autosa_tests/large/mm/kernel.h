@@ -8,9 +8,13 @@ typedef int data_t;
 //#define J 1024
 //#define K 1024
 
-#define I 1040
-#define J 1024
-#define K 1024
+//#define I 1040
+//#define J 1024
+//#define K 1024
+
+#define I 208
+#define J 512
+#define K 256
 
 //#define I 1032
 //#define J 1024
