@@ -1342,6 +1342,50 @@ def intel_run(
         module_calls,
         fifo_decls)
 
+
+def tapa_run(
+        kernel_call,
+        kernel_def,
+        kernel='autosa.tmp/output/src/kernel_kernel.cpp'):
+    """ Generate the kernel file for TAPA platform
+
+    We will copy the content of kernel definitions before the kernel calls.
+
+    Parameters
+    ----------
+    kernel_call:
+        file containing kernel calls
+    kernel_def:
+        file containing kernel definitions
+    """
+
+    # Load kernel definition file
+    lines = []
+    with open(kernel_def, 'r') as f:
+        lines = f.readlines()
+    call_lines = []
+    with open(kernel_call, 'r') as f:
+        call_lines = f.readlines()
+
+    # Simplify the expressions
+    lines = simplify_expressions(lines)
+
+    # Change the loop iterator type
+    lines = shrink_bit_width(lines, 'xilinx')
+
+    # Insert the HLS pragmas
+    lines = insert_xlnx_pragmas(lines)
+
+    # Lift the split_buffers
+    lines = lift_split_buffers(lines)
+
+    kernel = str(kernel)
+    print("Please find the generated file: " + kernel)
+
+    with open(kernel, 'w') as f:
+        f.writelines(lines)
+        f.writelines(call_lines)
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='==== AutoSA CodeGen ====')
     parser.add_argument(
@@ -1391,5 +1435,7 @@ if __name__ == "__main__":
         intel_run(args.kernel_call, args.kernel_def, args.output, args.hcl)
     elif args.target == 'autosa_hls_c':
         xilinx_run(args.kernel_call, args.kernel_def, args.output, args.host, args.hcl)
+    elif args.target == 'autosa_tapa':
+        tapa_run(args.kernel_call, args.kernel_def, args.output)
     elif args.target == 'autosa_catapult_c':
         catapult_run(args.kernel_call, args.kernel_def, args.tb, args.output, args.host)

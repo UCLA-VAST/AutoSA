@@ -130,7 +130,8 @@ enum platform
 {
   INTEL_HW,
   XILINX_HW,
-  CATAPULT_HW
+  CATAPULT_HW,
+  TAPA_HW
 };
 
 struct autosa_dep
