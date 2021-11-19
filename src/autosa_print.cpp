@@ -7823,7 +7823,7 @@ __isl_give isl_printer *print_module_serialize_body(
           /* fifo_data = tapa::truncated<begin, end>(mem_data); */
           p = isl_printer_start_line(p);
           if (data_pack_out == 1) {
-            p = print_str_new_line(p, "fifo_data = memdata[p];");
+            p = print_str_new_line(p, "fifo_data = mem_data[p];");
           } else {
             p = isl_printer_print_str(p, "fifo_data = tapa::truncated<");
             p = isl_printer_print_int(p, data_pack_out);

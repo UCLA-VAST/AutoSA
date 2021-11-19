@@ -124,7 +124,7 @@ if __name__ == "__main__":
 
     if not tuning:
         # Generate the final code    
-        if target == 'autosa_hls_c':
+        if target == 'autosa_hls_c' or target == 'autosa_tapa':
             cmd = './autosa_scripts/codegen.py -c ' + output_dir + \
                   '/src/top.cpp -d ' + output_dir + '/src/' + src_file_prefix + \
                   '_kernel_modules.cpp -t ' + target + ' -o ' + output_dir + '/src/' + \
