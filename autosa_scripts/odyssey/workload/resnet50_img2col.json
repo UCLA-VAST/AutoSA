@@ -1,0 +1,543 @@
+{
+  "workloads": [
+    {
+      "name": "conv1",
+      "tags": [
+        "gemm"
+      ],
+      "params": {
+        "i": 64,
+        "j": 50176,
+        "k": 147
+      }
+    },
+    {
+      "name": "conv2_1-0",
+      "tags": [
+        "gemm"
+      ],
+      "params": {
+        "i": 64,
+        "j": 3136,
+        "k": 64
+      }
+    },
+    {
+      "name": "conv2_2-0",
+      "tags": [
+        "gemm"
+      ],
+      "params": {
+        "i": 64,
+        "j": 3136,
+        "k": 576
+      }
+    },
+    {
+      "name": "conv2_3-0",
+      "tags": [
+        "gemm"
+      ],
+      "params": {
+        "i": 256,
+        "j": 3136,
+        "k": 64
+      }
+    },
+    {
+      "name": "conv2_1-1",
+      "tags": [
+        "gemm"
+      ],
+      "params": {
+        "i": 64,
+        "j": 3136,
+        "k": 64
+      }
+    },
+    {
+      "name": "conv2_2-1",
+      "tags": [
+        "gemm"
+      ],
+      "params": {
+        "i": 64,
+        "j": 3136,
+        "k": 576
+      }
+    },
+    {
+      "name": "conv2_3-1",
+      "tags": [
+        "gemm"
+      ],
+      "params": {
+        "i": 256,
+        "j": 3136,
+        "k": 64
+      }
+    },
+    {
+      "name": "conv2_1-2",
+      "tags": [
+        "gemm"
+      ],
+      "params": {
+        "i": 64,
+        "j": 3136,
+        "k": 64
+      }
+    },
+    {
+      "name": "conv2_2-2",
+      "tags": [
+        "gemm"
+      ],
+      "params": {
+        "i": 64,
+        "j": 3136,
+        "k": 576
+      }
+    },
+    {
+      "name": "conv2_3-2",
+      "tags": [
+        "gemm"
+      ],
+      "params": {
+        "i": 256,
+        "j": 3136,
+        "k": 64
+      }
+    },
+    {
+      "name": "conv3_1-0",
+      "tags": [
+        "gemm"
+      ],
+      "params": {
+        "i": 128,
+        "j": 784,
+        "k": 256
+      }
+    },
+    {
+      "name": "conv3_2-0",
+      "tags": [
+        "gemm"
+      ],
+      "params": {
+        "i": 128,
+        "j": 784,
+        "k": 1152
+      }
+    },
+    {
+      "name": "conv3_3-0",
+      "tags": [
+        "gemm"
+      ],
+      "params": {
+        "i": 512,
+        "j": 784,
+        "k": 128
+      }
+    },
+    {
+      "name": "conv3_1-1",
+      "tags": [
+        "gemm"
+      ],
+      "params": {
+        "i": 128,
+        "j": 784,
+        "k": 256
+      }
+    },
+    {
+      "name": "conv3_2-1",
+      "tags": [
+        "gemm"
+      ],
+      "params": {
+        "i": 128,
+        "j": 784,
+        "k": 1152
+      }
+    },
+    {
+      "name": "conv3_3-1",
+      "tags": [
+        "gemm"
+      ],
+      "params": {
+        "i": 512,
+        "j": 784,
+        "k": 128
+      }
+    },
+    {
+      "name": "conv3_1-2",
+      "tags": [
+        "gemm"
+      ],
+      "params": {
+        "i": 128,
+        "j": 784,
+        "k": 256
+      }
+    },
+    {
+      "name": "conv3_2-2",
+      "tags": [
+        "gemm"
+      ],
+      "params": {
+        "i": 128,
+        "j": 784,
+        "k": 1152
+      }
+    },
+    {
+      "name": "conv3_3-2",
+      "tags": [
+        "gemm"
+      ],
+      "params": {
+        "i": 512,
+        "j": 784,
+        "k": 128
+      }
+    },
+    {
+      "name": "conv3_1-3",
+      "tags": [
+        "gemm"
+      ],
+      "params": {
+        "i": 128,
+        "j": 784,
+        "k": 256
+      }
+    },
+    {
+      "name": "conv3_2-3",
+      "tags": [
+        "gemm"
+      ],
+      "params": {
+        "i": 128,
+        "j": 784,
+        "k": 1152
+      }
+    },
+    {
+      "name": "conv3_3-3",
+      "tags": [
+        "gemm"
+      ],
+      "params": {
+        "i": 512,
+        "j": 784,
+        "k": 128
+      }
+    },
+    {
+      "name": "conv4_1-0",
+      "tags": [
+        "gemm"
+      ],
+      "params": {
+        "i": 256,
+        "j": 196,
+        "k": 512
+      }
+    },
+    {
+      "name": "conv4_2-0",
+      "tags": [
+        "gemm"
+      ],
+      "params": {
+        "i": 256,
+        "j": 196,
+        "k": 2304
+      }
+    },
+    {
+      "name": "conv4_3-0",
+      "tags": [
+        "gemm"
+      ],
+      "params": {
+        "i": 1024,
+        "j": 196,
+        "k": 256
+      }
+    },
+    {
+      "name": "conv4_1-1",
+      "tags": [
+        "gemm"
+      ],
+      "params": {
+        "i": 256,
+        "j": 196,
+        "k": 512
+      }
+    },
+    {
+      "name": "conv4_2-1",
+      "tags": [
+        "gemm"
+      ],
+      "params": {
+        "i": 256,
+        "j": 196,
+        "k": 2304
+      }
+    },
+    {
+      "name": "conv4_3-1",
+      "tags": [
+        "gemm"
+      ],
+      "params": {
+        "i": 1024,
+        "j": 196,
+        "k": 256
+      }
+    },
+    {
+      "name": "conv4_1-2",
+      "tags": [
+        "gemm"
+      ],
+      "params": {
+        "i": 256,
+        "j": 196,
+        "k": 512
+      }
+    },
+    {
+      "name": "conv4_2-2",
+      "tags": [
+        "gemm"
+      ],
+      "params": {
+        "i": 256,
+        "j": 196,
+        "k": 2304
+      }
+    },
+    {
+      "name": "conv4_3-2",
+      "tags": [
+        "gemm"
+      ],
+      "params": {
+        "i": 1024,
+        "j": 196,
+        "k": 256
+      }
+    },
+    {
+      "name": "conv4_1-3",
+      "tags": [
+        "gemm"
+      ],
+      "params": {
+        "i": 256,
+        "j": 196,
+        "k": 512
+      }
+    },
+    {
+      "name": "conv4_2-3",
+      "tags": [
+        "gemm"
+      ],
+      "params": {
+        "i": 256,
+        "j": 196,
+        "k": 2304
+      }
+    },
+    {
+      "name": "conv4_3-3",
+      "tags": [
+        "gemm"
+      ],
+      "params": {
+        "i": 1024,
+        "j": 196,
+        "k": 256
+      }
+    },
+    {
+      "name": "conv4_1-4",
+      "tags": [
+        "gemm"
+      ],
+      "params": {
+        "i": 256,
+        "j": 196,
+        "k": 512
+      }
+    },
+    {
+      "name": "conv4_2-4",
+      "tags": [
+        "gemm"
+      ],
+      "params": {
+        "i": 256,
+        "j": 196,
+        "k": 2304
+      }
+    },
+    {
+      "name": "conv4_3-4",
+      "tags": [
+        "gemm"
+      ],
+      "params": {
+        "i": 1024,
+        "j": 196,
+        "k": 256
+      }
+    },
+    {
+      "name": "conv4_1-5",
+      "tags": [
+        "gemm"
+      ],
+      "params": {
+        "i": 256,
+        "j": 196,
+        "k": 512
+      }
+    },
+    {
+      "name": "conv4_2-5",
+      "tags": [
+        "gemm"
+      ],
+      "params": {
+        "i": 256,
+        "j": 196,
+        "k": 2304
+      }
+    },
+    {
+      "name": "conv4_3-5",
+      "tags": [
+        "gemm"
+      ],
+      "params": {
+        "i": 1024,
+        "j": 196,
+        "k": 256
+      }
+    },
+    {
+      "name": "conv5_1-0",
+      "tags": [
+        "gemm"
+      ],
+      "params": {
+        "i": 512,
+        "j": 49,
+        "k": 1024
+      }
+    },
+    {
+      "name": "conv5_2-0",
+      "tags": [
+        "gemm"
+      ],
+      "params": {
+        "i": 512,
+        "j": 49,
+        "k": 4608
+      }
+    },
+    {
+      "name": "conv5_3-0",
+      "tags": [
+        "gemm"
+      ],
+      "params": {
+        "i": 2048,
+        "j": 49,
+        "k": 512
+      }
+    },
+    {
+      "name": "conv5_1-1",
+      "tags": [
+        "gemm"
+      ],
+      "params": {
+        "i": 512,
+        "j": 49,
+        "k": 1024
+      }
+    },
+    {
+      "name": "conv5_2-1",
+      "tags": [
+        "gemm"
+      ],
+      "params": {
+        "i": 512,
+        "j": 49,
+        "k": 4608
+      }
+    },
+    {
+      "name": "conv5_3-1",
+      "tags": [
+        "gemm"
+      ],
+      "params": {
+        "i": 2048,
+        "j": 49,
+        "k": 512
+      }
+    },
+    {
+      "name": "conv5_1-2",
+      "tags": [
+        "gemm"
+      ],
+      "params": {
+        "i": 512,
+        "j": 49,
+        "k": 1024
+      }
+    },
+    {
+      "name": "conv5_2-2",
+      "tags": [
+        "gemm"
+      ],
+      "params": {
+        "i": 512,
+        "j": 49,
+        "k": 4608
+      }
+    },
+    {
+      "name": "conv5_3-2",
+      "tags": [
+        "gemm"
+      ],
+      "params": {
+        "i": 2048,
+        "j": 49,
+        "k": 512
+      }
+    }
+  ]
+}

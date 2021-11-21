@@ -1,0 +1,1437 @@
+{
+    "attr": {
+        "PE": {
+            "double_buffer": 0,
+            "filter": 0,
+            "in": -1,
+            "io": 0,
+            "serialize": 0,
+            "to_dram": 0,
+            "to_pe": 0
+        },
+        "cin_IO_L2_in": {
+            "double_buffer": 1,
+            "filter": 1,
+            "in": 1,
+            "io": 1,
+            "serialize": 0,
+            "to_dram": 0,
+            "to_pe": 1
+        },
+        "cin_IO_L2_in_inter": {
+            "double_buffer": 1,
+            "filter": 1,
+            "in": 1,
+            "io": 1,
+            "serialize": 0,
+            "to_dram": 0,
+            "to_pe": 1
+        },
+        "cin_IO_L2_in_intra": {
+            "double_buffer": 1,
+            "filter": 1,
+            "in": 1,
+            "io": 1,
+            "serialize": 0,
+            "to_dram": 0,
+            "to_pe": 1
+        },
+        "cin_IO_L3_in": {
+            "double_buffer": 0,
+            "filter": 0,
+            "in": 1,
+            "io": 1,
+            "serialize": 1,
+            "to_dram": 1,
+            "to_pe": 0
+        },
+        "cout_drain_IO_L1_out": {
+            "double_buffer": 0,
+            "filter": 1,
+            "in": 0,
+            "io": 1,
+            "serialize": 0,
+            "to_dram": 0,
+            "to_pe": 1
+        },
+        "cout_drain_IO_L1_out_inter": {
+            "double_buffer": 0,
+            "filter": 1,
+            "in": 0,
+            "io": 1,
+            "serialize": 0,
+            "to_dram": 0,
+            "to_pe": 1
+        },
+        "cout_drain_IO_L1_out_intra": {
+            "double_buffer": 0,
+            "filter": 1,
+            "in": 0,
+            "io": 1,
+            "serialize": 0,
+            "to_dram": 0,
+            "to_pe": 1
+        },
+        "cout_drain_IO_L2_out": {
+            "double_buffer": 0,
+            "filter": 1,
+            "in": 0,
+            "io": 1,
+            "serialize": 0,
+            "to_dram": 0,
+            "to_pe": 0
+        },
+        "cout_drain_IO_L3_out": {
+            "double_buffer": 0,
+            "filter": 0,
+            "in": 0,
+            "io": 1,
+            "serialize": 1,
+            "to_dram": 1,
+            "to_pe": 0
+        },
+        "w_IO_L2_in": {
+            "double_buffer": 1,
+            "filter": 1,
+            "in": 1,
+            "io": 1,
+            "serialize": 0,
+            "to_dram": 0,
+            "to_pe": 1
+        },
+        "w_IO_L2_in_inter": {
+            "double_buffer": 1,
+            "filter": 1,
+            "in": 1,
+            "io": 1,
+            "serialize": 0,
+            "to_dram": 0,
+            "to_pe": 1
+        },
+        "w_IO_L2_in_intra": {
+            "double_buffer": 1,
+            "filter": 1,
+            "in": 1,
+            "io": 1,
+            "serialize": 0,
+            "to_dram": 0,
+            "to_pe": 1
+        },
+        "w_IO_L3_in": {
+            "double_buffer": 0,
+            "filter": 0,
+            "in": 1,
+            "io": 1,
+            "serialize": 1,
+            "to_dram": 1,
+            "to_pe": 0
+        }
+    },
+    "compute": {
+        "PE": {
+            "dims": [
+                "(o_t1/o_t2)",
+                "(c_t1/c_t2)"
+            ],
+            "ele_type": "float",
+            "num": "((o_t1/o_t2)*(c_t1/c_t2))",
+            "unroll_factor": "i_t2"
+        }
+    },
+    "io": {
+        "cin_IO_L2_in": {
+            "dims": [
+                "(c_t1/c_t2)"
+            ]
+        },
+        "cin_IO_L3_in": {
+            "dims": [
+                "1"
+            ]
+        },
+        "cout_drain_IO_L1_out": {
+            "dims": [
+                "(c_t1/c_t2)",
+                "(o_t1/o_t2)"
+            ]
+        },
+        "cout_drain_IO_L2_out": {
+            "dims": [
+                "(c_t1/c_t2)"
+            ]
+        },
+        "cout_drain_IO_L3_out": {
+            "dims": [
+                "1"
+            ]
+        },
+        "w_IO_L2_in": {
+            "dims": [
+                "(o_t1/o_t2)"
+            ]
+        },
+        "w_IO_L3_in": {
+            "dims": [
+                "1"
+            ]
+        }
+    },
+    "latency": {
+        "PE": {
+            "bounds": [
+                "0",
+                "ceil((o/o_t1))"
+            ],
+            "child": {
+                "bounds": [
+                    "0",
+                    "ceil((r/r_t1))"
+                ],
+                "child": {
+                    "bounds": [
+                        "0",
+                        "ceil((c/c_t1))"
+                    ],
+                    "child": {
+                        "bounds": [
+                            "0",
+                            "ceil((i/i_t1))"
+                        ],
+                        "child": {
+                            "child": {
+                                "child": {
+                                    "bounds": [
+                                        "0",
+                                        "(r_t1/r_t2)"
+                                    ],
+                                    "child": {
+                                        "bounds": [
+                                            "0",
+                                            "(i_t1/i_t2)"
+                                        ],
+                                        "child": {
+                                            "bounds": [
+                                                "0",
+                                                "p"
+                                            ],
+                                            "child": {
+                                                "bounds": [
+                                                    "0",
+                                                    "q"
+                                                ],
+                                                "child": {
+                                                    "child": {
+                                                        "bounds": [
+                                                            "0",
+                                                            "r_t2"
+                                                        ],
+                                                        "child": {
+                                                            "child": {
+                                                                "bounds": [
+                                                                    "0",
+                                                                    "c_t2"
+                                                                ],
+                                                                "child": {
+                                                                    "child": {
+                                                                        "bounds": [
+                                                                            "0",
+                                                                            "o_t2"
+                                                                        ],
+                                                                        "child": {
+                                                                            "child": {
+                                                                                "child": [
+                                                                                    {
+                                                                                        "child": {
+                                                                                            "user_expr": "in.fifo_cin.2.1(c0, c1, c2, c3, p0, p1, c6, c7, c8, c9, c10, c11, c12, 4 * c1 + 2 * c6 + c8 + c10, 2 * p1 + 4 * c2 + c9 + c11, 8 * c3 + 2 * c7)"
+                                                                                        },
+                                                                                        "type": "user"
+                                                                                    },
+                                                                                    {
+                                                                                        "child": {
+                                                                                            "user_expr": "in.fifo_w.2.1(c0, c1, c2, c3, p0, p1, c6, c7, c8, c9, c10, c11, c12, 2 * p0 + 8 * c0 + c12, c8, c9, 8 * c3 + 2 * c7)"
+                                                                                        },
+                                                                                        "type": "user"
+                                                                                    },
+                                                                                    {
+                                                                                        "child": {
+                                                                                            "bounds": [
+                                                                                                "0",
+                                                                                                "i_t2"
+                                                                                            ],
+                                                                                            "child": {
+                                                                                                "child": {
+                                                                                                    "child": {
+                                                                                                        "user_expr": "S_0(2 * p0 + 8 * c0 + c12, 4 * c1 + 2 * c6 + c10, 2 * p1 + 4 * c2 + c11, 8 * c3 + 2 * c7 + c13, c8, c9)"
+                                                                                                    },
+                                                                                                    "type": "user"
+                                                                                                },
+                                                                                                "content": "hls_unroll",
+                                                                                                "type": "mark"
+                                                                                            },
+                                                                                            "iterator": "c13",
+                                                                                            "type": "for"
+                                                                                        },
+                                                                                        "content": "simd",
+                                                                                        "type": "mark"
+                                                                                    },
+                                                                                    {
+                                                                                        "child": {
+                                                                                            "user_expr": "out.fifo_w.2.1(c0, c1, c2, c3, p0, p1, c6, c7, c8, c9, c10, c11, c12, 2 * p0 + 8 * c0 + c12, c8, c9, 8 * c3 + 2 * c7)"
+                                                                                        },
+                                                                                        "type": "user"
+                                                                                    },
+                                                                                    {
+                                                                                        "child": [
+                                                                                            {
+                                                                                                "child": {
+                                                                                                    "user_expr": "out.fifo_cout_drain.1.1(c0, c1, c2, 1, p0, p1, c6, 3, 2, 2, c10, c11, c12, 4 * c1 + 2 * c6 + c10, 2 * p1 + 4 * c2 + c11, 2 * p0 + 8 * c0 + c12)"
+                                                                                                },
+                                                                                                "type": "user"
+                                                                                            }
+                                                                                        ],
+                                                                                        "type": "if"
+                                                                                    },
+                                                                                    {
+                                                                                        "child": {
+                                                                                            "user_expr": "out.fifo_cin.2.1(c0, c1, c2, c3, p0, p1, c6, c7, c8, c9, c10, c11, c12, 4 * c1 + 2 * c6 + c8 + c10, 2 * p1 + 4 * c2 + c9 + c11, 8 * c3 + 2 * c7)"
+                                                                                        },
+                                                                                        "type": "user"
+                                                                                    }
+                                                                                ],
+                                                                                "type": "block"
+                                                                            },
+                                                                            "content": "hls_pipeline",
+                                                                            "type": "mark"
+                                                                        },
+                                                                        "iterator": "c10",
+                                                                        "type": "for"
+                                                                    },
+                                                                    "content": "latency",
+                                                                    "type": "mark"
+                                                                },
+                                                                "iterator": "c11",
+                                                                "type": "for"
+                                                            },
+                                                            "content": "latency",
+                                                            "type": "mark"
+                                                        },
+                                                        "iterator": "c12",
+                                                        "type": "for"
+                                                    },
+                                                    "content": "latency",
+                                                    "type": "mark"
+                                                },
+                                                "iterator": "c0",
+                                                "type": "for"
+                                            },
+                                            "iterator": "c1",
+                                            "type": "for"
+                                        },
+                                        "iterator": "c9",
+                                        "type": "for"
+                                    },
+                                    "iterator": "c8",
+                                    "type": "for"
+                                },
+                                "content": "pe",
+                                "type": "mark"
+                            },
+                            "content": "array",
+                            "type": "mark"
+                        },
+                        "iterator": "c5",
+                        "type": "for"
+                    },
+                    "iterator": "c4",
+                    "type": "for"
+                },
+                "iterator": "c3",
+                "type": "for"
+            },
+            "iterator": "c2",
+            "type": "for"
+        },
+        "cin_IO_L2_in": {
+            "bounds": [
+                "0",
+                "ceil((o/o_t1))"
+            ],
+            "child": {
+                "bounds": [
+                    "0",
+                    "ceil((r/r_t1))"
+                ],
+                "child": {
+                    "bounds": [
+                        "0",
+                        "ceil((c/c_t1))"
+                    ],
+                    "child": {
+                        "bounds": [
+                            "0",
+                            "ceil((i/i_t1))"
+                        ],
+                        "child": {
+                            "child": {
+                                "child": {
+                                    "child": [
+                                        {
+                                            "child": {
+                                                "user_expr": "io_module.inter_intra.0.1()"
+                                            },
+                                            "type": "user"
+                                        },
+                                        {
+                                            "child": {
+                                                "user_expr": "io_module.state_handle()"
+                                            },
+                                            "type": "user"
+                                        }
+                                    ],
+                                    "type": "block"
+                                },
+                                "content": "io_L3",
+                                "type": "mark"
+                            },
+                            "content": "array",
+                            "type": "mark"
+                        },
+                        "iterator": "c5",
+                        "type": "for"
+                    },
+                    "iterator": "c4",
+                    "type": "for"
+                },
+                "iterator": "c3",
+                "type": "for"
+            },
+            "iterator": "c2",
+            "type": "for"
+        },
+        "cin_IO_L2_in_inter": {
+            "bounds": [
+                "0",
+                "(c_t1/c_t2)"
+            ],
+            "child": {
+                "child": {
+                    "child": [
+                        {
+                            "child": {
+                                "data_pack_factor": "p14",
+                                "ele_size": 4,
+                                "last_dim": "i_t1",
+                                "size": "((((((r_t1/r_t2)-1)*r_t2)+(r_t2-1))+(p-1))+1)*(((c_t2-1)+(q-1))+1)*i_t1",
+                                "type": "array_tile"
+                            },
+                            "content": "access_coalesce",
+                            "type": "mark"
+                        },
+                        {
+                            "child": {
+                                "data_pack_factor": "p14",
+                                "ele_size": 4,
+                                "last_dim": "i_t1",
+                                "size": "((((((r_t1/r_t2)-1)*r_t2)+(r_t2-1))+(p-1))+1)*(((c_t2-1)+(q-1))+1)*i_t1",
+                                "type": "array_tile"
+                            },
+                            "content": "access_coalesce",
+                            "type": "mark"
+                        }
+                    ],
+                    "type": "if"
+                },
+                "content": "io_L2",
+                "type": "mark"
+            },
+            "iterator": "c7",
+            "type": "for"
+        },
+        "cin_IO_L2_in_intra": {
+            "child": {
+                "child": {
+                    "child": {
+                        "bounds": [
+                            "0",
+                            "(r_t1/r_t2)"
+                        ],
+                        "child": {
+                            "bounds": [
+                                "0",
+                                "(i_t1/i_t2)"
+                            ],
+                            "child": {
+                                "bounds": [
+                                    "0",
+                                    "p"
+                                ],
+                                "child": {
+                                    "bounds": [
+                                        "0",
+                                        "q"
+                                    ],
+                                    "child": {
+                                        "child": {
+                                            "bounds": [
+                                                "0",
+                                                "r_t2"
+                                            ],
+                                            "child": {
+                                                "child": {
+                                                    "bounds": [
+                                                        "0",
+                                                        "c_t2"
+                                                    ],
+                                                    "child": {
+                                                        "child": {
+                                                            "bounds": [
+                                                                "0",
+                                                                "o_t2"
+                                                            ],
+                                                            "child": {
+                                                                "child": {
+                                                                    "child": {
+                                                                        "child": {
+                                                                            "user_expr": "out_trans.fifo_cin.fifo_cin_local.1.8.2(c0, c1, c2, c3, p0, 0, c6, c7, c8, c9, c10, c11, c12, 0, 4 * c1 + 2 * c6 + c8 + c10, 2 * p0 + 4 * c2 + c9 + c11, 8 * c3 + 2 * c7)"
+                                                                        },
+                                                                        "type": "user"
+                                                                    },
+                                                                    "content": "hls_pipeline",
+                                                                    "type": "mark"
+                                                                },
+                                                                "content": "simd",
+                                                                "type": "mark"
+                                                            },
+                                                            "iterator": "c10",
+                                                            "type": "for"
+                                                        },
+                                                        "content": "latency",
+                                                        "type": "mark"
+                                                    },
+                                                    "iterator": "c11",
+                                                    "type": "for"
+                                                },
+                                                "content": "latency",
+                                                "type": "mark"
+                                            },
+                                            "iterator": "c12",
+                                            "type": "for"
+                                        },
+                                        "content": "latency",
+                                        "type": "mark"
+                                    },
+                                    "iterator": "c0",
+                                    "type": "for"
+                                },
+                                "iterator": "c1",
+                                "type": "for"
+                            },
+                            "iterator": "c9",
+                            "type": "for"
+                        },
+                        "iterator": "c8",
+                        "type": "for"
+                    },
+                    "content": "pe",
+                    "type": "mark"
+                },
+                "content": "io_L1",
+                "type": "mark"
+            },
+            "content": "io_L2",
+            "type": "mark"
+        },
+        "cin_IO_L3_in": {
+            "bounds": [
+                "0",
+                "ceil((o/o_t1))"
+            ],
+            "child": {
+                "bounds": [
+                    "0",
+                    "ceil((r/r_t1))"
+                ],
+                "child": {
+                    "bounds": [
+                        "0",
+                        "ceil((c/c_t1))"
+                    ],
+                    "child": {
+                        "bounds": [
+                            "0",
+                            "ceil((i/i_t1))"
+                        ],
+                        "child": {
+                            "child": {
+                                "child": {
+                                    "bounds": [
+                                        "0",
+                                        "(c_t1/c_t2)"
+                                    ],
+                                    "child": {
+                                        "child": {
+                                            "child": {
+                                                "child": {
+                                                    "data_pack_factor": "p14",
+                                                    "ele_size": 4,
+                                                    "last_dim": "i_t1",
+                                                    "size": "((((((r_t1/r_t2)-1)*r_t2)+(r_t2-1))+(p-1))+1)*(((c_t2-1)+(q-1))+1)*i_t1",
+                                                    "type": "array_tile"
+                                                },
+                                                "content": "access_serialize",
+                                                "type": "mark"
+                                            },
+                                            "content": "access_coalesce",
+                                            "type": "mark"
+                                        },
+                                        "content": "io_L2",
+                                        "type": "mark"
+                                    },
+                                    "iterator": "c7",
+                                    "type": "for"
+                                },
+                                "content": "io_L3",
+                                "type": "mark"
+                            },
+                            "content": "array",
+                            "type": "mark"
+                        },
+                        "iterator": "c5",
+                        "type": "for"
+                    },
+                    "iterator": "c4",
+                    "type": "for"
+                },
+                "iterator": "c3",
+                "type": "for"
+            },
+            "iterator": "c2",
+            "type": "for"
+        },
+        "cout_drain_IO_L1_out": {
+            "bounds": [
+                "0",
+                "ceil((o/o_t1))"
+            ],
+            "child": {
+                "bounds": [
+                    "0",
+                    "ceil((r/r_t1))"
+                ],
+                "child": {
+                    "bounds": [
+                        "0",
+                        "ceil((c/c_t1))"
+                    ],
+                    "child": {
+                        "child": {
+                            "child": {
+                                "child": {
+                                    "child": {
+                                        "user_expr": "io_module.intra_inter.0.0()"
+                                    },
+                                    "type": "user"
+                                },
+                                "content": "io_L2",
+                                "type": "mark"
+                            },
+                            "content": "io_L3",
+                            "type": "mark"
+                        },
+                        "content": "array",
+                        "type": "mark"
+                    },
+                    "iterator": "c4",
+                    "type": "for"
+                },
+                "iterator": "c3",
+                "type": "for"
+            },
+            "iterator": "c2",
+            "type": "for"
+        },
+        "cout_drain_IO_L1_out_inter": {
+            "bounds": [
+                "0",
+                "(o_t1/o_t2)"
+            ],
+            "child": {
+                "child": {
+                    "child": [
+                        {
+                            "child": {
+                                "data_pack_factor": "p16",
+                                "ele_size": 4,
+                                "last_dim": "o_t2",
+                                "size": "r_t1*c_t2*o_t2",
+                                "type": "array_tile"
+                            },
+                            "content": "access_coalesce",
+                            "type": "mark"
+                        },
+                        {
+                            "child": {
+                                "data_pack_factor": "p16",
+                                "ele_size": 4,
+                                "last_dim": "o_t2",
+                                "size": "r_t1*c_t2*o_t2",
+                                "type": "array_tile"
+                            },
+                            "content": "access_coalesce",
+                            "type": "mark"
+                        }
+                    ],
+                    "type": "if"
+                },
+                "content": "io_L1",
+                "type": "mark"
+            },
+            "iterator": "c6",
+            "type": "for"
+        },
+        "cout_drain_IO_L1_out_intra": {
+            "child": {
+                "child": {
+                    "bounds": [
+                        "0",
+                        "(r_t1/r_t2)"
+                    ],
+                    "child": {
+                        "child": {
+                            "bounds": [
+                                "0",
+                                "r_t2"
+                            ],
+                            "child": {
+                                "child": {
+                                    "bounds": [
+                                        "0",
+                                        "c_t2"
+                                    ],
+                                    "child": {
+                                        "child": {
+                                            "bounds": [
+                                                "0",
+                                                "o_t2"
+                                            ],
+                                            "child": {
+                                                "child": {
+                                                    "child": {
+                                                        "child": {
+                                                            "user_expr": "in_trans.fifo_cout_drain_local.fifo_cout_drain.1.2.1(c0, c1, c2, 1, p0, p1, c6, 3, 2, 2, c10, c11, c12, 1, 4 * c1 + 2 * c6 + c10, 2 * p0 + 4 * c2 + c11, 2 * p1 + 8 * c0 + c12)"
+                                                        },
+                                                        "type": "user"
+                                                    },
+                                                    "content": "hls_pipeline",
+                                                    "type": "mark"
+                                                },
+                                                "content": "simd",
+                                                "type": "mark"
+                                            },
+                                            "iterator": "c10",
+                                            "type": "for"
+                                        },
+                                        "content": "latency",
+                                        "type": "mark"
+                                    },
+                                    "iterator": "c11",
+                                    "type": "for"
+                                },
+                                "content": "latency",
+                                "type": "mark"
+                            },
+                            "iterator": "c12",
+                            "type": "for"
+                        },
+                        "content": "latency",
+                        "type": "mark"
+                    },
+                    "iterator": "c8",
+                    "type": "for"
+                },
+                "content": "pe",
+                "type": "mark"
+            },
+            "content": "io_L1",
+            "type": "mark"
+        },
+        "cout_drain_IO_L2_out": {
+            "bounds": [
+                "0",
+                "ceil((o/o_t1))"
+            ],
+            "child": {
+                "bounds": [
+                    "0",
+                    "ceil((r/r_t1))"
+                ],
+                "child": {
+                    "bounds": [
+                        "0",
+                        "ceil((c/c_t1))"
+                    ],
+                    "child": {
+                        "child": {
+                            "child": {
+                                "bounds": [
+                                    "0",
+                                    "(c_t1/c_t2)"
+                                ],
+                                "child": {
+                                    "child": {
+                                        "child": [
+                                            {
+                                                "bounds": [
+                                                    "0",
+                                                    "(o_t1/o_t2)"
+                                                ],
+                                                "child": {
+                                                    "child": {
+                                                        "child": {
+                                                            "data_pack_factor": "p16",
+                                                            "ele_size": 4,
+                                                            "last_dim": "o_t2",
+                                                            "size": "r_t1*c_t2*o_t2",
+                                                            "type": "array_tile"
+                                                        },
+                                                        "content": "access_coalesce",
+                                                        "type": "mark"
+                                                    },
+                                                    "content": "io_L1",
+                                                    "type": "mark"
+                                                },
+                                                "iterator": "c6",
+                                                "type": "for"
+                                            },
+                                            {
+                                                "bounds": [
+                                                    "0",
+                                                    "(o_t1/o_t2)"
+                                                ],
+                                                "child": {
+                                                    "child": {
+                                                        "child": {
+                                                            "data_pack_factor": "p16",
+                                                            "ele_size": 4,
+                                                            "last_dim": "o_t2",
+                                                            "size": "r_t1*c_t2*o_t2",
+                                                            "type": "array_tile"
+                                                        },
+                                                        "content": "access_coalesce",
+                                                        "type": "mark"
+                                                    },
+                                                    "content": "io_L1",
+                                                    "type": "mark"
+                                                },
+                                                "iterator": "c6",
+                                                "type": "for"
+                                            }
+                                        ],
+                                        "type": "if"
+                                    },
+                                    "content": "io_L2",
+                                    "type": "mark"
+                                },
+                                "iterator": "c7",
+                                "type": "for"
+                            },
+                            "content": "io_L3",
+                            "type": "mark"
+                        },
+                        "content": "array",
+                        "type": "mark"
+                    },
+                    "iterator": "c4",
+                    "type": "for"
+                },
+                "iterator": "c3",
+                "type": "for"
+            },
+            "iterator": "c2",
+            "type": "for"
+        },
+        "cout_drain_IO_L3_out": {
+            "bounds": [
+                "0",
+                "ceil((o/o_t1))"
+            ],
+            "child": {
+                "bounds": [
+                    "0",
+                    "ceil((r/r_t1))"
+                ],
+                "child": {
+                    "bounds": [
+                        "0",
+                        "ceil((c/c_t1))"
+                    ],
+                    "child": {
+                        "child": {
+                            "child": {
+                                "bounds": [
+                                    "0",
+                                    "(c_t1/c_t2)"
+                                ],
+                                "child": {
+                                    "child": {
+                                        "bounds": [
+                                            "0",
+                                            "(o_t1/o_t2)"
+                                        ],
+                                        "child": {
+                                            "child": {
+                                                "child": {
+                                                    "child": {
+                                                        "data_pack_factor": "p16",
+                                                        "ele_size": 4,
+                                                        "last_dim": "o_t2",
+                                                        "size": "r_t1*c_t2*o_t2",
+                                                        "type": "array_tile"
+                                                    },
+                                                    "content": "access_serialize",
+                                                    "type": "mark"
+                                                },
+                                                "content": "access_coalesce",
+                                                "type": "mark"
+                                            },
+                                            "content": "io_L1",
+                                            "type": "mark"
+                                        },
+                                        "iterator": "c6",
+                                        "type": "for"
+                                    },
+                                    "content": "io_L2",
+                                    "type": "mark"
+                                },
+                                "iterator": "c7",
+                                "type": "for"
+                            },
+                            "content": "io_L3",
+                            "type": "mark"
+                        },
+                        "content": "array",
+                        "type": "mark"
+                    },
+                    "iterator": "c4",
+                    "type": "for"
+                },
+                "iterator": "c3",
+                "type": "for"
+            },
+            "iterator": "c2",
+            "type": "for"
+        },
+        "w_IO_L2_in": {
+            "bounds": [
+                "0",
+                "ceil((o/o_t1))"
+            ],
+            "child": {
+                "bounds": [
+                    "0",
+                    "ceil((r/r_t1))"
+                ],
+                "child": {
+                    "bounds": [
+                        "0",
+                        "ceil((c/c_t1))"
+                    ],
+                    "child": {
+                        "bounds": [
+                            "0",
+                            "ceil((i/i_t1))"
+                        ],
+                        "child": {
+                            "child": {
+                                "child": {
+                                    "child": [
+                                        {
+                                            "child": {
+                                                "user_expr": "io_module.inter_intra.0.1()"
+                                            },
+                                            "type": "user"
+                                        },
+                                        {
+                                            "child": {
+                                                "user_expr": "io_module.state_handle()"
+                                            },
+                                            "type": "user"
+                                        }
+                                    ],
+                                    "type": "block"
+                                },
+                                "content": "io_L3",
+                                "type": "mark"
+                            },
+                            "content": "array",
+                            "type": "mark"
+                        },
+                        "iterator": "c5",
+                        "type": "for"
+                    },
+                    "iterator": "c4",
+                    "type": "for"
+                },
+                "iterator": "c3",
+                "type": "for"
+            },
+            "iterator": "c2",
+            "type": "for"
+        },
+        "w_IO_L2_in_inter": {
+            "bounds": [
+                "0",
+                "(o_t1/o_t2)"
+            ],
+            "child": {
+                "child": {
+                    "child": [
+                        {
+                            "child": {
+                                "data_pack_factor": "p17",
+                                "ele_size": 4,
+                                "last_dim": "i_t1",
+                                "size": "o_t2*((p-1)+1)*((q-1)+1)*i_t1",
+                                "type": "array_tile"
+                            },
+                            "content": "access_coalesce",
+                            "type": "mark"
+                        },
+                        {
+                            "child": {
+                                "data_pack_factor": "p17",
+                                "ele_size": 4,
+                                "last_dim": "i_t1",
+                                "size": "o_t2*((p-1)+1)*((q-1)+1)*i_t1",
+                                "type": "array_tile"
+                            },
+                            "content": "access_coalesce",
+                            "type": "mark"
+                        }
+                    ],
+                    "type": "if"
+                },
+                "content": "io_L2",
+                "type": "mark"
+            },
+            "iterator": "c6",
+            "type": "for"
+        },
+        "w_IO_L2_in_intra": {
+            "child": {
+                "child": {
+                    "child": {
+                        "bounds": [
+                            "0",
+                            "(r_t1/r_t2)"
+                        ],
+                        "child": {
+                            "bounds": [
+                                "0",
+                                "(i_t1/i_t2)"
+                            ],
+                            "child": {
+                                "bounds": [
+                                    "0",
+                                    "p"
+                                ],
+                                "child": {
+                                    "bounds": [
+                                        "0",
+                                        "q"
+                                    ],
+                                    "child": {
+                                        "child": {
+                                            "bounds": [
+                                                "0",
+                                                "r_t2"
+                                            ],
+                                            "child": {
+                                                "child": {
+                                                    "bounds": [
+                                                        "0",
+                                                        "c_t2"
+                                                    ],
+                                                    "child": {
+                                                        "child": {
+                                                            "bounds": [
+                                                                "0",
+                                                                "o_t2"
+                                                            ],
+                                                            "child": {
+                                                                "child": {
+                                                                    "child": {
+                                                                        "child": {
+                                                                            "user_expr": "out_trans.fifo_w.fifo_w_local.1.8.2(c0, c1, c2, c3, p0, 0, c6, c7, c8, c9, c10, c11, c12, 0, 2 * p0 + 8 * c0 + c12, c8, c9, 8 * c3 + 2 * c7)"
+                                                                        },
+                                                                        "type": "user"
+                                                                    },
+                                                                    "content": "hls_pipeline",
+                                                                    "type": "mark"
+                                                                },
+                                                                "content": "simd",
+                                                                "type": "mark"
+                                                            },
+                                                            "iterator": "c10",
+                                                            "type": "for"
+                                                        },
+                                                        "content": "latency",
+                                                        "type": "mark"
+                                                    },
+                                                    "iterator": "c11",
+                                                    "type": "for"
+                                                },
+                                                "content": "latency",
+                                                "type": "mark"
+                                            },
+                                            "iterator": "c12",
+                                            "type": "for"
+                                        },
+                                        "content": "latency",
+                                        "type": "mark"
+                                    },
+                                    "iterator": "c0",
+                                    "type": "for"
+                                },
+                                "iterator": "c1",
+                                "type": "for"
+                            },
+                            "iterator": "c9",
+                            "type": "for"
+                        },
+                        "iterator": "c8",
+                        "type": "for"
+                    },
+                    "content": "pe",
+                    "type": "mark"
+                },
+                "content": "io_L1",
+                "type": "mark"
+            },
+            "content": "io_L2",
+            "type": "mark"
+        },
+        "w_IO_L3_in": {
+            "bounds": [
+                "0",
+                "ceil((o/o_t1))"
+            ],
+            "child": {
+                "bounds": [
+                    "0",
+                    "ceil((r/r_t1))"
+                ],
+                "child": {
+                    "bounds": [
+                        "0",
+                        "ceil((c/c_t1))"
+                    ],
+                    "child": {
+                        "bounds": [
+                            "0",
+                            "ceil((i/i_t1))"
+                        ],
+                        "child": {
+                            "child": {
+                                "child": {
+                                    "bounds": [
+                                        "0",
+                                        "(o_t1/o_t2)"
+                                    ],
+                                    "child": {
+                                        "child": {
+                                            "child": {
+                                                "child": {
+                                                    "data_pack_factor": "p17",
+                                                    "ele_size": 4,
+                                                    "last_dim": "i_t1",
+                                                    "size": "o_t2*((p-1)+1)*((q-1)+1)*i_t1",
+                                                    "type": "array_tile"
+                                                },
+                                                "content": "access_serialize",
+                                                "type": "mark"
+                                            },
+                                            "content": "access_coalesce",
+                                            "type": "mark"
+                                        },
+                                        "content": "io_L2",
+                                        "type": "mark"
+                                    },
+                                    "iterator": "c6",
+                                    "type": "for"
+                                },
+                                "content": "io_L3",
+                                "type": "mark"
+                            },
+                            "content": "array",
+                            "type": "mark"
+                        },
+                        "iterator": "c5",
+                        "type": "for"
+                    },
+                    "iterator": "c4",
+                    "type": "for"
+                },
+                "iterator": "c3",
+                "type": "for"
+            },
+            "iterator": "c2",
+            "type": "for"
+        }
+    },
+    "memory": {
+        "PE": {
+            "array": "cout",
+            "buf_size": "((r_t1*c_t2)*o_t2)",
+            "double_buffer": 0,
+            "ele_size": 4,
+            "ele_type": "float",
+            "num": "((o_t1/o_t2)*(c_t1/c_t2))"
+        },
+        "cin_IO_L2_in": {
+            "array": "cin",
+            "buf_size": "((((((((r_t1/r_t2)-1)*r_t2)+(r_t2-1))+(p-1))+1)*(((c_t2-1)+(q-1))+1))*i_t1)",
+            "data_pack_factor_inter": "p14",
+            "data_pack_factor_intra": "i_t2",
+            "double_buffer": 1,
+            "ele_size": 4,
+            "ele_type": "float",
+            "num": "(c_t1/c_t2)"
+        },
+        "cout_drain_IO_L1_out": {
+            "array": "cout",
+            "buf_size": "((r_t1*c_t2)*o_t2)",
+            "data_pack_factor_inter": "p16",
+            "data_pack_factor_intra": "1",
+            "double_buffer": 0,
+            "ele_size": 4,
+            "ele_type": "float",
+            "num": "((c_t1/c_t2)*(o_t1/o_t2))"
+        },
+        "w_IO_L2_in": {
+            "array": "w",
+            "buf_size": "(((o_t2*((p-1)+1))*((q-1)+1))*i_t1)",
+            "data_pack_factor_inter": "p17",
+            "data_pack_factor_intra": "i_t2",
+            "double_buffer": 1,
+            "ele_size": 4,
+            "ele_type": "float",
+            "num": "(o_t1/o_t2)"
+        }
+    },
+    "params": [
+        {
+            "attr": "loop_ub",
+            "name": "q",
+            "tags": [
+                "external"
+            ],
+            "tunable": false
+        },
+        {
+            "attr": "loop_ub",
+            "name": "p",
+            "tags": [
+                "external"
+            ],
+            "tunable": false
+        },
+        {
+            "attr": "loop_ub",
+            "name": "o",
+            "split_by": "o_t1",
+            "tags": [
+                "external"
+            ],
+            "tunable": false
+        },
+        {
+            "attr": "loop_ub",
+            "name": "r",
+            "split_by": "r_t1",
+            "tags": [
+                "external"
+            ],
+            "tunable": false
+        },
+        {
+            "attr": "loop_ub",
+            "name": "c",
+            "split_by": "c_t1",
+            "tags": [
+                "external"
+            ],
+            "tunable": false
+        },
+        {
+            "attr": "loop_ub",
+            "name": "i",
+            "split_by": "i_t1",
+            "tags": [
+                "external"
+            ],
+            "tunable": false
+        },
+        {
+            "attr": "array_part_tiling_factor",
+            "bounds": [
+                "1",
+                "o"
+            ],
+            "name": "o_t1",
+            "split_by": "o_t2",
+            "tunable": true
+        },
+        {
+            "attr": "array_part_tiling_factor",
+            "bounds": [
+                "1",
+                "c"
+            ],
+            "name": "c_t1",
+            "split_by": "c_t2",
+            "tunable": true
+        },
+        {
+            "attr": "array_part_tiling_factor",
+            "bounds": [
+                "1",
+                "r"
+            ],
+            "name": "r_t1",
+            "split_by": "r_t2",
+            "tunable": true
+        },
+        {
+            "attr": "array_part_tiling_factor",
+            "bounds": [
+                "1",
+                "i"
+            ],
+            "name": "i_t1",
+            "split_by": "i_t2",
+            "tunable": true
+        },
+        {
+            "attr": "latency_tiling_factor",
+            "bounds": [
+                "1",
+                "o_t1"
+            ],
+            "divisors": [
+                "o_t1"
+            ],
+            "name": "o_t2",
+            "tunable": true
+        },
+        {
+            "attr": "latency_tiling_factor",
+            "bounds": [
+                "1",
+                "c_t1"
+            ],
+            "divisors": [
+                "c_t1"
+            ],
+            "name": "c_t2",
+            "tunable": true
+        },
+        {
+            "attr": "latency_tiling_factor",
+            "bounds": [
+                "1",
+                "r_t1"
+            ],
+            "divisors": [
+                "r_t1"
+            ],
+            "name": "r_t2",
+            "tunable": true
+        },
+        {
+            "attr": "SIMD_tiling_factor",
+            "bounds": [
+                "1",
+                "min(i_t1,8)"
+            ],
+            "divisors": [
+                "i_t1"
+            ],
+            "name": "i_t2",
+            "tags": [
+                "power_of_two"
+            ],
+            "tunable": true
+        },
+        {
+            "attr": "data_pack_factor",
+            "bounds": [
+                "i_t2",
+                "max(min(i_t1,16),i_t2)"
+            ],
+            "divisors": [
+                "i_t1"
+            ],
+            "multiples": [
+                "i_t2"
+            ],
+            "name": "p14",
+            "tags": [
+                "power_of_two",
+                "auto_infer"
+            ],
+            "tunable": false
+        },
+        {
+            "attr": "data_pack_factor",
+            "bounds": [
+                "1",
+                "max(min(o_t2,4),1)"
+            ],
+            "divisors": [
+                "o_t2"
+            ],
+            "name": "p15",
+            "tags": [
+                "power_of_two",
+                "auto_infer"
+            ],
+            "tunable": false
+        },
+        {
+            "attr": "data_pack_factor",
+            "bounds": [
+                "1",
+                "max(min(o_t2,4),1)"
+            ],
+            "divisors": [
+                "o_t2"
+            ],
+            "name": "p16",
+            "tags": [
+                "power_of_two",
+                "auto_infer"
+            ],
+            "tunable": false
+        },
+        {
+            "attr": "data_pack_factor",
+            "bounds": [
+                "i_t2",
+                "max(min(i_t1,16),i_t2)"
+            ],
+            "divisors": [
+                "i_t1"
+            ],
+            "multiples": [
+                "i_t2"
+            ],
+            "name": "p17",
+            "tags": [
+                "power_of_two",
+                "auto_infer"
+            ],
+            "tunable": false
+        }
+    ]
+}

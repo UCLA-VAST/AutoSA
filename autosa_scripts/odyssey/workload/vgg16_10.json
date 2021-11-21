@@ -1,0 +1,16 @@
+{
+  "workloads": [
+    {
+      "name": "conv4-3",
+      "tags": ["conv", "maxpool_2"],
+      "params": {
+        "i": 512,
+        "o": 512,
+        "r": 28,
+        "c": 28,
+        "p": 3,
+        "q": 3
+      }
+    }
+  ]
+}

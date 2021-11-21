@@ -1,0 +1,22 @@
+{
+  "BRAM18K": {
+    "total": 5376,
+    "ratio": 0.7
+  },
+  "DSP": {
+    "total": 12288,
+    "ratio": 0.7
+  },
+  "FF": {
+    "total": 3456000,
+    "ratio": 0.7
+  },
+  "LUT": {
+    "total": 1728000,
+    "ratio": 0.7
+  },
+  "URAM": {
+    "total": 1280,
+    "ratio": 0.7
+  }
+}

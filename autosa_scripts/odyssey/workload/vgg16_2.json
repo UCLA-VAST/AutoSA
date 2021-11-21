@@ -1,0 +1,16 @@
+{
+  "workloads": [
+    {
+      "name": "conv1-2",
+      "tags": ["conv", "maxpool_2"],
+      "params": {
+        "i": 64,
+        "o": 64,
+        "r": 224,
+        "c": 224,
+        "p": 3,
+        "q": 3
+      }
+    }
+  ]
+}

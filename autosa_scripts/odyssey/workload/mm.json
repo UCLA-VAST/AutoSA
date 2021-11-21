@@ -1,0 +1,13 @@
+{
+  "workloads": [
+    {
+      "name": "gemm",
+      "tags": ["gemm"],
+      "params": {
+        "i": 1024,
+        "j": 1024,
+        "k": 1024
+      }
+    }
+  ]
+}

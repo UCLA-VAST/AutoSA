@@ -1,0 +1,400 @@
+{
+  "workloads": [
+    {
+      "name": "conv1",
+      "tags": [
+        "gemm"
+      ],
+      "params": {
+        "i": 32,
+        "j": 50176,
+        "k": 27
+      }
+    },
+    {
+      "name": "conv2_1-0",
+      "tags": [
+        "gemm"
+      ],
+      "params": {
+        "i": 32,
+        "j": 12544,
+        "k": 288
+      }
+    },
+    {
+      "name": "conv2_3-0",
+      "tags": [
+        "gemm"
+      ],
+      "params": {
+        "i": 16,
+        "j": 12544,
+        "k": 288
+      }
+    },
+    {
+      "name": "conv3_1-0",
+      "tags": [
+        "gemm"
+      ],
+      "params": {
+        "i": 96,
+        "j": 12544,
+        "k": 144
+      }
+    },
+    {
+      "name": "conv3_3-0",
+      "tags": [
+        "gemm"
+      ],
+      "params": {
+        "i": 24,
+        "j": 3136,
+        "k": 864
+      }
+    },
+    {
+      "name": "conv3_1-1",
+      "tags": [
+        "gemm"
+      ],
+      "params": {
+        "i": 96,
+        "j": 12544,
+        "k": 144
+      }
+    },
+    {
+      "name": "conv3_3-1",
+      "tags": [
+        "gemm"
+      ],
+      "params": {
+        "i": 24,
+        "j": 3136,
+        "k": 864
+      }
+    },
+    {
+      "name": "conv4_1-0",
+      "tags": [
+        "gemm"
+      ],
+      "params": {
+        "i": 144,
+        "j": 3136,
+        "k": 216
+      }
+    },
+    {
+      "name": "conv4_3-0",
+      "tags": [
+        "gemm"
+      ],
+      "params": {
+        "i": 32,
+        "j": 784,
+        "k": 1296
+      }
+    },
+    {
+      "name": "conv4_1-1",
+      "tags": [
+        "gemm"
+      ],
+      "params": {
+        "i": 144,
+        "j": 3136,
+        "k": 216
+      }
+    },
+    {
+      "name": "conv4_3-1",
+      "tags": [
+        "gemm"
+      ],
+      "params": {
+        "i": 32,
+        "j": 784,
+        "k": 1296
+      }
+    },
+    {
+      "name": "conv4_1-2",
+      "tags": [
+        "gemm"
+      ],
+      "params": {
+        "i": 144,
+        "j": 3136,
+        "k": 216
+      }
+    },
+    {
+      "name": "conv4_3-2",
+      "tags": [
+        "gemm"
+      ],
+      "params": {
+        "i": 32,
+        "j": 784,
+        "k": 1296
+      }
+    },
+    {
+      "name": "conv5_1-0",
+      "tags": [
+        "gemm"
+      ],
+      "params": {
+        "i": 192,
+        "j": 784,
+        "k": 288
+      }
+    },
+    {
+      "name": "conv5_3-0",
+      "tags": [
+        "gemm"
+      ],
+      "params": {
+        "i": 64,
+        "j": 196,
+        "k": 1728
+      }
+    },
+    {
+      "name": "conv5_1-1",
+      "tags": [
+        "gemm"
+      ],
+      "params": {
+        "i": 192,
+        "j": 784,
+        "k": 288
+      }
+    },
+    {
+      "name": "conv5_3-1",
+      "tags": [
+        "gemm"
+      ],
+      "params": {
+        "i": 64,
+        "j": 196,
+        "k": 1728
+      }
+    },
+    {
+      "name": "conv5_1-2",
+      "tags": [
+        "gemm"
+      ],
+      "params": {
+        "i": 192,
+        "j": 784,
+        "k": 288
+      }
+    },
+    {
+      "name": "conv5_3-2",
+      "tags": [
+        "gemm"
+      ],
+      "params": {
+        "i": 64,
+        "j": 196,
+        "k": 1728
+      }
+    },
+    {
+      "name": "conv5_1-3",
+      "tags": [
+        "gemm"
+      ],
+      "params": {
+        "i": 192,
+        "j": 784,
+        "k": 288
+      }
+    },
+    {
+      "name": "conv5_3-3",
+      "tags": [
+        "gemm"
+      ],
+      "params": {
+        "i": 64,
+        "j": 196,
+        "k": 1728
+      }
+    },
+    {
+      "name": "conv6_1-0",
+      "tags": [
+        "gemm"
+      ],
+      "params": {
+        "i": 384,
+        "j": 196,
+        "k": 576
+      }
+    },
+    {
+      "name": "conv6_3-0",
+      "tags": [
+        "gemm"
+      ],
+      "params": {
+        "i": 96,
+        "j": 196,
+        "k": 3456
+      }
+    },
+    {
+      "name": "conv6_1-1",
+      "tags": [
+        "gemm"
+      ],
+      "params": {
+        "i": 384,
+        "j": 196,
+        "k": 576
+      }
+    },
+    {
+      "name": "conv6_3-1",
+      "tags": [
+        "gemm"
+      ],
+      "params": {
+        "i": 96,
+        "j": 196,
+        "k": 3456
+      }
+    },
+    {
+      "name": "conv6_1-2",
+      "tags": [
+        "gemm"
+      ],
+      "params": {
+        "i": 384,
+        "j": 196,
+        "k": 576
+      }
+    },
+    {
+      "name": "conv6_3-2",
+      "tags": [
+        "gemm"
+      ],
+      "params": {
+        "i": 96,
+        "j": 196,
+        "k": 3456
+      }
+    },
+    {
+      "name": "conv7_1-0",
+      "tags": [
+        "gemm"
+      ],
+      "params": {
+        "i": 576,
+        "j": 196,
+        "k": 864
+      }
+    },
+    {
+      "name": "conv7_3-0",
+      "tags": [
+        "gemm"
+      ],
+      "params": {
+        "i": 160,
+        "j": 49,
+        "k": 5184
+      }
+    },
+    {
+      "name": "conv7_1-1",
+      "tags": [
+        "gemm"
+      ],
+      "params": {
+        "i": 576,
+        "j": 196,
+        "k": 864
+      }
+    },
+    {
+      "name": "conv7_3-1",
+      "tags": [
+        "gemm"
+      ],
+      "params": {
+        "i": 160,
+        "j": 49,
+        "k": 5184
+      }
+    },
+    {
+      "name": "conv7_1-2",
+      "tags": [
+        "gemm"
+      ],
+      "params": {
+        "i": 576,
+        "j": 196,
+        "k": 864
+      }
+    },
+    {
+      "name": "conv7_3-2",
+      "tags": [
+        "gemm"
+      ],
+      "params": {
+        "i": 160,
+        "j": 49,
+        "k": 5184
+      }
+    },
+    {
+      "name": "conv8_1-0",
+      "tags": [
+        "gemm"
+      ],
+      "params": {
+        "i": 960,
+        "j": 49,
+        "k": 1440
+      }
+    },
+    {
+      "name": "conv8_3-0",
+      "tags": [
+        "gemm"
+      ],
+      "params": {
+        "i": 320,
+        "j": 49,
+        "k": 8640
+      }
+    },
+    {
+      "name": "conv9",
+      "tags": [
+        "gemm"
+      ],
+      "params": {
+        "i": 1280,
+        "j": 49,
+        "k": 2880
+      }
+    }
+  ]
+}

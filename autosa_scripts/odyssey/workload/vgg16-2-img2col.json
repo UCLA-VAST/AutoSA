@@ -1,0 +1,22 @@
+{
+  "workloads": [
+    {
+      "name": "conv1-1",
+      "tags": ["gemm", "img2col"],
+      "params": {
+        "p0": 64,
+        "p1": 50176,
+        "p2": 27
+      }
+    },
+    {
+      "name": "conv1-2",
+      "tags": ["gemm", "img2col"],
+      "params": {
+        "p0": 64,
+        "p1": 50176,
+        "p2": 576
+      }
+    }
+  ]
+}
