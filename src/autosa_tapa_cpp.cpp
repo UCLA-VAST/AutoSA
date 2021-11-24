@@ -67,6 +67,12 @@ static void hls_open_files(struct hls_info *info, const char *input)
   strcpy(name + len, "_host.h");
   strcpy(dir + len_dir, name);
   info->host_h = fopen(dir, "w");
+
+  fprintf(info->host_h, "template <typename T1, typename T2> "                                                                                                                                                                              
+          "inline T1 min(T1 x, T2 y) { return (x < T1(y)) ? x : T1(y); }\n");
+  fprintf(info->host_h, "template <typename T1, typename T2> "
+          "inline T1 max(T1 x, T2 y) { return (x > T1(y)) ? x : T1(y); }\n");
+  fprintf(info->host_h, "\n");
   print_tapa_host_header(info->host_h);
   fprintf(info->host_c, "#include \"%s\"\n", name);
 
@@ -108,9 +114,11 @@ static void hls_open_files(struct hls_info *info, const char *input)
   fprintf(info->kernel_h, "#include <ap_int.h>\n");
   fprintf(info->kernel_h, "\n");
 
-  fprintf(info->kernel_h, "#define min(x,y) ((x < y) ? x : y)\n");
-  fprintf(info->kernel_h, "#define max(x,y) ((x > y) ? x : y)\n");
-  fprintf(info->kernel_h, "\n");
+  fprintf(info->kernel_c, "template <typename T1, typename T2> "
+          "inline T1 min(T1 x, T2 y) { return (x < T1(y)) ? x : T1(y); }\n");
+  fprintf(info->kernel_c, "template <typename T1, typename T2> "
+          "inline T1 max(T1 x, T2 y) { return (x > T1(y)) ? x : T1(y); }\n");
+  fprintf(info->kernel_c, "\n");
 
   free(file_path);
 }
