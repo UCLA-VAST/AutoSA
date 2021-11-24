@@ -2073,7 +2073,48 @@ static __isl_give isl_printer *print_fifo_decl_single(
     p = isl_printer_print_int(p, fifo_depth);
     p = isl_printer_print_str(p, ")))\");");
     p = isl_printer_end_line(p);
-  }  
+  }
+  if (hls->target == TAPA_HW) {
+    p = isl_printer_start_line(p);
+    p = isl_printer_print_str(p, "p = isl_printer_print_str(p, \"(\\\"");
+    p = autosa_array_ref_group_print_fifo_name(group, p);
+    p = isl_printer_print_str(p, "_");
+    p = isl_printer_print_str(p, module->name);
+    if (pe_inout)
+    {
+      p = isl_printer_print_str(p, suffix);
+    }
+    p = isl_printer_print_str(p, "\");");
+    p = isl_printer_end_line(p);
+
+    if (module->type == IO_MODULE || module->type == DRAIN_MODULE)
+    {
+      if (boundary)
+      {
+        p = print_inst_ids_inc_suffix(p, n, n - 1, 1);
+      }
+      else
+      {
+        p = print_inst_ids_suffix(p, n, NULL);
+      }
+    }
+    else if (module->type == PE_MODULE)
+    {
+      if (boundary)
+      {
+        p = print_pretrans_inst_ids_suffix(p, n, group->io_L1_pe_expr, group->dir);
+      }
+      else
+      {
+        p = print_pretrans_inst_ids_suffix(p, n, group->io_L1_pe_expr, NULL);
+      }
+    }
+    p = isl_printer_end_line(p);
+    p = isl_printer_start_line(p);
+    p = isl_printer_print_str(p, "p = isl_printer_print_str(p, \"\\\")\");");
+    p = isl_printer_end_line(p);
+  }
+
   p = print_str_new_line(p, "p = isl_printer_print_str(p, \";\");");  
   p = print_str_new_line(p, "p = isl_printer_end_line(p);");
 
