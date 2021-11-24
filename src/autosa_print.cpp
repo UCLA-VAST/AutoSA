@@ -380,8 +380,17 @@ __isl_give isl_printer *autosa_array_info_print_declaration_argument(
   if (array->n_index != 0 && !array->linearize)
     return print_non_linearized_declaration_argument(p, array, n_lane);
 
-  if (target == TAPA_HW)
-    p = isl_printer_print_str(p, "tapa::mmap<");
+  if (target == TAPA_HW) {
+    if (array->copy_in) {
+      if (array->copy_out)
+        p = isl_printer_print_str(p, "tapa::read_write_mmap<");
+      else
+        p = isl_printer_print_str(p, "tapa::read_only_mmap<");
+    } else if (array->copy_out)
+      p = isl_printer_print_str(p, "tapa::write_only_mmap<");
+    else
+      p = isl_printer_print_str(p, "tapa::placeholder_mmap<");
+  }
 
   //if (n_lane == 1)
   //  p = isl_printer_print_str(p, array->type);
