@@ -4361,9 +4361,13 @@ __isl_give isl_printer *autosa_print_reduce_data_pack(
       p = isl_printer_start_line(p);
       p = isl_printer_print_str(p, "dout_");
       p = isl_printer_print_int(p, i);
-      p = isl_printer_print_str(p, " = data_split[split_idx][");
-      p = isl_printer_print_int(p, i);
-      p = isl_printer_print_str(p, "];");
+      p = isl_printer_print_str(p, " = data_split[split_idx]");
+      if (data_pack_in > 1) {
+        p = isl_printer_print_str(p, "[");
+        p = isl_printer_print_int(p, i);
+        p = isl_printer_print_str(p, "]");
+      }
+      p = isl_printer_print_str(p, ";");
       p = isl_printer_end_line(p);
     }
 
@@ -4384,12 +4388,20 @@ __isl_give isl_printer *autosa_print_reduce_data_pack(
     /* re-assign the reduced values to the buf_data_split[i]. */
     for (int i = data_pack_in - 1; i >= 0; i--) {
       p = isl_printer_start_line(p);
-      p = isl_printer_print_str(p, "data_split[split_idx].set(");
-      p = isl_printer_print_int(p, i);
-      p = isl_printer_print_str(p, ", ");
+      p = isl_printer_print_str(p, "data_split[split_idx]");
+      if (data_pack_in > 1) {
+        p = isl_printer_print_str(p, ".set(");
+        p = isl_printer_print_int(p, i);
+        p = isl_printer_print_str(p, ", ");
+      } else {
+        p = isl_printer_print_str(p, " = ");
+      }
       p = isl_printer_print_str(p, "dout_");
       p = isl_printer_print_int(p, i);
-      p = isl_printer_print_str(p, ");");
+      if (data_pack_in > 1) {
+        p = isl_printer_print_str(p, ")");
+      }
+      p = isl_printer_print_str(p, ";");
       p = isl_printer_end_line(p);
     }
   }
