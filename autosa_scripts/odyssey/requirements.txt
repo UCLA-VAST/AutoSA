@@ -1,5 +1,5 @@
 bayesian-optimization==1.1.0
-certifi==2021.10.8
+certifi==2022.12.7
 dill @ file:///home/conda/feedstock_root/build_artifacts/dill_1623610058511/work
 joblib @ file:///tmp/build/80754af9/joblib_1635411271373/work
 mkl-fft==1.3.1
